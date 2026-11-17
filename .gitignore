@@ -1,0 +1,29 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.env
+
+# ---- Node ----
+node_modules/
+dist/
+*.log
+
+# ---- IDE / OS ----
+.idea/
+.vscode/
+.DS_Store
+
+# ---- Build & coverage ----
+build/
+coverage/
+out/
+
+# ---- Local data ----
+*.local
+data/
+tmp/

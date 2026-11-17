@@ -1,0 +1,27 @@
+{
+  "name": "@forge/runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AgentHarness Forge 执行内核适配层：AgentKernel 端口 + dsh 实现 + 平台插件包",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "test:contract": "vitest run test/contract"
+  },
+  "dependencies": {
+    "cordis": "^3.20.0",
+    "@deepseek-ai/dsh": "0.1.x",
+    "fastify": "^5.2.0",
+    "undici": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "eslint": "^9.16.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
