@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import sys
 import json
 import ssl
 import subprocess
@@ -16,6 +17,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import httpx
 from playwright.async_api import async_playwright, expect
 
+BLOCK_COOKIES = "--block-cookies" in sys.argv
+BLOCK_STORAGE = "--block-storage" in sys.argv
+OPAQUE_FRAME = "--opaque-frame" in sys.argv
 ROOT = Path(__file__).resolve().parents[1]
 credentials = dict(
     line.split("=", 1)
@@ -33,9 +37,30 @@ class Proxy(BaseHTTPRequestHandler):
     def do_POST(self):
         self.forward()
 
+    def do_PUT(self):
+        self.forward()
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header(
+            "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"
+        )
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-Forge-CSRF, X-Forge-Session, Last-Event-ID, Accept",
+        )
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def forward(self):
         if self.headers["Host"].startswith("forge-parent.test"):
-            raw = f'<iframe src="https://forge-child.test:{self.server.server_port}/agent/chat" width="1300" height="900"></iframe>'.encode()
+            sandbox = (
+                ' sandbox="allow-scripts allow-forms allow-downloads"'
+                if OPAQUE_FRAME
+                else ""
+            )
+            raw = f'<iframe{sandbox} src="https://forge-child.test:{self.server.server_port}/agent/chat" width="1300" height="900"></iframe>'.encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
         else:
@@ -44,6 +69,7 @@ class Proxy(BaseHTTPRequestHandler):
                 key: value
                 for key, value in self.headers.items()
                 if key.lower() not in ("host", "content-length", "accept-encoding")
+                and not (BLOCK_COOKIES and key.lower() == "cookie")
             }
             with httpx.Client(trust_env=False) as client:
                 response = client.request(
@@ -60,9 +86,11 @@ class Proxy(BaseHTTPRequestHandler):
                     "content-encoding",
                     "transfer-encoding",
                     "connection",
-                ):
+                ) and not (BLOCK_COOKIES and key.lower() == "set-cookie"):
                     self.send_header(key, value)
         self.send_header("Content-Length", str(len(raw)))
+        # 只在本机测试转发器模拟允许不透明源的预览代理；不放宽业务服务 CORS。
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(raw)
 
@@ -81,6 +109,10 @@ async def browser_test(port):
             ignore_https_errors=True, viewport={"width": 1440, "height": 1020}
         )
         try:
+            if BLOCK_STORAGE:
+                await context.add_init_script(
+                    "Object.defineProperty(window, 'sessionStorage', { get() { throw new DOMException('Storage blocked by test', 'SecurityError'); } });"
+                )
             page = await context.new_page()
             await page.goto(f"https://forge-parent.test:{port}/")
             frame = page.frame_locator("iframe")
@@ -101,30 +133,82 @@ async def browser_test(port):
                 }
                 for cookie in await context.cookies()
             ]
-            assert any(
-                cookie["partitionKey"] == "https://forge-parent.test"
-                and cookie["secure"]
-                and cookie["httpOnly"]
-                and cookie["sameSite"] == "None"
-                for cookie in attributes
-            ), attributes
-            print(
-                "PASS native cross-site HTTPS iframe login and partitioned HttpOnly Secure cookie"
-            )
+            if BLOCK_COOKIES:
+                assert not attributes
+                print(
+                    "PASS cookie-stripping HTTPS iframe logs into actual workspace using a preview header"
+                )
+                await frame.get_by_role("link", name="模型中心", exact=True).click()
+                await expect(
+                    frame.get_by_role("heading", name="模型中心", exact=True)
+                ).to_be_visible()
+                print("PASS model-center protected APIs work without any cookie")
+                await frame.get_by_role("link", name="治理与设置", exact=True).click()
+                await frame.get_by_role("button", name="保存策略", exact=True).click()
+                await expect(frame.get_by_role("alert")).to_contain_text("策略已保存")
+                print("PASS actual CSRF-protected policy save works without cookies")
+                if not BLOCK_STORAGE:
+                    await page.reload()
+                    await expect(frame.locator(".app-shell")).to_be_visible()
+                    print(
+                        "PASS cookie-free preview session survives a full iframe reload"
+                    )
+                else:
+                    print(
+                        "PASS cookie-free login works even when sessionStorage is unavailable (memory only)"
+                    )
+                await page.screenshot(
+                    path=str(
+                        ROOT
+                        / "data/business-checks"
+                        / (
+                            "preview-memory-auth.png"
+                            if BLOCK_STORAGE
+                            else "preview-cookie-free-auth.png"
+                        )
+                    )
+                )
+            else:
+                assert any(
+                    cookie["partitionKey"] == "https://forge-parent.test"
+                    and cookie["secure"]
+                    and cookie["httpOnly"]
+                    and cookie["sameSite"] == "None"
+                    for cookie in attributes
+                )
+                print(
+                    "PASS native cross-site HTTPS iframe login and partitioned HttpOnly Secure cookie"
+                )
             await frame.get_by_role("button", name="退出登录", exact=True).click()
             await expect(frame.get_by_label("密码", exact=True)).to_be_visible()
             status = await frame.locator("body").evaluate(
                 "async () => (await (await fetch('/api/auth/session')).json()).data"
             )
             assert not status["authenticated"]
-            print("PASS native cross-site HTTPS iframe logout")
-            (ROOT / "data/business-checks/iframe-report.json").write_text(
+            print(
+                "PASS native cross-site HTTPS iframe logout"
+                if not BLOCK_COOKIES
+                else "PASS cookie-free iframe logout clears the preview session"
+            )
+            (
+                ROOT
+                / (
+                    "data/business-checks/iframe-memory-report.json"
+                    if BLOCK_STORAGE
+                    else "data/business-checks/iframe-cookie-blocked-report.json"
+                    if BLOCK_COOKIES
+                    else "data/business-checks/iframe-report.json"
+                )
+            ).write_text(
                 json.dumps(
                     {
                         "result": "passed",
                         "scope": "actual app over native local TLS proxy and two cross-site test domains; Arena traffic authentication not tested",
                         "cookieAttributes": attributes,
-                        "checks": 2,
+                        "checks": 5 if BLOCK_COOKIES else 2,
+                        "cookiesBlocked": BLOCK_COOKIES,
+                        "storageBlocked": BLOCK_STORAGE,
+                        "opaqueFrame": OPAQUE_FRAME,
                     },
                     ensure_ascii=False,
                     indent=2,

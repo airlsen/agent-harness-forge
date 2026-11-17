@@ -8,7 +8,7 @@
 
 | 模块 | 本版实现 |
 |---|---|
-| 登录与导航 | 本地管理员、HttpOnly 签名会话、CSRF；HTTPS iframe 可使用分区 Cookie |
+| 登录与导航 | 本地管理员、HttpOnly Cookie 优先、CSRF；预览 Cookie 被阻断时使用 1 小时标签页兼容会话 |
 | Agent 工作台 | 场景选择、自由文本任务、Markdown / SSE、最近会话、文本附件、中止 |
 | 场景中心 | 4 个官方只读模板；个人场景创建 / 复制 / 编辑 / 软删除、不可变版本、模型试运行与发布门槛 |
 | 能力中心 | 实际安装的 dsh / Forge Runtime 组件与 4 个工具；Skill / MCP 明确标记尚未接入 |
@@ -77,7 +77,9 @@ make test           # 契约 + 隔离 Runner/API 测试；不请求外部模型
 python3 -m playwright install --with-deps chromium
 python3 scripts/check-business-api.py --browser   # 临时隔离业务栈的执行 UI
 python3 scripts/check-business-ui.py              # 当前无模型部署的实际页面（临时创建/删除测试场景）
-python3 scripts/check-iframe-auth.py              # 需已启动 HTTPS iframe 预览模式；本地双 TLS 测试域，不验证 Arena 流量代理
+python3 scripts/check-iframe-auth.py              # 本地双 TLS 域 Cookie 登录
+python3 scripts/check-iframe-auth.py --block-cookies  # 强制剥离全部 Cookie 的预览登录
+python3 scripts/check-business-api.py --browser --cookie-blocked  # 无 Cookie 的完整执行 UI
 
 # 历史 M0：只验证插件拦截，不等于产品验收
 npm --prefix runner run poc

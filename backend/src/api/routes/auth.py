@@ -1,8 +1,18 @@
 import time
 from collections import defaultdict
+from typing import Literal
 from fastapi import APIRouter, Request, HTTPException, Response
 from pydantic import BaseModel, Field
-from ..core.security import COOKIE, authenticated, csrf_token, make_cookie, password_valid
+from ..core.security import (
+    COOKIE,
+    PREVIEW_HEADER,
+    authenticated,
+    csrf_token,
+    make_cookie,
+    password_valid,
+    make_preview_session,
+    revoke_preview_session,
+)
 from ..core.config import settings
 from ..utils.response import ResponseUtil
 
@@ -13,6 +23,7 @@ attempts: dict[str, list[float]] = defaultdict(list)
 class Login(BaseModel):
     username: str = Field(max_length=80)
     password: str = Field(max_length=500)
+    transport: Literal["cookie", "preview-header"] = "cookie"
 
 
 @router.get("/session")
@@ -26,6 +37,10 @@ async def session(request: Request):
             else None,
             "csrfToken": csrf_token(request) if valid else None,
             "authMode": "local-workspace",
+            "previewHeaderAuth": settings.preview_header_auth,
+            "transport": ("preview-header" if request.headers.get(PREVIEW_HEADER) else "cookie")
+            if valid
+            else None,
         }
     )
 
@@ -41,12 +56,17 @@ async def login(payload: Login, request: Request, response: Response):
         recent.append(time.monotonic())
         raise HTTPException(401, "账号或密码不正确")
     attempts.pop(host, None)
+    if payload.transport == "preview-header":
+        if not settings.preview_header_auth:
+            raise HTTPException(403, "当前部署未开启预览兼容会话，请允许 Cookie 或从新标签页登录")
+        return ResponseUtil.ok({"ok": True, "previewSession": make_preview_session()})
     write_cookie(response, request, make_cookie())
     return ResponseUtil.ok({"ok": True})
 
 
 @router.post("/logout")
 async def logout(response: Response, request: Request):
+    revoke_preview_session(request)
     write_cookie(response, request, "", clear=True)
     return ResponseUtil.ok()
 

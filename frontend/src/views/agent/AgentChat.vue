@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { usePlatform } from '../../stores/platform';
 import { useConversation } from '../../stores/conversation';
-import { api } from '../../api/client';
+import { api, downloadResponse } from '../../api/client';
 import Icon from '../../components/ForgeIcon.vue';
 import Markdown from '../../components/MarkdownContent.vue';
 const app = usePlatform(),
@@ -135,6 +135,17 @@ async function openFile(path: string) {
     app.toast((e as Error).message, 'error');
   }
 }
+async function exportSession() {
+  if (!chat.current) return;
+  try {
+    await downloadResponse(
+      `/agent/sessions/${chat.current.id}/export`,
+      `forge-session-${chat.current.id}.json`,
+    );
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  }
+}
 function downloadFile() {
   if (!previewFile.value) return;
   const url = URL.createObjectURL(
@@ -185,13 +196,14 @@ function formatArgs(value: unknown) {
           ><span v-if="chat.current" class="tag soft">v{{ chat.current.scenarioVersion }}</span>
         </div>
         <div class="chat-subbar-actions">
-          <a
+          <button
             v-if="chat.current"
-            :href="`/api/agent/sessions/${chat.current.id}/export`"
+            @click="exportSession"
             class="icon-button"
             title="导出会话与轨迹"
             aria-label="导出会话"
-            ><Icon name="download" :size="17" /></a
+          >
+            <Icon name="download" :size="17" /></button
           ><button
             :class="['icon-button', { active: chat.panelOpen }]"
             title="会话上下文与执行轨迹"

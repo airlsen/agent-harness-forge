@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     cookie_samesite: Literal["strict", "lax", "none"] = "strict"
     cookie_partitioned: bool = False
+    preview_header_auth: bool = False
     serve_frontend: bool = True
     frontend_dist: Path = ROOT / "frontend" / "dist"
     session_idle_ttl_seconds: int = 1800

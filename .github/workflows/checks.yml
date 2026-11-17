@@ -29,3 +29,4 @@ jobs:
       - run: make test
       - run: python -m playwright install --with-deps chromium
       - run: python scripts/check-business-api.py --browser
+      - run: python scripts/check-business-api.py --browser --cookie-blocked

@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia';
-import { api, post, setCsrf } from '../api/client';
+import { api, post, setCsrf, setPreviewSession } from '../api/client';
 import type { Conversation, ModelConnection, RuntimeStatus, Scenario, Tool } from '../types/platform';
 
 export const usePlatform = defineStore('platform', {
   state: () => ({
     authenticated: false,
     authLoading: true,
+    previewHeaderAuth: false,
     user: null as null | { name: string; username: string; workspace: string },
     scenarios: [] as Scenario[],
     conversations: [] as Conversation[],
@@ -27,22 +28,53 @@ export const usePlatform = defineStore('platform', {
         const data = await api('/auth/session');
         this.authenticated = data.authenticated;
         this.user = data.user;
+        this.previewHeaderAuth = data.previewHeaderAuth;
+        if (!data.authenticated) setPreviewSession(null);
         setCsrf(data.csrfToken ?? '');
       } finally {
         this.authLoading = false;
       }
     },
     async login(username: string, password: string) {
+      setPreviewSession(null);
+      setCsrf('');
       await post('/auth/login', { username, password });
-      await this.checkAuth();
+      let auth = await api('/auth/session');
+      let cookieWorks = auth.authenticated;
+      // 检测真正的业务请求，不能把 login 的 200 或 session 的 200 当成登录成功。
+      if (cookieWorks) {
+        try {
+          await api('/registry/tools');
+        } catch (error) {
+          if ((error as { status: number }).status !== 401) throw error;
+          cookieWorks = false;
+        }
+      }
+      if (!cookieWorks) {
+        if (!auth.previewHeaderAuth)
+          throw new Error('密码已验证，但预览环境未保留登录 Cookie。请允许 Cookie 或从新标签页登录。');
+        const result = await post('/auth/login', { username, password, transport: 'preview-header' });
+        setPreviewSession(result.previewSession);
+        auth = await api('/auth/session');
+      }
+      if (!auth.authenticated) throw new Error('预览会话未能建立，请刷新预览后重试；无需更改账号密码。');
+      setCsrf(auth.csrfToken);
       await this.initialize();
+      this.authenticated = true;
+      this.user = auth.user;
+      this.previewHeaderAuth = auth.previewHeaderAuth;
+      if (!cookieWorks) this.toast('已使用预览兼容会话：仅当前标签页、1 小时有效', 'info');
     },
     async logout() {
-      await post('/auth/logout');
-      this.authenticated = false;
-      this.user = null;
-      this.conversations = [];
-      setCsrf('');
+      try {
+        await post('/auth/logout');
+      } finally {
+        this.authenticated = false;
+        this.user = null;
+        this.conversations = [];
+        setPreviewSession(null);
+        setCsrf('');
+      }
     },
     async initialize() {
       this.loading = true;

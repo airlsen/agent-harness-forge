@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia';
 import { api, post } from '../api/client';
+import { openEventStream } from '../api/events';
 import { usePlatform } from './platform';
 import type { Approval, ChatMessage, KernelEvent, SessionDetail } from '../types/platform';
-let stream: EventSource | null = null;
+let stream: { close: () => void } | null = null;
 let openGeneration = 0;
 
 async function trajectory(id: number, last: number) {
@@ -124,62 +125,62 @@ export const useConversation = defineStore('conversation', {
     follow(id: number, after: number) {
       this.disconnect();
       this.connectionWarning = '';
-      stream = new EventSource(`/api/agent/sessions/${id}/events?after=${after}`);
-      stream.addEventListener('kernel', (value) => {
-        if (this.current?.id !== id) return;
-        const event: KernelEvent = JSON.parse((value as MessageEvent).data);
-        if (this.events.some((row) => row.seq === event.seq)) return;
-        this.events.push(event);
-        const data = event.payload;
-        if (event.kind === 'message_delta') this.liveText += data.text;
-        else if (event.kind === 'message') {
-          if (
-            !this.messages.some(
-              (message) =>
-                message.id === data.runtimeMessageId ||
-                message.meta.runtimeMessageId === data.runtimeMessageId,
+      stream = openEventStream(`/api/agent/sessions/${id}/events?after=${after}`, {
+        kernel: (event) => {
+          if (this.current?.id !== id) return;
+          if (this.events.some((row) => row.seq === event.seq)) return;
+          this.events.push(event);
+          const data = event.payload;
+          if (event.kind === 'message_delta') this.liveText += data.text;
+          else if (event.kind === 'message') {
+            if (
+              !this.messages.some(
+                (message) =>
+                  message.id === data.runtimeMessageId ||
+                  message.meta.runtimeMessageId === data.runtimeMessageId,
+              )
             )
-          )
-            this.messages.push({
-              id: data.runtimeMessageId ?? `live-${event.seq}`,
-              role: 'assistant',
-              content: data.text,
-              meta: { partial: data.partial, runtimeMessageId: data.runtimeMessageId },
-            });
-          this.liveText = '';
-        } else if (event.kind === 'tool_result') {
-          if (
-            !this.messages.some(
-              (message) => message.role === 'tool' && message.meta.toolCallId === data.toolCallId,
+              this.messages.push({
+                id: data.runtimeMessageId ?? `live-${event.seq}`,
+                role: 'assistant',
+                content: data.text,
+                meta: { partial: data.partial, runtimeMessageId: data.runtimeMessageId },
+              });
+            this.liveText = '';
+          } else if (event.kind === 'tool_result') {
+            if (
+              !this.messages.some(
+                (message) => message.role === 'tool' && message.meta.toolCallId === data.toolCallId,
+              )
             )
-          )
-            this.messages.push({ id: `tool-${event.seq}`, role: 'tool', content: data.result, meta: data });
-        } else if (event.kind === 'approval_required') this.approvals.push(data);
-        else if (event.kind === 'approval_resolved')
-          this.approvals = this.approvals.filter((approval) => approval.ticketId !== data.ticketId);
-        else if (event.kind === 'error') this.runError = data.message;
-        else if (event.kind === 'cost_tick') {
-          this.current.tokensIn = data.totalTokensIn;
-          this.current.tokensOut = data.totalTokensOut;
-          this.current.cost = data.cost;
-        } else if (event.kind === 'files') {
-          this.panel = 'files';
-          void this.refreshFiles();
-        }
+              this.messages.push({ id: `tool-${event.seq}`, role: 'tool', content: data.result, meta: data });
+          } else if (event.kind === 'approval_required') this.approvals.push(data);
+          else if (event.kind === 'approval_resolved')
+            this.approvals = this.approvals.filter((approval) => approval.ticketId !== data.ticketId);
+          else if (event.kind === 'error') this.runError = data.message;
+          else if (event.kind === 'cost_tick') {
+            this.current.tokensIn = data.totalTokensIn;
+            this.current.tokensOut = data.totalTokensOut;
+            this.current.cost = data.cost;
+          } else if (event.kind === 'files') {
+            this.panel = 'files';
+            void this.refreshFiles();
+          }
+        },
+        settled: () => {
+          if (this.current?.id === id) {
+            this.disconnect();
+            void this.settled(id);
+          }
+        },
+        open: () => {
+          if (this.current?.id === id) this.connectionWarning = '';
+        },
+        error: () => {
+          if (this.current?.id === id && this.current.status === 'running')
+            this.connectionWarning = '实时连接中断，正在重连；后台执行和日志持久化仍在继续。';
+        },
       });
-      stream.addEventListener('settled', () => {
-        if (this.current?.id === id) {
-          this.disconnect();
-          void this.settled(id);
-        }
-      });
-      stream.onopen = () => {
-        if (this.current?.id === id) this.connectionWarning = '';
-      };
-      stream.onerror = () => {
-        if (this.current?.id === id && this.current.status === 'running')
-          this.connectionWarning = '实时连接中断，正在重连；后台执行和日志持久化仍在继续。';
-      };
     },
     async settled(id: number) {
       try {

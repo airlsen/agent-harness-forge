@@ -42,4 +42,5 @@ lint:
 test: ## 不吞错误；使用隔离协议夹具，不消耗真实模型
 	npm --prefix runner run contract
 	npm --prefix runner test
+	python3 scripts/check-preview-auth.py
 	python3 scripts/check-business-api.py

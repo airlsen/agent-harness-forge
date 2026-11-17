@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { api } from '../../api/client';
+import { api, downloadResponse } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
 import type { KernelEvent, SessionDetail } from '../../types/platform';
 import Icon from '../../components/ForgeIcon.vue';
@@ -33,6 +33,16 @@ async function load() {
     loading.value = false;
   }
 }
+async function exportEvidence() {
+  try {
+    await downloadResponse(
+      `/agent/sessions/${route.params.sessionId}/export`,
+      `forge-session-${route.params.sessionId}.json`,
+    );
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  }
+}
 onMounted(load);
 </script>
 <template>
@@ -50,9 +60,9 @@ onMounted(load);
           }}
         </p>
       </div>
-      <a :href="`/api/agent/sessions/${route.params.sessionId}/export`" class="button secondary"
-        ><Icon name="download" :size="16" />导出会话证据</a
-      >
+      <button @click="exportEvidence" class="button secondary">
+        <Icon name="download" :size="16" />导出会话证据
+      </button>
     </div>
     <section v-if="detail" class="snapshot-bar">
       <Icon name="layers" :size="18" />

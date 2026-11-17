@@ -9,6 +9,7 @@ set -a
 set +a
 if [[ "${FORGE_EMBEDDED_PREVIEW:-0}" == "1" ]]; then
   export FORGE_COOKIE_SECURE=true FORGE_COOKIE_SAMESITE=none FORGE_COOKIE_PARTITIONED=true
+  export FORGE_PREVIEW_HEADER_AUTH=true
 fi
 if [[ ! -f "$ROOT/frontend/dist/index.html" ]]; then echo "请先运行 npm --prefix frontend run build" >&2; exit 1; fi
 cd "$ROOT/backend"

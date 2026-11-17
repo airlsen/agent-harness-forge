@@ -17,7 +17,8 @@ make dev-backend                # API 开发 :8000，需配套 Vite
 
 - 业务配置默认在 `data/business.env`，启动脚本自动加载。没有内部 Token 或初始化认证文件时拒绝启动。
 - 模型通过登录后的模型中心管理；原文密钥不回传，不进入可导出的 Bundle。
-- 后台任务 / 会话锁仍在单进程，不要开启多个 uvicorn worker。
+- 普通部署默认只用 HttpOnly Cookie；`FORGE_EMBEDDED_PREVIEW=1` 额外开启短时 Header 兼容认证。仍校验密码和 CSRF；服务端只存令牌摘要，退出 / 1 小时到期 / 进程重启后失效。不是生产 OIDC，不能视为 HttpOnly 会话。
+- 后台任务 / 会话锁及预览会话表仍在单进程，不要开启多个 uvicorn worker。
 - SQLite `create_all` 尚不是数据库迁移体系，PostgreSQL override 尚未实测。
 - Redis、S3、OIDC、企业 RBAC、WORM 尚未接入。
 

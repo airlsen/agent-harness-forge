@@ -5,7 +5,9 @@ from pathlib import Path
 from playwright.async_api import async_playwright, expect
 
 
-async def check_execution_ui(base: str, username: str, password: str, output: Path):
+async def check_execution_ui(
+    base: str, username: str, password: str, output: Path, *, cookie_blocked=False
+):
     checks, errors = [], []
 
     def passed(name):
@@ -22,6 +24,14 @@ async def check_execution_ui(base: str, username: str, password: str, output: Pa
             await page.get_by_label("密码", exact=True).fill(password)
             await page.get_by_role("button", name="进入工作空间").click()
             await page.wait_for_selector(".app-shell")
+            if cookie_blocked:
+                assert not await page.context.cookies()
+                assert await page.evaluate(
+                    "Boolean(JSON.parse(sessionStorage.getItem('forge.preview-session.v1') || 'null')?.token)"
+                )
+                assert await page.evaluate(
+                    "localStorage.getItem('forge.preview-session.v1') === null"
+                )
             await page.locator(".scenario-trigger").click()
             await (
                 page.locator(".scenario-popover>button")
@@ -127,7 +137,7 @@ async def check_execution_ui(base: str, username: str, password: str, output: Pa
                 page.locator(".trajectory-event").first.locator("pre")
             ).to_contain_text("workspace_write")
             async with page.expect_download() as captured:
-                await page.get_by_role("link", name="导出会话证据").click()
+                await page.get_by_role("button", name="导出会话证据").click()
             export = await captured.value
             exported = json.loads(Path(await export.path()).read_text())
             assert exported["id"] == int(sid) and any(
@@ -143,6 +153,7 @@ async def check_execution_ui(base: str, username: str, password: str, output: Pa
                     {
                         "scope": "isolated protocol fixture, not real-model acceptance",
                         "result": "passed",
+                        "cookiesBlocked": cookie_blocked,
                         "checks": len(checks),
                         "items": checks,
                     },

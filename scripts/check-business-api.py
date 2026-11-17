@@ -176,6 +176,9 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
         "FORGE_RUNNER_TOKEN": token,
         "FORGE_RUNNER_DATA_DIR": str(data / "runner-sessions"),
         "PORT": str(port),
+        "FORGE_PREVIEW_HEADER_AUTH": "true"
+        if "--cookie-blocked" in sys.argv
+        else "false",
     }
     os.environ.update(env)
     node = (
@@ -591,19 +594,39 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
             from execution_ui_check import check_execution_ui
 
             api_port = free_port()
+            cookie_blocked = "--cookie-blocked" in sys.argv
+            api_module = "src.api.main:app"
+            api_env = dict(env)
+            if cookie_blocked:
+                # 测试专用 ASGI 透明过滤器：真实业务应用不变，只模拟代理完全剥离 Cookie。
+                # 不将此测试开关或夹具加入生产入口，事件流原样传递，不缓冲审批/SSE。
+                (data / "forge_cookie_filter.py").write_text(
+                    "from src.api.main import app as real_app\n"
+                    "async def app(scope, receive, send):\n"
+                    "    if scope['type'] != 'http':\n"
+                    "        return await real_app(scope, receive, send)\n"
+                    "    scope = {**scope, 'headers': [(k, v) for k, v in scope['headers'] if k.lower() != b'cookie']}\n"
+                    "    async def filtered(message):\n"
+                    "        if message['type'] == 'http.response.start':\n"
+                    "            message = {**message, 'headers': [(k, v) for k, v in message['headers'] if k.lower() != b'set-cookie']}\n"
+                    "        await send(message)\n"
+                    "    await real_app(scope, receive, filtered)\n"
+                )
+                api_env["PYTHONPATH"] = str(data) + os.pathsep + str(ROOT / "backend")
+                api_module = "forge_cookie_filter:app"
             api_process = subprocess.Popen(
                 [
                     sys.executable,
                     "-m",
                     "uvicorn",
-                    "src.api.main:app",
+                    api_module,
                     "--host",
                     "127.0.0.1",
                     "--port",
                     str(api_port),
                 ],
                 cwd=ROOT / "backend",
-                env=env,
+                env=api_env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -622,7 +645,13 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                         f"http://127.0.0.1:{api_port}",
                         "admin",
                         password,
-                        ROOT / "data/business-checks/execution-ui-report.json",
+                        ROOT
+                        / (
+                            "data/business-checks/execution-ui-cookie-blocked-report.json"
+                            if cookie_blocked
+                            else "data/business-checks/execution-ui-report.json"
+                        ),
+                        cookie_blocked=cookie_blocked,
                     )
                 )
             finally:

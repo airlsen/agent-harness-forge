@@ -18,7 +18,9 @@ npm run dev      # 0.0.0.0:5173，相对 /api 代理到后端 :8000
 npm run build    # vue-tsc + Vite；由正式 FastAPI 静态服务 dist
 ```
 
-API 统一在 `src/api/client.ts`，包含错误处理与 CSRF。EventSource 使用同源 Cookie、持久化事件序号，跨页面返回运行中的会话会重连。
+API 统一在 `src/api/client.ts`，包含错误处理与 CSRF。认证优先用 HttpOnly Cookie；仅开启预览兼容模式且 Cookie 不可用时，使用当前标签页的 1 小时 Header 会话（内存 / sessionStorage，不使用 localStorage）。该兼容令牌可被页面 JS 读取，不宣称具备 HttpOnly 防护。
+
+`src/api/events.ts` 使用带统一认证的 fetch SSE，持久化游标重连；JSON 导出也使用认证 fetch，不在 URL 携带会话令牌。跨页面返回运行中的会话会重连。
 
 没有模型配置时展示「模型未配置」，不会渲染固定模型回答或伪造执行历史。文本附件为任务输入的一部分，不是后端项目文件或知识库上传。
 

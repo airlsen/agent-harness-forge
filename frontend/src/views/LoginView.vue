@@ -79,7 +79,9 @@ async function login() {
           }}<Icon v-if="!busy" name="arrow" :size="17" />
         </button>
         <div class="login-security">
-          <Icon name="lock" :size="14" /><span>本地工作空间认证 · HttpOnly 会话保护</span>
+          <Icon name="lock" :size="14" /><span>{{
+            app.previewHeaderAuth ? 'Cookie 优先 · 支持预览兼容会话' : '本地工作空间认证 · HttpOnly 会话保护'
+          }}</span>
         </div>
         <div class="login-footnote">
           当前为单工作空间开发部署。<br />真实模型请在登录后进入「模型中心」配置。
