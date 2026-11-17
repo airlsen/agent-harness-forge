@@ -90,9 +90,10 @@ function selectTab(id: string) {
   detail.value = null;
   void router.replace({ query: { ...route.query, tab: id, tool: undefined } });
 }
-function start(scenario: Scenario) {
-  chat.newConversation(scenario.id);
-  void router.push('/agent/chat');
+async function start(scenario: Scenario) {
+  detail.value = null;
+  if (route.query.tool) await router.replace({ query: { ...route.query, tool: undefined } });
+  if (chat.requestNewConversation(scenario.id)) void router.push('/agent/chat');
 }
 function closeTool() {
   detail.value = null;

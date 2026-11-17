@@ -40,7 +40,8 @@ lint:
 	npm --prefix frontend run check:icons
 	frontend/node_modules/.bin/prettier --check runner/src runner/forge-runtime-plugin runner/scripts/check-business.mjs runner/scripts/check-workspace.mjs scripts/check-ui-icons.mjs .github/workflows/checks.yml
 
-test: ## 不吞错误；使用隔离协议夹具，不消耗真实模型
+test: ## 不吞错误；草稿状态单测与隔离协议夹具，不消耗真实模型
+	npm --prefix frontend test
 	npm --prefix runner run contract
 	npm --prefix runner test
 	python3 scripts/check-preview-auth.py

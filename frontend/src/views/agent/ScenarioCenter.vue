@@ -72,8 +72,8 @@ function edit(scenario?: Scenario) {
   drawer.value = true;
 }
 function useScenario(scenario: Scenario) {
-  chat.newConversation(scenario.id);
-  void router.push('/agent/chat');
+  detail.value = null;
+  if (chat.requestNewConversation(scenario.id)) void router.push('/agent/chat');
 }
 async function save() {
   if (!draft.name.trim()) {

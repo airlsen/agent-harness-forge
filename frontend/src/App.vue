@@ -29,28 +29,46 @@ const management = [
 ];
 const avatar = computed(() => app.user?.username?.slice(0, 1)?.toUpperCase() || 'A');
 function newChat() {
-  chat.newConversation();
+  if (chat.requestNewConversation()) void router.push('/agent/chat');
+}
+function discardAndStart() {
+  const pending = chat.pendingNewConversation;
+  if (!pending) return;
+  chat.newConversation(pending.scenarioId);
   void router.push('/agent/chat');
+}
+function returnToDraft() {
+  chat.pendingNewConversation = null;
+  chat.prepareStart();
+  void router.push('/agent/workbench');
 }
 async function logout() {
   try {
     help.value = false;
-    chat.newConversation();
+    chat.clear();
     await app.logout();
   } catch (error) {
     app.toast((error as Error).message, 'error');
   }
 }
+function protectDrafts(event: BeforeUnloadEvent) {
+  if (!app.authenticated || !chat.hasUnsentDrafts) return;
+  // Drafts deliberately stay in tab memory. Let the browser warn before a refresh
+  // or a cross-site navigation discards them; no business text enters storage.
+  event.preventDefault();
+  event.returnValue = '';
+}
 const unauthorized = () => {
   help.value = false;
   app.authenticated = false;
-  chat.disconnect();
+  chat.clear();
 };
 let timer: ReturnType<typeof setInterval> | null = null;
 let sessionTimer: ReturnType<typeof setInterval> | null = null;
 let sessionRefreshPending = false;
 onMounted(async () => {
   window.addEventListener('forge:unauthorized', unauthorized);
+  window.addEventListener('beforeunload', protectDrafts);
   try {
     await app.checkAuth();
     if (app.authenticated) await app.initialize();
@@ -82,6 +100,7 @@ onUnmounted(() => {
   if (timer) clearInterval(timer);
   if (sessionTimer) clearInterval(sessionTimer);
   window.removeEventListener('forge:unauthorized', unauthorized);
+  window.removeEventListener('beforeunload', protectDrafts);
   chat.disconnect();
 });
 </script>
@@ -192,6 +211,22 @@ onUnmounted(() => {
       <div v-if="app.loading" class="global-progress"></div>
       <div id="main-content" class="enterprise-view" tabindex="-1"><RouterView /></div>
     </div>
+    <DialogShell
+      v-if="chat.pendingNewConversation"
+      label="新建会话确认"
+      variant="modal"
+      panel-class="confirm-modal draft-replacement-dialog"
+      @close="chat.pendingNewConversation = null"
+    >
+      <h2>还有一份未发送的工作草稿</h2>
+      <p>新建会话会清空这份起始草稿和附件。你也可以返回草稿继续编辑；已有会话中的回复草稿不受影响。</p>
+      <p v-if="chat.sending">已经被服务端接收的请求，不会因新建会话而中止。</p>
+      <footer>
+        <button class="button secondary" @click="chat.pendingNewConversation = null">取消</button>
+        <button class="button secondary" @click="returnToDraft">返回草稿</button>
+        <button class="button primary" @click="discardAndStart">放弃草稿并新建</button>
+      </footer>
+    </DialogShell>
     <DialogShell v-if="help" label="使用帮助" panel-class="enterprise-guide" @close="help = false">
       <header>
         <div>

@@ -54,8 +54,7 @@ async function refresh() {
   }
 }
 function newChat() {
-  chat.newConversation();
-  void router.push('/agent/chat');
+  if (chat.requestNewConversation()) void router.push('/agent/chat');
 }
 async function archive() {
   if (!archiveTarget.value || archiving.value) return;
@@ -63,7 +62,7 @@ async function archive() {
   try {
     const id = archiveTarget.value.id;
     await remove(`/agent/sessions/${id}`);
-    if (chat.current?.id === id) chat.newConversation();
+    if (chat.current?.id === id) chat.prepareStart();
     archiveTarget.value = null;
     await app.refreshSessions();
     app.toast('会话已归档，历史消息与审计记录仍保留');

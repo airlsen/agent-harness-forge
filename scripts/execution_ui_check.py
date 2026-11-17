@@ -1,5 +1,6 @@
 """仅由隔离 API 测试调用，使用正式业务栈与显式的协议夹具，不接触用户工作空间。"""
 
+import asyncio
 import json
 from pathlib import Path
 from playwright.async_api import async_playwright, expect
@@ -18,6 +19,40 @@ async def check_execution_ui(
         browser = await playwright.chromium.launch(headless=True, args=["--no-sandbox"])
         page = await browser.new_page(viewport={"width": 1440, "height": 1000})
         page.on("pageerror", lambda error: errors.append(str(error)))
+        session_creates, interrupts, list_reads = [], [], []
+
+        async def record_list_read(response):
+            if response.request.method != "GET" or not response.url.endswith(
+                "/api/agent/sessions"
+            ):
+                return
+            try:
+                rows = (await response.json())["data"]["items"]
+                list_reads.append(
+                    {
+                        "at": asyncio.get_running_loop().time(),
+                        "states": [
+                            {"id": row["id"], "status": row["status"]}
+                            for row in rows
+                            if not row.get("isTest")
+                        ],
+                    }
+                )
+            except Exception:
+                pass
+
+        page.on("response", record_list_read)
+        page.on(
+            "request",
+            lambda request: (
+                session_creates.append(request.url)
+                if request.method == "POST"
+                and request.url.endswith("/api/agent/sessions")
+                else interrupts.append(request.url)
+                if request.method == "POST" and request.url.endswith("/interrupt")
+                else None
+            ),
+        )
         try:
             await page.goto(base + "/agent/chat")
             await page.get_by_label("账号", exact=True).fill(username)
@@ -32,6 +67,9 @@ async def check_execution_ui(
                 assert await page.evaluate(
                     "localStorage.getItem('forge.preview-session.v1') === null"
                 )
+            await expect(page.locator(".conversation-start-surface")).to_have_count(1)
+            await expect(page.locator("h1")).to_have_text("今天要完成什么工作？")
+            await expect(page.locator(".enterprise-composer-area")).to_have_count(0)
             await page.locator(".scenario-trigger").click()
             await (
                 page.locator(".scenario-popover>button")
@@ -45,6 +83,18 @@ async def check_execution_ui(
             ).to_be_visible()
             sid = page.url.rsplit("/", 1)[-1]
             assert sid.isdigit(), page.url
+            await expect(page.locator(".conversation-start-surface")).to_have_count(0)
+            await expect(page.locator(".conversation-start-suggestions")).to_have_count(
+                0
+            )
+            await expect(
+                page.locator(".enterprise-composer-area .task-composer")
+            ).to_have_count(1)
+            await expect(page.locator(".message-row.user")).to_have_count(1)
+            assert len(session_creates) == 1
+            passed(
+                "new-chat first acceptance immediately opens its actual session and bottom composer without a second welcome or duplicate session"
+            )
             await page.get_by_role("link", name="企业场景", exact=True).click()
             await (
                 page.locator(".recent-item>a")
@@ -208,12 +258,13 @@ async def check_execution_ui(
             # and an explicitly isolated protocol fixture, never a substituted UI API.
             await page.goto(base + "/agent/workbench")
             await expect(page.locator(".workbench-page")).to_be_visible()
-            await page.get_by_role("button", name="选择场景", exact=True).click()
-            await (
-                page.locator(".scenario-popover>button")
-                .filter(has_text="文档与报告")
-                .click()
-            )
+            creates_before_choice = len(session_creates)
+            await page.get_by_role(
+                "button", name="使用场景 文档与报告", exact=True
+            ).click()
+            await expect(page).to_have_url(base + "/agent/workbench")
+            await expect(page.get_by_label("任务输入")).to_be_focused()
+            assert len(session_creates) == creates_before_choice
             await page.locator("input[type=file]").set_input_files(
                 {
                     "name": "notes.txt",
@@ -228,6 +279,11 @@ async def check_execution_ui(
             await expect(page.get_by_role("button", name="允许本次")).to_be_visible()
             home_sid = page.url.rsplit("/", 1)[-1]
             assert home_sid.isdigit() and home_sid != sid
+            assert len(session_creates) == creates_before_choice + 1
+            await expect(page.locator(".conversation-start-surface")).to_have_count(0)
+            await expect(
+                page.locator(".enterprise-composer-area .task-composer")
+            ).to_have_count(1)
             await expect(page.locator(".user-message-text")).to_contain_text(
                 "Isolated enterprise UI fixture"
             )
@@ -261,6 +317,30 @@ async def check_execution_ui(
             await page.get_by_label("任务输入").fill(
                 "Unsent draft for this conversation only"
             )
+            await page.locator("input[type=file]").set_input_files(
+                {
+                    "name": "reply.txt",
+                    "mimeType": "text/plain",
+                    "buffer": b"Only this existing conversation",
+                }
+            )
+            interrupts_before_home = len(interrupts)
+            await page.get_by_role("link", name="工作台", exact=True).click()
+            await expect(page.get_by_label("任务输入")).to_have_value("")
+            await expect(page.locator(".attachment-chips")).to_have_count(0)
+            await page.get_by_label("任务输入").fill(
+                "Independent task draft on the workbench"
+            )
+            await page.locator("input[type=file]").set_input_files(
+                {
+                    "name": "start.txt",
+                    "mimeType": "text/plain",
+                    "buffer": b"Only the new task",
+                }
+            )
+            await page.get_by_role(
+                "button", name="使用场景 分析与决策", exact=True
+            ).click()
             await page.locator(
                 f'.enterprise-recent-item>a[href="/agent/chat/{sid}"]'
             ).click()
@@ -268,6 +348,59 @@ async def check_execution_ui(
                 "HOLD reconnect fixture"
             )
             await expect(page.get_by_label("任务输入")).to_have_value("")
+            await expect(page.locator(".attachment-chips")).to_have_count(0)
+            await page.get_by_label("任务输入").fill("Reply only for the first session")
+            await page.locator(
+                f'.enterprise-recent-item>a[href="/agent/chat/{home_sid}"]'
+            ).click()
+            await expect(page.get_by_label("任务输入")).to_have_value(
+                "Unsent draft for this conversation only"
+            )
+            await expect(page.locator(".attachment-chips")).to_contain_text("reply.txt")
+            await expect(page.locator(".attachment-chips")).not_to_contain_text(
+                "start.txt"
+            )
+            await page.locator(
+                f'.enterprise-recent-item>a[href="/agent/chat/{sid}"]'
+            ).click()
+            await expect(page.get_by_label("任务输入")).to_have_value(
+                "Reply only for the first session"
+            )
+            await expect(page.locator(".attachment-chips")).to_have_count(0)
+            await page.get_by_role("link", name="工作台", exact=True).click()
+            await expect(page.get_by_label("任务输入")).to_have_value(
+                "Independent task draft on the workbench"
+            )
+            await expect(page.locator(".attachment-chips")).to_contain_text("start.txt")
+            await expect(page.locator(".scenario-trigger")).to_contain_text(
+                "分析与决策"
+            )
+            assert len(interrupts) == interrupts_before_home
+            passed(
+                "workbench task and two conversation reply drafts restore their own text/files/scenario only, with no context mixing or interrupt request"
+            )
+            await page.locator(".enterprise-new-chat").click()
+            confirmation = page.get_by_role("dialog", name="新建会话确认", exact=True)
+            await expect(confirmation).to_be_visible()
+            await page.keyboard.press("Escape")
+            await expect(page.get_by_label("任务输入")).to_have_value(
+                "Independent task draft on the workbench"
+            )
+            await page.locator(".enterprise-new-chat").click()
+            await confirmation.get_by_role(
+                "button", name="放弃草稿并新建", exact=True
+            ).click()
+            await expect(page.get_by_label("任务输入")).to_have_value("")
+            await page.locator(
+                f'.enterprise-recent-item>a[href="/agent/chat/{home_sid}"]'
+            ).click()
+            await expect(page.get_by_label("任务输入")).to_have_value(
+                "Unsent draft for this conversation only"
+            )
+            await expect(page.locator(".attachment-chips")).to_contain_text("reply.txt")
+            passed(
+                "explicit new-task discard clears only that starting draft, not parked existing-conversation replies"
+            )
             await page.get_by_role("link", name="我的会话", exact=True).click()
             await page.get_by_label("搜索会话").fill("enterprise workbench fixture")
             await expect(page.locator(".conversation-table-row")).to_have_count(1)
@@ -280,36 +413,63 @@ async def check_execution_ui(
                 .click()
             )
             await expect(page.locator(".message-row.user")).to_have_count(1)
-            await expect(page.get_by_label("任务输入")).to_have_value("")
+            await expect(page.get_by_label("任务输入")).to_have_value(
+                "Unsent draft for this conversation only"
+            )
+            await expect(page.locator(".attachment-chips")).to_contain_text("reply.txt")
+            await page.get_by_role(
+                "button", name="移除附件 reply.txt", exact=True
+            ).click()
             passed(
-                "real conversation search shows settled-not-success state and does not leak unsent text into reopened sessions"
+                "real conversation search retains settled-not-success state and restores only the reopened session's own reply draft"
             )
             await page.get_by_label("任务输入").fill(
                 "HOLD navigation during submit fixture"
             )
 
-            async def delay_turn(route):
-                import asyncio
+            turn_release, turn_requested = asyncio.Event(), asyncio.Event()
 
-                await asyncio.sleep(0.6)
+            async def delay_turn(route):
+                turn_requested.set()
+                await turn_release.wait()
                 await route.continue_()
 
             await page.route("**/api/agent/sessions/*/turns", delay_turn)
-            async with page.expect_response(
-                lambda response: (
-                    "/turns" in response.url and response.request.method == "POST"
-                )
-            ):
+            try:
                 await page.get_by_role("button", name="发送任务", exact=True).click()
+                await asyncio.wait_for(turn_requested.wait(), timeout=5)
                 await page.locator(".enterprise-new-chat").click()
-            await page.unroute("**/api/agent/sessions/*/turns", delay_turn)
+                await expect(page).to_have_url(base + "/agent/chat")
+                await page.get_by_label("任务输入").fill(
+                    "A newer draft must survive the late receipt"
+                )
+                await page.locator("input[type=file]").set_input_files(
+                    {
+                        "name": "newer.txt",
+                        "mimeType": "text/plain",
+                        "buffer": b"Never attach this to the old turn",
+                    }
+                )
+                async with page.expect_response(
+                    lambda response: (
+                        "/turns" in response.url and response.request.method == "POST"
+                    )
+                ):
+                    turn_release.set()
+            finally:
+                turn_release.set()
+                await page.unroute_all(behavior="wait")
             await expect(page).to_have_url(base + "/agent/chat")
             await expect(page.locator(".message-row")).to_have_count(0)
-            await expect(page.get_by_label("任务输入")).to_have_value("")
-            passed(
-                "late in-flight turn receipt cannot attach text or redirect a newly created draft"
+            await expect(page.get_by_label("任务输入")).to_have_value(
+                "A newer draft must survive the late receipt"
             )
-            await page.goto(base + "/agent/conversations")
+            await expect(page.locator(".attachment-chips")).to_contain_text("newer.txt")
+            assert len(interrupts) == interrupts_before_home
+            passed(
+                "late in-flight turn receipt cannot redirect, overwrite, clear, or populate a newer draft and its attachment"
+            )
+            await page.get_by_role("link", name="我的会话", exact=True).click()
             await page.get_by_label("搜索会话").fill("enterprise workbench fixture")
             await page.get_by_role("button", name="刷新会话").click()
             # The HOLD turn is accepted in the background and settles independently.
@@ -329,6 +489,12 @@ async def check_execution_ui(
             )
             await page.get_by_role("link", name="我的会话", exact=True).click()
             await page.get_by_label("搜索会话").fill("enterprise workbench fixture")
+            # We deliberately leave while the second answer is still streaming:
+            # the fixture holds for 3s, then the background list polls every 3s.
+            # A 5s default assertion can expire just before the next legitimate poll.
+            await expect(
+                page.locator(".conversation-table-row .session-state")
+            ).to_have_text("可继续", timeout=10000)
             await expect(
                 page.locator(".conversation-table-actions button")
             ).to_be_enabled()
@@ -340,6 +506,14 @@ async def check_execution_ui(
             await expect(page.locator(".conversation-table-row")).to_have_count(0)
             passed(
                 "running sessions cannot be archived; settled-session confirmation really archives the record"
+            )
+            await page.get_by_role("link", name="工作台", exact=True).click()
+            await expect(page.get_by_label("任务输入")).to_have_value(
+                "A newer draft must survive the late receipt"
+            )
+            await expect(page.locator(".attachment-chips")).to_contain_text("newer.txt")
+            passed(
+                "background settlement and another session's archive leave the new workbench draft and its file intact"
             )
             assert not errors, errors
             passed("execution journeys produce no browser JavaScript exceptions")
@@ -357,5 +531,46 @@ async def check_execution_ui(
                 )
             )
             return checks
+        except Exception:
+            api_state = await page.evaluate("""async () => {
+                try {
+                    let preview = null;
+                    try { preview = JSON.parse(sessionStorage.getItem('forge.preview-session.v1') || 'null'); } catch {}
+                    const headers = preview?.token ? {'X-Forge-Session': preview.token} : {};
+                    const get = async path => (await (await fetch('/api' + path, {headers, signal:AbortSignal.timeout(5000)})).json()).data;
+                    const list = await get('/agent/sessions');
+                    return await Promise.all(list.items.filter(item => !item.isTest).map(async item => {
+                        const detail = await get('/agent/sessions/' + item.id);
+                        const events = await get('/agent/sessions/' + item.id + '/trajectory');
+                        return {id:item.id, status:detail.status, messageRoles:detail.messages.map(row => row.role),
+                            lastUser:detail.messages.filter(row => row.role === 'user').at(-1)?.content,
+                            pendingTools:detail.pendingApprovals.map(row => row.tool),
+                            lastKinds:events.events.slice(-12).map(row => row.kind)};
+                    }));
+                } catch(error) { return {diagnosticError:String(error)}; }
+            }""")
+            await page.screenshot(
+                path=str(output.with_name(output.stem + "-failure.png"))
+            )
+            output.with_name(output.stem + "-failure.json").write_text(
+                json.dumps(
+                    {
+                        "completedChecks": checks,
+                        "browserErrors": errors,
+                        "url": page.url,
+                        "listReads": list_reads,
+                        "apiState": api_state,
+                        "sessionStates": await page.locator(
+                            ".conversation-table-row .session-state"
+                        ).all_text_contents(),
+                        "pendingApprovalCards": await page.locator(
+                            ".approval-card"
+                        ).count(),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            raise
         finally:
             await browser.close()
