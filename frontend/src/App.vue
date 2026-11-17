@@ -6,6 +6,7 @@ import { useConversation } from './stores/conversation';
 import { sessionState } from './utils/presentation';
 import Icon from './components/ForgeIcon.vue';
 import DialogShell from './components/DialogShell.vue';
+import AccountMenu from './components/AccountMenu.vue';
 import LoginView from './views/LoginView.vue';
 
 const app = usePlatform();
@@ -13,6 +14,7 @@ const chat = useConversation();
 const route = useRoute();
 const router = useRouter();
 const help = ref(false);
+const loggingOut = ref(false);
 const adminRoutes = ['/agent/manage', '/agent/models', '/agent/governance', '/agent/audit'];
 const isAdministration = computed(() => adminRoutes.includes(route.path));
 const navigation = [
@@ -27,7 +29,6 @@ const management = [
   { path: '/agent/governance', label: '企业策略', icon: 'shield' },
   { path: '/agent/audit', label: '运行审计', icon: 'activity' },
 ];
-const avatar = computed(() => app.user?.username?.slice(0, 1)?.toUpperCase() || 'A');
 function newChat() {
   if (chat.requestNewConversation()) void router.push('/agent/chat');
 }
@@ -43,12 +44,16 @@ function returnToDraft() {
   void router.push('/agent/workbench');
 }
 async function logout() {
+  if (loggingOut.value) return;
+  loggingOut.value = true;
   try {
     help.value = false;
     chat.clear();
     await app.logout();
   } catch (error) {
     app.toast((error as Error).message, 'error');
+  } finally {
+    loggingOut.value = false;
   }
 }
 function protectDrafts(event: BeforeUnloadEvent) {
@@ -148,8 +153,7 @@ onUnmounted(() => {
         <div class="enterprise-recent-heading">最近会话</div>
         <div class="enterprise-recents">
           <div v-if="!app.regularConversations.length" class="enterprise-recent-empty">
-            <span></span>
-            <p>还没有会话记录<br /><small>从一项具体工作开始。</small></p>
+            <p>开始对话，记录会留在这里。</p>
           </div>
           <div
             v-for="item in app.regularConversations.slice(0, 6)"
@@ -187,15 +191,7 @@ onUnmounted(() => {
         >
           <Icon name="book" :size="18" /><span>帮助</span>
         </button>
-        <div class="enterprise-profile">
-          <span class="enterprise-avatar">{{ avatar }}</span>
-          <div>
-            <strong>{{ app.user?.username }}</strong><small>当前管理员账号</small>
-          </div>
-          <button class="icon-button" aria-label="退出登录" title="退出登录" @click="logout">
-            <Icon name="logout" :size="17" />
-          </button>
-        </div>
+        <AccountMenu :username="app.user?.username ?? ''" :busy="loggingOut" @logout="logout" />
       </div>
     </aside>
     <div class="app-body enterprise-body">

@@ -306,29 +306,12 @@ textarea:focus-visible {
   min-height: 0;
 }
 .enterprise-recent-empty {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  align-items: start;
-  gap: 12px;
-  padding: 11px 12px;
-  border: 1px solid transparent;
-}
-.enterprise-recent-empty > span {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--muted);
-  margin-top: 8px;
-  justify-self: center;
+  padding: 11px 13px;
 }
 .enterprise-recent-empty p {
   font-size: 11px;
-  color: var(--text-secondary);
-  line-height: 1.9;
-}
-.enterprise-recent-empty small {
-  font-size: 11px;
   color: var(--text-subtle);
+  line-height: 1.9;
 }
 .enterprise-recent-item {
   border-radius: 6px;
@@ -411,12 +394,30 @@ textarea:focus-visible {
   background: var(--accent-soft);
 }
 .enterprise-profile {
+  position: relative;
+  border-top: 1px solid var(--line);
+  padding: 14px 0;
+  margin-top: 18px;
+}
+.enterprise-account-trigger {
   display: flex;
   align-items: center;
   gap: 10px;
-  border-top: 1px solid var(--line);
-  padding: 21px 7px;
-  margin-top: 18px;
+  width: 100%;
+  min-height: 48px;
+  padding: 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  text-align: left;
+  color: var(--ink);
+}
+.enterprise-account-trigger:not(:disabled):hover,
+.enterprise-account-trigger[aria-expanded='true'] {
+  background: var(--accent-soft);
+}
+.enterprise-account-trigger:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 2px;
 }
 .enterprise-avatar {
   width: 33px;
@@ -431,10 +432,10 @@ textarea:focus-visible {
   border-radius: 50%;
   flex-shrink: 0;
 }
-.enterprise-profile > div {
+.enterprise-account-identity {
   min-width: 0;
 }
-.enterprise-profile strong {
+.enterprise-account-identity strong {
   display: block;
   font-size: 12px;
   font-weight: 600;
@@ -442,16 +443,48 @@ textarea:focus-visible {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 110px;
 }
-.enterprise-profile small {
+.enterprise-account-identity small {
   display: block;
   font-size: 11px;
-  color: var(--text-subtle);
+  color: var(--text-secondary);
   margin-top: 3px;
 }
-.enterprise-profile > button {
-  margin-left: auto;
+.enterprise-account-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: 184px;
+  max-width: calc(100vw - 24px);
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: 0 6px 22px #26334a14;
+  z-index: 100;
+}
+.enterprise-account-menu::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -9px;
+  height: 9px;
+}
+.enterprise-account-menu > button {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  border-radius: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  text-align: left;
+}
+.enterprise-account-menu > button:not(:disabled):hover,
+.enterprise-account-menu > button:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
 }
 .enterprise-shell .enterprise-body {
   margin-left: var(--sidebar);
@@ -3033,22 +3066,29 @@ textarea:focus-visible {
     padding-top: 12px;
   }
   .enterprise-profile {
-    flex-direction: column;
-    gap: 5px;
-    padding: 12px 0;
+    padding: 9px 0;
     margin-top: 10px;
   }
-  .enterprise-profile .enterprise-avatar,
-  .enterprise-profile small {
+  .enterprise-account-trigger {
+    flex-direction: column;
+    justify-content: center;
+    min-height: 66px;
+    gap: 5px;
+    padding: 7px 3px;
+    text-align: center;
+  }
+  .enterprise-account-identity {
+    max-width: 100%;
+  }
+  .enterprise-account-identity small {
     display: none;
   }
-  .enterprise-profile strong {
-    max-width: 68px;
+  .enterprise-account-identity strong {
     font-size: 11px;
     text-align: center;
   }
-  .enterprise-profile > button {
-    margin-left: 0;
+  .enterprise-account-menu > button {
+    min-height: 44px;
   }
   .enterprise-collection-toolbar {
     flex-wrap: wrap;

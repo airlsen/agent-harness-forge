@@ -125,6 +125,87 @@ async def main():
             check(
                 "shared-resource navigation keeps a plain recent-session label without arrow controls; all conversations remain reachable"
             )
+            await expect(page.locator(".enterprise-recent-empty")).to_have_text(
+                "开始对话，记录会留在这里。"
+            )
+            await expect(
+                page.locator(
+                    ".enterprise-recent-empty br,.enterprise-recent-empty small"
+                )
+            ).to_have_count(0)
+            check("empty recent history is one sentence without stacked helper copy")
+            account = page.get_by_role("button", name="账号菜单")
+            account_menu = page.get_by_role("menu", name="账号操作", exact=True)
+            logout_item = page.get_by_role("menuitem", name="退出登录", exact=True)
+            await page.mouse.move(0, 0)
+            await expect(account).to_have_attribute("aria-expanded", "false")
+            await expect(account_menu).to_have_count(0)
+            await expect(page.locator(".enterprise-profile button")).to_have_count(1)
+            await expect(page.locator(".enterprise-profile svg")).to_have_count(0)
+            check(
+                "account footer has one avatar trigger with no permanent exit arrow or logout button"
+            )
+            await page.locator(".enterprise-avatar").hover()
+            await expect(account_menu).to_be_visible()
+            await expect(account).to_have_attribute("aria-expanded", "true")
+            await logout_item.hover()
+            await expect(logout_item).to_be_visible()
+            await screenshot("account-hover-desktop.png")
+            await page.locator(".workbench-page h1").hover()
+            await expect(account_menu).to_have_count(0)
+            check(
+                "desktop avatar hover exposes a reachable logout menu and leaving dismisses it"
+            )
+            await page.locator(".enterprise-avatar").hover()
+            await expect(account_menu).to_be_visible()
+            await account.click()
+            await expect(logout_item).to_be_focused()
+            await page.locator(".workbench-page h1").hover()
+            await expect(account_menu).to_be_visible()
+            await account.click()
+            await expect(account_menu).to_have_count(0)
+            await expect(account).to_be_focused()
+            check(
+                "clicking a hovered avatar pins its menu; clicking again closes it without logging out"
+            )
+            await account.click()
+            await page.get_by_label("任务输入").click()
+            await expect(account_menu).to_have_count(0)
+            await expect(page.get_by_label("任务输入")).to_be_focused()
+            await account.click()
+            await page.get_by_role("link", name="企业场景", exact=True).click()
+            await expect(account_menu).to_have_count(0)
+            await page.get_by_role("link", name="工作台", exact=True).click()
+            await expect(page.locator(".workbench-page")).to_be_visible()
+            check(
+                "outside clicks keep their target focus and route changes dismiss the account menu"
+            )
+            for key in ["Enter", "Space", "ArrowDown", "ArrowUp"]:
+                await account.focus()
+                await page.keyboard.press(key)
+                await expect(logout_item).to_be_focused()
+                for navigation_key in ["ArrowDown", "ArrowUp", "Home", "End"]:
+                    await page.keyboard.press(navigation_key)
+                    await expect(logout_item).to_be_focused()
+                await page.keyboard.press("Escape")
+                await expect(account_menu).to_have_count(0)
+                await expect(account).to_be_focused()
+            check(
+                "avatar keyboard opening, menu arrow keys and Escape restore focus without triggering logout"
+            )
+            await account.press("Enter")
+            await page.keyboard.press("Shift+Tab")
+            await expect(account_menu).to_have_count(0)
+            await expect(account).to_be_focused()
+            await account.press("Enter")
+            await page.keyboard.press("Tab")
+            await expect(account_menu).to_have_count(0)
+            assert await page.evaluate(
+                "!document.activeElement.closest('.enterprise-profile')"
+            )
+            check(
+                "account menu supports native Tab and Shift+Tab exit without trapping sidebar focus"
+            )
             await page.reload()
             await expect(page.locator(".workbench-page")).to_be_visible()
             check("authenticated session survives SPA reload")
@@ -670,9 +751,14 @@ async def main():
             check(
                 "persistent phone navigation remains visible after Escape and route changes; keyboard focus reaches content without a drawer trap"
             )
-            await page.get_by_role("button", name="退出登录", exact=True).click()
+            await expect(page.locator(".enterprise-avatar")).to_be_visible()
+            await expect(
+                page.get_by_role("menuitem", name="退出登录", exact=True)
+            ).to_have_count(0)
+            await page.get_by_role("button", name="账号菜单").click()
+            await page.get_by_role("menuitem", name="退出登录", exact=True).click()
             await expect(page.get_by_role("heading", name="欢迎回来")).to_be_visible()
-            check("mobile logout is reachable and clears authentication")
+            check("mobile avatar menu logout is reachable and clears authentication")
             await page.get_by_label("账号", exact=True).fill(credentials["username"])
             await page.get_by_label("密码", exact=True).fill(credentials["password"])
             await page.get_by_role("button", name="进入企业平台").click()
@@ -685,7 +771,12 @@ async def main():
                     "buffer": b"Do not persist business text",
                 }
             )
-            await page.get_by_role("button", name="退出登录", exact=True).click()
+            await expect(page.locator(".enterprise-avatar")).to_be_visible()
+            await expect(
+                page.get_by_role("menuitem", name="退出登录", exact=True)
+            ).to_have_count(0)
+            await page.get_by_role("button", name="账号菜单").click()
+            await page.get_by_role("menuitem", name="退出登录", exact=True).click()
             await expect(page.get_by_role("heading", name="欢迎回来")).to_be_visible()
             await page.get_by_label("账号", exact=True).fill(credentials["username"])
             await page.get_by_label("密码", exact=True).fill(credentials["password"])

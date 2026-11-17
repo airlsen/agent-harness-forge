@@ -58,6 +58,7 @@ async def main(args):
     if args.axe_script and not args.axe_script.is_file():
         raise FileNotFoundError(args.axe_script)
     checks, layouts, states, fonts, errors, server_errors = [], [], [], [], [], []
+    account_layouts = []
 
     def passed(name):
         checks.append(name)
@@ -300,6 +301,93 @@ async def main(args):
                 passed(
                     f"{width}x{height}: workbench centers its compact dialogue start, seven resource/admin pages retain their grid; one heading each, no topbar gap or overflow"
                 )
+                # The account trigger remains tappable on the narrow rail; its
+                # upward menu must not be clipped by the sidebar or viewport.
+                account = page.get_by_role("button", name="账号菜单")
+                await expect(page.locator(".enterprise-avatar")).to_be_visible()
+                await expect(page.locator(".enterprise-profile svg")).to_have_count(0)
+                await account.click()
+                item = page.get_by_role("menuitem", name="退出登录", exact=True)
+                await expect(item).to_be_focused()
+                account_geometry = await item.evaluate(
+                    """element => {
+                        const box = el => {
+                            const r = el.getBoundingClientRect();
+                            return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};
+                        };
+                        const r = element.getBoundingClientRect();
+                        return {
+                            trigger:box(document.querySelector('.enterprise-account-trigger')),
+                            avatar:box(document.querySelector('.enterprise-avatar')),
+                            menu:box(element.closest('[role=menu]')),
+                            item:box(element),
+                            hitTarget:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2) === element,
+                            horizontalOverflow:document.documentElement.scrollWidth > innerWidth + 1,
+                        };
+                    }"""
+                )
+                for key in ["trigger", "avatar", "menu", "item"]:
+                    bounds = account_geometry[key]
+                    assert bounds["x"] >= 0 and bounds["y"] >= 0, account_geometry
+                    assert bounds["right"] <= width + 1, account_geometry
+                    assert bounds["bottom"] <= height + 1, account_geometry
+                assert account_geometry["trigger"]["height"] >= 44
+                assert account_geometry["trigger"]["width"] >= 44
+                assert account_geometry["hitTarget"]
+                assert not account_geometry["horizontalOverflow"]
+                if width <= 700:
+                    assert account_geometry["item"]["height"] >= 44
+                account_layouts.append(
+                    {"width": width, "height": height, **account_geometry}
+                )
+                if (width, height) in AUDIT_SIZES:
+                    await audit(f"{width}/account-menu")
+                    await screenshot(f"account-menu-{width}x{height}")
+                await page.keyboard.press("Escape")
+                await expect(page.get_by_role("menu", name="账号操作")).to_have_count(0)
+                await expect(account).to_be_focused()
+            passed(
+                "avatar and upward logout menu fit all eleven desktop/tablet/phone/short viewports, with real hit targets, no permanent exit icon and no horizontal overflow"
+            )
+
+            # A real touch context, not merely a narrow mouse viewport: the
+            # first tap must open the menu without synthetic-hover dependence.
+            touch_context = await browser.new_context(
+                viewport={"width": 390, "height": 844},
+                is_mobile=True,
+                has_touch=True,
+                storage_state=await page.context.storage_state(),
+            )
+            try:
+                touch_page = await touch_context.new_page()
+                touch_page.on("pageerror", lambda error: errors.append(str(error)))
+                await touch_page.goto(args.base + "/agent/workbench")
+                touch_account = touch_page.get_by_role("button", name="账号菜单")
+                touch_menu = touch_page.get_by_role("menu", name="账号操作")
+                await expect(touch_account).to_be_visible()
+                assert await touch_page.evaluate(
+                    "matchMedia('(pointer: coarse)').matches && !matchMedia('(hover: hover)').matches"
+                )
+                await touch_page.locator(".enterprise-avatar").tap()
+                await expect(touch_menu).to_be_visible()
+                await expect(
+                    touch_page.get_by_role("menuitem", name="退出登录", exact=True)
+                ).to_be_focused()
+                await touch_account.tap()
+                await expect(touch_menu).to_have_count(0)
+                await touch_account.tap()
+                await touch_page.get_by_label("任务输入").tap()
+                await expect(touch_menu).to_have_count(0)
+                await expect(touch_page.get_by_label("任务输入")).to_be_focused()
+                await expect(touch_account).to_have_attribute("aria-expanded", "false")
+                await touch_page.screenshot(
+                    path=str(destination / "account-touch-dismissed.png")
+                )
+            finally:
+                await touch_context.close()
+            passed(
+                "native coarse-pointer touch opens on the first avatar tap, toggles closed and dismisses outside without sticky hover"
+            )
 
             # Verify the actual CJK font, not just computed font-weight.
             await page.set_viewport_size({"width": 1440, "height": 1000})
@@ -466,6 +554,8 @@ async def main(args):
                 "items": checks,
                 "layoutCount": len(layouts),
                 "layouts": layouts,
+                "accountMenuLayoutCount": len(account_layouts),
+                "accountMenuLayouts": account_layouts,
                 "accessibilityEnabled": bool(args.axe_script),
                 "accessibilityStateCount": len(states),
                 "accessibility": states,

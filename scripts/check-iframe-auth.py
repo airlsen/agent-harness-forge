@@ -184,7 +184,11 @@ async def browser_test(port):
                 print(
                     "PASS native cross-site HTTPS iframe login and partitioned HttpOnly Secure cookie"
                 )
-            await frame.get_by_role("button", name="退出登录", exact=True).click()
+            await expect(
+                frame.get_by_role("menuitem", name="退出登录", exact=True)
+            ).to_have_count(0)
+            await frame.get_by_role("button", name="账号菜单").click()
+            await frame.get_by_role("menuitem", name="退出登录", exact=True).click()
             await expect(frame.get_by_label("密码", exact=True)).to_be_visible()
             status = await frame.locator("body").evaluate(
                 "async () => (await (await fetch('/api/auth/session')).json()).data"
