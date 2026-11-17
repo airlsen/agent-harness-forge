@@ -8,7 +8,6 @@ const app = usePlatform();
     <div class="enterprise-page-inner">
       <div class="page-heading">
         <div>
-          <div class="eyebrow">PLATFORM ADMINISTRATION</div>
           <h1>平台管理</h1>
           <p>统一维护连接与执行策略，让公共能力可靠地服务工作。</p>
         </div>

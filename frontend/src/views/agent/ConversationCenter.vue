@@ -80,7 +80,6 @@ onMounted(refresh);
     <div class="enterprise-page-inner">
       <div class="page-heading">
         <div>
-          <div class="eyebrow">YOUR CONVERSATIONS</div>
           <h1>我的会话</h1>
           <p>找回上下文、查看结果，或继续推进一项工作。</p>
         </div>

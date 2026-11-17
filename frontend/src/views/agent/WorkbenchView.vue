@@ -30,19 +30,8 @@ function focusComposer() {
   <main class="enterprise-page workbench-page">
     <div class="workbench-inner">
       <section class="workbench-hero" aria-labelledby="workbench-title">
-        <div class="workbench-hero-copy">
-          <div class="workbench-kicker"><span></span>ENTERPRISE INTELLIGENCE, IN ACTION</div>
-          <h1 id="workbench-title">从一个目标，<span>开始今天的工作。</span></h1>
-          <p>发现企业共享的场景与能力，在会话中把工作向前推进。</p>
-        </div>
-        <div class="workbench-orbit" aria-hidden="true">
-          <i class="orbit-line"></i><i class="orbit-line second"></i
-          ><span class="orbit-core"><Icon name="sparkles" :size="30" /></span
-          ><span class="orbit-satellite first"><Icon name="book" :size="16" /></span
-          ><span class="orbit-satellite second"><Icon name="plug" :size="16" /></span
-          ><span class="orbit-satellite third"><Icon name="file" :size="16" /></span
-          ><span class="orbit-dot"></span>
-        </div>
+        <h1 id="workbench-title">今天要完成什么工作？</h1>
+        <p>描述任务，或选择企业场景开始，按需引用公共能力。</p>
       </section>
       <section class="workbench-start" aria-label="开始一项工作">
         <TaskComposer hero @submitted="(id) => router.push(`/agent/chat/${id}`)" />

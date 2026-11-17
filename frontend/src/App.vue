@@ -34,6 +34,7 @@ function newChat() {
 }
 async function logout() {
   try {
+    help.value = false;
     chat.newConversation();
     await app.logout();
   } catch (error) {
@@ -41,6 +42,7 @@ async function logout() {
   }
 }
 const unauthorized = () => {
+  help.value = false;
   app.authenticated = false;
   chat.disconnect();
 };
@@ -162,6 +164,15 @@ onUnmounted(() => {
           aria-label="平台管理"
           ><Icon name="settings" :size="18" /><span>平台管理</span><Icon name="chevron" :size="14"
         /></RouterLink>
+        <button
+          class="enterprise-help-link"
+          aria-label="使用帮助"
+          aria-haspopup="dialog"
+          :aria-expanded="help"
+          @click="help = true"
+        >
+          <Icon name="book" :size="18" /><span>帮助</span>
+        </button>
         <div class="enterprise-profile">
           <span class="enterprise-avatar">{{ avatar }}</span>
           <div>
@@ -174,22 +185,6 @@ onUnmounted(() => {
       </div>
     </aside>
     <div class="app-body enterprise-body">
-      <header class="enterprise-topbar">
-        <div class="enterprise-breadcrumb">
-          <span class="enterprise-breadcrumb-root"><Icon name="building" :size="15" />企业平台</span
-          ><Icon class="breadcrumb-chevron" name="chevron" :size="12" /><strong>{{
-            route.meta.title
-          }}</strong>
-        </div>
-        <div class="enterprise-topbar-actions">
-          <button class="preview-mode-badge" aria-label="查看版本与能力说明" @click="help = true">
-            <span></span>单管理员预览<Icon name="info" :size="13" /></button
-          ><span class="topbar-divider"></span
-          ><button class="enterprise-help" aria-label="使用指南" @click="help = true">
-            <Icon name="book" :size="16" /><span>使用指南</span>
-          </button>
-        </div>
-      </header>
       <nav v-if="isAdministration" class="enterprise-admin-tabs" aria-label="平台管理导航">
         <RouterLink
           v-for="item in management"
@@ -202,14 +197,13 @@ onUnmounted(() => {
       <div v-if="app.loading" class="global-progress"></div>
       <div id="main-content" class="enterprise-view" tabindex="-1"><RouterView /></div>
     </div>
-    <DialogShell v-if="help" label="企业平台使用指南" panel-class="enterprise-guide" @close="help = false">
+    <DialogShell v-if="help" label="使用帮助" panel-class="enterprise-guide" @close="help = false">
       <header>
         <div>
-          <div class="eyebrow">GETTING STARTED</div>
-          <h2>一套企业能力，各自推进工作。</h2>
-          <p>企业版前端 · 第一批</p>
+          <h2>使用帮助</h2>
+          <p>从提交任务到查看结果，按需了解操作。</p>
         </div>
-        <button class="icon-button" aria-label="关闭使用指南" @click="help = false">
+        <button class="icon-button" aria-label="关闭帮助面板" @click="help = false">
           <Icon name="close" :size="21" />
         </button>
       </header>
@@ -217,41 +211,67 @@ onUnmounted(() => {
         <div class="guide-step">
           <span>01</span>
           <div>
-            <h3>从企业场景开始</h3>
-            <p>浏览预置或已发布的场景，将提示词和可用工具带入新会话，不必重复配置。</p>
-            <RouterLink to="/agent/scenarios" class="text-link" @click="help = false"
-              >查看企业场景 <Icon name="arrow" :size="14"
-            /></RouterLink>
+            <h3>提交一项工作</h3>
+            <p>
+              在工作台描述目标、已有信息和期望结果；需要时附上文本资料。模型未连接时，先由管理员完成连接配置。
+            </p>
+            <div class="guide-links">
+              <RouterLink to="/agent/workbench" class="text-link" @click="help = false"
+                >前往工作台 <Icon name="arrow" :size="14"
+              /></RouterLink>
+              <RouterLink to="/agent/models" class="text-link" @click="help = false"
+                >配置模型连接 <Icon name="arrow" :size="14"
+              /></RouterLink>
+            </div>
           </div>
         </div>
         <div class="guide-step">
           <span>02</span>
           <div>
-            <h3>发现公共能力</h3>
-            <p>在能力中心了解工具用途和使用范围。当前仅接入基础工具；Skills、MCP 与通用插件管理尚未接入。</p>
-            <RouterLink to="/agent/capabilities" class="text-link" @click="help = false"
-              >浏览能力中心 <Icon name="arrow" :size="14"
-            /></RouterLink>
+            <h3>引用场景与公共能力</h3>
+            <p>
+              选择已发布或预置场景，复用工作规范和授权工具。公共能力无需重复安装，具体可用状态以能力中心为准。
+            </p>
+            <div class="guide-links">
+              <RouterLink to="/agent/scenarios" class="text-link" @click="help = false"
+                >查看企业场景 <Icon name="arrow" :size="14"
+              /></RouterLink>
+              <RouterLink to="/agent/capabilities" class="text-link" @click="help = false"
+                >浏览能力中心 <Icon name="arrow" :size="14"
+              /></RouterLink>
+            </div>
           </div>
         </div>
         <div class="guide-step">
           <span>03</span>
           <div>
-            <h3>在会话中完成与回看</h3>
-            <p>补充要求、确认敏感操作，按需打开结果和过程。轮次结束表示可以继续，不代表业务目标已经完成。</p>
-          </div>
-        </div>
-        <div class="release-boundary">
-          <Icon name="info" :size="19" />
-          <div>
-            <strong>当前仍是单管理员业务预览</strong>
+            <h3>确认审批，查看结果</h3>
             <p>
-              本批交付的是企业版前端结构。尚未接入员工身份、企业权限和跨员工会话隔离，请勿将共用管理员账号作为全员使用方案。
+              写入会话目录前，按策略等待你批准或拒绝。通过会话工具栏打开结果、文件和执行过程；轮次结束不等于业务目标已完成。
             </p>
           </div>
         </div>
+        <div class="guide-step">
+          <span>04</span>
+          <div>
+            <h3>找回并继续会话</h3>
+            <p>在我的会话中搜索记录、补充要求，或回看已有回复和文件。归档只收起记录，不删除审计证据。</p>
+            <RouterLink to="/agent/conversations" class="text-link" @click="help = false"
+              >查看我的会话 <Icon name="arrow" :size="14"
+            /></RouterLink>
+          </div>
+        </div>
+        <div class="guide-administration">
+          <Icon name="info" :size="17" />
+          <div>
+            <p>模型连接、执行策略及当前部署限制，统一在平台管理中查看。</p>
+            <RouterLink to="/agent/manage" class="text-link" @click="help = false"
+              >前往平台管理 <Icon name="arrow" :size="14"
+            /></RouterLink>
+          </div>
+        </div>
       </div>
-      <footer><button class="button primary" @click="help = false">了解，开始使用</button></footer>
+      <footer><button class="button primary" @click="help = false">关闭帮助</button></footer>
     </DialogShell>
   </div>
   <Transition name="toast"

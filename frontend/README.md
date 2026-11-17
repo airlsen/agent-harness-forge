@@ -22,13 +22,22 @@
 
 ## 代码分工
 
-- `App.vue`：常驻企业导航、管理区导航、指南；存在运行中会话时每 3 秒同步会话列表状态，防止离开 SSE 页后状态滞留。
+- `App.vue`：常驻企业导航、管理区导航、左下角操作帮助；不再渲染全局顶栏。存在运行中会话时每 3 秒同步会话列表状态，防止离开 SSE 页后状态滞留。
 - `components/TaskComposer.vue`：首页/会话共用输入、场景选择、文本附件和发送，拒绝空提交、二进制文本和超限附件。
 - `components/DialogShell.vue`、`utils/focus.ts`：遮罩、Esc、Tab 焦点约束与焦点返回；这些焦点约束仅用于弹窗和按需详情，不把常驻主导航当作模态抽屉。
 - `utils/presentation.ts`：统一状态/日期/文件尺寸，`idle` 只显示“可继续”，不等于成功。
 - `stores/conversation.ts`：真实 SSE 与执行状态；提交/读取代际校验，迟到响应不能污染新会话；附件读取跟随草稿版本。
 - `style.css`：既有管理表单、Markdown 与基础业务样式。
 - `enterprise.css`：新版外壳、公共目录、工作台、会话体验与响应式布局；桌面/平板为常驻完整侧栏，700px 及以下为常驻有文字导航栏，不再点击展开。所有导航行共用固定图标列、文字列与尾部列；短窗口的菜单区域独立滚动。保留原有暖橙主题，无外部字体、图片或 CDN 依赖。
+
+## 页面外壳与标题
+
+- 不渲染“企业平台 ＞ 当前页面 / 单管理员预览 / 使用指南”全局顶栏，也不保留原 60–64px 占位。加载进度从正文顶部 `y=0` 开始。
+- 常规页面只保留一组标题、必要说明和页级操作，移除标题前的装饰性英文。工作台使用“今天要完成什么工作？”，去掉轨道插图，任务输入为主要操作。
+- 工作台、目录、会话列表及管理表单共用 `--page-padding-*`、`--page-title-size`、`--page-max-width`、`--page-heading-gap`。内容最大宽度为 1160px，桌面/平板/手机各断点使用同一套对齐规则。
+- 管理区 52px 二级导航、会话结果/过程/导出工具栏和轨迹返回入口仍然存在；不能把这些功能控件当成重复装饰删除。
+- 帮助在侧栏底部，复用 `DialogShell`，支持键盘打开、Tab 约束、Esc/按钮/遮罩关闭及焦点返回；帮助内链接进入真实页面，不显示开发批次介绍。
+- 部署限制集中于登录提示、平台管理的身份/运行边界，以及会话列表的隔离说明；能力中心继续如实显示 Skills/MCP 尚未接入。移除全局预览徽标不等于已实现员工身份或隔离。
 
 ## 导航字重与图标规范
 
@@ -59,10 +68,13 @@ API 统一在 `src/api/client.ts`，包含错误处理与 CSRF。认证优先用
 
 ```bash
 python3 scripts/check-business-ui.py  # 实际无模型部署；临时复制/编辑/删除一个回归场景
+python3 scripts/check-page-layout.py  # 11 组尺寸、标题/间距、底部帮助与实际中文粗体
 python3 scripts/check-business-api.py --browser
 python3 scripts/check-business-api.py --browser --cookie-blocked
 python3 scripts/check-iframe-auth.py --block-cookies --block-storage --opaque-frame
 ```
+
+布局检查只读取当前部署业务资源，不创建模型执行；可通过 `--axe-script /path/to/axe.min.js` 同时运行可访问性检查。
 
 执行浏览器回归在隔离数据库、认证和 Runner 中使用明确的本机协议夹具，不配置用户的模型，不等于真实提供商验收。
 

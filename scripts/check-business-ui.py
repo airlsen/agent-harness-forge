@@ -91,21 +91,32 @@ async def main():
             await page.reload()
             await expect(page.locator(".workbench-page")).to_be_visible()
             check("authenticated session survives SPA reload")
-            await page.get_by_role("button", name="查看版本与能力说明").click()
+            help_trigger = page.locator(".enterprise-sidebar-footer").get_by_role(
+                "button", name="使用帮助", exact=True
+            )
+            await help_trigger.click()
             await expect(
-                page.get_by_role("dialog", name="企业平台使用指南")
-            ).to_contain_text("尚未接入员工身份")
+                page.get_by_role("dialog", name="使用帮助", exact=True)
+            ).to_contain_text("提交一项工作")
             await page.keyboard.press("Tab")
             check(
-                "guide keyboard focus stays in modal",
+                "sidebar help keyboard focus stays in modal",
                 await page.evaluate(
                     "Boolean(document.activeElement.closest('[role=dialog]'))"
                 ),
             )
             await page.keyboard.press("Escape")
             await expect(page.get_by_role("dialog")).to_have_count(0)
+            await expect(help_trigger).to_be_focused()
+            await help_trigger.click()
+            await page.get_by_role("link", name="前往平台管理", exact=True).click()
+            await expect(page.get_by_role("dialog")).to_have_count(0)
+            await expect(page.locator(".release-boundary")).to_contain_text(
+                "当前使用单管理员认证，不具备员工间会话访问隔离"
+            )
+            await go("/agent/workbench")
             check(
-                "version guide discloses single-admin boundary and closes with Escape"
+                "sidebar help closes with Escape, restores focus, and links to truthful deployment boundaries in management"
             )
             await page.get_by_role("button", name="选择场景").click()
             await (

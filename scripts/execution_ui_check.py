@@ -145,6 +145,55 @@ async def check_execution_ui(
             await expect(
                 page.locator(".trajectory-event").first.locator("pre")
             ).to_contain_text("workspace_write")
+            for width, height in [(1440, 1000), (390, 844), (320, 720)]:
+                await page.set_viewport_size({"width": width, "height": height})
+                await page.locator(".trajectory-page").evaluate(
+                    "element => { element.scrollTop = 0; }"
+                )
+                await expect(page.locator(".trajectory-page h1")).to_have_count(1)
+                await expect(
+                    page.get_by_role("link", name="返回审计中心", exact=True)
+                ).to_be_visible()
+                await expect(
+                    page.get_by_role("button", name="导出会话证据", exact=True)
+                ).to_be_visible()
+                geometry = await page.evaluate(
+                    """() => {
+                        const main = document.querySelector('.trajectory-page');
+                        const inner = main.querySelector('.enterprise-page-inner');
+                        const view = document.querySelector('.enterprise-view');
+                        const back = main.querySelector('.back-link');
+                        const root = getComputedStyle(document.documentElement);
+                        return {
+                            viewY:view.getBoundingClientRect().y,
+                            top:back.getBoundingClientRect().y,
+                            expectedTop:parseFloat(root.getPropertyValue('--page-padding-top')),
+                            contentX:inner.getBoundingClientRect().x,
+                            headingX:main.querySelector('.page-heading').getBoundingClientRect().x,
+                            snapshotWidth:main.querySelector('.snapshot-bar').getBoundingClientRect().width,
+                            snapshotHeight:main.querySelector('.snapshot-bar').getBoundingClientRect().height,
+                            snapshotContentWidth:main.querySelector('.snapshot-bar > div').getBoundingClientRect().width,
+                            overflow:main.scrollWidth > main.clientWidth + 1,
+                        };
+                    }"""
+                )
+                assert abs(geometry["viewY"]) < 1, geometry
+                assert abs(geometry["top"] - geometry["expectedTop"]) < 1, geometry
+                assert abs(geometry["contentX"] - geometry["headingX"]) < 1, geometry
+                assert not geometry["overflow"], geometry
+                if width <= 480:
+                    assert geometry["snapshotHeight"] < 230, geometry
+                    assert (
+                        geometry["snapshotContentWidth"]
+                        > geometry["snapshotWidth"] * 0.55
+                    ), geometry
+                await page.screenshot(
+                    path=str(output.parent / f"{output.stem}-trajectory-{width}.png")
+                )
+            await page.set_viewport_size({"width": 1440, "height": 1000})
+            passed(
+                "populated trajectory preserves its return link and export action on the shared grid without a topbar gap or desktop/phone overflow"
+            )
             async with page.expect_download() as captured:
                 await page.get_by_role("button", name="导出会话证据").click()
             export = await captured.value

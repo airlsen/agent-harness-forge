@@ -174,7 +174,6 @@ async function versions(scenario: Scenario) {
     <div class="enterprise-page-inner">
       <div class="page-heading">
         <div>
-          <div class="eyebrow">SHARED SCENARIOS</div>
           <h1>
             企业场景<span class="heading-count">{{ app.availableScenarios.length }}</span>
           </h1>

@@ -112,7 +112,6 @@ onMounted(load);
     <div class="enterprise-page-inner">
       <div class="page-heading">
         <div>
-          <div class="eyebrow">SHARED CAPABILITIES</div>
           <h1>企业能力中心</h1>
           <p>一处发现平台提供的工具、技能与连接，按需带入工作。</p>
         </div>
