@@ -37,7 +37,8 @@ lint:
 	python3 -m ruff check --select F,E9 backend/src scripts
 	python3 -m ruff format --check backend/src scripts
 	npm --prefix frontend run format:check
-	frontend/node_modules/.bin/prettier --check runner/src runner/forge-runtime-plugin runner/scripts/check-business.mjs runner/scripts/check-workspace.mjs .github/workflows/checks.yml
+	npm --prefix frontend run check:icons
+	frontend/node_modules/.bin/prettier --check runner/src runner/forge-runtime-plugin runner/scripts/check-business.mjs runner/scripts/check-workspace.mjs scripts/check-ui-icons.mjs .github/workflows/checks.yml
 
 test: ## 不吞错误；使用隔离协议夹具，不消耗真实模型
 	npm --prefix runner run contract

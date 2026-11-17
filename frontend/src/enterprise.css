@@ -120,6 +120,17 @@ textarea:focus-visible {
   top: 12px;
 }
 .enterprise-sidebar {
+  /* Explicit CJK fallback keeps real medium/bold faces available on Linux too. */
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'PingFang SC',
+    'Microsoft YaHei',
+    Arial,
+    'Noto Sans CJK SC',
+    sans-serif;
   position: fixed;
   inset: 0 auto 0 0;
   width: var(--sidebar);
@@ -167,8 +178,8 @@ textarea:focus-visible {
 }
 .enterprise-brand small {
   display: block;
-  font-size: 10px;
-  font-weight: 450;
+  font-size: 11px;
+  font-weight: 500;
   letter-spacing: 1.5px;
   color: var(--text-subtle);
   margin-top: 5px;
@@ -188,7 +199,8 @@ textarea:focus-visible {
   border: 1px solid transparent;
   border-radius: 7px;
   text-align: left;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
   line-height: 20px;
   flex-shrink: 0;
 }
@@ -199,12 +211,12 @@ textarea:focus-visible {
   height: 20px;
   justify-self: center;
   color: inherit;
+  stroke-width: 1.8;
 }
 .enterprise-new-chat {
   background: #fff;
-  color: var(--text-secondary);
+  color: var(--ink);
   border-color: var(--line);
-  font-weight: 550;
   box-shadow: 0 2px 2px #26334a03;
   margin-bottom: 24px;
   transition:
@@ -238,7 +250,7 @@ textarea:focus-visible {
 .enterprise-sidebar .enterprise-primary > a {
   position: relative;
   margin: 0;
-  color: var(--text-secondary);
+  color: var(--ink);
   background: transparent;
 }
 .enterprise-sidebar .enterprise-primary > a:hover {
@@ -248,7 +260,10 @@ textarea:focus-visible {
 .enterprise-sidebar .enterprise-primary > a.is-active {
   color: var(--accent-ink);
   background: var(--accent-soft);
-  font-weight: 600;
+  font-weight: 700;
+}
+.enterprise-sidebar .enterprise-primary > a.is-active > svg {
+  stroke-width: 2;
 }
 .enterprise-sidebar .enterprise-primary > a.is-active::before {
   display: none;
@@ -268,6 +283,7 @@ textarea:focus-visible {
   background: var(--accent-soft);
   color: var(--accent-ink);
   font-size: 10px;
+  font-weight: 500;
   border: 0;
   padding: 1px 5px;
   min-width: 19px;
@@ -280,7 +296,8 @@ textarea:focus-visible {
   justify-content: space-between;
   margin: 28px 13px 12px;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 600;
   letter-spacing: 0.4px;
 }
 .enterprise-recent-heading > a {
@@ -364,6 +381,12 @@ textarea:focus-visible {
   background: var(--accent-soft);
   color: var(--accent-ink);
 }
+.enterprise-management-link.selected {
+  font-weight: 700;
+}
+.enterprise-management-link.selected > svg:first-child {
+  stroke-width: 2;
+}
 .enterprise-profile {
   display: flex;
   align-items: center;
@@ -391,7 +414,7 @@ textarea:focus-visible {
 .enterprise-profile strong {
   display: block;
   font-size: 12px;
-  font-weight: 550;
+  font-weight: 600;
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
@@ -400,7 +423,7 @@ textarea:focus-visible {
 }
 .enterprise-profile small {
   display: block;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-subtle);
   margin-top: 3px;
 }
@@ -3554,7 +3577,7 @@ textarea:focus-visible {
 }
 @media (max-width: 700px) {
   :root {
-    --sidebar: 88px;
+    --sidebar: 92px;
   }
   .enterprise-sidebar {
     padding: 20px 7px 0;
@@ -3576,7 +3599,7 @@ textarea:focus-visible {
     gap: 5px;
     min-height: 66px;
     padding: 9px 4px;
-    font-size: 10px;
+    font-size: 11px;
     line-height: 16px;
     text-align: center;
   }
@@ -3613,7 +3636,7 @@ textarea:focus-visible {
   }
   .enterprise-profile strong {
     max-width: 68px;
-    font-size: 10px;
+    font-size: 11px;
     text-align: center;
   }
   .enterprise-profile > button {

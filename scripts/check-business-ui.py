@@ -385,7 +385,7 @@ async def main():
                 await go("/agent/workbench")
                 await expect(page.locator(".enterprise-primary > a")).to_have_count(4)
                 geometry = await page.evaluate(
-                    """() => {
+                    r"""() => {
                     const box = element => {
                         const r = element.getBoundingClientRect();
                         return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};
@@ -396,6 +396,10 @@ async def main():
                         body: box(document.querySelector('.enterprise-body')),
                         items: [...document.querySelectorAll('.enterprise-new-chat,.enterprise-primary>a,.enterprise-management-link')].map(element => ({
                             row:box(element), icon:box(element.querySelector('svg')),
+                            fontSize:getComputedStyle(element).fontSize,
+                            fontWeight:Number(getComputedStyle(element).fontWeight),
+                            svgIcon:element.querySelector('svg')?.getAttribute('fill') === 'none',
+                            emojiIcon:/[\p{Extended_Pictographic}\p{Regional_Indicator}\uFE0F\u20E3]/u.test(element.innerText),
                             label:box(element.querySelector('span:not(.nav-count)')),
                             labelHidden: getComputedStyle(element.querySelector('span:not(.nav-count)')).display === 'none',
                             labelClipped: element.querySelector('span:not(.nav-count)').scrollWidth > element.querySelector('span:not(.nav-count)').clientWidth + 1,
@@ -414,6 +418,15 @@ async def main():
                     for item in geometry["items"]
                 )
                 items = geometry["items"]
+                assert all(item["fontWeight"] >= 600 for item in items)
+                assert all(
+                    item["fontSize"] == ("14px" if width > 700 else "11px")
+                    for item in items
+                )
+                assert all(item["svgIcon"] and not item["emojiIcon"] for item in items)
+                await expect(
+                    page.locator(".enterprise-primary > a.is-active")
+                ).to_have_css("font-weight", "700")
                 icon_centres = [
                     item["icon"]["x"] + item["icon"]["width"] / 2 for item in items
                 ]
@@ -454,6 +467,12 @@ async def main():
             )
             check(
                 "new chat, primary menus and platform management share aligned icon/text columns and row heights; labels and original warm-orange theme remain intact"
+            )
+            check(
+                "sidebar primary labels use readable semibold sizing and a stronger selected state across desktop and phone layouts"
+            )
+            check(
+                "navigation icons remain local line SVGs with no decorative emoji text"
             )
             await page.set_viewport_size({"width": 820, "height": 480})
             last_menu = page.get_by_role("link", name="我的会话", exact=True)
