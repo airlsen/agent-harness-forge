@@ -1,32 +1,33 @@
-"""治理路由：RBAC / 配额 / 策略矩阵 / 模型路由（租户管理员）。
-MVP 骨架：策略读写即可；判定逻辑在 runner 的 policy 插件（快照下发）。
-"""
-
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from ..core.database import get_session
-from ..utils.response import ApiResponse, ResponseUtil
+from ..models.platform import PlatformSetting
+from ..services.settings_service import PolicyInput, get_policy
+from ..utils.response import ResponseUtil
 
 router = APIRouter()
 
 
 @router.get("/policies")
-async def get_policies(db: AsyncSession = Depends(get_session)) -> ApiResponse:
-    return ResponseUtil.ok({"tool_matrix": {}, "network": {}, "data_rules": []})
+async def policies(db: AsyncSession = Depends(get_session)):
+    return ResponseUtil.ok(
+        {
+            **(await get_policy(db)),
+            "scope": "single-workspace",
+            "shellEnabled": False,
+            "networkToolsEnabled": False,
+            "notice": "修改只影响新建会话；现有会话继续使用其不可变策略快照。",
+        }
+    )
 
 
 @router.put("/policies")
-async def put_policies(payload: dict, db: AsyncSession = Depends(get_session)) -> ApiResponse:
-    # TODO(M2): 生成 policy_snapshot，推送 Runner policy 插件热更新（Cordis 可逆注册）
-    return ResponseUtil.ok()
-
-
-@router.get("/quotas")
-async def get_quotas(db: AsyncSession = Depends(get_session)) -> ApiResponse:
-    return ResponseUtil.ok({"tenant": {}, "department": [], "users": []})
-
-
-@router.get("/model-routes")
-async def get_model_routes(db: AsyncSession = Depends(get_session)) -> ApiResponse:
-    return ResponseUtil.ok({"rules": []})
+async def save(payload: PolicyInput, db: AsyncSession = Depends(get_session)):
+    row = await db.get(PlatformSetting, "policy")
+    if not row:
+        row = PlatformSetting(key="policy", value=payload.model_dump())
+        db.add(row)
+    else:
+        row.value = payload.model_dump()
+    await db.commit()
+    return ResponseUtil.ok(await get_policy(db))

@@ -23,7 +23,7 @@ export interface UserCtx {
 }
 
 export interface SessionHandle {
-  sessionId: string;      // 平台会话 id（与控制面一致）
+  sessionId: string; // 平台会话 id（与控制面一致）
   forgeSessionId: number; // 控制面 DB 主键（回调关联用）
   bundleHash: string;
 }

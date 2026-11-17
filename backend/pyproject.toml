@@ -1,7 +1,7 @@
 [project]
 name = "forge-backend"
-version = "0.1.0"
-description = "AgentHarness Forge 控制面：租户/RBAC/场景装配/Runner 调度/审计/配额"
+version = "0.2.0"
+description = "Forge 单工作空间控制面：本地认证、场景版本、会话执行、审批与审计"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
@@ -9,10 +9,10 @@ dependencies = [
     "pydantic>=2.9",
     "pydantic-settings>=2.5",
     "sqlalchemy[asyncio]>=2.0",
+    "aiosqlite>=0.20",
+    "cryptography>=44",
     "asyncpg>=0.30",
-    "redis>=5.2",
     "httpx>=0.28",
-    "sse-starlette>=2.2",
 ]
 
 [project.optional-dependencies]
@@ -21,7 +21,7 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
     "mypy>=1.13",
-    "testcontainers>=4.8",
+    "playwright>=1.50,<2",
 ]
 
 [build-system]

@@ -1,36 +1,41 @@
-# runner/ · 执行内核适配层（TS）
+# Forge Harness Runner
 
-AgentKernel 端口（`src/kernel/types.ts`）+ dsh 实现 + 平台 Cordis 插件包。
-与控制面（backend/）仅经 HTTP 契约通信；**禁止把 cordis/dsh 类型泄漏给控制面**。
+正式入口 `src/server.ts`，由控制面以内部 Bearer Token 调用；浏览器不直接访问 Runner。Node >=24.9.0，固定 `dsh@0.2.2-rc.1`。
 
-## ⚠️ 运行时要求
+## 业务路径
 
-- **Node.js ≥ 24.9.0**（dsh `engines` 硬要求；推荐 Node 26 LTS）
-- dsh 版本锁定：`@deepseek-ai/dsh@0.2.2-rc.1`（Developer Preview，升级必须过契约检查）
+- `src/kernel/types.ts`：AgentKernel 端口。
+- `dsh-kernel.ts`：会话独立进程、runtime patch、事件桥、审批、受限文件、容量与清理。
+- `dsh-process.ts`：换行 JSON-RPC、请求关联、host 请求与安全中止。
+- `forge-runtime-plugin/index.js`：OpenAI-compatible 模型适配器、4 个文本工作区工具、agent 级 restrict 与单调拒绝 guard、写入审批门控。
 
-## 命令
+模型配置只能由控制面传入。没有配置模型时拒绝创建执行会话，不会回落到历史假模型。模型凭据只经环境传入 dsh 子进程，不写入 runtime patch。
 
 ```bash
-npm install
-npx tsx scripts/contract-check.mjs   # dsh 插件 API 契约（19 项，升级 dsh 必跑）
-npx tsx scripts/poc.mjs              # M0 端到端验证（9 项断言，产物在 .poc/）
-pnpm dev                             # Runner HTTP server（tsx watch, :9000）
+npm ci
+npm run build
+npm run contract      # 19 项扩展点契约
+npm test              # 21 项真实文件边界 + 20 项正式插件/真 dsh 协议夹具（非真实模型）
+npm run test:workspace # 仅文件执行器/配额边界，不代替审批集成
+
+# 仓库根目录，先初始化 data/business.env
+bash scripts/start-runner.sh
 ```
 
-## M0 已验证（2026-11-17，全绿）
+默认端口9000 / 容量4。每个活跃会话占一个 dsh 进程，归档释放。没有完成 20 会话负载验收或闲置自动回收。
 
-sdk-minimal profile 嵌入、插件 patch 叠加、JSON-RPC 握手（`deepseek-harness-sdk-runtime`）、
-`ctx.llm.registerAdapter` 假模型驱动、`tools/pre-execute` 门控放行/拒绝、会话事件流外拉（session.event/status）。
-详见 `docs/05-M0-技术验证报告.md`。
+## 实际限制
 
-## 关键文件
+仅 `current_time / workspace_list / workspace_read / workspace_write`。原生 shell、原生文件和工作目录工具在业务 patch 禁用，业务白名单进一步限制可见与可执行工具。不允许外部插件安装；这不是容器级隔离。
 
-| 文件 | 说明 |
-|---|---|
-| `src/kernel/types.ts` | AgentKernel 端口契约（控制面唯一依赖面） |
-| `src/kernel/dsh-process.ts` | dsh 子进程启动 + stdio 换行 JSON-RPC 客户端 |
-| `src/kernel/dsh-kernel.ts` | AgentKernel 的 dsh 实现（M1 接 session/prompt → KernelEvent 扇出） |
-| `forge-poc-plugin/` | M0 插件：假模型适配器 + forge_probe 探针 + tools/pre-execute 门控 + WAL |
-| `patches/forge-poc.patch.yml` | 插件进入插件树的 patch 模板（POC 脚本自动生成绝对路径版） |
-| `scripts/dsh-launch.mjs` | bin 自启动问题 workaround（dsh@0.2.2-rc.1 的 import.meta.main 缺陷） |
-| `scripts/poc.mjs` / `scripts/contract-check.mjs` | M0 验证编排 / 契约检查 |
+审批为一次性允许 / 拒绝 / 超时拒绝 / 中止取消；没有人工改参提交或 IM 审批。中止关闭进程，同 Runner 内下一轮可打开本地日志；整个 Runner 重启后不会恢复旧执行，但保留磁盘时文件读取仍可用。
+
+`fork()` 明确拒绝；只读存储事件回看不等于执行分叉或重跑。
+
+## 历史 M0
+
+`forge-poc-plugin/`、`scripts/poc.mjs`、`patches/forge-poc.patch.yml` 保留研究证据：固定假模型 + 安全探针验证 `tools/pre-execute` 的 allow / deny。探针不执行真实 Shell，不计入业务模型验收。
+
+```bash
+npm run poc
+```

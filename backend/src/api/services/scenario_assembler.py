@@ -1,73 +1,69 @@
-"""ScenarioAssembler：Scenario → Bundle 的唯一编译器（ADR-2）。
-
-继承旧 `_build_options_input()` 的职责，但输出从"SDK Options"变为"不可变 Bundle 快照"：
-  profile_patch（含 prompt 四分区）+ plugin_mounts + skill_files + mcp + model_route + policy_ref。
-bundle_hash = sha256(canonical_json(bundle))，写进会话与审计，回放/复现的锚点。
-"""
+"""Scenario → 不变 Bundle；当前只允许已实现、可执行的能力。"""
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass
 from typing import Any
-
+from fastapi import HTTPException
 from ..schemas.agent_scenario import ScenarioPayload
-
-PLATFORM_IDENTITY = "你是 AgentHarness Forge 平台上的企业智能体…"  # TODO(M1): prompts 模块细化
+from .settings_service import TOOL_NAMES
 
 
 @dataclass
 class Bundle:
     profile_patch: dict[str, Any]
-    plugin_mounts: list[str]               # 仅允许 plugin_registry 白名单内（验签在 Runner）
-    skill_files: dict[str, str]            # 文件名 -> 内容（物化到沙箱工作区）
-    mcp: list[dict[str, Any]]              # 认证走 auth_ref，密钥不内联
-    model_route: dict[str, Any]            # primary + fallbacks（标签，网关解析）
-    policy_ref: str                        # 治理策略快照 id（policy 插件本地判定用）
-    input_schema: dict[str, Any] | None = None
-    meta: dict[str, Any] = field(default_factory=dict)
+    plugin_mounts: list[str]
+    skill_files: dict[str, str]
+    mcp: list[dict[str, Any]]
+    model_route: dict[str, Any]
+    policy_ref: str
+    input_schema: dict | None
+    meta: dict
 
     @property
     def bundle_hash(self) -> str:
-        canonical = json.dumps(self.__dict__, sort_keys=True, ensure_ascii=False)
-        return hashlib.sha256(canonical.encode()).hexdigest()
+        return hashlib.sha256(
+            json.dumps(asdict(self), sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+        ).hexdigest()
 
 
 class ScenarioAssembler:
-    """控制面侧唯一装配入口。"""
-
-    def compile(
-        self,
-        scenario: ScenarioPayload,
-        *,
-        tenant_policy: dict[str, Any],
-        rendered_prompt: str,
-    ) -> Bundle:
+    def compile(self, scenario: ScenarioPayload, *, tenant_policy: dict, rendered_prompt: str) -> Bundle:
         caps = scenario.capabilities
+        if set(caps.plugin_names) - {"forge-runtime"}:
+            raise HTTPException(422, "当前只能挂载已审核的 forge-runtime 业务插件")
+        if set(caps.builtin_tool_names) - TOOL_NAMES:
+            raise HTTPException(422, "包含尚未接入的工具")
+        if caps.skill_ids or caps.mcp_server_ids or caps.project_ids:
+            raise HTTPException(422, "当前部署尚未挂载 Skill/MCP/项目，不接受无效能力装配")
+        if scenario.model not in ("default", ""):
+            raise HTTPException(422, "当前请使用 default 模型路由，在模型中心设置实际模型")
+        if scenario.input_schema is not None:
+            raise HTTPException(422, "当前工作台仅支持文本任务输入，结构化输入表单尚未接入")
+        policy_json = json.dumps(tenant_policy, sort_keys=True)
         return Bundle(
             profile_patch={
-                "mode": scenario.execution_mode,  # standard | ptc（dsh 运行模式）
+                "mode": "standard",
                 "systemPrompt": {
-                    "identity": PLATFORM_IDENTITY,
-                    "domain": rendered_prompt,            # {{变量}} 已渲染
-                    "safety": tenant_policy.get("safety_rules", []),
-                    "workspace": tenant_policy.get("workspace_rules", []),
+                    "identity": "你是 AgentHarness Forge 工作空间的企业智能体。请诚实、准确地完成用户任务。",
+                    "domain": rendered_prompt,
+                    "safety": ["只使用已授权工具；不要编造工具结果、文件或网络访问。"],
+                    "workspace": ["所有产物仅允许保存在当前会话的受限工作区。"],
                 },
             },
-            plugin_mounts=self._resolve_plugins(caps.plugin_names),
-            skill_files=self._materialize_skills(caps.skill_ids),      # TODO(M1): 查 skill 表
-            mcp=self._resolve_mcp(caps.mcp_server_ids),                # TODO(M1): auth_ref 化
-            model_route={"primary": scenario.model, "fallbacks": tenant_policy.get("fallbacks", [])},
-            policy_ref=tenant_policy.get("policy_snapshot_id", ""),
+            plugin_mounts=["forge-runtime"],
+            skill_files={},
+            mcp=[],
+            model_route={"primary": "default", "fallbacks": []},
+            policy_ref=hashlib.sha256(policy_json.encode()).hexdigest()[:16],
             input_schema=scenario.input_schema,
-            meta={"builtin_tools": caps.builtin_tool_names, "projects": caps.project_ids},
+            meta={
+                "builtin_tools": [
+                    name
+                    for name in dict.fromkeys(caps.builtin_tool_names)
+                    if name in tenant_policy.get("allowedTools", [])
+                ],
+                "policy": tenant_policy,
+                "scenarioName": scenario.name,
+            },
         )
-
-    def _resolve_plugins(self, names: list[str]) -> list[str]:
-        # TODO(M1): 校验 plugin_registry 白名单 + 版本 pin；未登记直接拒绝（企业安全红线）
-        return names
-
-    def _materialize_skills(self, skill_ids: list[int]) -> dict[str, str]:
-        return {}  # TODO(M1): 沿袭旧 skill_materializer 逻辑
-
-    def _resolve_mcp(self, mcp_ids: list[int]) -> list[dict[str, Any]]:
-        return []  # TODO(M1): 查 mcp_server 表 → auth_ref（短期令牌由 runner 侧插件注入）

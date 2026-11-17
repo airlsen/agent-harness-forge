@@ -1,104 +1,131 @@
-/**
- * dsh-process：把 dsh sdk-minimal profile 作为子进程拉起，走 stdio 上的
- * 换行分隔 JSON-RPC 2.0 通信（协议：@deepseek-ai/dsh-sdk-protocol，源码已核验）。
- *
- * 服务端身份：deepseek-harness-sdk-runtime
- * 方法面（已核验）：initialize / session/prompt / session/query / session/resume / session/wait
- * 反向调用（host 应答）：approval/request、user-question/ask
- */
-
-import { spawn, type ChildProcess } from 'node:child_process'
-import { createInterface } from 'node:readline'
+/** dsh sdk-minimal 子进程 + 换行 JSON-RPC。控制面不直接依赖此协议。 */
+import { spawn, type ChildProcess } from 'node:child_process';
+import { createInterface } from 'node:readline';
 
 export interface DshSpawnOptions {
-  /** dsh 可执行入口（runner/node_modules/.bin/dsh 或打包后的 lib/bin.js） */
-  binPath: string
-  profile: string // 'sdk-minimal'
-  patchPaths: string[] // --patch 覆盖层（我们的 forge 插件由此进入插件树）
-  env?: NodeJS.ProcessEnv
-  /** 所有进出帧的原始落盘（POC 期等同 audit-exporter 的最小外部形态） */
-  rawFrameSink?: (direction: 'out' | 'in', frame: unknown) => void
+  binPath: string;
+  profile: string;
+  patchPaths: string[];
+  env?: NodeJS.ProcessEnv;
+  rawFrameSink?: (direction: 'out' | 'in', frame: unknown) => void;
 }
-
 export class DshProcess {
-  private child: ChildProcess | null = null
-  private seq = 0
-  private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
-  private notificationHandlers: Array<(method: string, params: unknown) => void> = []
-
-  /** 反向请求处理（approval/request 等），value: (params) => result */
-  hostHandlers = new Map<string, (params: any) => Promise<unknown> | unknown>()
+  private child: ChildProcess | null = null;
+  private seq = 0;
+  private rawFrameSink?: DshSpawnOptions['rawFrameSink'];
+  private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+  private notificationHandlers: Array<(method: string, params: any) => void> = [];
+  hostHandlers = new Map<string, (params: any) => Promise<unknown> | unknown>();
 
   async start(opts: DshSpawnOptions): Promise<void> {
-    const args = ['--profile', opts.profile]
-    for (const p of opts.patchPaths) args.push('--patch', p)
-    // SDK server 走 stdio：必须保证 stdout 纯 JSON-RPC，stderr 自由落日志
-    this.child = spawn(opts.binPath, args, {
+    if (this.child) throw new Error('dsh is already started');
+    this.rawFrameSink = opts.rawFrameSink;
+    const args = [opts.binPath, '--profile', opts.profile];
+    for (const p of opts.patchPaths) args.push('--patch', p);
+    // 显式复用当前 Node，避免子进程 shebang 意外落回系统旧版 Node。
+    const child = spawn(process.execPath, args, {
       env: { ...process.env, ...opts.env },
       stdio: ['pipe', 'pipe', 'inherit'],
-    })
-    const rl = createInterface({ input: this.child.stdout! })
-    rl.on('line', (line) => this.onLine(opts, line))
-    this.child.on('exit', (code) => {
-      const err = new Error(`dsh exited with code ${code}`)
-      for (const p of this.pending.values()) p.reject(err)
-      this.pending.clear()
-    })
+    });
+    this.child = child;
+    const rl = createInterface({ input: child.stdout! });
+    rl.on('line', (line) => this.onLine(line));
+    const fail = (err: Error) => {
+      for (const p of this.pending.values()) p.reject(err);
+      this.pending.clear();
+      if (this.child === child) this.child = null;
+    };
+    child.once('error', fail);
+    child.once('exit', (code) => {
+      rl.close();
+      fail(new Error(`dsh exited with code ${code}`));
+    });
   }
-
-  private onLine(opts: DshSpawnOptions, line: string) {
-    let frame: any
+  private onLine(line: string) {
+    let frame: any;
     try {
-      frame = JSON.parse(line)
+      frame = JSON.parse(line);
     } catch {
-      return
+      return;
     }
-    opts.rawFrameSink?.('in', frame)
+    this.rawFrameSink?.('in', frame);
     if ('id' in frame && 'method' in frame) {
-      // 服务端反向请求（approval/request / user-question/ask）——Runner 作为 host 应答
-      const handler = this.hostHandlers.get(frame.method)
+      const handler = this.hostHandlers.get(frame.method);
+      const child = this.child;
+      // 中止时可能仍有审批 promise 正在结算；不能向已关闭或下一代进程回写。
+      const reply = (value: unknown) => {
+        if (this.child !== child || !child?.stdin?.writable) return;
+        try {
+          this.send(value);
+        } catch {
+          /* 进程已退出，原请求不再有效。 */
+        }
+      };
       const respond = async () => {
         try {
-          const result = handler ? await handler(frame.params) : undefined
-          this.send({ jsonrpc: '2.0', id: frame.id, result })
+          if (!handler) {
+            reply({
+              jsonrpc: '2.0',
+              id: frame.id,
+              error: { code: -32601, message: 'Host method not supported' },
+            });
+            return;
+          }
+          const result = await handler(frame.params);
+          reply({ jsonrpc: '2.0', id: frame.id, result });
         } catch (e) {
-          this.send({ jsonrpc: '2.0', id: frame.id, error: { code: -32603, message: String(e) } })
+          reply({ jsonrpc: '2.0', id: frame.id, error: { code: -32603, message: String(e) } });
         }
-      }
-      void respond()
+      };
+      void respond();
     } else if ('id' in frame) {
-      const p = this.pending.get(frame.id)
-      if (!p) return
-      this.pending.delete(frame.id)
-      if (frame.error) p.reject(new Error(frame.error.message ?? 'jsonrpc error'))
-      else p.resolve(frame.result)
+      const p = this.pending.get(frame.id);
+      if (!p) return;
+      this.pending.delete(frame.id);
+      if (frame.error) p.reject(new Error(frame.error.message ?? 'jsonrpc error'));
+      else p.resolve(frame.result);
     } else if ('method' in frame) {
-      for (const h of this.notificationHandlers) h(frame.method, frame.params)
+      for (const h of this.notificationHandlers) h(frame.method, frame.params);
     }
   }
-
   private send(frame: unknown) {
-    this.child?.stdin?.write(JSON.stringify(frame) + '\n')
+    if (!this.child?.stdin?.writable) throw new Error('dsh process is not writable');
+    this.rawFrameSink?.('out', frame);
+    this.child.stdin.write(JSON.stringify(frame) + '\n');
   }
-
-  request<T = unknown>(method: string, params: Record<string, unknown>): Promise<T> {
-    const id = ++this.seq
+  request<T = any>(method: string, params: Record<string, unknown>): Promise<T> {
+    const id = ++this.seq;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as any, reject })
-      this.send({ jsonrpc: '2.0', method, id, params })
-    })
+      this.pending.set(id, { resolve: resolve as any, reject });
+      try {
+        this.send({ jsonrpc: '2.0', method, id, params });
+      } catch (e) {
+        this.pending.delete(id);
+        reject(e);
+      }
+    });
   }
-
   onNotification(handler: (method: string, params: any) => void): () => void {
-    this.notificationHandlers.push(handler)
+    this.notificationHandlers.push(handler);
     return () => {
-      const i = this.notificationHandlers.indexOf(handler)
-      if (i >= 0) this.notificationHandlers.splice(i, 1)
-    }
+      const i = this.notificationHandlers.indexOf(handler);
+      if (i >= 0) this.notificationHandlers.splice(i, 1);
+    };
   }
-
   async dispose(): Promise<void> {
-    this.child?.kill('SIGTERM')
-    this.child = null
+    const child = this.child;
+    if (!child) return;
+    this.child = null;
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        resolve();
+      }, 1500);
+      child.once('exit', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      child.kill('SIGTERM');
+    });
   }
 }

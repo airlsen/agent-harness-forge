@@ -1,31 +1,32 @@
-"""场景相关请求/响应契约（与 frontend/src/types/agent.ts 对齐）。"""
-
-from typing import Any
-
-from pydantic import BaseModel, Field
+from typing import Any, Literal
+from pydantic import BaseModel, Field, field_validator
 
 
 class CapabilitySelection(BaseModel):
-    """能力声明：场景勾选的能力组合（解析后的 id 形态）。"""
-
-    plugin_names: list[str] = []
-    skill_ids: list[int] = []
-    mcp_server_ids: list[int] = []
-    builtin_tool_names: list[str] = []
-    project_ids: list[str] = []
+    plugin_names: list[str] = Field(default_factory=list)
+    skill_ids: list[int] = Field(default_factory=list)
+    mcp_server_ids: list[int] = Field(default_factory=list)
+    builtin_tool_names: list[str] = Field(default_factory=list)
+    project_ids: list[str] = Field(default_factory=list)
 
 
 class ScenarioPayload(BaseModel):
-    """场景装配单（请求与 AI 生成草稿同构，同旧 ClaudeScenarioPayload 思想）。"""
-
-    name: str = Field(max_length=128)
-    description: str = ""
-    icon: str = "ri-robot-line"
-    prompt_template: str = ""  # 支持 {{变量}}
-    capabilities: CapabilitySelection = CapabilitySelection()
-    model: str = "deepseek-chat"  # 路由标签，实际走模型网关策略
-    execution_mode: str = "standard"  # standard | ptc
+    name: str = Field(min_length=1, max_length=128)
+    description: str = Field(default="", max_length=512)
+    icon: str = Field(default="sparkles", max_length=64)
+    prompt_template: str = Field(default="", max_length=16000)
+    capabilities: CapabilitySelection = Field(default_factory=CapabilitySelection)
+    model: str = Field(default="default", max_length=128)
+    execution_mode: Literal["standard"] = "standard"
     input_schema: dict[str, Any] | None = None
+
+    @field_validator("name")
+    @classmethod
+    def nonempty_name(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("场景名称不能为空")
+        return value
 
 
 class CreateScenarioRequest(ScenarioPayload):
@@ -38,14 +39,3 @@ class UpdateScenarioRequest(ScenarioPayload):
 
 class GenerateScenarioRequest(BaseModel):
     description: str = Field(min_length=4, max_length=2000)
-
-
-class ScenarioResponse(BaseModel):
-    id: int
-    space: str
-    owner_id: str
-    status: str
-    current_version: int
-    payload: ScenarioPayload
-
-    model_config = {"from_attributes": True}

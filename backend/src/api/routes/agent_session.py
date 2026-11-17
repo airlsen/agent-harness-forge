@@ -1,50 +1,129 @@
-"""会话路由：建会话 / SSE 执行 / 中断 / 分叉 / 回放 / 轨迹。
-
-SSE 事件协议沿用旧协议（session/message_delta/tool_use/approval/cost_tick/files/done…），
-事件生产由 Runner 侧 Event Bridge 完成，本站负责鉴权、落库与扇出接线。
-"""
-
-from fastapi import APIRouter, Depends, Header, Query
+import asyncio
+import json
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi.responses import StreamingResponse, Response
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sse_starlette.sse import EventSourceResponse
-
 from ..core.database import get_session
-from ..utils.response import ApiResponse, ResponseUtil
+from ..services.session_service import session_service
+from ..services.runner_client import runner_client
+from ..utils.response import ResponseUtil
 
 router = APIRouter()
-OwnerHeader = Header(default="dev-user", alias="X-Dev-User")
+
+
+class NewSession(BaseModel):
+    scenarioId: int = Field(gt=0)
+
+
+class Turn(BaseModel):
+    message: str = Field(min_length=1, max_length=64000)
+
+
+@router.get("")
+async def list_sessions():
+    return ResponseUtil.ok({"items": await session_service.list()})
 
 
 @router.post("")
-async def create_session(
-    scenario_id: int,
-    db: AsyncSession = Depends(get_session),
-    owner_id: str = OwnerHeader,
-) -> ApiResponse:
-    """编译 Bundle 快照 -> 选 Runner -> 落 agent_session -> 返回 session_id。"""
-    # TODO(M1): session_service.create(...)，内部调 ScenarioAssembler + RunnerClient
-    return ResponseUtil.ok({"sessionId": None, "todo": "M1"})
+async def create(payload: NewSession):
+    return ResponseUtil.ok(await session_service.create(payload.scenarioId))
 
 
-@router.post("/{session_id}/stream")
-async def stream_turn(session_id: int, message: str) -> EventSourceResponse:
-    """一轮任务的 SSE 流（语义对齐旧 /conversations/stream）。"""
-    # TODO(M1): session_service.stream_execute(...)，事件源 = Runner Event Bridge
-    raise NotImplementedError
+@router.get("/{session_id}")
+async def detail(session_id: int):
+    return ResponseUtil.ok(await session_service.detail(session_id))
+
+
+@router.post("/{session_id}/turns", status_code=202)
+async def turn(session_id: int, payload: Turn):
+    return ResponseUtil.ok(await session_service.start(session_id, payload.message))
+
+
+@router.get("/{session_id}/events")
+async def events(session_id: int, request: Request, after: int = Query(default=0, ge=0)):
+    await session_service.status(session_id)
+    try:
+        after = max(after, int(request.headers.get("last-event-id", "0")))
+    except ValueError:
+        pass
+
+    async def generate():
+        cursor = after
+        while not await request.is_disconnected():
+            rows = await session_service.events(session_id, cursor)
+            for event in rows:
+                cursor = event["seq"]
+                yield f"id: {cursor}\nevent: kernel\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+            state = await session_service.status(session_id)
+            if state != "running" and not rows:
+                yield "event: settled\ndata: {}\n\n"
+                return
+            if not rows:
+                yield ": heartbeat\n\n"
+            await asyncio.sleep(0.2)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/{session_id}/interrupt")
-async def interrupt(session_id: int) -> ApiResponse:
+async def interrupt(session_id: int, db: AsyncSession = Depends(get_session)):
+    await session_service.interrupt(session_id)
     return ResponseUtil.ok()
 
 
-@router.post("/{session_id}/fork")
-async def fork(session_id: int, at_seq: int = Query(ge=0)) -> ApiResponse:
-    """从事件序号分叉出新会话（同 Bundle 快照）。"""
-    return ResponseUtil.ok({"sessionId": None, "forkedFrom": session_id, "atSeq": at_seq})
+@router.delete("/{session_id}")
+async def archive(session_id: int):
+    await session_service.archive(session_id)
+    return ResponseUtil.ok()
 
 
 @router.get("/{session_id}/trajectory")
-async def trajectory(session_id: int, source: str | None = None, cursor: int = 0) -> ApiResponse:
-    """轨迹分页（前端 TrajectoryPanel 与审计共用）。"""
-    return ResponseUtil.ok({"events": [], "nextCursor": None})
+async def trajectory(session_id: int, source: str | None = None, cursor: int = Query(0, ge=0)):
+    rows = await session_service.events(session_id, cursor, source=source)
+    return ResponseUtil.ok({"events": rows, "nextCursor": rows[-1]["seq"] if rows else cursor})
+
+
+@router.get("/{session_id}/files")
+async def files(session_id: int, db: AsyncSession = Depends(get_session)):
+    row = await session_service.row(db, session_id)
+    if not row.runner_session_id:
+        return ResponseUtil.ok({"items": []})
+    return ResponseUtil.ok(await runner_client.call("GET", f"/v1/sessions/{row.runner_session_id}/files"))
+
+
+@router.get("/{session_id}/file")
+async def file(
+    session_id: int, path: str = Query(min_length=1, max_length=220), db: AsyncSession = Depends(get_session)
+):
+    from urllib.parse import quote
+
+    row = await session_service.row(db, session_id)
+    if not row.runner_session_id:
+        raise HTTPException(404, "会话尚未产生文件")
+    data = await runner_client.call(
+        "GET", f"/v1/sessions/{row.runner_session_id}/file?path={quote(path, safe='')}"
+    )
+    return ResponseUtil.ok(data)
+
+
+@router.get("/{session_id}/export")
+async def export(session_id: int):
+    data = await session_service.detail(session_id)
+    all_events, cursor = [], 0
+    while True:
+        page = await session_service.events(session_id, cursor, limit=2000)
+        if not page:
+            break
+        all_events.extend(page)
+        cursor = page[-1]["seq"]
+    data["events"] = all_events
+    return Response(
+        json.dumps(data, ensure_ascii=False, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="forge-session-{session_id}.json"'},
+    )

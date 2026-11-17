@@ -1,16 +1,26 @@
-# backend/ · 控制面（Control Plane）
+# Forge Control Plane · FastAPI
 
-Python 3.12 + FastAPI。职责：租户/RBAC、场景装配（Bundle 编译）、Runner 调度、审批回调、审计检索、配额对账。
-**不认识任何 dsh/Cordis 类型**，与 Runner 仅通过 AgentKernel HTTP 契约通信（见 `services/runner_client.py`）。
+正式入口 `src.api.main:app`。本版为单工作空间 / 单管理员 / 单 worker，不是原设计中的多租户 OIDC/RBAC 服务。
 
-## 开发
+核心：本地签名会话和 CSRF、SQLite 持久化、场景版本和 Bundle 装配、模型密钥加密、后台执行泵、审批工单、SSE / 只读轨迹 / 导出、构建后的 Vue SPA 静态服务。
 
 ```bash
-cd ../backend
-uv sync                 # 或 pip install -e ".[dev]"
-cp .env.example .env
-uvicorn src.api.main:app --reload --port 8000
+# 仓库根目录
+python3 -m pip install -e 'backend[dev]'
+python3 scripts/setup-sandbox.py
+make build
+bash scripts/start-api.sh       # 正式同源前后端 :5173
+# 另一个终端 bash scripts/start-runner.sh
+
+make dev-backend                # API 开发 :8000，需配套 Vite
 ```
 
-分层规范：route 不写业务 · service 不碰 HTTP · model 不做序列化 · 统一 ResponseUtil。
-详细设计见 `docs/03-后端架构分析.md`。
+- 业务配置默认在 `data/business.env`，启动脚本自动加载。没有内部 Token 或初始化认证文件时拒绝启动。
+- 模型通过登录后的模型中心管理；原文密钥不回传，不进入可导出的 Bundle。
+- 后台任务 / 会话锁仍在单进程，不要开启多个 uvicorn worker。
+- SQLite `create_all` 尚不是数据库迁移体系，PostgreSQL override 尚未实测。
+- Redis、S3、OIDC、企业 RBAC、WORM 尚未接入。
+
+验收命令：`python3 scripts/check-business-api.py`；可加 `--browser` 启动隔离的完整执行 UI 检查。所有协议夹具为测试专用，不是业务假模型。
+
+完整部署与恢复语义见 `docs/06-沙箱预览部署.md`。

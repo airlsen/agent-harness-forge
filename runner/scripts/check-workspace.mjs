@@ -1,0 +1,170 @@
+#!/usr/bin/env node
+/** 正式插件执行器的真实文件边界检查。不使用模型、不替代业务 API/审批集成。 */
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { apply } from '../forge-runtime-plugin/index.js';
+
+const temporary = await mkdtemp(join(tmpdir(), 'forge-workspace-check-'));
+const root = join(temporary, 'workspace');
+const tools = new Map();
+const oldConfig = process.env.FORGE_MODEL_CONFIG;
+process.env.FORGE_MODEL_CONFIG = JSON.stringify({
+  baseUrl: 'http://unused.invalid/v1',
+  model: 'executor-check-no-model',
+});
+let dispose;
+let checks = 0;
+const execute = (name, args = {}) => tools.get(name).execute(args);
+const write = (path, content = 'text') => execute('workspace_write', { path, content });
+const read = (path) => execute('workspace_read', { path });
+const clear = async () => {
+  await rm(root, { recursive: true, force: true });
+  await mkdir(root, { recursive: true });
+};
+const check = async (name, test) => {
+  await test();
+  checks += 1;
+  console.log('PASS', name);
+};
+try {
+  dispose = await apply(
+    {
+      llm: { registerAdapter: () => () => {} },
+      tools: {
+        register: (tool) => {
+          tools.set(tool.name, tool);
+          return () => {};
+        },
+        guard: () => () => {},
+      },
+      on: () => () => {},
+    },
+    {
+      workspace: root,
+      allowedTools: ['workspace_list', 'workspace_read', 'workspace_write'],
+      requireWriteApproval: true,
+    },
+  );
+
+  await check('256000-byte file is accepted and readable', async () => {
+    await write('limit.txt', 'x'.repeat(256000));
+    assert.equal((await read('limit.txt')).content.length, 256000);
+  });
+  await check('single-byte over-limit write is rejected without overwriting', async () => {
+    await assert.rejects(() => write('limit.txt', 'x'.repeat(256001)), /256 KB/);
+    assert.equal((await stat(join(root, 'limit.txt'))).size, 256000);
+  });
+  await check('file limit counts UTF-8 bytes, not characters', async () => {
+    await assert.rejects(() => write('unicode.txt', '汉'.repeat(86000)), /256 KB/);
+  });
+  await check('oversized existing file cannot be read', async () => {
+    await writeFile(join(root, 'external.txt'), 'x'.repeat(256001));
+    await assert.rejects(() => read('external.txt'), /256 KB/);
+  });
+  await clear();
+  const deep = 'one/two/three/four/five/six/seven/report.md';
+  await check('eight path components are allowed', async () => {
+    await write(deep, 'nested artifact');
+    assert.equal((await read(deep)).content, 'nested artifact');
+  });
+  await check('ninth path component is rejected', async () => {
+    await assert.rejects(() => write('one/two/three/four/five/six/seven/eight/report.md'), /8 层/);
+  });
+  await check('listing recursively returns relative paths and exact byte counts', async () => {
+    assert.deepEqual((await execute('workspace_list')).files, [{ path: deep, bytes: 15 }]);
+  });
+  for (const [path, pattern, title] of [
+    ['../escape.txt', /超出/, 'path traversal'],
+    ['.hidden/report.txt', /隐藏/, 'hidden directory'],
+    ['bad\0name', /无效/, 'NUL path'],
+    ['x'.repeat(201), /无效/, 'oversized path'],
+  ]) {
+    await check(`${title} is rejected`, () => assert.rejects(() => write(path), pattern));
+  }
+  const sentinel = join(temporary, 'sentinel.txt');
+  await writeFile(sentinel, 'protected');
+  await symlink(sentinel, join(root, 'link.txt'));
+  await check('symlink reads and writes both fail closed', async () => {
+    await assert.rejects(() => read('link.txt'), /符号链接/);
+    await assert.rejects(() => write('link.txt', 'changed'), /符号链接/);
+    assert.equal(await readFile(sentinel, 'utf8'), 'protected');
+  });
+  await check('symlinks and hidden files are absent from listing', async () => {
+    await writeFile(join(root, '.private'), 'hidden');
+    assert.deepEqual(
+      (await execute('workspace_list')).files.map((file) => file.path),
+      [deep],
+    );
+  });
+
+  await clear();
+  await Promise.all(Array.from({ length: 99 }, (_, index) => writeFile(join(root, `${index}.txt`), 'x')));
+  await check('the hundredth file is accepted', async () => {
+    await write('100.txt');
+    assert.equal((await execute('workspace_list')).files.length, 100);
+  });
+  await check('the hundred-and-first file is rejected', () =>
+    assert.rejects(() => write('101.txt'), /100 个/),
+  );
+  await check('overwriting at the file-count limit remains allowed', async () => {
+    await write('100.txt', 'updated');
+    assert.equal((await read('100.txt')).content, 'updated');
+  });
+
+  await clear();
+  await Promise.all(
+    Array.from({ length: 39 }, (_, index) => writeFile(join(root, `${index}.txt`), 'x'.repeat(250000))),
+  );
+  await check('exactly ten million bytes are allowed', async () => {
+    await write('last.txt', 'y'.repeat(250000));
+    assert.equal(
+      (await execute('workspace_list')).files.reduce((sum, file) => sum + file.bytes, 0),
+      10000000,
+    );
+  });
+  await check('one byte over the total quota is rejected', () =>
+    assert.rejects(() => write('extra.txt', 'x'), /10 MB/),
+  );
+  await check('overwrite subtracts previous file size from the quota', async () => {
+    await write('last.txt', 'z'.repeat(250000));
+    await assert.rejects(() => write('last.txt', 'z'.repeat(250001)), /10 MB/);
+    assert.equal((await read('last.txt')).content, 'z'.repeat(250000));
+  });
+
+  await clear();
+  await Promise.all(Array.from({ length: 99 }, (_, index) => writeFile(join(root, `${index}.txt`), 'x')));
+  await check('concurrent writes cannot race past the file-count quota', async () => {
+    const results = await Promise.allSettled([write('a.txt'), write('b.txt')]);
+    assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+    assert.equal((await execute('workspace_list')).files.length, 100);
+  });
+  await clear();
+  await Promise.all(
+    Array.from({ length: 40 }, (_, index) => writeFile(join(root, `${index}.txt`), 'x'.repeat(249975))),
+  );
+  await check('concurrent writes cannot race past the total-size quota', async () => {
+    const results = await Promise.allSettled([
+      write('a.txt', 'x'.repeat(600)),
+      write('b.txt', 'x'.repeat(600)),
+    ]);
+    assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+    assert.equal(
+      (await execute('workspace_list')).files.reduce((sum, file) => sum + file.bytes, 0),
+      9999600,
+    );
+  });
+  console.log(
+    JSON.stringify({
+      scope: 'formal workspace executors, no model, not approval integration',
+      checks,
+      result: 'passed',
+    }),
+  );
+} finally {
+  dispose?.();
+  if (oldConfig === undefined) delete process.env.FORGE_MODEL_CONFIG;
+  else process.env.FORGE_MODEL_CONFIG = oldConfig;
+  await rm(temporary, { recursive: true, force: true });
+}

@@ -1,19 +1,45 @@
-.PHONY: dev-backend dev-runner dev-frontend lint test
+.PHONY: install setup build serve runner dev-backend dev-runner dev-frontend typecheck lint test
 
-dev-backend:        ## 启动控制面（FastAPI, :8000）
-	cd backend && uvicorn src.api.main:app --reload --port 8000
+install:
+	python3 -m pip install -e 'backend[dev]'
+	npm --prefix runner ci
+	npm --prefix frontend ci
 
-dev-runner:         ## 启动执行内核适配层（tsx watch, :9000）
-	pnpm -C runner dev
+setup:
+	python3 scripts/setup-sandbox.py
 
-dev-frontend:       ## 启动前端（vite, :5173）
-	pnpm -C frontend dev
+build:
+	npm --prefix runner run build
+	npm --prefix frontend run build
+	python3 -m compileall -q backend/src
 
-lint:               ## 全仓 lint
-	cd backend && ruff check src || true
-	pnpm -C runner lint || true
-	pnpm -C frontend lint || true
+serve:  ## 已构建的 Vue + 正式 FastAPI，默认 :5173
+	bash scripts/start-api.sh
 
-test:               ## 全仓测试
-	cd backend && pytest -q || true
-	pnpm -C runner test || true
+runner: ## 正式 Harness Runner，默认 :9000
+	bash scripts/start-runner.sh
+
+dev-backend: ## 开发模式控制面 :8000；需先初始化账号
+	set -a; . ./data/business.env; set +a; cd backend && python3 -m uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
+
+dev-runner:
+	set -a; . ./data/business.env; set +a; cd runner && npm run dev
+
+dev-frontend:
+	npm --prefix frontend run dev
+
+typecheck:
+	python3 -m compileall -q backend/src
+	npm --prefix runner run typecheck
+	npm --prefix frontend run typecheck
+
+lint:
+	python3 -m ruff check --select F,E9 backend/src scripts
+	python3 -m ruff format --check backend/src scripts
+	npm --prefix frontend run format:check
+	frontend/node_modules/.bin/prettier --check runner/src runner/forge-runtime-plugin runner/scripts/check-business.mjs runner/scripts/check-workspace.mjs .github/workflows/checks.yml
+
+test: ## 不吞错误；使用隔离协议夹具，不消耗真实模型
+	npm --prefix runner run contract
+	npm --prefix runner test
+	python3 scripts/check-business-api.py

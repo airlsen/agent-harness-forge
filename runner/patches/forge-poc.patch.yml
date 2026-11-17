@@ -1,6 +1,6 @@
 # forge-poc.patch.yml —— 在 sdk-minimal 完整插件树之上叠加一层 Forge POC 插件
 # 用法：node scripts/poc.mjs 会自动把 __PLUGIN_PATH__/__MARKER__/__WAL__ 占位符替换为绝对路径
-# 并重写成 patches/.generated.poc.patch.yml，再以 --patch 传给 dsh。
+# 并写到本轮产物目录的 poc.patch.yml，再以 --patch 传给 dsh。
 # （手写版可直接把占位符改为绝对路径后用：dsh --profile sdk-minimal --patch <本文件>）
 
 - insert:
@@ -13,4 +13,4 @@
         allowCommand: "echo hello-forge"
         denyCommand: "rm -rf /tmp/forge-poc-should-never-run"
         denyPattern: "\\brm\\s+-rf\\b"
-        finalText: "POC finish: 放行命令已执行，拒绝命令已被门控拦下。"
+        finalText: "POC 完成：echo 探针已放行，危险调用被门控拒绝，审计事件已输出。"

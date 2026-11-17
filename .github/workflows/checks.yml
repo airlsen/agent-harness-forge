@@ -1,0 +1,31 @@
+name: Forge build and isolated integration
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  business-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26.13.1'
+          cache: npm
+          cache-dependency-path: |
+            runner/package-lock.json
+            frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -e 'backend[dev]'
+      - run: npm --prefix runner ci
+      - run: npm --prefix frontend ci
+      - run: make lint
+      - run: make build
+      - run: make test
+      - run: python -m playwright install --with-deps chromium
+      - run: python scripts/check-business-api.py --browser
