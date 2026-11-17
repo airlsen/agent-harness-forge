@@ -1,0 +1,11 @@
+{
+  "name": "forge-poc-plugin",
+  "version": "0.0.1",
+  "private": true,
+  "description": "M0 POC：政策门控 + 假模型适配器 + 审计 WAL，以纯 Cordis 插件形态挂入 dsh 插件树",
+  "type": "module",
+  "main": "index.js",
+  "dsh": {
+    "bundle": false
+  }
+}

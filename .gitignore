@@ -27,3 +27,8 @@ out/
 *.local
 data/
 tmp/
+
+# ---- Forge POC 运行产物 ----
+runner/.poc/
+runner/patches/.generated.*.yml
+runner/package-lock.json

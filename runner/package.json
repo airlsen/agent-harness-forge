@@ -9,13 +9,13 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src",
     "test": "vitest run",
-    "test:contract": "vitest run test/contract"
+    "poc": "tsx scripts/poc.mjs",
+    "poc:boot-only": "tsx scripts/poc.mjs --boot-only",
+    "contract": "tsx scripts/contract-check.mjs"
   },
   "dependencies": {
-    "cordis": "^3.20.0",
-    "@deepseek-ai/dsh": "0.1.x",
-    "fastify": "^5.2.0",
-    "undici": "^7.0.0"
+    "@deepseek-ai/dsh": "0.2.2-rc.1",
+    "fastify": "^5.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
