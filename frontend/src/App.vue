@@ -126,12 +126,7 @@ onUnmounted(() => {
             >
           </RouterLink>
         </nav>
-        <div class="enterprise-recent-heading">
-          <span>最近会话</span
-          ><RouterLink to="/agent/conversations" aria-label="查看全部会话" title="查看全部会话"
-            ><Icon name="arrow" :size="14"
-          /></RouterLink>
-        </div>
+        <div class="enterprise-recent-heading">最近会话</div>
         <div class="enterprise-recents">
           <div v-if="!app.regularConversations.length" class="enterprise-recent-empty">
             <span></span>

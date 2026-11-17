@@ -85,8 +85,17 @@ async def main():
                 "我的工作空间"
             )
             await expect(page.locator(".primary-navigation>a")).to_have_count(4)
+            await expect(page.locator(".enterprise-recent-heading")).to_have_text(
+                "最近会话"
+            )
+            await expect(
+                page.locator(".enterprise-recent-heading").locator("a,button,svg")
+            ).to_have_count(0)
+            await expect(
+                page.get_by_role("link", name="我的会话", exact=True)
+            ).to_have_attribute("href", "/agent/conversations")
             check(
-                "shared-resource navigation replaces personal workspace and infrastructure menus"
+                "shared-resource navigation keeps a plain recent-session label without arrow controls; all conversations remain reachable"
             )
             await page.reload()
             await expect(page.locator(".workbench-page")).to_be_visible()
