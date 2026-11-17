@@ -28,9 +28,9 @@ async function login() {
         ><span>forge<span class="brand-period">.</span></span></a
       >
       <div class="login-intro">
-        <span class="eyebrow">YOUR AGENTS. YOUR WORKSPACE.</span>
+        <span class="eyebrow">SHARED CAPABILITIES. REAL WORK.</span>
         <h1>让智能，<br />真正参与工作。</h1>
-        <p>从一个想法，到一次可追溯的执行。<br />连接模型、装配能力，让 Agent 成为你的工作伙伴。</p>
+        <p>从一个想法，到一次可追溯的执行。<br />企业统一提供能力，让 Agent 成为工作的助力。</p>
         <div class="login-illustration">
           <div class="illustration-orbit orbit-one"></div>
           <div class="illustration-orbit orbit-two"></div>
@@ -48,9 +48,9 @@ async function login() {
     </section>
     <section class="login-form-area">
       <form class="login-form" @submit.prevent="login">
-        <span class="tag soft">FORGE WORKSPACE</span>
+        <span class="tag soft">FORGE ENTERPRISE</span>
         <h2>欢迎回来</h2>
-        <p>登录你的 Agent 工作空间。</p>
+        <p>登录企业智能体平台，开始推进工作。</p>
         <div v-if="error" class="form-alert error" role="alert">
           <Icon name="info" :size="17" />{{ error }}
         </div>
@@ -60,7 +60,7 @@ async function login() {
           v-model="username"
           autocomplete="username"
           required
-          placeholder="输入工作空间账号"
+          placeholder="输入平台账号"
         /><label for="password">密码</label>
         <div class="password-input">
           <input
@@ -75,19 +75,20 @@ async function login() {
           </button>
         </div>
         <button type="submit" class="button primary large" :disabled="busy">
-          <span v-if="busy" class="loader small"></span>{{ busy ? '正在登录' : '进入工作空间'
+          <span v-if="busy" class="loader small"></span>{{ busy ? '正在登录' : '进入企业平台'
           }}<Icon v-if="!busy" name="arrow" :size="17" />
         </button>
         <div class="login-security">
           <Icon name="lock" :size="14" /><span>{{
-            app.previewHeaderAuth ? 'Cookie 优先 · 支持预览兼容会话' : '本地工作空间认证 · HttpOnly 会话保护'
+            app.previewHeaderAuth ? 'Cookie 优先 · 支持预览兼容会话' : '单管理员认证 · HttpOnly 会话保护'
           }}</span>
         </div>
         <div class="login-footnote">
-          当前为单工作空间开发部署。<br />真实模型请在登录后进入「模型中心」配置。
+          当前为单管理员业务预览，尚未接入员工身份与会话权限。<br />真实模型请在登录后进入「平台管理 →
+          模型连接」配置。
         </div>
       </form>
-      <span class="login-version">AgentHarness Forge · v0.2</span>
+      <span class="login-version">AgentHarness Forge · 企业版前端预览</span>
     </section>
   </div>
 </template>

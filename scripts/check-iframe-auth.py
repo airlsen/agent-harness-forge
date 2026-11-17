@@ -118,7 +118,7 @@ async def browser_test(port):
             frame = page.frame_locator("iframe")
             await expect(frame.get_by_label("密码", exact=True)).to_be_visible()
             await frame.get_by_label("密码", exact=True).fill(credentials["password"])
-            await frame.get_by_role("button", name="进入工作空间").click()
+            await frame.get_by_role("button", name="进入企业平台").click()
             await expect(frame.locator(".app-shell")).to_be_visible()
             attributes = [
                 {
@@ -138,12 +138,17 @@ async def browser_test(port):
                 print(
                     "PASS cookie-stripping HTTPS iframe logs into actual workspace using a preview header"
                 )
-                await frame.get_by_role("link", name="模型中心", exact=True).click()
+                await frame.get_by_role("link", name="平台管理", exact=True).click()
+                await (
+                    frame.locator(".enterprise-admin-tabs")
+                    .get_by_role("link", name="模型连接", exact=True)
+                    .click()
+                )
                 await expect(
-                    frame.get_by_role("heading", name="模型中心", exact=True)
+                    frame.get_by_role("heading", name="模型连接", exact=True)
                 ).to_be_visible()
                 print("PASS model-center protected APIs work without any cookie")
-                await frame.get_by_role("link", name="治理与设置", exact=True).click()
+                await frame.get_by_role("link", name="企业策略", exact=True).click()
                 await frame.get_by_role("button", name="保存策略", exact=True).click()
                 await expect(frame.get_by_role("alert")).to_contain_text("策略已保存")
                 print("PASS actual CSRF-protected policy save works without cookies")

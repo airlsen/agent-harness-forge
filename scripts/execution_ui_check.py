@@ -22,7 +22,7 @@ async def check_execution_ui(
             await page.goto(base + "/agent/chat")
             await page.get_by_label("账号", exact=True).fill(username)
             await page.get_by_label("密码", exact=True).fill(password)
-            await page.get_by_role("button", name="进入工作空间").click()
+            await page.get_by_role("button", name="进入企业平台").click()
             await page.wait_for_selector(".app-shell")
             if cookie_blocked:
                 assert not await page.context.cookies()
@@ -45,7 +45,7 @@ async def check_execution_ui(
             ).to_be_visible()
             sid = page.url.rsplit("/", 1)[-1]
             assert sid.isdigit(), page.url
-            await page.get_by_role("link", name="场景中心", exact=True).click()
+            await page.get_by_role("link", name="企业场景", exact=True).click()
             await (
                 page.locator(".recent-item>a")
                 .filter(has_text="HOLD reconnect fixture")
@@ -77,7 +77,15 @@ async def check_execution_ui(
             passed(
                 "real tool approval card controls actual workspace_write and persists the tool card"
             )
-            await page.get_by_role("button", name="result.md").click()
+            await expect(page.locator(".context-panel")).to_have_count(0)
+            await page.get_by_role("button", name="查看结果", exact=True).click()
+            async with page.expect_response(
+                lambda response: "/file?path=result.md" in response.url
+            ) as file_response:
+                await page.get_by_role("button", name="result.md").click()
+            fetched_file = await file_response.value
+            await fetched_file.finished()
+            assert fetched_file.status == 200
             await expect(page.get_by_role("dialog", name="产物预览")).to_be_visible()
             await expect(page.locator(".file-preview>pre")).to_contain_text(
                 "# API integration fixture"
@@ -93,6 +101,7 @@ async def check_execution_ui(
             passed(
                 "actual generated file opens in preview and downloads with correct content"
             )
+            await page.get_by_role("button", name="关闭会话详情").click()
             await page.get_by_label("任务输入").fill("WRITE denied fixture")
             await page.get_by_role("button", name="发送任务", exact=True).click()
             await expect(
@@ -145,6 +154,143 @@ async def check_execution_ui(
             )
             passed(
                 "trajectory filtering, raw event expansion and authenticated JSON export work end to end"
+            )
+            # Enterprise first-batch journeys, still against real control plane/Runner
+            # and an explicitly isolated protocol fixture, never a substituted UI API.
+            await page.goto(base + "/agent/workbench")
+            await expect(page.locator(".workbench-page")).to_be_visible()
+            await page.get_by_role("button", name="选择场景", exact=True).click()
+            await (
+                page.locator(".scenario-popover>button")
+                .filter(has_text="文档与报告")
+                .click()
+            )
+            await page.locator("input[type=file]").set_input_files(
+                {
+                    "name": "notes.txt",
+                    "mimeType": "text/plain",
+                    "buffer": b"Isolated enterprise UI fixture",
+                }
+            )
+            await page.get_by_label("任务输入").fill(
+                "WRITE enterprise workbench fixture"
+            )
+            await page.get_by_role("button", name="发送任务", exact=True).click()
+            await expect(page.get_by_role("button", name="允许本次")).to_be_visible()
+            home_sid = page.url.rsplit("/", 1)[-1]
+            assert home_sid.isdigit() and home_sid != sid
+            await expect(page.locator(".user-message-text")).to_contain_text(
+                "Isolated enterprise UI fixture"
+            )
+            await expect(page.locator(".context-panel")).to_have_count(0)
+            passed(
+                "workbench composer submits real text attachments and opens the created conversation"
+            )
+            await page.set_viewport_size({"width": 390, "height": 844})
+            await page.get_by_role("button", name="查看过程", exact=True).click()
+            await expect(page.locator(".context-panel")).to_have_attribute(
+                "aria-modal", "true"
+            )
+            await expect(page.locator(".chat-primary")).to_have_attribute("inert", "")
+            for _ in range(8):
+                await page.keyboard.press("Tab")
+                assert await page.evaluate(
+                    "document.querySelector('.context-panel').contains(document.activeElement)"
+                )
+            await page.keyboard.press("Escape")
+            await expect(page.locator(".context-panel")).to_have_count(0)
+            await page.get_by_role("button", name="允许本次").click()
+            await expect(page.locator(".message-row.tool")).to_contain_text("执行完成")
+            await expect(page.locator(".session-result-receipt")).to_be_visible()
+            await page.locator(".session-result-receipt").click()
+            await expect(page.locator(".artifact-file")).to_contain_text("result.md")
+            await page.keyboard.press("Escape")
+            passed(
+                "mobile process drawer traps focus; approval still writes and results open only on request"
+            )
+            await page.set_viewport_size({"width": 1440, "height": 1000})
+            await page.get_by_label("任务输入").fill(
+                "Unsent draft for this conversation only"
+            )
+            await page.locator(
+                f'.enterprise-recent-item>a[href="/agent/chat/{sid}"]'
+            ).click()
+            await expect(page.locator(".chat-title>strong")).to_contain_text(
+                "HOLD reconnect fixture"
+            )
+            await expect(page.get_by_label("任务输入")).to_have_value("")
+            await page.get_by_role("link", name="我的会话", exact=True).click()
+            await page.get_by_label("搜索会话").fill("enterprise workbench fixture")
+            await expect(page.locator(".conversation-table-row")).to_have_count(1)
+            await expect(
+                page.locator(".conversation-table-row .session-state")
+            ).to_have_text("可继续")
+            await (
+                page.locator(".conversation-table-actions")
+                .get_by_role("link", name="打开", exact=True)
+                .click()
+            )
+            await expect(page.locator(".message-row.user")).to_have_count(1)
+            await expect(page.get_by_label("任务输入")).to_have_value("")
+            passed(
+                "real conversation search shows settled-not-success state and does not leak unsent text into reopened sessions"
+            )
+            await page.get_by_label("任务输入").fill(
+                "HOLD navigation during submit fixture"
+            )
+
+            async def delay_turn(route):
+                import asyncio
+
+                await asyncio.sleep(0.6)
+                await route.continue_()
+
+            await page.route("**/api/agent/sessions/*/turns", delay_turn)
+            async with page.expect_response(
+                lambda response: (
+                    "/turns" in response.url and response.request.method == "POST"
+                )
+            ):
+                await page.get_by_role("button", name="发送任务", exact=True).click()
+                await page.locator(".enterprise-new-chat").click()
+            await page.unroute("**/api/agent/sessions/*/turns", delay_turn)
+            await expect(page).to_have_url(base + "/agent/chat")
+            await expect(page.locator(".message-row")).to_have_count(0)
+            await expect(page.get_by_label("任务输入")).to_have_value("")
+            passed(
+                "late in-flight turn receipt cannot attach text or redirect a newly created draft"
+            )
+            await page.goto(base + "/agent/conversations")
+            await page.get_by_label("搜索会话").fill("enterprise workbench fixture")
+            await page.get_by_role("button", name="刷新会话").click()
+            # The HOLD turn is accepted in the background and settles independently.
+            await expect(
+                page.locator(".conversation-table-row .session-state")
+            ).to_have_text("执行中")
+            await expect(
+                page.locator(".conversation-table-actions button")
+            ).to_be_disabled()
+            await (
+                page.locator(".conversation-table-actions")
+                .get_by_role("link", name="打开", exact=True)
+                .click()
+            )
+            await expect(page.locator(".message-row.assistant")).to_have_count(
+                2, timeout=10000
+            )
+            await page.get_by_role("link", name="我的会话", exact=True).click()
+            await page.get_by_label("搜索会话").fill("enterprise workbench fixture")
+            await expect(
+                page.locator(".conversation-table-actions button")
+            ).to_be_enabled()
+            await page.locator(".conversation-table-actions button").click()
+            await expect(
+                page.get_by_role("dialog", name="归档会话确认")
+            ).to_be_visible()
+            await page.get_by_role("button", name="确认归档", exact=True).click()
+            await expect(page.locator(".conversation-table-row")).to_have_count(0)
+            passed(
+                "running sessions cannot be archived; settled-session confirmation really archives the record"
             )
             assert not errors, errors
             passed("execution journeys produce no browser JavaScript exceptions")

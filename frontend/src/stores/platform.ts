@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { api, post, setCsrf, setPreviewSession } from '../api/client';
 import type { Conversation, ModelConnection, RuntimeStatus, Scenario, Tool } from '../types/platform';
+import { isAvailableScenario } from '../utils/presentation';
 
 export const usePlatform = defineStore('platform', {
   state: () => ({
@@ -16,6 +17,10 @@ export const usePlatform = defineStore('platform', {
     loading: false,
     notice: null as null | { message: string; type: 'success' | 'error' | 'info' },
   }),
+  getters: {
+    availableScenarios: (state) => state.scenarios.filter(isAvailableScenario),
+    regularConversations: (state) => state.conversations.filter((item) => !item.isTest),
+  },
   actions: {
     toast(message: string, type: 'success' | 'error' | 'info' = 'success') {
       this.notice = { message, type };
@@ -99,7 +104,9 @@ export const usePlatform = defineStore('platform', {
       this.scenarios = await api<Scenario[]>('/agent-scenarios');
     },
     async refreshSessions() {
-      this.conversations = (await api<{ items: Conversation[] }>('/agent/sessions')).items;
+      const identity = this.user?.username;
+      const result = await api<{ items: Conversation[] }>('/agent/sessions');
+      if (this.authenticated && this.user?.username === identity) this.conversations = result.items;
     },
     async refreshRuntime() {
       this.runtime = await api<RuntimeStatus>('/runtime/status');

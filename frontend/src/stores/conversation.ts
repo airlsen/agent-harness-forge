@@ -29,13 +29,14 @@ export const useConversation = defineStore('conversation', {
     selectedScenarioId: null as number | null,
     input: '',
     draftAttachments: [] as { name: string; content: string }[],
+    draftRevision: 0,
     liveText: '',
     sending: false,
     loading: false,
     runError: '',
     connectionWarning: '',
-    panel: 'context' as 'context' | 'trajectory' | 'files',
-    panelOpen: window.innerWidth >= 1280,
+    panel: 'files' as 'context' | 'trajectory' | 'files',
+    panelOpen: false,
   }),
   getters: { running: (state) => state.sending || state.current?.status === 'running' },
   actions: {
@@ -45,6 +46,7 @@ export const useConversation = defineStore('conversation', {
     },
     newConversation(scenarioId?: number) {
       ++openGeneration;
+      ++this.draftRevision;
       this.disconnect();
       this.current = null;
       this.messages = [];
@@ -56,16 +58,28 @@ export const useConversation = defineStore('conversation', {
       this.connectionWarning = '';
       this.sending = false;
       this.loading = false;
-      if (scenarioId) this.selectedScenarioId = scenarioId;
+      this.input = '';
+      this.draftAttachments = [];
+      this.panelOpen = false;
+      this.panel = 'files';
+      this.selectedScenarioId = scenarioId ?? usePlatform().availableScenarios[0]?.id ?? null;
     },
     async open(id: number) {
       const generation = ++openGeneration;
+      ++this.draftRevision;
       this.disconnect();
+      this.input = '';
+      this.draftAttachments = [];
+      this.sending = false;
       this.loading = true;
       this.liveText = '';
       this.runError = '';
       this.connectionWarning = '';
       this.files = [];
+      this.current = null;
+      this.messages = [];
+      this.events = [];
+      this.approvals = [];
       try {
         const detail = await api<SessionDetail>(`/agent/sessions/${id}`);
         const events = await trajectory(id, detail.lastEventSeq);
@@ -94,32 +108,44 @@ export const useConversation = defineStore('conversation', {
     async submit(): Promise<number | null> {
       const platform = usePlatform();
       if (this.running || (!this.input.trim() && !this.draftAttachments.length)) return null;
-      if (!platform.connection?.configured) throw new Error('模型未配置，请先到模型中心保存真实模型连接');
+      if (!platform.connection?.configured) throw new Error('模型尚未连接，请由管理员在「模型连接」完成配置');
       const scenarioId =
         platform.scenarios.find((scenario) => scenario.id === this.selectedScenarioId)?.id ??
-        platform.scenarios[0]?.id;
+        platform.availableScenarios[0]?.id;
       if (!scenarioId) throw new Error('请先选择一个场景');
       const message = [
         this.input.trim(),
         ...this.draftAttachments.map((file) => `\n附件：${file.name}\n\`\`\`text\n${file.content}\n\`\`\``),
       ].join('\n');
       if (message.length > 64000) throw new Error('任务与文本附件合计不能超过 64000 字符');
+      const generation = openGeneration;
       this.sending = true;
       this.runError = '';
       this.connectionWarning = '';
       this.liveText = '';
       try {
-        if (!this.current) this.current = await post<SessionDetail>('/agent/sessions', { scenarioId });
-        const receipt = await post(`/agent/sessions/${this.current.id}/turns`, { message });
+        const session = this.current ?? (await post<SessionDetail>('/agent/sessions', { scenarioId }));
+        // A navigation/new draft during an in-flight create must never attach its receipt
+        // or text to another conversation. Backend execution, once accepted, continues.
+        if (generation !== openGeneration) {
+          await platform.refreshSessions();
+          return null;
+        }
+        this.current = session;
+        const receipt = await post(`/agent/sessions/${session.id}/turns`, { message });
+        if (generation !== openGeneration) {
+          await platform.refreshSessions();
+          return null;
+        }
         this.messages.push({ id: receipt.messageId, role: 'user', content: message, meta: {} });
         this.input = '';
         this.draftAttachments = [];
         this.current.status = 'running';
-        this.follow(this.current.id, receipt.cursor);
+        this.follow(session.id, receipt.cursor);
         await platform.refreshSessions();
-        return this.current.id;
+        return generation === openGeneration ? session.id : null;
       } finally {
-        this.sending = false;
+        if (generation === openGeneration) this.sending = false;
       }
     },
     follow(id: number, after: number) {

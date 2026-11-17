@@ -1,6 +1,15 @@
 <script setup lang="ts">
 withDefaults(defineProps<{ name: string; size?: number }>(), { size: 20 });
 const paths: Record<string, string> = {
+  home: 'M3 10l9-7 9 7v11h-6v-7H9v7H3V10z',
+  building: 'M4 21V3h12v18 M16 9h4v12 M8 7h4 M8 11h4 M8 15h4 M8 21v-3h4v3 M2 21h20',
+  users:
+    'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75',
+  menu: 'M4 6h16 M4 12h16 M4 18h16',
+  more: 'M5 12h.01 M12 12h.01 M19 12h.01',
+  pause: 'M8 5v14 M16 5v14',
+  arrowDown: 'M12 5v14 M6 13l6 6 6-6',
+  external: 'M15 3h6v6 M10 14L21 3 M21 14v7H3V3h7',
   grid: 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
   message: 'M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2V11.5a9.5 9.5 0 1 1 19 0z M7 9h9 M7 13h6',
   sparkles: 'M12 3l2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4L12 3z M20 2v4 M18 4h4',

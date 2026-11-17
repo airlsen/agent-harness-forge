@@ -32,7 +32,7 @@ function status(value: string) {
   return (
     (
       {
-        idle: '空闲',
+        idle: '可继续',
         running: '执行中',
         error: '执行异常',
         interrupted: '已中断',
@@ -47,8 +47,8 @@ function status(value: string) {
     <div class="page-heading">
       <div>
         <div class="eyebrow">AUDIT & OBSERVABILITY</div>
-        <h1>每次执行，都有迹可循。</h1>
-        <p>从场景版本到工具结果，查看工作空间内实际发生的任务与事件。</p>
+        <h1>运行审计</h1>
+        <p>从场景版本到工具结果，查看当前部署内实际发生的任务与事件。</p>
       </div>
       <button class="button secondary" :disabled="loading" @click="load">
         <Icon name="refresh" :size="16" />刷新记录
@@ -78,7 +78,7 @@ function status(value: string) {
             placeholder="搜索会话、场景或 ID" /></label
         ><select v-model="filter" aria-label="筛选会话状态">
           <option value="all">全部状态</option>
-          <option value="idle">空闲</option>
+          <option value="idle">可继续</option>
           <option value="running">执行中</option>
           <option value="error">执行异常</option>
           <option value="archived">已归档</option>
@@ -89,7 +89,7 @@ function status(value: string) {
         <Icon name="activity" :size="34" />
         <h3>{{ query ? '没有匹配的记录' : '真实工作，从第一项任务开始' }}</h3>
         <p>创建会话并执行后，消息、工具调用与运行时轨迹将在这里持久化留存。</p>
-        <RouterLink v-if="!query" to="/agent/chat" class="button secondary"
+        <RouterLink v-if="!query" to="/agent/workbench" class="button secondary"
           >前往工作台<Icon name="arrow" :size="14"
         /></RouterLink>
       </div>

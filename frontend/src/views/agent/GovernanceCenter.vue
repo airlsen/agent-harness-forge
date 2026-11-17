@@ -40,10 +40,10 @@ async function save() {
     <div class="page-heading">
       <div>
         <div class="eyebrow">GOVERNANCE & SETTINGS</div>
-        <h1>让能力，在边界内运行。</h1>
+        <h1>企业策略</h1>
         <p>治理不是阻碍执行，而是让每次执行都有清晰的授权与责任。</p>
       </div>
-      <span class="tag soft"><Icon name="shield" :size="13" />工作空间策略</span>
+      <span class="tag soft"><Icon name="shield" :size="13" />平台策略</span>
     </div>
     <div class="policy-intro">
       <Icon name="info" :size="18" /><span
@@ -56,10 +56,10 @@ async function save() {
           <Icon name="shield" :size="20" />
           <h2>工具与审批</h2>
         </div>
-        <p class="section-description">场景声明与工作空间策略取交集，未被同时授权的工具一律拒绝。</p>
+        <p class="section-description">场景声明与平台策略取交集，未被同时授权的工具一律拒绝。</p>
         <div class="switch-setting">
           <div>
-            <strong>写入工作区前需要审批</strong>
+            <strong>写入会话目录前需要审批</strong>
             <p>生成或覆盖文本产物时，逐次等待用户批准；超时默认拒绝。</p>
           </div>
           <button
@@ -172,7 +172,7 @@ async function save() {
             </div>
             <div>
               <dt>认证方式</dt>
-              <dd>本地工作空间账号</dd>
+              <dd>本地管理员账号</dd>
             </div>
           </dl>
         </section>

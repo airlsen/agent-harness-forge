@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-"""真实业务 UI 冒烟：无模型配置时不伪造对话；只临时创建/删除一个场景。
+"""企业版第一批 UI 回归：正式 SPA/API，无模型、不替换 API、不伪造资源。
 
-需 Playwright Chromium。凭据从受保护文件读取，不打印、不截图密码。
+只临时复制/编辑/软删除一个测试场景；凭据不打印，不保存登录密码截图。
+执行链路另由 check-business-api.py --browser 的隔离协议夹具验收。
 """
 
 import argparse
 import asyncio
 import json
 from pathlib import Path
-import re
+import time
 from playwright.async_api import async_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument("--base", default="http://127.0.0.1:5173")
 parser.add_argument("--credentials", default=str(ROOT / "data/admin-login.txt"))
-parser.add_argument("--output", default=str(ROOT / "data/business-checks"))
+parser.add_argument("--output", default=str(ROOT / "data/enterprise-checks"))
 args = parser.parse_args()
 credentials = dict(
     line.split("=", 1) for line in Path(args.credentials).read_text().splitlines()
@@ -28,16 +29,16 @@ checks = []
 def check(name, condition=True):
     assert condition, name
     checks.append(name)
-    print("PASS", name)
+    print("PASS", name, flush=True)
 
 
 async def main():
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=True, args=["--no-sandbox"])
-        page = await browser.new_page(
-            viewport={"width": 1440, "height": 1000}, device_scale_factor=1
-        )
+        page = await browser.new_page(viewport={"width": 1440, "height": 1000})
         errors, failed_api = [], []
+        fixture_id = None
+        fixture_name = f"企业前端回归-{int(time.time())}"
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.on(
             "response",
@@ -47,102 +48,197 @@ async def main():
                 else None
             ),
         )
+
+        async def go(path):
+            await page.goto(args.base + path)
+            await expect(page.locator(".enterprise-shell")).to_be_visible()
+
+        async def screenshot(name):
+            await page.screenshot(path=str(destination / name))
+
         try:
-            await page.goto(args.base + "/agent/chat")
+            await page.goto(args.base + "/")
             await expect(page.get_by_role("heading", name="欢迎回来")).to_be_visible()
-            await page.screenshot(path=str(destination / "login-desktop.png"))
-            check("built SPA deep link serves login, not Vite/POC")
+            await screenshot("login-desktop.png")
             await page.get_by_label("密码", exact=True).fill("invalid-test-password")
-            await page.get_by_role("button", name="进入工作空间").click()
+            await page.get_by_role("button", name="进入企业平台").click()
             await expect(
                 page.get_by_role("alert").filter(has_text="账号或密码不正确")
             ).to_be_visible()
             check("invalid credentials produce a visible error")
             await page.get_by_label("账号", exact=True).fill(credentials["username"])
             await page.get_by_label("密码", exact=True).fill(credentials["password"])
-            await page.get_by_role("button", name="进入工作空间").click()
-            await page.wait_for_selector(".app-shell")
+            await page.get_by_role("button", name="进入企业平台").click()
+            await expect(page.locator(".workbench-page")).to_be_visible()
+            await expect(page.locator(".workbench-scene-card")).to_have_count(4)
             await expect(page.locator(".connect-model-prompt")).to_contain_text(
-                "模型未配置"
+                "模型尚未连接"
             )
-            await expect(page.locator(".primary-navigation .nav-count")).to_have_text(
-                "4"
+            await expect(
+                page.get_by_role("button", name="发送任务", exact=True)
+            ).to_be_disabled()
+            await screenshot("workbench-desktop.png")
+            check(
+                "root opens enterprise workbench with four real templates and honest model state"
             )
-            await page.screenshot(path=str(destination / "chat-desktop.png"))
-            check("login opens real routed workbench with four scenarios")
+            await expect(page.locator(".enterprise-sidebar")).not_to_contain_text(
+                "我的工作空间"
+            )
+            await expect(page.locator(".primary-navigation>a")).to_have_count(4)
+            check(
+                "shared-resource navigation replaces personal workspace and infrastructure menus"
+            )
             await page.reload()
-            await expect(page.locator(".app-shell")).to_be_visible()
-            check("HttpOnly authenticated session survives SPA reload")
-            await page.get_by_role("button", name="一起解决一个技术问题").click()
+            await expect(page.locator(".workbench-page")).to_be_visible()
+            check("authenticated session survives SPA reload")
+            await page.get_by_role("button", name="查看版本与能力说明").click()
+            await expect(
+                page.get_by_role("dialog", name="企业平台使用指南")
+            ).to_contain_text("尚未接入员工身份")
+            await page.keyboard.press("Tab")
+            check(
+                "guide keyboard focus stays in modal",
+                await page.evaluate(
+                    "Boolean(document.activeElement.closest('[role=dialog]'))"
+                ),
+            )
+            await page.keyboard.press("Escape")
+            await expect(page.get_by_role("dialog")).to_have_count(0)
+            check(
+                "version guide discloses single-admin boundary and closes with Escape"
+            )
+            await page.get_by_role("button", name="选择场景").click()
+            await (
+                page.locator(".scenario-popover>button")
+                .filter(has_text="代码与研发")
+                .click()
+            )
             await expect(page.locator(".scenario-trigger")).to_contain_text(
                 "代码与研发"
             )
-            await expect(page.get_by_label("任务输入")).to_have_value(
-                re.compile("技术问题")
+            await page.get_by_label("任务输入").fill("请分析一个技术问题")
+            await page.locator("input[type=file]").set_input_files(
+                {
+                    "name": "notes.txt",
+                    "mimeType": "text/plain",
+                    "buffer": b"real attachment content",
+                }
             )
-            check("task suggestion actually selects scenario and fills composer")
+            await expect(page.locator(".attachment-chips")).to_contain_text("notes.txt")
+            await page.get_by_role("button", name="移除附件 notes.txt").click()
+            await expect(page.locator(".attachment-chips")).to_have_count(0)
+            check(
+                "shared composer selects actual scenario, reads and removes text attachment"
+            )
             await page.get_by_role("button", name="发送任务", exact=True).click()
             await expect(page).to_have_url(args.base + "/agent/models")
-            await expect(page.locator(".page-heading .tag")).to_contain_text(
-                "模型未配置"
-            )
+            await expect(
+                page.get_by_role("heading", name="模型连接", exact=True)
+            ).to_be_visible()
             await expect(
                 page.get_by_role("button", name="测试已保存的连接")
             ).to_be_disabled()
-            check("unconfigured model directs user to setup, never fabricates success")
+            check("unconfigured model goes to real setup; never fabricates execution")
             await page.get_by_role("button", name="DeepSeek", exact=True).click()
             await expect(page.get_by_label("Base URL")).to_have_value(
                 "https://api.deepseek.com"
             )
-            await expect(page.get_by_label("模型 ID")).to_have_value("deepseek-chat")
-            await page.get_by_role("link", name="场景中心", exact=True).click()
-            await page.get_by_role("link", name="模型中心", exact=True).click()
-            await expect(page.get_by_label("Base URL")).to_have_value("")
-            check("model preset is editable draft only until explicitly saved")
-            await page.screenshot(path=str(destination / "models-desktop.png"))
-            await page.get_by_role("link", name="场景中心", exact=True).click()
-            await expect(page.locator(".scenario-card")).to_have_count(4)
-            await page.screenshot(path=str(destination / "scenarios-desktop.png"))
+            await page.get_by_role("link", name="企业场景", exact=True).click()
+            await page.get_by_role("link", name="平台管理", exact=True).click()
             await (
-                page.locator(".scenario-card")
-                .first.get_by_role("button", name="复制", exact=True)
+                page.locator(".enterprise-admin-tabs")
+                .get_by_role("link", name="模型连接", exact=True)
                 .click()
             )
+            await expect(page.get_by_label("Base URL")).to_have_value("")
+            check("model preset stays an unsaved draft until explicit save")
+            await screenshot("models-desktop.png")
+            await page.get_by_role("link", name="企业场景", exact=True).click()
+            await expect(page.locator(".scenario-card")).to_have_count(4)
+            await expect(
+                page.get_by_role("button", name="新建场景", exact=True)
+            ).to_have_count(0)
+            await (
+                page.locator(".scenario-card")
+                .first.get_by_role("button", name="查看详情")
+                .click()
+            )
+            await expect(page.get_by_role("dialog", name="场景详情")).to_contain_text(
+                "工作规范"
+            )
+            await page.keyboard.press("Escape")
+            await screenshot("scenarios-desktop.png")
+            check(
+                "scenario catalogue separates use from maintenance and exposes real details"
+            )
+            await page.get_by_role("button", name="维护场景", exact=True).click()
+            async with page.expect_response(
+                lambda response: (
+                    response.url.endswith("/copy") and response.request.method == "POST"
+                )
+            ) as response:
+                await (
+                    page.locator(".scenario-card")
+                    .first.get_by_role("button", name="复制为草稿")
+                    .click()
+                )
+            fixture_id = (await (await response.value).json())["data"]["id"]
             await expect(page.locator(".scenario-card")).to_have_count(1)
             card = page.locator(".scenario-card").first
             await card.get_by_role("button", name="编辑", exact=True).click()
-            await expect(page.get_by_role("dialog", name="场景编辑器")).to_be_visible()
-            await page.get_by_label("场景名称").fill("浏览器回归验证场景")
+            await page.get_by_label("场景名称").fill(fixture_name)
             await page.get_by_label("一句话介绍").fill(
-                "只用于界面 CRUD 回归，验收后删除。"
+                "只用于真实界面 CRUD 回归，验收后删除。"
             )
             await page.get_by_label("角色、目标与工作方式").fill(
-                "这是一条 UI 回归验证提示词，不是已执行的模型任务。"
+                "这是企业前端回归提示词，不是已执行的模型任务。"
             )
             await page.get_by_role("button", name="保存草稿", exact=True).click()
-            await expect(
-                page.get_by_role("dialog", name="场景编辑器")
-            ).not_to_be_visible()
-            await expect(card.get_by_role("heading")).to_have_text("浏览器回归验证场景")
-            await expect(card.get_by_role("button", name="版本 v2")).to_be_visible()
-            check("official-template copy and drawer edit persist a second version")
+            await expect(page.get_by_role("dialog", name="场景编辑器")).to_have_count(0)
+            await expect(card.get_by_role("heading")).to_have_text(fixture_name)
             await card.get_by_role("button", name="版本 v2").click()
             await expect(page.locator(".version-entry")).to_have_count(2)
             await page.locator(".version-entry").first.locator("summary").click()
             await expect(
                 page.locator(".version-entry").first.locator("pre")
-            ).to_contain_text("UI 回归验证提示词")
-            await page.get_by_role("button", name="关闭版本历史").click()
-            check("version drawer displays immutable recorded payloads")
-            await card.get_by_role("button", name="使用场景").click()
-            await expect(page.locator(".scenario-trigger")).to_contain_text(
-                "浏览器回归验证场景"
+            ).to_contain_text("企业前端回归提示词")
+            await page.keyboard.press("Escape")
+            check(
+                "template copy, maintenance edit and immutable version history persist"
             )
-            check("use-scenario action connects management page to chat workbench")
-            await page.get_by_role("link", name="场景中心", exact=True).click()
-            await page.get_by_label("搜索场景").fill("浏览器回归验证场景")
+            await page.get_by_role("button", name="返回使用目录").click()
+            await expect(page.locator(".scenario-card")).to_have_count(4)
+            await expect(page.locator(".scenario-grid")).not_to_contain_text(
+                fixture_name
+            )
+            check(
+                "maintenance drafts do not masquerade as published enterprise scenarios"
+            )
+            await page.get_by_role("button", name="维护场景", exact=True).click()
+            await page.get_by_label("搜索场景").fill(fixture_name)
+            await page.get_by_role("button", name="预览草稿", exact=True).click()
+            await expect(page.locator(".scenario-trigger")).to_contain_text(
+                fixture_name
+            )
+            await expect(page.locator(".context-panel")).to_have_count(0)
+            await page.get_by_role("button", name="查看结果", exact=True).click()
+            await expect(page.locator(".context-panel")).to_be_visible()
+            await expect(page.locator(".panel-empty")).to_contain_text("结果会留在这里")
+            await page.get_by_role("button", name="关闭会话详情").click()
+            await page.get_by_role("button", name="查看过程", exact=True).click()
+            await expect(page.locator(".panel-empty")).to_contain_text(
+                "过程会在执行时出现"
+            )
+            await page.keyboard.press("Escape")
+            await expect(page.locator(".context-panel")).to_have_count(0)
+            check(
+                "conversation detail is on-demand; empty results/process never claim success"
+            )
+            await page.get_by_role("link", name="企业场景", exact=True).click()
+            await page.get_by_role("button", name="维护场景", exact=True).click()
+            await page.get_by_label("搜索场景").fill(fixture_name)
             await page.get_by_role(
-                "button", name="删除场景 浏览器回归验证场景", exact=True
+                "button", name=f"删除场景 {fixture_name}", exact=True
             ).click()
             await expect(
                 page.get_by_role("dialog", name="删除场景确认")
@@ -151,90 +247,194 @@ async def main():
             await expect(
                 page.get_by_role("heading", name="没有找到匹配的场景")
             ).to_be_visible()
-            check("delete confirmation and search empty state both work")
-            await page.get_by_role("link", name="能力中心", exact=True).click()
-            await expect(page.locator(".plugin-card")).to_have_count(2)
-            await page.screenshot(path=str(destination / "capabilities-desktop.png"))
-            await page.get_by_role("button", name="组件详情").first.click()
+            fixture_id = None
+            check("confirmed soft delete works and leaves a real search empty state")
+            await page.get_by_role("link", name="企业能力中心", exact=True).click()
+            await expect(page.locator(".enterprise-tool-card")).to_have_count(4)
+            await expect(page.locator(".plugin-card")).to_have_count(0)
+            await page.get_by_label("搜索能力").fill("nonexistent-tool")
+            await expect(
+                page.get_by_role("heading", name="没有匹配的能力")
+            ).to_be_visible()
+            await page.get_by_role("button", name="清除搜索").click()
+            await page.get_by_role("button", name="查看生成文本产物详情").click()
+            await expect(page.get_by_role("dialog", name="工具详情")).to_contain_text(
+                "默认需要确认"
+            )
+            await expect(page.locator(".related-scenario").first).to_be_visible()
+            await page.keyboard.press("Escape")
+            check(
+                "public tools support discovery, search, readable boundaries and related scenarios"
+            )
+            await screenshot("capabilities-desktop.png")
+            await page.locator(".runtime-details>summary").click()
+            await expect(page.locator(".runtime-component-list>article")).to_have_count(
+                2
+            )
+            await page.get_by_role("button", name="组件详情", exact=True).first.click()
             await expect(page.get_by_role("dialog", name="组件详情")).to_be_visible()
-            await page.get_by_role("button", name="关闭组件详情").click()
-            await page.get_by_role("button", name=re.compile("内置工具")).click()
-            await expect(page.locator(".tools-list>article")).to_have_count(4)
-            await page.get_by_role("button", name=re.compile("Skill 库")).click()
+            await page.keyboard.press("Escape")
+            check(
+                "SDK/runtime components are advanced information, not fake installable business plugins"
+            )
+            await page.get_by_role("button", name="Skills 技能 0", exact=True).click()
             await expect(page.locator(".capability-unavailable")).to_contain_text(
                 "尚未接入"
             )
-            await page.get_by_role("button", name=re.compile("MCP 服务")).click()
+            await page.get_by_role("button", name="MCP 服务 0", exact=True).click()
             await expect(page.locator(".capability-unavailable")).to_contain_text(
-                "没有已连接的 MCP"
+                "尚未接入"
             )
+            await page.reload()
+            await expect(page.locator(".capability-unavailable")).to_contain_text("MCP")
+            await expect(page.locator(".capability-unavailable button")).to_have_count(
+                0
+            )
+            await screenshot("mcp-desktop.png")
             check(
-                "capability directory is functional and labels Skill/MCP as unavailable"
+                "Skill/MCP fetch real availability; deep-linked tab persists and no fake install action exists"
             )
-            await page.get_by_role("link", name="治理与设置", exact=True).click()
+            await go("/agent/conversations")
+            await expect(
+                page.get_by_role("heading", name="我的会话", exact=True)
+            ).to_be_visible()
+            await expect(page.locator(".preview-inline-note")).to_contain_text(
+                "隔离尚未接入"
+            )
+            await page.get_by_label("搜索会话").fill("nothing")
+            await expect(
+                page.get_by_role("heading", name="没有匹配的会话")
+            ).to_be_visible()
+            await page.get_by_role("button", name="清除筛选").click()
+            await expect(page.locator(".conversation-table-row")).to_have_count(0)
+            check(
+                "conversation centre uses real empty data and honestly discloses isolation boundary"
+            )
+            await go("/agent/chat/not-a-valid-id")
+            await expect(page.locator(".session-load-error")).to_contain_text(
+                "会话地址无效"
+            )
+            await expect(page.locator(".task-composer")).to_have_count(0)
+            await go("/agent/chat/99999999")
+            await expect(page.locator(".session-load-error")).to_be_visible()
+            check(
+                "invalid and missing session deep links show recoverable errors, not a misleading new chat"
+            )
+            await go("/agent/manage")
+            await (
+                page.locator(".enterprise-admin-tabs")
+                .get_by_role("link", name="企业策略", exact=True)
+                .click()
+            )
             await expect(
                 page.get_by_role("switch", name="写入前需要审批")
             ).to_have_attribute("aria-checked", "true")
-            await expect(page.locator(".policy-tool-list input:checked")).to_have_count(
-                4
-            )
-            await page.screenshot(path=str(destination / "governance-desktop.png"))
             await page.get_by_role("button", name="保存策略").click()
             await expect(page.get_by_role("alert")).to_contain_text("策略已保存")
-            check("real governance policy loads and can be persisted with CSRF")
-            await page.get_by_role("link", name="审计中心", exact=True).click()
+            check("existing CSRF-protected governance still persists actual policy")
+            await (
+                page.locator(".enterprise-admin-tabs")
+                .get_by_role("link", name="运行审计", exact=True)
+                .click()
+            )
             await expect(
                 page.get_by_role("heading", name="真实工作，从第一项任务开始")
             ).to_be_visible()
-            await page.screenshot(path=str(destination / "audit-desktop.png"))
-            check("no model tasks means no invented audit activity")
-            for path, name in [
-                ("/agent/chat", "chat"),
-                ("/agent/scenarios", "scenarios"),
-                ("/agent/models", "models"),
-                ("/agent/governance", "governance"),
-                ("/agent/capabilities", "capabilities"),
-                ("/agent/audit", "audit"),
-            ]:
-                await page.set_viewport_size({"width": 390, "height": 844})
-                await page.goto(args.base + path)
-                await page.wait_for_selector(".app-shell")
-                await page.wait_for_timeout(180)
-                await page.screenshot(path=str(destination / f"{name}-mobile.png"))
-                overflow = await page.evaluate(
-                    'document.documentElement.scrollWidth > innerWidth || document.querySelector(".app-body").scrollWidth > document.querySelector(".app-body").clientWidth'
+            check("audit remains real and contains no invented model executions")
+            routes = [
+                ("workbench", "workbench"),
+                ("scenarios", "scenarios"),
+                ("capabilities", "capabilities"),
+                ("chat", "chat"),
+                ("conversations", "conversations"),
+                ("manage", "management"),
+                ("models", "models"),
+                ("governance", "governance"),
+                ("audit", "audit"),
+            ]
+            for width in [390, 768]:
+                await page.set_viewport_size(
+                    {"width": width, "height": 844 if width == 390 else 1024}
                 )
-                check(f"{name}: 390px layout has no horizontal overflow", not overflow)
+                for path, name in routes:
+                    await go("/agent/" + path)
+                    await page.wait_for_timeout(80)
+                    overflow = await page.evaluate(
+                        'document.documentElement.scrollWidth > innerWidth || document.querySelector(".enterprise-body").scrollWidth > document.querySelector(".enterprise-body").clientWidth'
+                    )
+                    check(
+                        f"{name}: {width}px viewport has no horizontal overflow",
+                        not overflow,
+                    )
+                    if width == 390:
+                        await screenshot(f"{name}-mobile.png")
+            await page.set_viewport_size({"width": 390, "height": 844})
+            await go("/agent/workbench")
+            await expect(page.locator(".enterprise-sidebar")).to_have_attribute(
+                "inert", ""
+            )
+            await page.get_by_role("button", name="打开导航").click()
+            await expect(page.locator(".enterprise-sidebar")).to_have_class(
+                "enterprise-sidebar is-open"
+            )
+            for _ in range(17):
+                await page.keyboard.press("Tab")
+                assert await page.evaluate(
+                    "document.querySelector('.enterprise-sidebar').contains(document.activeElement)"
+                )
+            await page.keyboard.press("Escape")
+            await expect(page.get_by_role("button", name="打开导航")).to_be_focused()
+            check(
+                "mobile navigation has inert closed state, focus trap, Escape and focus return"
+            )
+            await page.get_by_role("button", name="打开导航").click()
+            await page.get_by_role("link", name="企业场景", exact=True).click()
+            await expect(page.locator(".enterprise-sidebar")).to_have_attribute(
+                "inert", ""
+            )
+            check("mobile navigation automatically closes after route selection")
+            await page.get_by_role("button", name="打开导航").click()
             await page.get_by_role("button", name="退出登录", exact=True).click()
             await expect(page.get_by_role("heading", name="欢迎回来")).to_be_visible()
-            check("mobile logout remains reachable and clears partitioned session")
-            check("no browser JS exceptions or API 5xx", not errors and not failed_api)
+            check("mobile logout is reachable and clears authentication")
+            check(
+                "no browser JavaScript exceptions or API 5xx",
+                not errors and not failed_api,
+            )
+            report = {
+                "result": "passed",
+                "scope": "actual single-admin deployment, no model, no API mocks; not multi-user acceptance",
+                "checks": len(checks),
+                "items": checks,
+                "errors": errors,
+                "serverErrors": failed_api,
+            }
+            (destination / "ui-report.json").write_text(
+                json.dumps(report, ensure_ascii=False, indent=2)
+            )
             print(
                 json.dumps(
                     {"checks": len(checks), "result": "passed"}, ensure_ascii=False
                 )
             )
-            (destination / "ui-report.json").write_text(
-                json.dumps(
-                    {
-                        "checks": len(checks),
-                        "result": "passed",
-                        "items": checks,
-                        "errors": errors,
-                        "serverErrors": failed_api,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
         except Exception:
-            # 若还在登录页，永不将真实密码保存为截图。
             if await page.locator("#password").count():
                 await page.locator("#password").fill("")
-            await page.screenshot(path=str(destination / "ui-failure.png"))
+            await screenshot("ui-failure.png")
             print("JS errors:", errors, "API server errors:", failed_api)
             raise
         finally:
+            if fixture_id:
+                # Only remove this test's exact copied resource, including on assertion failure.
+                await page.evaluate(
+                    """async (id) => {
+                    let preview = null; try { preview = JSON.parse(sessionStorage.getItem('forge.preview-session.v1') || 'null'); } catch {}
+                    const headers = preview?.token ? {'X-Forge-Session': preview.token} : {};
+                    const auth = (await (await fetch('/api/auth/session', {headers})).json()).data;
+                    if (auth.authenticated) await fetch('/api/agent-scenarios/' + id, {method:'DELETE', headers:{...headers,'X-Forge-CSRF':auth.csrfToken}});
+                }""",
+                    fixture_id,
+                )
             await browser.close()
 
 

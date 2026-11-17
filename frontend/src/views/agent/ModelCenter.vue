@@ -88,8 +88,8 @@ async function test() {
     <div class="page-heading">
       <div>
         <div class="eyebrow">MODEL CONNECTION</div>
-        <h1>模型中心</h1>
-        <p>模型是可替换的能力，工作空间与 Harness 始终属于你。</p>
+        <h1>模型连接</h1>
+        <p>统一配置平台模型出口，新会话共用连接，无需按账号重复设置。</p>
       </div>
       <span
         :class="[
