@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { usePlatform } from './stores/platform';
 import { useConversation } from './stores/conversation';
 import { sessionState } from './utils/presentation';
-import { trapTabKey } from './utils/focus';
 import Icon from './components/ForgeIcon.vue';
 import DialogShell from './components/DialogShell.vue';
 import LoginView from './views/LoginView.vue';
@@ -13,25 +12,6 @@ const app = usePlatform();
 const chat = useConversation();
 const route = useRoute();
 const router = useRouter();
-const mobileNavigation = ref(false);
-const compactMedia = window.matchMedia('(max-width: 900px)');
-const compact = ref(compactMedia.matches);
-const sidebar = ref<HTMLElement | null>(null);
-let previousNavigationFocus: HTMLElement | null = null;
-function resizeNavigation() {
-  compact.value = compactMedia.matches;
-  if (!compact.value) mobileNavigation.value = false;
-}
-watch(mobileNavigation, async (open) => {
-  if (open) {
-    previousNavigationFocus = document.activeElement as HTMLElement;
-    await nextTick();
-    sidebar.value?.focus();
-  } else {
-    await nextTick();
-    if (previousNavigationFocus?.isConnected) previousNavigationFocus.focus();
-  }
-});
 const help = ref(false);
 const adminRoutes = ['/agent/manage', '/agent/models', '/agent/governance', '/agent/audit'];
 const isAdministration = computed(() => adminRoutes.includes(route.path));
@@ -51,13 +31,11 @@ const avatar = computed(() => app.user?.username?.slice(0, 1)?.toUpperCase() || 
 function newChat() {
   chat.newConversation();
   void router.push('/agent/chat');
-  mobileNavigation.value = false;
 }
 async function logout() {
   try {
     chat.newConversation();
     await app.logout();
-    mobileNavigation.value = false;
   } catch (error) {
     app.toast((error as Error).message, 'error');
   }
@@ -65,27 +43,12 @@ async function logout() {
 const unauthorized = () => {
   app.authenticated = false;
   chat.disconnect();
-  mobileNavigation.value = false;
 };
-function keyboard(event: KeyboardEvent) {
-  if (mobileNavigation.value) {
-    if (event.key === 'Escape') mobileNavigation.value = false;
-    trapTabKey(event, sidebar.value);
-  }
-}
-watch(
-  () => route.fullPath,
-  () => {
-    mobileNavigation.value = false;
-  },
-);
 let timer: ReturnType<typeof setInterval> | null = null;
 let sessionTimer: ReturnType<typeof setInterval> | null = null;
 let sessionRefreshPending = false;
 onMounted(async () => {
   window.addEventListener('forge:unauthorized', unauthorized);
-  window.addEventListener('keydown', keyboard);
-  compactMedia.addEventListener('change', resizeNavigation);
   try {
     await app.checkAuth();
     if (app.authenticated) await app.initialize();
@@ -117,8 +80,6 @@ onUnmounted(() => {
   if (timer) clearInterval(timer);
   if (sessionTimer) clearInterval(sessionTimer);
   window.removeEventListener('forge:unauthorized', unauthorized);
-  window.removeEventListener('keydown', keyboard);
-  compactMedia.removeEventListener('change', resizeNavigation);
   chat.disconnect();
 });
 </script>
@@ -129,22 +90,7 @@ onUnmounted(() => {
   <LoginView v-else-if="!app.authenticated" />
   <div v-else class="app-shell enterprise-shell">
     <a href="#main-content" class="skip-link">跳至主要内容</a>
-    <button
-      v-if="mobileNavigation"
-      class="mobile-navigation-backdrop"
-      aria-label="关闭导航"
-      @click="mobileNavigation = false"
-    ></button>
-    <aside
-      id="enterprise-navigation"
-      ref="sidebar"
-      :inert="compact && !mobileNavigation"
-      :role="compact && mobileNavigation ? 'dialog' : undefined"
-      :aria-modal="compact && mobileNavigation ? true : undefined"
-      tabindex="-1"
-      :class="['enterprise-sidebar', { 'is-open': mobileNavigation }]"
-      aria-label="企业平台导航"
-    >
+    <aside id="enterprise-navigation" class="enterprise-sidebar" aria-label="企业平台导航">
       <div class="enterprise-brand-row">
         <RouterLink to="/agent/workbench" class="enterprise-brand" aria-label="Forge 企业工作台">
           <span class="brand-mark"><Icon name="layers" :size="23" /></span>
@@ -153,59 +99,60 @@ onUnmounted(() => {
             ><small>企业智能体平台</small></span
           >
         </RouterLink>
-        <button class="icon-button mobile-nav-close" aria-label="收起导航" @click="mobileNavigation = false">
-          <Icon name="close" :size="20" />
-        </button>
       </div>
       <button class="enterprise-new-chat" @click="newChat">
         <Icon name="plus" :size="18" /><span>新建会话</span><Icon name="edit" :size="15" />
       </button>
-      <nav class="primary-navigation enterprise-primary" aria-label="主导航">
-        <RouterLink
-          v-for="item in navigation"
-          :key="item.path"
-          :to="item.path"
-          :aria-label="item.label"
-          :class="{
-            'is-active':
-              route.path === item.path ||
-              (item.path === '/agent/conversations' && route.path.startsWith('/agent/chat')),
-          }"
-        >
-          <Icon :name="item.icon" :size="19" /><span>{{ item.label }}</span>
-          <span v-if="item.path === '/agent/scenarios' && app.availableScenarios.length" class="nav-count">{{
-            app.availableScenarios.length
-          }}</span>
-        </RouterLink>
-      </nav>
-      <div class="enterprise-recent-heading">
-        <span>最近会话</span
-        ><RouterLink to="/agent/conversations" aria-label="查看全部会话" title="查看全部会话"
-          ><Icon name="arrow" :size="14"
-        /></RouterLink>
-      </div>
-      <div class="enterprise-recents">
-        <div v-if="!app.regularConversations.length" class="enterprise-recent-empty">
-          <span></span>
-          <p>还没有会话记录<br /><small>从一项具体工作开始。</small></p>
-        </div>
-        <div
-          v-for="item in app.regularConversations.slice(0, 6)"
-          :key="item.id"
-          :class="[
-            'recent-item',
-            'enterprise-recent-item',
-            { selected: route.params.sessionId === String(item.id) },
-          ]"
-        >
+      <div class="enterprise-sidebar-content">
+        <nav class="primary-navigation enterprise-primary" aria-label="主导航">
           <RouterLink
-            :to="`/agent/chat/${item.id}`"
-            :title="`${item.title} · ${sessionState(item.status).label}`"
-            ><span v-if="item.status === 'running'" class="dot pulse"></span
-            ><Icon v-else :name="sessionState(item.status).icon" :size="14" /><span>{{
-              item.title
-            }}</span></RouterLink
+            v-for="item in navigation"
+            :key="item.path"
+            :to="item.path"
+            :aria-label="item.label"
+            :class="{
+              'is-active':
+                route.path === item.path ||
+                (item.path === '/agent/conversations' && route.path.startsWith('/agent/chat')),
+            }"
           >
+            <Icon :name="item.icon" :size="19" /><span>{{ item.label }}</span>
+            <span
+              v-if="item.path === '/agent/scenarios' && app.availableScenarios.length"
+              class="nav-count"
+              >{{ app.availableScenarios.length }}</span
+            >
+          </RouterLink>
+        </nav>
+        <div class="enterprise-recent-heading">
+          <span>最近会话</span
+          ><RouterLink to="/agent/conversations" aria-label="查看全部会话" title="查看全部会话"
+            ><Icon name="arrow" :size="14"
+          /></RouterLink>
+        </div>
+        <div class="enterprise-recents">
+          <div v-if="!app.regularConversations.length" class="enterprise-recent-empty">
+            <span></span>
+            <p>还没有会话记录<br /><small>从一项具体工作开始。</small></p>
+          </div>
+          <div
+            v-for="item in app.regularConversations.slice(0, 6)"
+            :key="item.id"
+            :class="[
+              'recent-item',
+              'enterprise-recent-item',
+              { selected: route.params.sessionId === String(item.id) },
+            ]"
+          >
+            <RouterLink
+              :to="`/agent/chat/${item.id}`"
+              :title="`${item.title} · ${sessionState(item.status).label}`"
+              ><span v-if="item.status === 'running'" class="dot pulse"></span
+              ><Icon v-else :name="sessionState(item.status).icon" :size="14" /><span>{{
+                item.title
+              }}</span></RouterLink
+            >
+          </div>
         </div>
       </div>
       <div class="enterprise-sidebar-footer">
@@ -226,18 +173,10 @@ onUnmounted(() => {
         </div>
       </div>
     </aside>
-    <div class="app-body enterprise-body" :inert="compact && mobileNavigation">
+    <div class="app-body enterprise-body">
       <header class="enterprise-topbar">
         <div class="enterprise-breadcrumb">
-          <button
-            class="icon-button mobile-nav-toggle"
-            aria-label="打开导航"
-            :aria-expanded="mobileNavigation"
-            aria-controls="enterprise-navigation"
-            @click="mobileNavigation = !mobileNavigation"
-          >
-            <Icon name="menu" :size="21" /></button
-          ><span class="enterprise-breadcrumb-root"><Icon name="building" :size="15" />企业平台</span
+          <span class="enterprise-breadcrumb-root"><Icon name="building" :size="15" />企业平台</span
           ><Icon class="breadcrumb-chevron" name="chevron" :size="12" /><strong>{{
             route.meta.title
           }}</strong>

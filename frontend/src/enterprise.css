@@ -123,6 +123,7 @@ textarea:focus-visible {
   position: fixed;
   inset: 0 auto 0 0;
   width: var(--sidebar);
+  min-height: 0;
   padding: 30px 17px 0;
   background: #f7f8fa;
   border-right: 1px solid var(--line);
@@ -136,6 +137,7 @@ textarea:focus-visible {
   justify-content: space-between;
   padding: 0 13px;
   margin-bottom: 31px;
+  flex-shrink: 0;
 }
 .enterprise-brand {
   display: flex;
@@ -171,17 +173,37 @@ textarea:focus-visible {
   color: var(--text-subtle);
   margin-top: 5px;
 }
-.enterprise-new-chat {
-  min-height: 44px;
-  display: flex;
+/* One shared grid keeps the icon, label and trailing badge columns aligned. */
+.enterprise-sidebar .enterprise-primary > a,
+.enterprise-new-chat,
+.enterprise-management-link {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 20px;
   align-items: center;
-  gap: 10px;
+  justify-content: start;
+  gap: 12px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  text-align: left;
+  font-size: 13px;
+  line-height: 20px;
+  flex-shrink: 0;
+}
+.enterprise-sidebar .enterprise-primary > a > svg,
+.enterprise-new-chat > svg:first-child,
+.enterprise-management-link > svg:first-child {
+  width: 20px;
+  height: 20px;
+  justify-self: center;
+  color: inherit;
+}
+.enterprise-new-chat {
   background: #fff;
   color: var(--text-secondary);
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 10px 13px;
-  font-size: 13px;
+  border-color: var(--line);
   font-weight: 550;
   box-shadow: 0 2px 2px #26334a03;
   margin-bottom: 24px;
@@ -190,12 +212,20 @@ textarea:focus-visible {
     border-color 0.15s;
 }
 .enterprise-new-chat > svg:last-child {
-  margin-left: auto;
+  width: 15px;
+  height: 15px;
+  justify-self: end;
   color: var(--text-secondary);
 }
 .enterprise-new-chat:hover {
   border-color: var(--accent-line);
   background: var(--accent-soft);
+}
+.enterprise-sidebar-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .enterprise-sidebar .enterprise-primary {
   display: flex;
@@ -207,16 +237,8 @@ textarea:focus-visible {
 }
 .enterprise-sidebar .enterprise-primary > a {
   position: relative;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 43px;
-  padding: 11px 13px;
   margin: 0;
   color: var(--text-secondary);
-  border-radius: 7px;
-  font-size: 13px;
-  border: 0;
   background: transparent;
 }
 .enterprise-sidebar .enterprise-primary > a:hover {
@@ -232,10 +254,17 @@ textarea:focus-visible {
   display: none;
 }
 .enterprise-sidebar .enterprise-primary > a > span {
-  display: inline;
+  display: block;
+  min-width: 0;
+  white-space: nowrap;
+}
+.enterprise-sidebar .enterprise-primary > a > span:not(.nav-count) {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .enterprise-sidebar .enterprise-primary .nav-count {
-  margin-left: auto;
+  margin-left: 0;
+  justify-self: end;
   background: var(--accent-soft);
   color: var(--accent-ink);
   font-size: 10px;
@@ -249,7 +278,7 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 34px 11px 12px;
+  margin: 28px 13px 12px;
   color: var(--text-secondary);
   font-size: 10px;
   letter-spacing: 0.4px;
@@ -264,22 +293,23 @@ textarea:focus-visible {
   color: var(--accent-ink);
 }
 .enterprise-recents {
-  overflow-y: auto;
-  min-height: 50px;
-  flex: 1;
+  min-height: 0;
 }
 .enterprise-recent-empty {
-  display: flex;
-  align-items: flex-start;
-  gap: 11px;
-  padding: 11px 13px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid transparent;
 }
 .enterprise-recent-empty > span {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: var(--surface-subtle);
+  background: var(--muted);
   margin-top: 8px;
+  justify-self: center;
 }
 .enterprise-recent-empty p {
   font-size: 11px;
@@ -297,32 +327,36 @@ textarea:focus-visible {
   background: transparent;
 }
 .enterprise-recent-item > a {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
   font-size: 12px;
-  padding: 10px 13px;
+  padding: 9px 12px;
   min-height: 38px;
+  border: 1px solid transparent;
   color: var(--text-secondary);
-  gap: 9px;
+  gap: 12px;
+}
+.enterprise-recent-item > a > svg,
+.enterprise-recent-item > a > .dot {
+  justify-self: center;
 }
 .enterprise-recent-item:hover,
 .enterprise-recent-item.selected {
   background: var(--accent-soft);
 }
 .enterprise-sidebar-footer {
-  margin-top: auto;
+  margin-top: 0;
   padding-top: 20px;
   flex-shrink: 0;
 }
 .enterprise-management-link {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 11px 13px;
-  font-size: 12px;
   color: var(--text-secondary);
-  border-radius: 7px;
 }
 .enterprise-management-link > svg:last-child {
-  margin-left: auto;
+  width: 14px;
+  height: 14px;
+  justify-self: end;
   color: var(--text-secondary);
 }
 .enterprise-management-link:hover,
@@ -465,11 +499,6 @@ textarea:focus-visible {
   flex-direction: column;
   outline: none;
   position: relative;
-}
-.mobile-nav-toggle,
-.mobile-nav-close,
-.mobile-navigation-backdrop {
-  display: none;
 }
 .enterprise-admin-tabs {
   display: flex;
@@ -3213,7 +3242,7 @@ textarea:focus-visible {
 .drawer > header p {
   color: var(--text-secondary);
 }
-/* Responsive: keep the full sidebar in a drawer instead of an icon-only rail. */
+/* Navigation stays visible: labelled sidebar on desktop/tablet, labelled rail on phones. */
 @media (min-width: 1700px) {
   .workbench-page {
     padding-top: 56px;
@@ -3417,40 +3446,11 @@ textarea:focus-visible {
 }
 @media (max-width: 900px) {
   :root {
-    --sidebar: 242px;
+    --sidebar: 208px;
     --header: 60px;
   }
   .enterprise-sidebar {
-    transform: translateX(-100%);
-    transition: transform 0.2s ease;
-    width: min(286px, 86vw);
-    padding: 26px 17px 0;
-    background: #f7f8fa;
-  }
-  .enterprise-sidebar.is-open {
-    transform: translateX(0);
-    box-shadow: 12px 0 45px #26334a22;
-  }
-  .mobile-navigation-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    background: #26334a45;
-    z-index: 85;
-  }
-  .mobile-nav-toggle,
-  .mobile-nav-close {
-    display: inline-flex;
-  }
-  .mobile-nav-close {
-    width: 27px;
-    margin-right: -12px;
-    color: var(--text-secondary);
-  }
-  .enterprise-shell .enterprise-body {
-    margin-left: 0;
-    width: 100%;
-    background: var(--surface);
+    padding: 24px 12px 0;
   }
   .enterprise-topbar {
     padding-inline: 23px;
@@ -3464,9 +3464,6 @@ textarea:focus-visible {
   }
   .enterprise-breadcrumb-root {
     font-size: 11px;
-  }
-  .enterprise-topbar .mobile-nav-toggle {
-    margin-left: -5px;
   }
   .enterprise-shell .global-progress {
     top: 59px;
@@ -3483,7 +3480,7 @@ textarea:focus-visible {
     font-size: 29px;
   }
   .workbench-hero h1 > span {
-    display: inline;
+    display: block;
   }
   .workbench-hero p {
     max-width: none;
@@ -3556,6 +3553,76 @@ textarea:focus-visible {
   }
 }
 @media (max-width: 700px) {
+  :root {
+    --sidebar: 88px;
+  }
+  .enterprise-sidebar {
+    padding: 20px 7px 0;
+  }
+  .enterprise-brand-row {
+    justify-content: center;
+    padding: 0;
+    margin-bottom: 20px;
+  }
+  .enterprise-brand > span:last-child {
+    display: none;
+  }
+  .enterprise-sidebar .enterprise-primary > a,
+  .enterprise-new-chat,
+  .enterprise-management-link {
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+    justify-items: center;
+    gap: 5px;
+    min-height: 66px;
+    padding: 9px 4px;
+    font-size: 10px;
+    line-height: 16px;
+    text-align: center;
+  }
+  .enterprise-new-chat {
+    margin-bottom: 16px;
+  }
+  .enterprise-new-chat > svg:last-child,
+  .enterprise-management-link > svg:last-child,
+  .enterprise-recent-heading,
+  .enterprise-recents {
+    display: none;
+  }
+  .enterprise-sidebar .enterprise-primary .nav-count {
+    position: absolute;
+    top: 5px;
+    right: 6px;
+    min-width: 15px;
+    padding: 0 3px;
+    font-size: 9px;
+    line-height: 14px;
+  }
+  .enterprise-sidebar-footer {
+    padding-top: 12px;
+  }
+  .enterprise-profile {
+    flex-direction: column;
+    gap: 5px;
+    padding: 12px 0;
+    margin-top: 10px;
+  }
+  .enterprise-profile .enterprise-avatar,
+  .enterprise-profile small {
+    display: none;
+  }
+  .enterprise-profile strong {
+    max-width: 68px;
+    font-size: 10px;
+    text-align: center;
+  }
+  .enterprise-profile > button {
+    margin-left: 0;
+  }
+  .enterprise-breadcrumb-root,
+  .breadcrumb-chevron {
+    display: none;
+  }
   .workbench-page {
     padding: 25px 24px 0;
     background: var(--surface);
@@ -3885,8 +3952,15 @@ textarea:focus-visible {
   .task-composer-hero #task-input {
     min-height: 103px;
   }
+  .task-composer-toolbar {
+    flex-wrap: wrap;
+  }
   .task-composer-options {
     gap: 7px;
+    min-width: 0;
+  }
+  .task-send {
+    margin-left: auto;
   }
   .task-composer .scenario-trigger {
     font-size: 10px;
@@ -4180,10 +4254,14 @@ textarea:focus-visible {
     gap: 7px;
   }
   .enterprise-chat .chat-title {
+    flex: 1;
+    min-width: 0;
     gap: 7px;
   }
   .enterprise-chat .chat-title > strong {
-    max-width: 150px;
+    flex: 1;
+    min-width: 0;
+    max-width: none;
     font-size: 11px;
   }
   .enterprise-chat .chat-subbar-actions {

@@ -368,32 +368,127 @@ async def main():
                     )
                     if width == 390:
                         await screenshot(f"{name}-mobile.png")
-            await page.set_viewport_size({"width": 390, "height": 844})
-            await go("/agent/workbench")
-            await expect(page.locator(".enterprise-sidebar")).to_have_attribute(
-                "inert", ""
-            )
-            await page.get_by_role("button", name="打开导航").click()
-            await expect(page.locator(".enterprise-sidebar")).to_have_class(
-                "enterprise-sidebar is-open"
-            )
-            for _ in range(17):
-                await page.keyboard.press("Tab")
-                assert await page.evaluate(
-                    "document.querySelector('.enterprise-sidebar').contains(document.activeElement)"
+            navigation_layouts = []
+            for width, height in [
+                (1440, 1000),
+                (1024, 900),
+                (900, 1024),
+                (820, 1000),
+                (768, 1024),
+                (701, 900),
+                (700, 844),
+                (390, 844),
+                (320, 720),
+                (820, 480),
+            ]:
+                await page.set_viewport_size({"width": width, "height": height})
+                await go("/agent/workbench")
+                await expect(page.locator(".enterprise-primary > a")).to_have_count(4)
+                geometry = await page.evaluate(
+                    """() => {
+                    const box = element => {
+                        const r = element.getBoundingClientRect();
+                        return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};
+                    };
+                    const sidebar = document.querySelector('.enterprise-sidebar');
+                    return {
+                        sidebar: box(sidebar), inert: sidebar.inert,
+                        body: box(document.querySelector('.enterprise-body')),
+                        items: [...document.querySelectorAll('.enterprise-new-chat,.enterprise-primary>a,.enterprise-management-link')].map(element => ({
+                            row:box(element), icon:box(element.querySelector('svg')),
+                            label:box(element.querySelector('span:not(.nav-count)')),
+                            labelHidden: getComputedStyle(element.querySelector('span:not(.nav-count)')).display === 'none',
+                            labelClipped: element.querySelector('span:not(.nav-count)').scrollWidth > element.querySelector('span:not(.nav-count)').clientWidth + 1,
+                        })),
+                        accent:getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+                    };
+                }"""
                 )
-            await page.keyboard.press("Escape")
-            await expect(page.get_by_role("button", name="打开导航")).to_be_focused()
+                assert not geometry["inert"], (width, height, geometry)
+                assert abs(geometry["sidebar"]["x"]) < 1, (width, height, geometry)
+                assert abs(geometry["body"]["x"] - geometry["sidebar"]["right"]) < 1
+                assert abs(geometry["body"]["right"] - width) < 1
+                assert geometry["accent"] == "#da724d"
+                assert not any(
+                    item["labelHidden"] or item["labelClipped"]
+                    for item in geometry["items"]
+                )
+                items = geometry["items"]
+                icon_centres = [
+                    item["icon"]["x"] + item["icon"]["width"] / 2 for item in items
+                ]
+                assert max(icon_centres) - min(icon_centres) < 1, (
+                    width,
+                    height,
+                    geometry,
+                )
+                if width > 700:
+                    text_starts = [item["label"]["x"] for item in items]
+                    assert max(text_starts) - min(text_starts) < 1, (
+                        width,
+                        height,
+                        geometry,
+                    )
+                    assert all(item["row"]["height"] == 44 for item in items)
+                else:
+                    text_centres = [
+                        item["label"]["x"] + item["label"]["width"] / 2
+                        for item in items
+                    ]
+                    assert max(text_centres) - min(text_centres) < 1, (
+                        width,
+                        height,
+                        geometry,
+                    )
+                    assert all(item["row"]["height"] == 66 for item in items)
+                navigation_layouts.append(
+                    {"width": width, "height": height, **geometry}
+                )
+                if (width, height) in [(820, 1000), (390, 844), (820, 480)]:
+                    await screenshot(f"navigation-{width}x{height}.png")
+            (destination / "navigation-layout.json").write_text(
+                json.dumps(navigation_layouts, ensure_ascii=False, indent=2)
+            )
             check(
-                "mobile navigation has inert closed state, focus trap, Escape and focus return"
+                "navigation stays visible without an overlay or content overlap at ten desktop/tablet/phone/short-window sizes"
             )
-            await page.get_by_role("button", name="打开导航").click()
+            check(
+                "new chat, primary menus and platform management share aligned icon/text columns and row heights; labels and original warm-orange theme remain intact"
+            )
+            await page.set_viewport_size({"width": 820, "height": 480})
+            last_menu = page.get_by_role("link", name="我的会话", exact=True)
+            await last_menu.focus()
+            await expect(last_menu).to_be_in_viewport()
+            await page.get_by_role("link", name="平台管理", exact=True).focus()
+            await expect(
+                page.get_by_role("link", name="平台管理", exact=True)
+            ).to_be_in_viewport()
+            check(
+                "short-window navigation scrolls independently without covering the fixed account and management footer"
+            )
+            await page.set_viewport_size({"width": 390, "height": 844})
+            await page.get_by_role("link", name="工作台", exact=True).focus()
+            reached_content = False
+            for _ in range(20):
+                await page.keyboard.press("Tab")
+                if await page.evaluate(
+                    "Boolean(document.activeElement.closest('.enterprise-body'))"
+                ):
+                    reached_content = True
+                    break
+            assert reached_content, "persistent navigation must not trap keyboard focus"
+            await page.keyboard.press("Escape")
             await page.get_by_role("link", name="企业场景", exact=True).click()
-            await expect(page.locator(".enterprise-sidebar")).to_have_attribute(
-                "inert", ""
+            await expect(
+                page.locator(".enterprise-primary > a.is-active")
+            ).to_have_attribute("aria-label", "企业场景")
+            await expect(page.locator(".enterprise-sidebar")).to_be_visible()
+            await expect(
+                page.get_by_role("button", name="打开导航", exact=True)
+            ).to_have_count(0)
+            check(
+                "persistent phone navigation remains visible after Escape and route changes; keyboard focus reaches content without a drawer trap"
             )
-            check("mobile navigation automatically closes after route selection")
-            await page.get_by_role("button", name="打开导航").click()
             await page.get_by_role("button", name="退出登录", exact=True).click()
             await expect(page.get_by_role("heading", name="欢迎回来")).to_be_visible()
             check("mobile logout is reachable and clears authentication")
