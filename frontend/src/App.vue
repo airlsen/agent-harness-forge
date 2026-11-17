@@ -246,7 +246,7 @@ onUnmounted(() => {
           <button class="preview-mode-badge" aria-label="查看版本与能力说明" @click="help = true">
             <span></span>单管理员预览<Icon name="info" :size="13" /></button
           ><span class="topbar-divider"></span
-          ><button class="enterprise-help" @click="help = true">
+          ><button class="enterprise-help" aria-label="使用指南" @click="help = true">
             <Icon name="book" :size="16" /><span>使用指南</span>
           </button>
         </div>
