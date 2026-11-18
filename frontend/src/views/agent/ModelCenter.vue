@@ -1,300 +1,245 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
-import { post, put } from '../../api/client';
+import { api, post, put, remove } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
+import type { ModelConnection } from '../../types/platform';
 import Icon from '../../components/ForgeIcon.vue';
-const app = usePlatform(),
-  saving = ref(false),
-  testing = ref(false),
-  reveal = ref(false),
-  formReady = ref(false);
+import DialogShell from '../../components/DialogShell.vue';
+
+const app = usePlatform();
+const models = ref<ModelConnection[]>([]);
+const loading = ref(true);
+const loadError = ref('');
+const editorOpen = ref(false);
+const editing = ref<ModelConnection | null>(null);
+const saving = ref(false);
+const deletingId = ref<number | null>(null);
 const form = reactive({
-  name: '默认模型连接',
+  name: '',
   baseUrl: '',
   model: '',
   apiKey: '',
-  clearKey: false,
   contextWindow: 64000,
   inputPrice: null as number | null,
   outputPrice: null as number | null,
 });
-onMounted(async () => {
+
+function resetForm(model?: ModelConnection) {
+  editing.value = model ?? null;
+  form.name = model?.name ?? '';
+  form.baseUrl = model?.baseUrl ?? '';
+  form.model = model?.model ?? '';
+  form.apiKey = '';
+  form.contextWindow = model?.contextWindow ?? 64000;
+  form.inputPrice = model?.inputPrice ?? null;
+  form.outputPrice = model?.outputPrice ?? null;
+}
+function openEditor(model?: ModelConnection) {
+  resetForm(model);
+  editorOpen.value = true;
+}
+function closeEditor() {
+  if (!saving.value) editorOpen.value = false;
+}
+function endpointHost(baseUrl: string) {
   try {
-    await app.refreshRuntime();
-    if (app.connection)
-      Object.assign(form, {
-        name: app.connection.name || '默认模型连接',
-        baseUrl: app.connection.baseUrl,
-        model: app.connection.model,
-        contextWindow: app.connection.contextWindow,
-        inputPrice: app.connection.inputPrice,
-        outputPrice: app.connection.outputPrice,
-      });
-  } catch (e) {
-    app.toast((e as Error).message, 'error');
-  } finally {
-    formReady.value = true;
+    return new URL(baseUrl).host;
+  } catch {
+    return baseUrl;
   }
-});
-function preset(name: string) {
-  if (name === 'deepseek') {
-    form.baseUrl = 'https://api.deepseek.com';
-    form.model = 'deepseek-chat';
-    form.name = 'DeepSeek API';
-  } else if (name === 'openai') {
-    form.baseUrl = 'https://api.openai.com/v1';
-    form.model = '';
-    form.name = 'OpenAI API';
-  } else {
-    form.baseUrl = '';
-    form.model = '';
-    form.name = '企业模型网关';
+}
+async function load() {
+  loading.value = true;
+  loadError.value = '';
+  try {
+    models.value = (await api<{ items: ModelConnection[] }>('/models')).items;
+  } catch (error) {
+    loadError.value = (error as Error).message;
+  } finally {
+    loading.value = false;
   }
 }
 async function save() {
+  if (!form.name.trim() || !form.baseUrl.trim() || !form.model.trim()) {
+    app.toast('请填写模型名称、Base URL 和模型 ID', 'error');
+    return;
+  }
   saving.value = true;
   try {
-    await put('/models/connection', {
-      ...form,
+    const payload = {
+      name: form.name.trim(),
+      baseUrl: form.baseUrl.trim(),
+      model: form.model.trim(),
       apiKey: form.apiKey || null,
-      inputPrice: form.inputPrice === ('' as any) ? null : form.inputPrice,
-      outputPrice: form.outputPrice === ('' as any) ? null : form.outputPrice,
-    });
-    form.apiKey = '';
-    form.clearKey = false;
-    await app.refreshRuntime();
-    app.toast('模型连接已保存，仅影响新建会话');
-  } catch (e) {
-    app.toast((e as Error).message, 'error');
+      contextWindow: form.contextWindow,
+      inputPrice: form.inputPrice,
+      outputPrice: form.outputPrice,
+    };
+    if (editing.value?.id) await put(`/models/${editing.value.id}`, payload);
+    else await post('/models', payload);
+    await Promise.all([load(), app.refreshRuntime()]);
+    app.toast(editing.value ? '模型配置已保存' : '模型已添加。');
+    editorOpen.value = false;
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
   } finally {
     saving.value = false;
   }
 }
-async function test() {
-  testing.value = true;
+async function deleteModel(model: ModelConnection) {
+  if (!model.id || deletingId.value !== null) return;
+  if (!window.confirm(`确定删除模型“${model.name}”吗？历史会话仍保留已有模型快照。`)) return;
+  deletingId.value = model.id;
   try {
-    const result = await post('/models/connection/test');
-    await app.refreshRuntime();
-    app.toast(result.message, result.ok ? 'success' : 'error');
-  } catch (e) {
-    app.toast((e as Error).message, 'error');
+    await remove(`/models/${model.id}`);
+    await Promise.all([load(), app.refreshRuntime()]);
+    app.toast('模型配置已删除。');
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
   } finally {
-    testing.value = false;
+    deletingId.value = null;
   }
 }
+
+onMounted(load);
 </script>
+
 <template>
-  <main class="page-content enterprise-page">
+  <main class="page-content enterprise-page model-management-page">
     <div class="enterprise-page-inner">
-      <div class="page-heading">
+      <div class="page-heading model-management-heading">
         <div>
-          <h1>模型连接</h1>
-          <p>统一配置平台模型出口，新会话共用连接，无需按账号重复设置。</p>
+          <h1>模型管理</h1>
+          <p>维护企业模型配置，为聊天工作台后续的模型选择提供统一来源；密钥只保存在服务端。</p>
         </div>
-        <span
-          :class="[
-            'tag',
-            app.connection?.lastTest.ok ? 'success' : app.connection?.configured ? 'warm' : 'neutral',
-          ]"
-          ><span class="dot"></span
-          >{{
-            app.connection?.lastTest.ok
-              ? '连接测试通过'
-              : app.connection?.configured
-                ? '已配置 · 待测试'
-                : '模型未配置'
-          }}</span
-        >
+        <div class="page-heading-actions">
+          <span v-if="models.length" class="heading-count">{{ models.length }} 个模型</span>
+          <button class="button primary" @click="openEditor()">
+            <Icon name="plus" :size="16" />添加模型
+          </button>
+        </div>
       </div>
-      <div class="settings-layout">
-        <section class="settings-card model-form-card">
-          <div class="settings-card-heading">
-            <span class="scene-icon"><Icon name="cpu" :size="23" /></span>
+
+      <section v-if="loading" class="model-management-loading" aria-live="polite">
+        <span class="loader"></span>正在读取模型配置…
+      </section>
+      <section v-else-if="loadError" class="form-alert error model-management-alert" role="alert">
+        <Icon name="info" :size="18" />
+        <div>
+          <strong>模型配置未能读取</strong>
+          <p>{{ loadError }}</p>
+        </div>
+        <button class="button secondary small" @click="load">重试</button>
+      </section>
+      <section v-else-if="!models.length" class="enterprise-empty model-management-empty">
+        <span class="enterprise-empty-symbol"><Icon name="cpu" :size="30" /></span>
+        <h2>还没有模型配置</h2>
+        <p>添加一个兼容 OpenAI Chat Completions 的模型连接，统一维护其名称、端点、模型 ID 和凭据。</p>
+        <button class="button primary" @click="openEditor()">
+          <Icon name="plus" :size="16" />添加第一个模型
+        </button>
+      </section>
+      <section v-else class="model-card-grid" aria-label="模型配置列表">
+        <article v-for="model in models" :key="model.id" class="model-management-card">
+          <div class="model-card-top">
+            <span class="model-card-icon"><Icon name="cpu" :size="20" /></span>
+          </div>
+          <div class="model-card-copy">
+            <h2>{{ model.name }}</h2>
+            <p>{{ model.model }}</p>
+          </div>
+          <dl class="model-card-details">
             <div>
-              <h2>默认模型连接</h2>
-              <p>新会话的 default 路由使用此连接；已有会话保持原模型与价格快照。</p>
+              <dt>服务地址</dt>
+              <dd>{{ endpointHost(model.baseUrl) }}</dd>
             </div>
-            <span class="tag soft">OpenAI Compatible</span>
-          </div>
-          <div class="provider-presets">
-            <button :disabled="!formReady" @click="preset('deepseek')">
-              <Icon name="sparkles" :size="16" />DeepSeek</button
-            ><button :disabled="!formReady" @click="preset('openai')">
-              <Icon name="globe" :size="16" />OpenAI</button
-            ><button :disabled="!formReady" @click="preset('private')">
-              <Icon name="server" :size="16" />企业 / 私有网关
-            </button>
-          </div>
-          <form v-if="formReady" id="model-form" @submit.prevent="save">
-            <div class="form-grid">
-              <div>
-                <label for="connection-name">连接名称</label
-                ><input
-                  id="connection-name"
-                  v-model="form.name"
-                  maxlength="100"
-                  placeholder="例如：企业 DeepSeek 网关"
-                  required
-                />
-              </div>
-              <div>
-                <label for="model-id">模型 ID <span class="required">*</span></label
-                ><input
-                  id="model-id"
-                  v-model="form.model"
-                  maxlength="128"
-                  placeholder="填写网关提供的实际模型 ID"
-                  required
-                />
-              </div>
+            <div>
+              <dt>上下文窗口</dt>
+              <dd>{{ model.contextWindow.toLocaleString() }}</dd>
             </div>
-            <label for="base-url">Base URL <span class="required">*</span></label
-            ><input
-              id="base-url"
-              v-model="form.baseUrl"
-              type="url"
-              placeholder="https://your-gateway.example.com/v1"
-              required
-            />
-            <p class="field-hint">
-              填写 API 根路径，不包含 /chat/completions。支持企业网关、vLLM 和其他兼容服务。
-            </p>
-            <label for="api-key"
-              >API Key
-              <span v-if="app.connection?.apiKeyConfigured" class="key-saved"
-                ><Icon name="lock" :size="12" />服务端已保存</span
-              ></label
-            >
-            <div class="password-input">
-              <input
-                id="api-key"
-                v-model="form.apiKey"
-                :type="reveal ? 'text' : 'password'"
-                autocomplete="new-password"
-                :placeholder="
-                  app.connection?.apiKeyConfigured
-                    ? '留空保留已存密钥；填写新值可替换'
-                    : '输入 API Key，无鉴权的私有网关可留空'
-                "
-              /><button
-                type="button"
-                :aria-label="reveal ? '隐藏 API Key' : '显示 API Key'"
-                @click="reveal = !reveal"
-              >
-                <Icon :name="reveal ? 'eyeOff' : 'eye'" :size="18" />
-              </button>
-            </div>
-            <p class="field-hint">密钥仅通过当前同源 API 提交，在服务端加密存储；读取接口不返回原文。</p>
-            <label v-if="app.connection?.apiKeyConfigured" class="inline-checkbox"
-              ><input
-                v-model="form.clearKey"
-                type="checkbox"
-              />保存时移除当前密钥（仅限无需鉴权的私有服务）</label
-            >
-            <div class="form-divider"></div>
-            <div class="form-grid">
-              <div>
-                <label for="context-window">上下文窗口（tokens）</label
-                ><input
-                  id="context-window"
-                  v-model.number="form.contextWindow"
-                  type="number"
-                  min="4096"
-                  max="2000000"
-                  required
-                />
-              </div>
-              <div class="field-callout">
-                <Icon name="info" :size="15" /><span
-                  >请以实际服务支持的容量为准，不会自动扩容模型上下文。</span
-                >
-              </div>
-            </div>
-            <details class="advanced-settings">
-              <summary>
-                计费信息 <span>可选，不填写则不显示费用估算</span><Icon name="chevronDown" :size="15" />
-              </summary>
-              <div class="form-grid">
-                <div>
-                  <label for="input-price">输入价格（¥ / 百万 tokens）</label
-                  ><input
-                    id="input-price"
-                    v-model.number="form.inputPrice"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="未配置"
-                  />
-                </div>
-                <div>
-                  <label for="output-price">输出价格（¥ / 百万 tokens）</label
-                  ><input
-                    id="output-price"
-                    v-model.number="form.outputPrice"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="未配置"
-                  />
-                </div>
-              </div>
-            </details>
-            <div class="model-form-actions">
-              <span><Icon name="lock" :size="13" />仅管理员可修改模型连接</span
-              ><button type="submit" class="button primary" :disabled="saving">
-                <span v-if="saving" class="loader small"></span><Icon v-else name="save" :size="16" />保存连接
-              </button>
-            </div>
-          </form>
-          <div v-else class="loading-inline"><span class="loader"></span>读取模型配置…</div>
-        </section>
-        <aside class="settings-aside">
-          <section class="settings-card connection-test">
-            <div class="settings-section-heading">
-              <Icon name="activity" :size="18" />
-              <h2>连接测试</h2>
-            </div>
-            <p>发送一次简短的真实模型请求，检查地址、模型名和凭据是否可用。</p>
-            <div
-              v-if="app.connection?.lastTest.at"
-              :class="['connection-test-result', { ok: app.connection.lastTest.ok }]"
-            >
-              <Icon :name="app.connection.lastTest.ok ? 'check' : 'info'" :size="19" /><strong>{{
-                app.connection.lastTest.ok ? '模型服务已响应' : '连接测试未通过'
-              }}</strong>
-              <p>{{ app.connection.lastTest.message }}</p>
-              <span v-if="app.connection.lastTest.latencyMs"
-                >耗时 {{ app.connection.lastTest.latencyMs }} ms</span
-              >
-            </div>
-            <div v-else class="connection-test-idle">
-              <Icon name="plug" :size="30" /><span>{{
-                app.connection?.configured ? '已保存配置，等待测试' : '先保存你的第一个模型连接'
-              }}</span>
-            </div>
+          </dl>
+          <footer>
+            <button class="button secondary small" @click="openEditor(model)">编辑</button>
             <button
-              class="button secondary full-width"
-              :disabled="testing || !app.connection?.configured"
-              @click="test"
+              class="button text small danger-text"
+              :disabled="deletingId === model.id"
+              @click="deleteModel(model)"
             >
-              <span v-if="testing" class="loader small"></span><Icon v-else name="bolt" :size="16" />{{
-                testing ? '正在请求模型…' : '测试已保存的连接'
-              }}</button
-            ><small>测试会向所配服务发送少量请求，可能产生 token 费用。</small>
-          </section>
-          <section class="settings-card model-explanation">
-            <Icon name="layers" :size="23" />
-            <h3>统一出口，可替换模型</h3>
-            <p>
-              浏览器不直接调用模型。请求经过控制面与 dsh 插件，再由 Forge Gateway 适配器发送到你配置的服务。
-            </p>
-            <div class="mini-flow">
-              <span>工作台</span><Icon name="arrow" :size="11" /><span>Harness</span
-              ><Icon name="arrow" :size="11" /><span>你的模型</span>
-            </div>
-          </section>
-        </aside>
-      </div>
+              {{ deletingId === model.id ? '正在删除…' : '删除' }}
+            </button>
+          </footer>
+        </article>
+      </section>
     </div>
   </main>
+
+  <DialogShell
+    v-if="editorOpen"
+    label="模型配置"
+    variant="drawer"
+    panel-class="model-editor-drawer"
+    @close="closeEditor"
+  >
+    <header>
+      <div>
+        <h2>{{ editing ? '编辑模型' : '添加模型' }}</h2>
+        <p>填写模型服务的实际连接信息。保存后不会展示或回传 API Key 原文。</p>
+      </div>
+      <button class="icon-button" aria-label="关闭模型配置" :disabled="saving" @click="closeEditor">
+        <Icon name="close" :size="20" />
+      </button>
+    </header>
+    <form class="model-editor-form" @submit.prevent="save">
+      <label for="model-name">模型名称 <span class="required">*</span></label>
+      <input
+        id="model-name"
+        v-model="form.name"
+        maxlength="100"
+        placeholder="例如：企业 DeepSeek Chat"
+        required
+      />
+
+      <label for="model-id">模型 ID <span class="required">*</span></label>
+      <input id="model-id" v-model="form.model" maxlength="128" placeholder="例如：deepseek-chat" required />
+
+      <label for="model-base-url">Base URL <span class="required">*</span></label>
+      <input
+        id="model-base-url"
+        v-model="form.baseUrl"
+        type="url"
+        maxlength="512"
+        placeholder="https://your-gateway.example.com/v1"
+        required
+      />
+      <p class="field-hint">填写 API 根路径，不包含 <code>/chat/completions</code>。</p>
+
+      <label for="model-api-key">API Key</label>
+      <input
+        id="model-api-key"
+        v-model="form.apiKey"
+        type="password"
+        autocomplete="new-password"
+        :placeholder="editing?.apiKeyConfigured ? '留空保留已保存密钥；填写新值可替换' : '无鉴权服务可留空'"
+      />
+      <p class="field-hint">密钥仅通过同源 API 提交，并以加密形式存储在服务端。</p>
+
+      <label for="model-context-window">上下文窗口（tokens）</label>
+      <input
+        id="model-context-window"
+        v-model.number="form.contextWindow"
+        type="number"
+        min="4096"
+        max="2000000"
+        required
+      />
+    </form>
+    <footer>
+      <button class="button secondary" :disabled="saving" @click="closeEditor">取消</button>
+      <button class="button primary" :disabled="saving" @click="save">
+        <span v-if="saving" class="loader small"></span><Icon v-else name="save" :size="16" />{{
+          saving ? '正在保存…' : '保存模型'
+        }}
+      </button>
+    </footer>
+  </DialogShell>
 </template>
