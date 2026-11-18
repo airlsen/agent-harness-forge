@@ -17,6 +17,12 @@ export type PluginPackage = {
   runtime: string;
   source: string;
   artifactHash: string;
+  releaseKey: string;
+  artifactName: string;
+  artifactBytes: number;
+  scanStatus: string;
+  reviewNote: string;
+  execution: { kind?: string; endpoint?: string; networkDomains?: string[]; timeoutSeconds?: number };
   extensionPoints: string[];
   permissions: string[];
   tools: PluginTool[];

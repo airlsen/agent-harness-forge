@@ -25,6 +25,21 @@ const workerTools = {
   },
 };
 
+function bindingSpec(binding) {
+  const builtin = workerTools[binding?.package];
+  if (builtin) {
+    if (binding.version !== builtin.version)
+      throw new Error(`Forge 未批准插件“${binding?.package ?? ''}”的当前受管版本`);
+    return builtin;
+  }
+  // Uploaded packages never provide executable Node code to DSH. They target the generic
+  // remote Worker protocol and can only use the exact tools frozen in their signed lease.
+  if (binding?.runtime === 'forge-remote-worker-v1' && Array.isArray(binding.tools)) {
+    return { tools: Object.fromEntries(binding.tools.map((tool) => [tool.name, { permission: tool.permission }])) };
+  }
+  throw new Error(`Forge 未批准插件“${binding?.package ?? ''}”的运行时`);
+}
+
 function workerEndpoint(value) {
   if (typeof value !== 'string') throw new Error('受管插件 Worker 未配置');
   const url = new URL(value);
@@ -41,9 +56,7 @@ export function apply(ctx, config) {
   const approvalTools = new Set();
   const disposers = [];
   for (const binding of bindings) {
-    const packageSpec = workerTools[binding?.package];
-    if (!packageSpec || binding.version !== packageSpec.version)
-      throw new Error(`Forge 未批准插件“${binding?.package ?? ''}”的当前受管版本`);
+    const packageSpec = bindingSpec(binding);
     for (const tool of binding.tools ?? []) {
       if (!allowed.has(tool.name)) throw new Error(`插件工具“${tool.name}”未被当前会话授权`);
       const spec = packageSpec.tools[tool.name];
@@ -68,7 +81,12 @@ export function apply(ctx, config) {
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({
                   lease: config.lease,
-                  binding: { package: binding.package, version: binding.version },
+                  binding: {
+                    package: binding.package,
+                    version: binding.version,
+                    artifactHash: binding.artifactHash,
+                    runtime: binding.runtime,
+                  },
                   tool: tool.name,
                   arguments: args,
                 }),

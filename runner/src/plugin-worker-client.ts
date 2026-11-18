@@ -47,9 +47,11 @@ export class PluginWorkerClient {
     return new PluginWorkerClient(child, secret, `http://127.0.0.1:${port}`);
   }
 
-  issueLease(sessionId: string): string {
+  issueLease(sessionId: string, bindings: unknown[] = []): string {
+    // Bind the lease to exact versions, tool names and remote execution metadata.
+    // The DSH child receives only this opaque signed value, never a long-lived worker secret.
     const encoded = Buffer.from(
-      JSON.stringify({ sessionId, expiresAt: Date.now() + 30 * 60 * 1000 }),
+      JSON.stringify({ sessionId, expiresAt: Date.now() + 30 * 60 * 1000, bindings }),
     ).toString('base64url');
     const signature = createHmac('sha256', this.secret).update(encoded).digest('base64url');
     return `${encoded}.${signature}`;
