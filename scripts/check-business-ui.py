@@ -36,10 +36,25 @@ async def main():
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=True, args=["--no-sandbox"])
         page = await browser.new_page(viewport={"width": 1440, "height": 1000})
-        errors, failed_api = [], []
+        errors, failed_api, session_posts = [], [], []
         fixture_id = None
         fixture_name = f"企业前端回归-{int(time.time())}"
         page.on("pageerror", lambda error: errors.append(str(error)))
+        page.on(
+            "request",
+            lambda request: (
+                session_posts.append(request.url)
+                if request.method == "POST" and "/api/agent/sessions" in request.url
+                else None
+            ),
+        )
+
+        async def accept_page_leave(dialog):
+            if dialog.type != "beforeunload":
+                errors.append("Unexpected native dialog: " + dialog.type)
+            await dialog.accept()
+
+        page.on("dialog", accept_page_leave)
         page.on(
             "response",
             lambda response: (
@@ -70,7 +85,20 @@ async def main():
             await page.get_by_label("密码", exact=True).fill(credentials["password"])
             await page.get_by_role("button", name="进入企业平台").click()
             await expect(page.locator(".workbench-page")).to_be_visible()
-            await expect(page.locator(".workbench-scene-card")).to_have_count(4)
+            await expect(page.locator(".conversation-scenario-chip")).to_have_count(3)
+            await expect(page.locator(".workbench-page h1")).to_have_text(
+                "今天要完成什么工作？"
+            )
+            await expect(page.locator(".workbench-page h1")).to_have_count(1)
+            await expect(
+                page.locator(
+                    ".workbench-section,.workbench-footer,.workbench-scene-card,.workbench-recent-list,.workbench-ability-grid"
+                )
+            ).to_have_count(0)
+            for removed in ["企业公共能力", "继续最近的工作", "全部场景", "全部会话"]:
+                await expect(page.locator(".workbench-page")).not_to_contain_text(
+                    removed
+                )
             await expect(page.locator(".connect-model-prompt")).to_contain_text(
                 "模型尚未连接"
             )
@@ -79,14 +107,104 @@ async def main():
             ).to_be_disabled()
             await screenshot("workbench-desktop.png")
             check(
-                "root opens enterprise workbench with four real templates and honest model state"
+                "root retains the workbench and opens one shared dialogue start with three real non-default scenarios, no directory/recents/promotional modules and honest model state"
             )
             await expect(page.locator(".enterprise-sidebar")).not_to_contain_text(
                 "我的工作空间"
             )
             await expect(page.locator(".primary-navigation>a")).to_have_count(4)
+            await expect(page.locator(".enterprise-recent-heading")).to_have_text(
+                "最近会话"
+            )
+            await expect(
+                page.locator(".enterprise-recent-heading").locator("a,button,svg")
+            ).to_have_count(0)
+            await expect(
+                page.get_by_role("link", name="我的会话", exact=True)
+            ).to_have_attribute("href", "/agent/conversations")
             check(
-                "shared-resource navigation replaces personal workspace and infrastructure menus"
+                "shared-resource navigation keeps a plain recent-session label without arrow controls; all conversations remain reachable"
+            )
+            await expect(page.locator(".enterprise-recent-empty")).to_have_text(
+                "开始对话，记录会留在这里。"
+            )
+            await expect(
+                page.locator(
+                    ".enterprise-recent-empty br,.enterprise-recent-empty small"
+                )
+            ).to_have_count(0)
+            check("empty recent history is one sentence without stacked helper copy")
+            account = page.get_by_role("button", name="账号菜单")
+            account_menu = page.get_by_role("menu", name="账号操作", exact=True)
+            logout_item = page.get_by_role("menuitem", name="退出登录", exact=True)
+            await page.mouse.move(0, 0)
+            await expect(account).to_have_attribute("aria-expanded", "false")
+            await expect(account_menu).to_have_count(0)
+            await expect(page.locator(".enterprise-profile button")).to_have_count(1)
+            await expect(page.locator(".enterprise-profile svg")).to_have_count(0)
+            check(
+                "account footer has one avatar trigger with no permanent exit arrow or logout button"
+            )
+            await page.locator(".enterprise-avatar").hover()
+            await expect(account_menu).to_be_visible()
+            await expect(account).to_have_attribute("aria-expanded", "true")
+            await logout_item.hover()
+            await expect(logout_item).to_be_visible()
+            await screenshot("account-hover-desktop.png")
+            await page.locator(".workbench-page h1").hover()
+            await expect(account_menu).to_have_count(0)
+            check(
+                "desktop avatar hover exposes a reachable logout menu and leaving dismisses it"
+            )
+            await page.locator(".enterprise-avatar").hover()
+            await expect(account_menu).to_be_visible()
+            await account.click()
+            await expect(logout_item).to_be_focused()
+            await page.locator(".workbench-page h1").hover()
+            await expect(account_menu).to_be_visible()
+            await account.click()
+            await expect(account_menu).to_have_count(0)
+            await expect(account).to_be_focused()
+            check(
+                "clicking a hovered avatar pins its menu; clicking again closes it without logging out"
+            )
+            await account.click()
+            await page.get_by_label("任务输入").click()
+            await expect(account_menu).to_have_count(0)
+            await expect(page.get_by_label("任务输入")).to_be_focused()
+            await account.click()
+            await page.get_by_role("link", name="企业场景", exact=True).click()
+            await expect(account_menu).to_have_count(0)
+            await page.get_by_role("link", name="工作台", exact=True).click()
+            await expect(page.locator(".workbench-page")).to_be_visible()
+            check(
+                "outside clicks keep their target focus and route changes dismiss the account menu"
+            )
+            for key in ["Enter", "Space", "ArrowDown", "ArrowUp"]:
+                await account.focus()
+                await page.keyboard.press(key)
+                await expect(logout_item).to_be_focused()
+                for navigation_key in ["ArrowDown", "ArrowUp", "Home", "End"]:
+                    await page.keyboard.press(navigation_key)
+                    await expect(logout_item).to_be_focused()
+                await page.keyboard.press("Escape")
+                await expect(account_menu).to_have_count(0)
+                await expect(account).to_be_focused()
+            check(
+                "avatar keyboard opening, menu arrow keys and Escape restore focus without triggering logout"
+            )
+            await account.press("Enter")
+            await page.keyboard.press("Shift+Tab")
+            await expect(account_menu).to_have_count(0)
+            await expect(account).to_be_focused()
+            await account.press("Enter")
+            await page.keyboard.press("Tab")
+            await expect(account_menu).to_have_count(0)
+            assert await page.evaluate(
+                "!document.activeElement.closest('.enterprise-profile')"
+            )
+            check(
+                "account menu supports native Tab and Shift+Tab exit without trapping sidebar focus"
             )
             await page.reload()
             await expect(page.locator(".workbench-page")).to_be_visible()
@@ -141,6 +259,113 @@ async def main():
             check(
                 "shared composer selects actual scenario, reads and removes text attachment"
             )
+            await page.locator("input[type=file]").set_input_files(
+                {
+                    "name": "draft.txt",
+                    "mimeType": "text/plain",
+                    "buffer": b"Preserve the real draft attachment",
+                }
+            )
+            before_selection = len(session_posts)
+            await page.get_by_role(
+                "button", name="使用场景 文档与报告", exact=True
+            ).click()
+            await expect(page).to_have_url(args.base + "/agent/workbench")
+            await expect(page.get_by_label("任务输入")).to_have_value(
+                "请分析一个技术问题"
+            )
+            await expect(page.get_by_label("任务输入")).to_be_focused()
+            await expect(page.locator(".attachment-chips")).to_contain_text("draft.txt")
+            await expect(page.locator(".scenario-trigger")).to_contain_text(
+                "文档与报告"
+            )
+            await expect(
+                page.get_by_role("button", name="使用场景 文档与报告", exact=True)
+            ).to_have_attribute("aria-pressed", "true")
+            assert len(session_posts) == before_selection
+            check(
+                "lightweight scenario selection stays in place, focuses input, preserves text/files and never creates or sends a session"
+            )
+            await page.get_by_role("link", name="企业场景", exact=True).click()
+            await page.get_by_role("link", name="工作台", exact=True).click()
+            await expect(page.get_by_label("任务输入")).to_have_value(
+                "请分析一个技术问题"
+            )
+            await expect(page.locator(".attachment-chips")).to_contain_text("draft.txt")
+            await expect(page.locator(".scenario-trigger")).to_contain_text(
+                "文档与报告"
+            )
+            check(
+                "returning to the workbench restores its task draft, selected scenario and actual attachment without a reset"
+            )
+            page.remove_listener("dialog", accept_page_leave)
+            try:
+                async with page.expect_event("dialog") as captured_leave:
+                    await page.evaluate("setTimeout(() => location.reload(), 0)")
+                leave = await captured_leave.value
+                assert leave.type == "beforeunload"
+                await leave.dismiss()
+            finally:
+                page.on("dialog", accept_page_leave)
+            await expect(page.get_by_label("任务输入")).to_have_value(
+                "请分析一个技术问题"
+            )
+            await expect(page.locator(".attachment-chips")).to_contain_text("draft.txt")
+            assert await page.evaluate(
+                "!JSON.stringify({...localStorage, ...sessionStorage}).includes('请分析一个技术问题')"
+            )
+            check(
+                "browser refresh warns before discarding a tab-memory draft; cancel keeps its text/file and raw business content is not persisted to storage"
+            )
+            await page.locator(".enterprise-new-chat").click()
+            confirmation = page.get_by_role("dialog", name="新建会话确认", exact=True)
+            await expect(confirmation).to_be_visible()
+            await expect(page.locator("#app")).to_have_attribute("aria-hidden", "true")
+            assert await page.locator("#app").evaluate("element => element.inert")
+            for key in ["Tab"] * 8 + ["Shift+Tab"] * 8:
+                await page.keyboard.press(key)
+                assert await confirmation.evaluate(
+                    "element => element.contains(document.activeElement)"
+                )
+            await page.keyboard.press("Escape")
+            await expect(confirmation).to_have_count(0)
+            await expect(page.locator("#app")).not_to_have_attribute(
+                "aria-hidden", "true"
+            )
+            assert not await page.locator("#app").evaluate("element => element.inert")
+            await expect(page.locator(".enterprise-new-chat")).to_be_focused()
+            await expect(page.get_by_label("任务输入")).to_have_value(
+                "请分析一个技术问题"
+            )
+            await expect(page.locator(".attachment-chips")).to_contain_text("draft.txt")
+            check(
+                "new-chat draft replacement asks explicitly, traps keyboard focus and preserves the draft on Escape"
+            )
+            await page.get_by_role("link", name="企业场景", exact=True).click()
+            await page.locator(".enterprise-new-chat").click()
+            await confirmation.get_by_role(
+                "button", name="返回草稿", exact=True
+            ).click()
+            await expect(page).to_have_url(args.base + "/agent/workbench")
+            await expect(page.get_by_label("任务输入")).to_have_value(
+                "请分析一个技术问题"
+            )
+            await expect(page.locator(".attachment-chips")).to_contain_text("draft.txt")
+            await page.locator(".enterprise-new-chat").click()
+            await confirmation.get_by_role(
+                "button", name="放弃草稿并新建", exact=True
+            ).click()
+            await expect(page).to_have_url(args.base + "/agent/chat")
+            await expect(page.locator(".conversation-start-surface")).to_have_count(1)
+            await expect(page.locator("h1")).to_have_text("今天要完成什么工作？")
+            await expect(page.locator(".enterprise-composer-area")).to_have_count(0)
+            await expect(page.get_by_label("任务输入")).to_have_value("")
+            await expect(page.locator(".attachment-chips")).to_have_count(0)
+            assert len(session_posts) == before_selection
+            check(
+                "return-to-draft and explicit discard are distinct; new chat reuses the same start UI without creating a session or a duplicate bottom composer"
+            )
+            await page.get_by_label("任务输入").fill("请分析一个技术问题")
             await page.get_by_role("button", name="发送任务", exact=True).click()
             await expect(page).to_have_url(args.base + "/agent/models")
             await expect(
@@ -228,6 +453,13 @@ async def main():
             await page.get_by_role("button", name="维护场景", exact=True).click()
             await page.get_by_label("搜索场景").fill(fixture_name)
             await page.get_by_role("button", name="预览草稿", exact=True).click()
+            await expect(
+                page.get_by_role("dialog", name="新建会话确认", exact=True)
+            ).to_be_visible()
+            await page.get_by_role("button", name="放弃草稿并新建", exact=True).click()
+            await expect(page.locator(".start-draft-notice")).to_contain_text(
+                "维护草稿预览"
+            )
             await expect(page.locator(".scenario-trigger")).to_contain_text(
                 fixture_name
             )
@@ -519,9 +751,44 @@ async def main():
             check(
                 "persistent phone navigation remains visible after Escape and route changes; keyboard focus reaches content without a drawer trap"
             )
-            await page.get_by_role("button", name="退出登录", exact=True).click()
+            await expect(page.locator(".enterprise-avatar")).to_be_visible()
+            await expect(
+                page.get_by_role("menuitem", name="退出登录", exact=True)
+            ).to_have_count(0)
+            await page.get_by_role("button", name="账号菜单").click()
+            await page.get_by_role("menuitem", name="退出登录", exact=True).click()
             await expect(page.get_by_role("heading", name="欢迎回来")).to_be_visible()
-            check("mobile logout is reachable and clears authentication")
+            check("mobile avatar menu logout is reachable and clears authentication")
+            await page.get_by_label("账号", exact=True).fill(credentials["username"])
+            await page.get_by_label("密码", exact=True).fill(credentials["password"])
+            await page.get_by_role("button", name="进入企业平台").click()
+            await page.get_by_role("link", name="工作台", exact=True).click()
+            await page.get_by_label("任务输入").fill("Must be purged on logout")
+            await page.locator("input[type=file]").set_input_files(
+                {
+                    "name": "private.txt",
+                    "mimeType": "text/plain",
+                    "buffer": b"Do not persist business text",
+                }
+            )
+            await expect(page.locator(".enterprise-avatar")).to_be_visible()
+            await expect(
+                page.get_by_role("menuitem", name="退出登录", exact=True)
+            ).to_have_count(0)
+            await page.get_by_role("button", name="账号菜单").click()
+            await page.get_by_role("menuitem", name="退出登录", exact=True).click()
+            await expect(page.get_by_role("heading", name="欢迎回来")).to_be_visible()
+            await page.get_by_label("账号", exact=True).fill(credentials["username"])
+            await page.get_by_label("密码", exact=True).fill(credentials["password"])
+            await page.get_by_role("button", name="进入企业平台").click()
+            await expect(page.get_by_label("任务输入")).to_have_value("")
+            await expect(page.locator(".attachment-chips")).to_have_count(0)
+            assert await page.evaluate(
+                "!JSON.stringify({...localStorage, ...sessionStorage}).includes('Must be purged on logout')"
+            )
+            check(
+                "logout and re-login purge tab-local business drafts and attachments; raw task text never enters browser storage"
+            )
             check(
                 "no browser JavaScript exceptions or API 5xx",
                 not errors and not failed_api,

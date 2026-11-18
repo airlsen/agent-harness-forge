@@ -10,6 +10,7 @@ import type { KernelEvent } from '../../types/platform';
 import Icon from '../../components/ForgeIcon.vue';
 import Markdown from '../../components/MarkdownContent.vue';
 import TaskComposer from '../../components/TaskComposer.vue';
+import ConversationStart from '../../components/ConversationStart.vue';
 import DialogShell from '../../components/DialogShell.vue';
 
 const app = usePlatform();
@@ -84,7 +85,7 @@ const selectedTools = computed(() =>
     ).includes(t.name),
   ),
 );
-const welcome = computed(() => !chat.current && !chat.messages.length && !loadError.value);
+const welcome = computed(() => !chat.messages.length && !loadError.value);
 const processEvents = computed(() =>
   chat.events.filter((e) =>
     ['tool_use_start', 'tool_result', 'approval_required', 'approval_resolved', 'error', 'message'].includes(
@@ -119,7 +120,7 @@ async function loadSession(value: unknown) {
   fileError.value = '';
   stickToBottom.value = true;
   if (value && (!/^\d+$/.test(String(value)) || !Number.isSafeInteger(Number(value)))) {
-    chat.newConversation();
+    chat.prepareStart();
     loadError.value = '会话地址无效，请从会话列表重新打开。';
     return;
   }
@@ -127,13 +128,21 @@ async function loadSession(value: unknown) {
     if (value && Number(value) !== chat.current?.id) await chat.open(Number(value));
     else if (value && chat.current?.status === 'running')
       chat.follow(Number(value), chat.events.at(-1)?.seq ?? 0);
-    else if (!value && chat.current) chat.newConversation();
+    else if (!value) chat.prepareStart();
     if (generation === routeGeneration) await scrollToBottom();
   } catch (error) {
     if (generation === routeGeneration) loadError.value = (error as Error).message;
   }
 }
 watch(() => route.params.sessionId, loadSession, { immediate: true });
+// The start composer disappears as soon as the first turn is accepted. Keep
+// routing in this persistent parent so unmounting it cannot swallow the receipt.
+watch(
+  () => (chat.messages.some((message) => message.role === 'user') ? chat.current?.id : null),
+  (id) => {
+    if (id && !route.params.sessionId) void router.replace(`/agent/chat/${id}`);
+  },
+);
 watch(
   () => chat.liveText + chat.messages.length + chat.events.length,
   async () => {
@@ -159,10 +168,6 @@ function trackScroll() {
 function showPanel(panel: 'files' | 'trajectory' | 'context') {
   chat.panelOpen = chat.panel !== panel || !chat.panelOpen;
   chat.panel = panel;
-}
-function choosePrompt(text: string) {
-  chat.input = text;
-  void nextTick(() => document.getElementById('task-input')?.focus());
 }
 function toolTitle(name: string) {
   return app.tools.find((t) => t.name === name)?.title ?? name;
@@ -301,36 +306,7 @@ async function copyMessage(text: string) {
             ><RouterLink class="button primary" to="/agent/conversations">返回会话列表</RouterLink>
           </div>
         </div>
-        <div v-else-if="welcome" class="new-session-welcome">
-          <span :class="['scene-icon', selected?.payload.icon]"><Icon :name="sceneIcon" :size="29" /></span>
-          <div class="eyebrow">START A CONVERSATION</div>
-          <h1>{{ selected?.payload.name ?? '从一项工作开始' }}</h1>
-          <p>{{ sceneDescription || '描述你的目标，按需引用平台提供的能力。' }}</p>
-          <div class="new-session-capabilities">
-            <span
-              ><Icon name="layers" :size="14" />{{
-                selected?.status === 'draft' ? '维护草稿预览' : '引用平台场景'
-              }}</span
-            ><button @click="showPanel('context')">
-              <Icon name="blocks" :size="14" />{{
-                selectedTools.length ? `${selectedTools.length} 项授权工具` : '专注对话'
-              }}<Icon name="chevron" :size="12" />
-            </button>
-          </div>
-          <div class="new-session-prompts">
-            <button @click="choosePrompt('请先帮我梳理完成这项工作需要哪些信息：\n')">
-              <Icon name="message" :size="16" /><span>一起梳理工作目标</span
-              ><Icon name="arrow" :size="14" /></button
-            ><button @click="choosePrompt('请根据以下资料提炼要点，并整理下一步行动：\n')">
-              <Icon name="file" :size="16" /><span>整理资料与下一步行动</span><Icon name="arrow" :size="14" />
-            </button>
-          </div>
-          <div v-if="!app.connection?.configured" class="connect-model-prompt enterprise-model-prompt">
-            <Icon name="plug" :size="17" />
-            <div><strong>模型尚未连接</strong><span>配置真实模型后开始执行。</span></div>
-            <RouterLink to="/agent/models">配置连接 <Icon name="arrow" :size="14" /></RouterLink>
-          </div>
-        </div>
+        <ConversationStart v-else-if="welcome" @submitted="(id) => router.replace(`/agent/chat/${id}`)" />
         <div v-else class="conversation-messages">
           <div class="conversation-start">
             <Icon name="layers" :size="13" />{{ chat.current?.scenarioName }} · v{{
@@ -426,7 +402,7 @@ async function copyMessage(text: string) {
           </button>
         </div>
       </div>
-      <div v-if="!loadError" class="composer-area enterprise-composer-area">
+      <div v-if="!loadError && !welcome && !chat.loading" class="composer-area enterprise-composer-area">
         <button
           v-if="!stickToBottom && !welcome"
           class="jump-to-latest"

@@ -5,6 +5,29 @@ import { usePlatform } from './platform';
 import type { Approval, ChatMessage, KernelEvent, SessionDetail } from '../types/platform';
 let stream: { close: () => void } | null = null;
 let openGeneration = 0;
+// Reopening a conversation while its turn request is still in flight must read
+// the database after that request settles, not display an older idle snapshot.
+const pendingTurns = new Map<number, Promise<{ messageId: number; cursor: number }>>();
+// A failed first turn can retry its created session, but that session must not
+// become the visible conversation (or steal the start draft) before acceptance.
+const preparedSessions = new Map<number, SessionDetail>();
+
+interface TaskDraft {
+  id: number;
+  input: string;
+  attachments: { name: string; content: string }[];
+  scenarioId: number | null;
+  preview: boolean;
+}
+function sameDraft(left: TaskDraft, right: TaskDraft) {
+  return (
+    left.id === right.id &&
+    left.scenarioId === right.scenarioId &&
+    left.preview === right.preview &&
+    left.input === right.input &&
+    JSON.stringify(left.attachments) === JSON.stringify(right.attachments)
+  );
+}
 
 async function trajectory(id: number, last: number) {
   const events: KernelEvent[] = [];
@@ -27,9 +50,16 @@ export const useConversation = defineStore('conversation', {
     approvals: [] as Approval[],
     files: [] as { path: string; bytes: number }[],
     selectedScenarioId: null as number | null,
+    previewScenarioId: null as number | null,
     input: '',
     draftAttachments: [] as { name: string; content: string }[],
     draftRevision: 0,
+    // Memory only, scoped to this authenticated tab. Never persist business drafts in Web Storage.
+    drafts: {} as Record<string, TaskDraft>,
+    draftKey: 'new',
+    draftId: 0,
+    draftSequence: 0,
+    pendingNewConversation: null as null | { scenarioId?: number; draftId: number },
     liveText: '',
     sending: false,
     loading: false,
@@ -38,13 +68,43 @@ export const useConversation = defineStore('conversation', {
     panel: 'files' as 'context' | 'trajectory' | 'files',
     panelOpen: false,
   }),
-  getters: { running: (state) => state.sending || state.current?.status === 'running' },
+  getters: {
+    running: (state) => state.sending || state.current?.status === 'running',
+    hasUnsentDrafts: (state) =>
+      Boolean(
+        state.input.trim() ||
+        state.draftAttachments.length ||
+        Object.entries(state.drafts).some(
+          ([key, draft]) =>
+            (key !== state.draftKey || state.loading || (key !== 'new' && !state.current)) &&
+            (draft.input.trim() || draft.attachments.length),
+        ),
+      ),
+  },
   actions: {
     disconnect() {
       stream?.close();
       stream = null;
     },
-    newConversation(scenarioId?: number) {
+    snapshotDraft(): TaskDraft {
+      if (!this.draftId) this.draftId = ++this.draftSequence;
+      return {
+        id: this.draftId,
+        input: this.input,
+        attachments: this.draftAttachments.map((file) => ({ ...file })),
+        scenarioId: this.selectedScenarioId,
+        preview: this.selectedScenarioId !== null && this.selectedScenarioId === this.previewScenarioId,
+      };
+    },
+    saveDraft() {
+      // An opening session has not restored its cached draft yet. Do not overwrite it.
+      if (this.loading || (this.draftKey !== 'new' && !this.current)) return;
+      const draft = this.snapshotDraft();
+      if (draft.input || draft.attachments.length || this.draftKey === 'new')
+        this.drafts[this.draftKey] = draft;
+      else delete this.drafts[this.draftKey];
+    },
+    resetSession(): number {
       ++openGeneration;
       ++this.draftRevision;
       this.disconnect();
@@ -62,31 +122,118 @@ export const useConversation = defineStore('conversation', {
       this.draftAttachments = [];
       this.panelOpen = false;
       this.panel = 'files';
-      this.selectedScenarioId = scenarioId ?? usePlatform().availableScenarios[0]?.id ?? null;
+      return openGeneration;
+    },
+    restoreDraft(key: string, scenarioId?: number, allowPreview = false) {
+      const draft = this.drafts[key];
+      this.draftKey = key;
+      this.draftId = draft?.id ?? ++this.draftSequence;
+      this.input = draft?.input ?? '';
+      this.draftAttachments = draft?.attachments.map((file) => ({ ...file })) ?? [];
+      const platform = usePlatform();
+      const selectedId = scenarioId ?? draft?.scenarioId;
+      const selected = platform.scenarios.find(
+        (scenario) =>
+          scenario.id === selectedId &&
+          (allowPreview ||
+            draft?.preview ||
+            platform.availableScenarios.some((item) => item.id === scenario.id)),
+      );
+      this.selectedScenarioId = selected?.id ?? platform.availableScenarios[0]?.id ?? null;
+      this.previewScenarioId = selected?.status === 'draft' ? selected.id : null;
+    },
+    prepareStart() {
+      // Returning home parks this session's reply, not its execution. A new-task draft
+      // is independent of every existing conversation and never inherits their context.
+      if (this.current || this.loading || this.draftKey !== 'new') {
+        this.saveDraft();
+        this.resetSession();
+        this.restoreDraft('new');
+      } else {
+        const platform = usePlatform();
+        if (
+          !platform.scenarios.some(
+            (scenario) =>
+              scenario.id === this.selectedScenarioId &&
+              (platform.availableScenarios.some((item) => item.id === scenario.id) ||
+                scenario.id === this.previewScenarioId),
+          )
+        ) {
+          this.selectedScenarioId = platform.availableScenarios[0]?.id ?? null;
+          this.previewScenarioId = null;
+        }
+        if (!this.draftId) this.draftId = ++this.draftSequence;
+      }
+    },
+    newConversation(scenarioId?: number) {
+      this.saveDraft();
+      this.resetSession();
+      const discarded = this.drafts.new;
+      if (discarded) preparedSessions.delete(discarded.id);
+      delete this.drafts.new;
+      this.restoreDraft('new', scenarioId, true);
+      this.pendingNewConversation = null;
+    },
+    requestNewConversation(scenarioId?: number): boolean {
+      this.saveDraft();
+      const draft = this.drafts.new;
+      if (draft && (draft.input.trim() || draft.attachments.length)) {
+        this.pendingNewConversation = { scenarioId, draftId: draft.id };
+        return false;
+      }
+      this.newConversation(scenarioId);
+      return true;
+    },
+    clear() {
+      this.resetSession();
+      pendingTurns.clear();
+      preparedSessions.clear();
+      this.drafts = {};
+      this.draftKey = 'new';
+      this.draftId = ++this.draftSequence;
+      this.selectedScenarioId = null;
+      this.previewScenarioId = null;
+      this.pendingNewConversation = null;
+    },
+    selectScenario(id: number): boolean {
+      if (
+        this.current ||
+        this.running ||
+        this.loading ||
+        !usePlatform().availableScenarios.some((scenario) => scenario.id === id)
+      )
+        return false;
+      this.selectedScenarioId = id;
+      this.previewScenarioId = null;
+      return true;
+    },
+    consumeDraft(key: string, submitted: TaskDraft) {
+      preparedSessions.delete(submitted.id);
+      const cached = this.drafts[key];
+      if (this.pendingNewConversation?.draftId === submitted.id && cached && sameDraft(cached, submitted))
+        this.pendingNewConversation = null;
+      if (cached && sameDraft(cached, submitted)) delete this.drafts[key];
+      if (this.draftKey === key && sameDraft(this.snapshotDraft(), submitted)) {
+        this.input = '';
+        this.draftAttachments = [];
+        ++this.draftRevision;
+      }
     },
     async open(id: number) {
-      const generation = ++openGeneration;
-      ++this.draftRevision;
-      this.disconnect();
-      this.input = '';
-      this.draftAttachments = [];
-      this.sending = false;
+      this.saveDraft();
+      const generation = this.resetSession();
+      this.draftKey = `session:${id}`;
+      this.draftId = ++this.draftSequence;
       this.loading = true;
-      this.liveText = '';
-      this.runError = '';
-      this.connectionWarning = '';
-      this.files = [];
-      this.current = null;
-      this.messages = [];
-      this.events = [];
-      this.approvals = [];
       try {
+        await pendingTurns.get(id)?.catch(() => {});
+        if (generation !== openGeneration) return;
         const detail = await api<SessionDetail>(`/agent/sessions/${id}`);
         const events = await trajectory(id, detail.lastEventSeq);
         if (generation !== openGeneration) return;
         this.current = detail;
         this.messages = detail.messages;
-        this.selectedScenarioId = detail.scenarioId;
+        this.restoreDraft(`session:${id}`, detail.scenarioId, true);
         this.approvals = detail.pendingApprovals;
         this.events = events;
         const lastError = [...events].reverse().find((event) => event.kind === 'error');
@@ -107,9 +254,10 @@ export const useConversation = defineStore('conversation', {
     },
     async submit(): Promise<number | null> {
       const platform = usePlatform();
-      if (this.running || (!this.input.trim() && !this.draftAttachments.length)) return null;
+      if (this.running || this.loading || (!this.input.trim() && !this.draftAttachments.length)) return null;
       if (!platform.connection?.configured) throw new Error('模型尚未连接，请由管理员在「模型连接」完成配置');
       const scenarioId =
+        this.current?.scenarioId ??
         platform.scenarios.find((scenario) => scenario.id === this.selectedScenarioId)?.id ??
         platform.availableScenarios[0]?.id;
       if (!scenarioId) throw new Error('请先选择一个场景');
@@ -119,27 +267,49 @@ export const useConversation = defineStore('conversation', {
       ].join('\n');
       if (message.length > 64000) throw new Error('任务与文本附件合计不能超过 64000 字符');
       const generation = openGeneration;
+      this.selectedScenarioId = scenarioId;
+      const submittedDraft = this.snapshotDraft();
+      const originKey = this.draftKey;
       this.sending = true;
       this.runError = '';
       this.connectionWarning = '';
       this.liveText = '';
       try {
-        const session = this.current ?? (await post<SessionDetail>('/agent/sessions', { scenarioId }));
+        const prepared = preparedSessions.get(submittedDraft.id);
+        if (prepared && pendingTurns.has(prepared.id))
+          throw new Error('这份草稿仍在提交，请稍后再试；不会重复发送。');
+        const session =
+          this.current ??
+          (prepared?.scenarioId === scenarioId
+            ? prepared
+            : await post<SessionDetail>('/agent/sessions', { scenarioId }));
         // A navigation/new draft during an in-flight create must never attach its receipt
         // or text to another conversation. Backend execution, once accepted, continues.
         if (generation !== openGeneration) {
           await platform.refreshSessions();
           return null;
         }
-        this.current = session;
-        const receipt = await post(`/agent/sessions/${session.id}/turns`, { message });
+        if (pendingTurns.has(session.id)) throw new Error('这份草稿仍在提交，请稍后再试；不会重复发送。');
+        if (!this.current) preparedSessions.set(submittedDraft.id, session);
+        const pending = post<{ messageId: number; cursor: number }>(`/agent/sessions/${session.id}/turns`, {
+          message,
+        });
+        pendingTurns.set(session.id, pending);
+        let receipt;
+        try {
+          receipt = await pending;
+        } finally {
+          if (pendingTurns.get(session.id) === pending) pendingTurns.delete(session.id);
+        }
+        // A late accepted turn consumes only its own draft, never a newer task or reply.
+        this.consumeDraft(originKey, submittedDraft);
         if (generation !== openGeneration) {
           await platform.refreshSessions();
           return null;
         }
+        this.current = session;
+        this.draftKey = `session:${session.id}`;
         this.messages.push({ id: receipt.messageId, role: 'user', content: message, meta: {} });
-        this.input = '';
-        this.draftAttachments = [];
         this.current.status = 'running';
         this.follow(session.id, receipt.cursor);
         await platform.refreshSessions();

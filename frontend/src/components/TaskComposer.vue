@@ -28,6 +28,7 @@ const canSend = computed(
     (chat.input.trim() || chat.draftAttachments.length) &&
     !attaching.value &&
     !submitting.value &&
+    !chat.running &&
     !chat.loading,
 );
 
@@ -65,7 +66,7 @@ async function send() {
   picker.value = false;
   try {
     const id = await chat.submit();
-    if (id) emit('submitted', id);
+    if (id && active) emit('submitted', id);
   } catch (error) {
     app.toast((error as Error).message, 'error');
   } finally {
@@ -108,6 +109,7 @@ function keyboard(event: KeyboardEvent) {
     void send();
   }
 }
+defineExpose({ focus: () => textarea.value?.focus() });
 </script>
 <template>
   <div ref="root" :class="['task-composer', { 'task-composer-hero': hero }]">
@@ -167,6 +169,7 @@ function keyboard(event: KeyboardEvent) {
               :class="{ selected: selected?.id === scenario.id }"
               @click="
                 chat.selectedScenarioId = scenario.id;
+                chat.previewScenarioId = scenario.status === 'draft' ? scenario.id : null;
                 picker = false;
                 textarea?.focus();
               "
@@ -212,7 +215,7 @@ function keyboard(event: KeyboardEvent) {
         </button>
       </div>
       <button
-        v-if="chat.running"
+        v-if="chat.current?.status === 'running'"
         class="stop-button"
         @click="chat.interrupt().catch((e) => app.toast(e.message, 'error'))"
       >
@@ -226,15 +229,15 @@ function keyboard(event: KeyboardEvent) {
         title="发送任务 · Enter"
         @click="send"
       >
-        <span v-if="submitting" class="loader small"></span
-        ><template v-else><span v-if="hero">开始工作</span><Icon name="arrowUp" :size="18" /></template>
+        <span v-if="submitting || chat.sending" class="loader small"></span
+        ><template v-else><span v-if="hero">发送</span><Icon name="arrowUp" :size="18" /></template>
       </button>
     </div>
   </div>
-  <div class="task-composer-footnote">
-    <span
+  <div :class="['task-composer-footnote', { 'task-composer-shortcuts': hero }]">
+    <span v-if="!hero"
       ><Icon name="layers" :size="12" />{{
-        hero ? '引用公共能力，按场景范围执行' : chat.current ? '场景与策略快照已锁定' : '新会话将引用所选场景'
+        chat.current ? '场景与策略快照已锁定' : '新会话将引用所选场景'
       }}</span
     >
     <span>Enter 发送 <i>·</i> Shift + Enter 换行</span>

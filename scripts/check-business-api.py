@@ -640,6 +640,16 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                         break
                     if not line:
                         raise RuntimeError("Isolated API exited during startup")
+
+                # Drain access logs throughout the expanded browser journey, not just
+                # startup. Otherwise an unread OS pipe could eventually block uvicorn
+                # and turn test-harness backpressure into a false execution failure.
+                def drain_browser_logs():
+                    for _ in api_process.stdout:
+                        pass
+
+                log_drain = threading.Thread(target=drain_browser_logs, daemon=True)
+                log_drain.start()
                 asyncio.run(
                     check_execution_ui(
                         f"http://127.0.0.1:{api_port}",

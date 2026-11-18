@@ -6,6 +6,7 @@ import { useConversation } from './stores/conversation';
 import { sessionState } from './utils/presentation';
 import Icon from './components/ForgeIcon.vue';
 import DialogShell from './components/DialogShell.vue';
+import AccountMenu from './components/AccountMenu.vue';
 import LoginView from './views/LoginView.vue';
 
 const app = usePlatform();
@@ -13,6 +14,7 @@ const chat = useConversation();
 const route = useRoute();
 const router = useRouter();
 const help = ref(false);
+const loggingOut = ref(false);
 const adminRoutes = ['/agent/manage', '/agent/models', '/agent/governance', '/agent/audit'];
 const isAdministration = computed(() => adminRoutes.includes(route.path));
 const navigation = [
@@ -27,30 +29,51 @@ const management = [
   { path: '/agent/governance', label: '企业策略', icon: 'shield' },
   { path: '/agent/audit', label: '运行审计', icon: 'activity' },
 ];
-const avatar = computed(() => app.user?.username?.slice(0, 1)?.toUpperCase() || 'A');
 function newChat() {
-  chat.newConversation();
+  if (chat.requestNewConversation()) void router.push('/agent/chat');
+}
+function discardAndStart() {
+  const pending = chat.pendingNewConversation;
+  if (!pending) return;
+  chat.newConversation(pending.scenarioId);
   void router.push('/agent/chat');
 }
+function returnToDraft() {
+  chat.pendingNewConversation = null;
+  chat.prepareStart();
+  void router.push('/agent/workbench');
+}
 async function logout() {
+  if (loggingOut.value) return;
+  loggingOut.value = true;
   try {
     help.value = false;
-    chat.newConversation();
+    chat.clear();
     await app.logout();
   } catch (error) {
     app.toast((error as Error).message, 'error');
+  } finally {
+    loggingOut.value = false;
   }
+}
+function protectDrafts(event: BeforeUnloadEvent) {
+  if (!app.authenticated || !chat.hasUnsentDrafts) return;
+  // Drafts deliberately stay in tab memory. Let the browser warn before a refresh
+  // or a cross-site navigation discards them; no business text enters storage.
+  event.preventDefault();
+  event.returnValue = '';
 }
 const unauthorized = () => {
   help.value = false;
   app.authenticated = false;
-  chat.disconnect();
+  chat.clear();
 };
 let timer: ReturnType<typeof setInterval> | null = null;
 let sessionTimer: ReturnType<typeof setInterval> | null = null;
 let sessionRefreshPending = false;
 onMounted(async () => {
   window.addEventListener('forge:unauthorized', unauthorized);
+  window.addEventListener('beforeunload', protectDrafts);
   try {
     await app.checkAuth();
     if (app.authenticated) await app.initialize();
@@ -82,6 +105,7 @@ onUnmounted(() => {
   if (timer) clearInterval(timer);
   if (sessionTimer) clearInterval(sessionTimer);
   window.removeEventListener('forge:unauthorized', unauthorized);
+  window.removeEventListener('beforeunload', protectDrafts);
   chat.disconnect();
 });
 </script>
@@ -126,16 +150,10 @@ onUnmounted(() => {
             >
           </RouterLink>
         </nav>
-        <div class="enterprise-recent-heading">
-          <span>最近会话</span
-          ><RouterLink to="/agent/conversations" aria-label="查看全部会话" title="查看全部会话"
-            ><Icon name="arrow" :size="14"
-          /></RouterLink>
-        </div>
+        <div class="enterprise-recent-heading">最近会话</div>
         <div class="enterprise-recents">
           <div v-if="!app.regularConversations.length" class="enterprise-recent-empty">
-            <span></span>
-            <p>还没有会话记录<br /><small>从一项具体工作开始。</small></p>
+            <p>开始对话，记录会留在这里。</p>
           </div>
           <div
             v-for="item in app.regularConversations.slice(0, 6)"
@@ -173,15 +191,7 @@ onUnmounted(() => {
         >
           <Icon name="book" :size="18" /><span>帮助</span>
         </button>
-        <div class="enterprise-profile">
-          <span class="enterprise-avatar">{{ avatar }}</span>
-          <div>
-            <strong>{{ app.user?.username }}</strong><small>当前管理员账号</small>
-          </div>
-          <button class="icon-button" aria-label="退出登录" title="退出登录" @click="logout">
-            <Icon name="logout" :size="17" />
-          </button>
-        </div>
+        <AccountMenu :username="app.user?.username ?? ''" :busy="loggingOut" @logout="logout" />
       </div>
     </aside>
     <div class="app-body enterprise-body">
@@ -197,6 +207,22 @@ onUnmounted(() => {
       <div v-if="app.loading" class="global-progress"></div>
       <div id="main-content" class="enterprise-view" tabindex="-1"><RouterView /></div>
     </div>
+    <DialogShell
+      v-if="chat.pendingNewConversation"
+      label="新建会话确认"
+      variant="modal"
+      panel-class="confirm-modal draft-replacement-dialog"
+      @close="chat.pendingNewConversation = null"
+    >
+      <h2>还有一份未发送的工作草稿</h2>
+      <p>新建会话会清空这份起始草稿和附件。你也可以返回草稿继续编辑；已有会话中的回复草稿不受影响。</p>
+      <p v-if="chat.sending">已经被服务端接收的请求，不会因新建会话而中止。</p>
+      <footer>
+        <button class="button secondary" @click="chat.pendingNewConversation = null">取消</button>
+        <button class="button secondary" @click="returnToDraft">返回草稿</button>
+        <button class="button primary" @click="discardAndStart">放弃草稿并新建</button>
+      </footer>
+    </DialogShell>
     <DialogShell v-if="help" label="使用帮助" panel-class="enterprise-guide" @close="help = false">
       <header>
         <div>

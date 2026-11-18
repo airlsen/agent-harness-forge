@@ -157,9 +157,10 @@ function selectTab(id: string) {
   detail.value = null;
   void router.replace({ query: { ...route.query, tab: id, tool: undefined } });
 }
-function start(scenario: Scenario) {
-  chat.newConversation(scenario.id);
-  void router.push('/agent/chat');
+async function start(scenario: Scenario) {
+  detail.value = null;
+  if (route.query.tool) await router.replace({ query: { ...route.query, tool: undefined } });
+  if (chat.requestNewConversation(scenario.id)) void router.push('/agent/chat');
 }
 function closeTool() {
   detail.value = null;
@@ -287,21 +288,77 @@ onMounted(load);
       </div>
       <section v-else-if="tab === 'mcp' && mcp" class="mcp-manager">
         <div class="mcp-manager-heading">
-          <div><h2>接入远程 MCP 服务</h2><p>粘贴常见 mcpServers JSON。第一版支持 HTTPS Streamable HTTP，不会运行 JSON 中的本机命令。</p></div>
+          <div>
+            <h2>接入远程 MCP 服务</h2>
+            <p>粘贴常见 mcpServers JSON。第一版支持 HTTPS Streamable HTTP，不会运行 JSON 中的本机命令。</p>
+          </div>
           <span class="tag neutral">远程 HTTP</span>
         </div>
         <label class="mcp-json-label" for="mcp-import-json">MCP 服务配置 JSON</label>
-        <textarea id="mcp-import-json" v-model="mcpJson" class="mcp-json-input" rows="9" spellcheck="false" placeholder="{\n  &quot;mcpServers&quot;: {\n    &quot;my-service&quot;: {\n      &quot;type&quot;: &quot;http&quot;,\n      &quot;url&quot;: &quot;https://mcp.example.com/mcp&quot;\n    }\n  }\n}"></textarea>
-        <div class="mcp-manager-actions"><span>认证头会加密保存在本机数据库，不会在列表中显示。</span><button class="button primary" :disabled="mcpBusy || !mcpJson.trim()" @click="importMcpJson">{{ mcpBusy ? '处理中…' : '导入配置' }}</button></div>
+        <textarea
+          id="mcp-import-json"
+          v-model="mcpJson"
+          class="mcp-json-input"
+          rows="9"
+          spellcheck="false"
+          placeholder='{\n  "mcpServers": {\n    "my-service": {\n      "type": "http",\n      "url": "https://mcp.example.com/mcp"\n    }\n  }\n}'
+        ></textarea>
+        <div class="mcp-manager-actions">
+          <span>认证头会加密保存在本机数据库，不会在列表中显示。</span
+          ><button class="button primary" :disabled="mcpBusy || !mcpJson.trim()" @click="importMcpJson">
+            {{ mcpBusy ? '处理中…' : '导入配置' }}
+          </button>
+        </div>
         <div v-if="mcpMessage" class="mcp-feedback" role="status">{{ mcpMessage }}</div>
         <div class="mcp-server-list">
           <article v-for="server in mcp.items" :key="server.id" class="mcp-server-card">
-            <div class="mcp-server-card-head"><div><strong>{{ server.name }}</strong><span :class="['tag', server.status === 'connected' ? 'success' : server.status === 'error' ? 'danger' : 'neutral']">{{ server.status === 'connected' ? '连接正常' : server.status === 'error' ? '连接失败' : '待测试' }}</span></div><code>{{ server.url }}</code></div>
+            <div class="mcp-server-card-head">
+              <div>
+                <strong>{{ server.name }}</strong><span
+                  :class="[
+                    'tag',
+                    server.status === 'connected'
+                      ? 'success'
+                      : server.status === 'error'
+                        ? 'danger'
+                        : 'neutral',
+                  ]"
+                  >{{
+                    server.status === 'connected'
+                      ? '连接正常'
+                      : server.status === 'error'
+                        ? '连接失败'
+                        : '待测试'
+                  }}</span
+                >
+              </div>
+              <code>{{ server.url }}</code>
+            </div>
             <p v-if="server.lastError" class="mcp-server-error">{{ server.lastError }}</p>
-            <div v-if="server.tools.length" class="mcp-tool-list"><strong>发现 {{ server.tools.length }} 项工具</strong><span v-for="tool in server.tools" :key="tool.name" :title="tool.description">{{ tool.name }}</span></div>
-            <div class="mcp-server-controls"><span v-if="server.hasCredentials" class="mcp-credential-note">认证信息已保存</span><button class="button secondary small" :disabled="mcpBusy" @click="testMcp(server)">测试连接</button><button class="button secondary small" :disabled="server.status !== 'connected'" @click="toggleMcp(server)">{{ server.enabled ? '停用' : '启用' }}</button><button class="button text small" @click="deleteMcp(server)">移除</button></div>
+            <div v-if="server.tools.length" class="mcp-tool-list">
+              <strong>发现 {{ server.tools.length }} 项工具</strong
+              ><span v-for="tool in server.tools" :key="tool.name" :title="tool.description">{{
+                tool.name
+              }}</span>
+            </div>
+            <div class="mcp-server-controls">
+              <span v-if="server.hasCredentials" class="mcp-credential-note">认证信息已保存</span
+              ><button class="button secondary small" :disabled="mcpBusy" @click="testMcp(server)">
+                测试连接</button
+              ><button
+                class="button secondary small"
+                :disabled="server.status !== 'connected'"
+                @click="toggleMcp(server)"
+              >
+                {{ server.enabled ? '停用' : '启用' }}</button
+              ><button class="button text small" @click="deleteMcp(server)">移除</button>
+            </div>
           </article>
-          <div v-if="!mcp.items.length" class="enterprise-empty"><span class="enterprise-empty-symbol"><Icon name="plug" :size="28" /></span><h2>还没有 MCP 服务</h2><p>导入配置后，测试连接并查看服务公开的工具。</p></div>
+          <div v-if="!mcp.items.length" class="enterprise-empty">
+            <span class="enterprise-empty-symbol"><Icon name="plug" :size="28" /></span>
+            <h2>还没有 MCP 服务</h2>
+            <p>导入配置后，测试连接并查看服务公开的工具。</p>
+          </div>
         </div>
       </section>
       <section v-else-if="unavailable" class="capability-unavailable enterprise-unavailable">

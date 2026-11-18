@@ -58,6 +58,7 @@ async def main(args):
     if args.axe_script and not args.axe_script.is_file():
         raise FileNotFoundError(args.axe_script)
     checks, layouts, states, fonts, errors, server_errors = [], [], [], [], [], []
+    account_layouts = []
 
     def passed(name):
         checks.append(name)
@@ -195,12 +196,21 @@ async def main(args):
                             const root = getComputedStyle(document.documentElement);
                             const view = document.querySelector('.enterprise-view');
                             const main = view.querySelector('main');
-                            const heading = main.querySelector('.page-heading,.workbench-hero');
+                            const heading = main.querySelector('.page-heading,.conversation-start-heading');
+                            const start = main.querySelector('.conversation-start-surface');
+                            const startStyle = start ? getComputedStyle(start) : null;
                             const help = document.querySelector('.enterprise-help-link');
                             return {
                                 body:box(document.querySelector('.enterprise-body')),
                                 view:box(view),
-                                inner:box(main.querySelector('.enterprise-page-inner,.workbench-inner')),
+                                inner:box(main.querySelector('.enterprise-page-inner,.conversation-start-inner')),
+                                start:box(start),
+                                composer:box(main.querySelector('.task-composer')),
+                                startMaxWidth:startStyle ? parseFloat(startStyle.getPropertyValue('--start-max-width')) : null,
+                                startPadTop:startStyle ? parseFloat(startStyle.paddingTop) : null,
+                                startPadBottom:startStyle ? parseFloat(startStyle.paddingBottom) : null,
+                                startPadX:startStyle ? parseFloat(startStyle.paddingLeft) : null,
+                                suggestionCount:main.querySelectorAll('.conversation-scenario-chip').length,
                                 heading:box(heading),
                                 titleSize:getComputedStyle(heading.querySelector('h1')).fontSize,
                                 titleCount:main.querySelectorAll('h1').length,
@@ -213,7 +223,7 @@ async def main(args):
                                 helpIcon:box(help.querySelector('svg')),
                                 footer:box(document.querySelector('.enterprise-sidebar-footer')),
                                 sidebarInert:document.querySelector('.enterprise-sidebar').inert,
-                                retiredMarkup:document.querySelectorAll('.enterprise-topbar,.preview-mode-badge,.workbench-kicker,.workbench-orbit,.page-heading .eyebrow').length,
+                                retiredMarkup:document.querySelectorAll('.enterprise-topbar,.preview-mode-badge,.workbench-kicker,.workbench-orbit,.page-heading .eyebrow,.workbench-section,.workbench-scene-card,.workbench-footer,.new-session-welcome').length,
                                 padTop:parseFloat(root.getPropertyValue('--page-padding-top')),
                                 padX:parseFloat(root.getPropertyValue('--page-padding-x')),
                                 maxWidth:parseFloat(root.getPropertyValue('--page-max-width')),
@@ -234,10 +244,31 @@ async def main(args):
                     assert abs(body["y"]) < 1
                     assert abs(view["y"] - (52 if admin else 0)) < 1
                     assert abs(view["height"] + view["y"] - height) < 1
-                    assert abs(heading["y"] - view["y"] - geometry["padTop"]) < 1
-                    expected_width = min(
-                        geometry["maxWidth"], body["width"] - 2 * geometry["padX"]
-                    )
+                    if route == "workbench":
+                        assert geometry["startMaxWidth"] == 820
+                        assert geometry["suggestionCount"] == 3
+                        assert geometry["start"]
+                        free_height = max(
+                            0,
+                            view["height"]
+                            - inner["height"]
+                            - geometry["startPadTop"]
+                            - geometry["startPadBottom"],
+                        )
+                        expected_top = view["y"] + geometry["startPadTop"]
+                        if width > 700 and height > 640:
+                            expected_top += free_height / 2
+                        assert abs(heading["y"] - expected_top) < 1, geometry
+                        expected_width = min(
+                            geometry["startMaxWidth"],
+                            body["width"] - 2 * geometry["startPadX"],
+                        )
+                        assert abs(geometry["composer"]["width"] - expected_width) < 1
+                    else:
+                        assert abs(heading["y"] - view["y"] - geometry["padTop"]) < 1
+                        expected_width = min(
+                            geometry["maxWidth"], body["width"] - 2 * geometry["padX"]
+                        )
                     expected_x = body["x"] + (body["width"] - expected_width) / 2
                     assert abs(inner["width"] - expected_width) < 1
                     assert abs(inner["x"] - expected_x) < 1
@@ -268,8 +299,95 @@ async def main(args):
                         if route in {"workbench", "manage", "models"}:
                             await screenshot(f"{route}-{width}")
                 passed(
-                    f"{width}x{height}: eight pages share one heading and content grid; no topbar gap or overflow"
+                    f"{width}x{height}: workbench centers its compact dialogue start, seven resource/admin pages retain their grid; one heading each, no topbar gap or overflow"
                 )
+                # The account trigger remains tappable on the narrow rail; its
+                # upward menu must not be clipped by the sidebar or viewport.
+                account = page.get_by_role("button", name="账号菜单")
+                await expect(page.locator(".enterprise-avatar")).to_be_visible()
+                await expect(page.locator(".enterprise-profile svg")).to_have_count(0)
+                await account.click()
+                item = page.get_by_role("menuitem", name="退出登录", exact=True)
+                await expect(item).to_be_focused()
+                account_geometry = await item.evaluate(
+                    """element => {
+                        const box = el => {
+                            const r = el.getBoundingClientRect();
+                            return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};
+                        };
+                        const r = element.getBoundingClientRect();
+                        return {
+                            trigger:box(document.querySelector('.enterprise-account-trigger')),
+                            avatar:box(document.querySelector('.enterprise-avatar')),
+                            menu:box(element.closest('[role=menu]')),
+                            item:box(element),
+                            hitTarget:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2) === element,
+                            horizontalOverflow:document.documentElement.scrollWidth > innerWidth + 1,
+                        };
+                    }"""
+                )
+                for key in ["trigger", "avatar", "menu", "item"]:
+                    bounds = account_geometry[key]
+                    assert bounds["x"] >= 0 and bounds["y"] >= 0, account_geometry
+                    assert bounds["right"] <= width + 1, account_geometry
+                    assert bounds["bottom"] <= height + 1, account_geometry
+                assert account_geometry["trigger"]["height"] >= 44
+                assert account_geometry["trigger"]["width"] >= 44
+                assert account_geometry["hitTarget"]
+                assert not account_geometry["horizontalOverflow"]
+                if width <= 700:
+                    assert account_geometry["item"]["height"] >= 44
+                account_layouts.append(
+                    {"width": width, "height": height, **account_geometry}
+                )
+                if (width, height) in AUDIT_SIZES:
+                    await audit(f"{width}/account-menu")
+                    await screenshot(f"account-menu-{width}x{height}")
+                await page.keyboard.press("Escape")
+                await expect(page.get_by_role("menu", name="账号操作")).to_have_count(0)
+                await expect(account).to_be_focused()
+            passed(
+                "avatar and upward logout menu fit all eleven desktop/tablet/phone/short viewports, with real hit targets, no permanent exit icon and no horizontal overflow"
+            )
+
+            # A real touch context, not merely a narrow mouse viewport: the
+            # first tap must open the menu without synthetic-hover dependence.
+            touch_context = await browser.new_context(
+                viewport={"width": 390, "height": 844},
+                is_mobile=True,
+                has_touch=True,
+                storage_state=await page.context.storage_state(),
+            )
+            try:
+                touch_page = await touch_context.new_page()
+                touch_page.on("pageerror", lambda error: errors.append(str(error)))
+                await touch_page.goto(args.base + "/agent/workbench")
+                touch_account = touch_page.get_by_role("button", name="账号菜单")
+                touch_menu = touch_page.get_by_role("menu", name="账号操作")
+                await expect(touch_account).to_be_visible()
+                assert await touch_page.evaluate(
+                    "matchMedia('(pointer: coarse)').matches && !matchMedia('(hover: hover)').matches"
+                )
+                await touch_page.locator(".enterprise-avatar").tap()
+                await expect(touch_menu).to_be_visible()
+                await expect(
+                    touch_page.get_by_role("menuitem", name="退出登录", exact=True)
+                ).to_be_focused()
+                await touch_account.tap()
+                await expect(touch_menu).to_have_count(0)
+                await touch_account.tap()
+                await touch_page.get_by_label("任务输入").tap()
+                await expect(touch_menu).to_have_count(0)
+                await expect(touch_page.get_by_label("任务输入")).to_be_focused()
+                await expect(touch_account).to_have_attribute("aria-expanded", "false")
+                await touch_page.screenshot(
+                    path=str(destination / "account-touch-dismissed.png")
+                )
+            finally:
+                await touch_context.close()
+            passed(
+                "native coarse-pointer touch opens on the first avatar tap, toggles closed and dismisses outside without sticky hover"
+            )
 
             # Verify the actual CJK font, not just computed font-weight.
             await page.set_viewport_size({"width": 1440, "height": 1000})
@@ -303,7 +421,9 @@ async def main(args):
             for width, height in [(1440, 1000), (820, 1000), (390, 844), (820, 480)]:
                 await page.set_viewport_size({"width": width, "height": height})
                 await go("workbench")
-                trigger = page.get_by_role("button", name="使用帮助", exact=True)
+                # The trigger is intentionally outside the accessibility tree while
+                # its modal is open; inspect the same DOM button across both states.
+                trigger = page.locator(".enterprise-help-link")
                 await trigger.focus()
                 await expect(trigger).to_be_in_viewport()
                 await page.keyboard.press("Enter")
@@ -367,8 +487,44 @@ async def main(args):
                 await expect(
                     toolbar.get_by_role("button", name="查看过程", exact=True)
                 ).to_be_visible()
+                await expect(page.locator(".conversation-start-surface")).to_have_count(
+                    1
+                )
+                await expect(page.locator("h1")).to_have_text("今天要完成什么工作？")
+                await expect(page.locator(".enterprise-composer-area")).to_have_count(0)
                 await audit(f"{width}/chat")
                 await screenshot(f"chat-{width}")
+                await page.get_by_role(
+                    "button", name="使用场景 文档与报告", exact=True
+                ).click()
+                await audit(f"{width}/chat/selected-scenario")
+                await page.get_by_role("button", name="选择场景", exact=True).click()
+                popover = page.locator(".scenario-popover")
+                await expect(popover).to_be_visible()
+                popover_box = await popover.bounding_box()
+                assert (
+                    popover_box and popover_box["x"] + popover_box["width"] <= width + 1
+                )
+                await audit(f"{width}/chat/scenario-picker")
+                await page.keyboard.press("Escape")
+                await expect(popover).to_have_count(0)
+                await page.get_by_label("任务输入").fill(
+                    "Layout draft guard, never sent"
+                )
+                await page.locator(".enterprise-new-chat").click()
+                await expect(
+                    page.get_by_role("dialog", name="新建会话确认", exact=True)
+                ).to_be_visible()
+                await expect(page.locator("#app")).to_have_attribute(
+                    "aria-hidden", "true"
+                )
+                assert await page.locator("#app").evaluate("element => element.inert")
+                await audit(f"{width}/chat/draft-confirmation")
+                await page.get_by_role("button", name="取消", exact=True).click()
+                await expect(page.get_by_label("任务输入")).to_have_value(
+                    "Layout draft guard, never sent"
+                )
+                await page.get_by_label("任务输入").fill("")
             passed(
                 "conversation toolbars start at the top; results/process controls and honest Skills/MCP states remain"
             )
@@ -398,6 +554,8 @@ async def main(args):
                 "items": checks,
                 "layoutCount": len(layouts),
                 "layouts": layouts,
+                "accountMenuLayoutCount": len(account_layouts),
+                "accountMenuLayouts": account_layouts,
                 "accessibilityEnabled": bool(args.axe_script),
                 "accessibilityStateCount": len(states),
                 "accessibility": states,
