@@ -77,7 +77,9 @@ def _validate_remote_execution(value: object) -> dict:
         addresses = {ipaddress.ip_address(host)}
     except ValueError:
         try:
-            addresses = {ipaddress.ip_address(item[4][0]) for item in socket.getaddrinfo(host, parsed.port or 443)}
+            addresses = {
+                ipaddress.ip_address(item[4][0]) for item in socket.getaddrinfo(host, parsed.port or 443)
+            }
         except OSError as error:
             raise HTTPException(422, "无法解析远程 Worker 域名") from error
     if not addresses or any(not address.is_global for address in addresses):
@@ -122,15 +124,19 @@ def validate_manifest(value: object, *, uploaded: bool = False) -> dict:
     ):
         raise HTTPException(422, "插件名称、包标识或说明无效")
     if uploaded and runtime == "forge-bridge":
-        raise HTTPException(422, "上传包不能声明 forge-bridge；请使用 forge-remote-worker-v1 或作为 DSH 系统插件候选导入")
+        raise HTTPException(
+            422, "上传包不能声明 forge-bridge；请使用 forge-remote-worker-v1 或作为 DSH 系统插件候选导入"
+        )
     tools = value["tools"]
     if not tools or len(tools) > 32:
         raise HTTPException(422, "一个插件版本最多声明 32 项工具")
     if len(json.dumps(tools, ensure_ascii=False).encode()) > 128 * 1024:
         raise HTTPException(422, "插件工具契约不能超过 128 KB")
     tool_names = [str(tool.get("name", "")) for tool in tools if isinstance(tool, dict)]
-    if len(tool_names) != len(tools) or not tool_names or any(
-        not name or not name.replace("_", "").replace("-", "").isalnum() for name in tool_names
+    if (
+        len(tool_names) != len(tools)
+        or not tool_names
+        or any(not name or not name.replace("_", "").replace("-", "").isalnum() for name in tool_names)
     ):
         raise HTTPException(422, "插件工具标识无效")
     if len(set(tool_names)) != len(tool_names) or set(tool_names) & TOOL_NAMES:
@@ -393,10 +399,14 @@ def _current_available(rows: list[PluginRegistry]) -> list[PluginRegistry]:
 async def list_plugins(db: AsyncSession) -> tuple[list[dict], list[dict]]:
     rows = (await db.scalars(select(PluginRegistry).order_by(PluginRegistry.id.desc()))).all()
     available = _current_available(rows)
-    return [public_view(row) for row in available], [public_view(row) for row in rows if row.source_ref.startswith("uploaded:")]
+    return [public_view(row) for row in available], [
+        public_view(row) for row in rows if row.source_ref.startswith("uploaded:")
+    ]
 
 
-async def approved_bindings(db: AsyncSession, packages: list[str], tool_map: dict[str, list[str]]) -> list[dict]:
+async def approved_bindings(
+    db: AsyncSession, packages: list[str], tool_map: dict[str, list[str]]
+) -> list[dict]:
     selected = [item for item in dict.fromkeys(packages) if item != "forge-runtime"]
     if not selected:
         if tool_map:
@@ -416,7 +426,9 @@ async def approved_bindings(db: AsyncSession, packages: list[str], tool_map: dic
         candidates = [
             row
             for row in by_plugin.get(plugin_id, [])
-            if row.audit_status == "approved" and row.enabled and row.runtime in {"forge-bridge", "forge-remote-worker-v1"}
+            if row.audit_status == "approved"
+            and row.enabled
+            and row.runtime in {"forge-bridge", "forge-remote-worker-v1"}
         ]
         if not candidates:
             raise HTTPException(422, f"插件“{plugin_id}”尚未通过审核、已停用或运行时不受支持")
@@ -427,7 +439,9 @@ async def approved_bindings(db: AsyncSession, packages: list[str], tool_map: dic
             raise HTTPException(422, f"请至少选择插件“{row.display_name or plugin_id}”的一项工具")
         unknown = set(names) - set(available)
         if unknown:
-            raise HTTPException(422, f"插件“{row.display_name or plugin_id}”包含未登记工具：" + "、".join(sorted(unknown)))
+            raise HTTPException(
+                422, f"插件“{row.display_name or plugin_id}”包含未登记工具：" + "、".join(sorted(unknown))
+            )
         if set(names) & TOOL_NAMES or set(names) & bound_tools:
             raise HTTPException(422, "插件工具与平台或其他插件工具冲突")
         bound_tools.update(names)

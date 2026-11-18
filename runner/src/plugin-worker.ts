@@ -32,7 +32,13 @@ const secret = configuredSecret;
 const customers = [
   { id: 'crm-1001', name: '陈晨', email: 'chen.chen@example.test', company: '光屿科技', stage: '已沟通' },
   { id: 'crm-1002', name: '林夏', email: 'lin.xia@example.test', company: '远景零售', stage: '意向客户' },
-  { id: 'crm-1003', name: 'Alex Morgan', email: 'alex.morgan@example.test', company: 'Northstar Labs', stage: '跟进中' },
+  {
+    id: 'crm-1003',
+    name: 'Alex Morgan',
+    email: 'alex.morgan@example.test',
+    company: 'Northstar Labs',
+    stage: '跟进中',
+  },
 ];
 let noteSequence = 0;
 
@@ -40,11 +46,18 @@ function outline(args: Record<string, unknown>) {
   const text = String(args.text ?? '').trim();
   if (!text || text.length > 30000) throw new Error('需要提供不超过 30000 个字符的待整理文本');
   const maxItems = Number.isInteger(args.maxItems) ? Math.min(20, Math.max(1, Number(args.maxItems))) : 8;
-  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
   const ranked = lines.filter((line) => /^#{1,6}\s+/.test(line) || /^[-*•]\s+/.test(line));
   const items: string[] = [];
-  for (const line of (ranked.length ? ranked : lines)) {
-    const value = line.replace(/^#{1,6}\s+/, '').replace(/^[-*•]\s+/, '').replace(/\s+/g, ' ').slice(0, 280);
+  for (const line of ranked.length ? ranked : lines) {
+    const value = line
+      .replace(/^#{1,6}\s+/, '')
+      .replace(/^[-*•]\s+/, '')
+      .replace(/\s+/g, ' ')
+      .slice(0, 280);
     if (value && !items.includes(value)) items.push(value);
     if (items.length >= maxItems) break;
   }
@@ -69,7 +82,9 @@ function verifyLease(value: unknown): Lease | null {
 }
 
 function findCustomer(args: Record<string, unknown>) {
-  const query = String(args.query ?? '').trim().toLowerCase();
+  const query = String(args.query ?? '')
+    .trim()
+    .toLowerCase();
   if (!query || query.length > 120) throw new Error('需要提供不超过 120 个字符的客户名称或邮箱关键词');
   return {
     customers: customers.filter((customer) =>
@@ -90,7 +105,12 @@ function addCustomerNote(args: Record<string, unknown>) {
 function globallyRoutable(address: string): boolean {
   if (address.includes(':')) {
     const normalized = address.toLowerCase();
-    return normalized !== '::1' && !normalized.startsWith('fc') && !normalized.startsWith('fd') && !normalized.startsWith('fe80');
+    return (
+      normalized !== '::1' &&
+      !normalized.startsWith('fc') &&
+      !normalized.startsWith('fd') &&
+      !normalized.startsWith('fe80')
+    );
   }
   const [first, second] = address.split('.').map(Number);
   return !(
@@ -105,12 +125,16 @@ function globallyRoutable(address: string): boolean {
   );
 }
 
-async function remoteEndpoint(execution: LeaseBinding['execution']): Promise<{ endpoint: string; timeout: number }> {
+async function remoteEndpoint(
+  execution: LeaseBinding['execution'],
+): Promise<{ endpoint: string; timeout: number }> {
   if (!execution || execution.kind !== 'remote-worker' || typeof execution.endpoint !== 'string')
     throw new Error('远程 Worker 执行契约无效');
   const endpoint = new URL(execution.endpoint);
   const host = endpoint.hostname.toLowerCase().replace(/\.$/, '');
-  const domains = (execution.networkDomains ?? []).map((value) => String(value).toLowerCase().replace(/\.$/, ''));
+  const domains = (execution.networkDomains ?? []).map((value) =>
+    String(value).toLowerCase().replace(/\.$/, ''),
+  );
   if (
     endpoint.protocol !== 'https:' ||
     endpoint.username ||
@@ -134,7 +158,11 @@ async function remoteEndpoint(execution: LeaseBinding['execution']): Promise<{ e
   return { endpoint: endpoint.href, timeout };
 }
 
-async function invokeRemote(execution: LeaseBinding['execution'], tool: string, args: Record<string, unknown>) {
+async function invokeRemote(
+  execution: LeaseBinding['execution'],
+  tool: string,
+  args: Record<string, unknown>,
+) {
   const { endpoint, timeout } = await remoteEndpoint(execution);
   const signal = AbortSignal.timeout(timeout * 1000);
   let response: Response;
@@ -154,7 +182,9 @@ async function invokeRemote(execution: LeaseBinding['execution'], tool: string, 
     throw new Error('远程 Worker 响应超过 256 KB 限制');
   const body = await response.json().catch(() => ({}));
   if (!response.ok || !body || typeof body !== 'object' || !('result' in body))
-    throw new Error(typeof body?.message === 'string' ? body.message.slice(0, 500) : '远程 Worker 返回无效响应');
+    throw new Error(
+      typeof body?.message === 'string' ? body.message.slice(0, 500) : '远程 Worker 返回无效响应',
+    );
   if (Buffer.byteLength(JSON.stringify(body.result)) > 256 * 1024)
     throw new Error('远程 Worker 响应超过 256 KB 限制');
   return body.result;
@@ -181,21 +211,35 @@ app.post<{ Body: InvokeBody }>('/v1/invoke', async (request, reply) => {
   const lease = verifyLease(request.body?.lease);
   if (!lease) return reply.code(401).send({ message: 'invalid or expired plugin lease' });
   const binding = leaseBinding(lease, request.body ?? {});
-  if (!binding) return reply.code(403).send({ message: 'plugin binding or tool is not granted by this lease' });
+  if (!binding)
+    return reply.code(403).send({ message: 'plugin binding or tool is not granted by this lease' });
   const tool = request.body?.tool;
   const args = request.body?.arguments ?? {};
   try {
-    if (binding.package === 'forge-text-tools' && binding.version === '0.1.0' && tool === 'text_extract_outline')
+    if (
+      binding.package === 'forge-text-tools' &&
+      binding.version === '0.1.0' &&
+      tool === 'text_extract_outline'
+    )
       return { result: outline(args), sessionId: lease.sessionId };
     if (binding.package === 'forge-demo-crm' && binding.version === '0.1.0' && tool === 'crm_find_customer')
       return { result: findCustomer(args), sessionId: lease.sessionId };
-    if (binding.package === 'forge-demo-crm' && binding.version === '0.1.0' && tool === 'crm_add_customer_note')
+    if (
+      binding.package === 'forge-demo-crm' &&
+      binding.version === '0.1.0' &&
+      tool === 'crm_add_customer_note'
+    )
       return { result: addCustomerNote(args), sessionId: lease.sessionId };
     if (binding.runtime === 'forge-remote-worker-v1')
-      return { result: await invokeRemote(binding.execution, String(tool), args), sessionId: lease.sessionId };
+      return {
+        result: await invokeRemote(binding.execution, String(tool), args),
+        sessionId: lease.sessionId,
+      };
     return reply.code(403).send({ message: 'plugin runtime is not approved for this worker' });
   } catch (error) {
-    return reply.code(422).send({ message: error instanceof Error ? error.message : 'plugin execution failed' });
+    return reply
+      .code(422)
+      .send({ message: error instanceof Error ? error.message : 'plugin execution failed' });
   }
 });
 
