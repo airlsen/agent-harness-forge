@@ -1,7 +1,8 @@
 /**
  * 把扁平的消息列表聚合成「轮次」视图：一轮 = 一条用户消息 + 一个 AI 块。
- * AI 块内按发生顺序排列过程步骤：思考（始终展开）、连续工具调用组（可折叠）、正文。
- * live 覆盖项只落在最后一轮：运行中的思考/工具/正文流式并入同一个 AI 块。
+ * AI 块内按发生顺序排列过程步骤：思考（流式时展开，思考结束后折叠成一行）、
+ * 连续工具调用组（可折叠）、正文。live 覆盖项只落在最后一轮：
+ * 运行中的思考/工具/正文流式并入同一个 AI 块。
  */
 import type { ChatMessage } from '../types/platform';
 
@@ -73,7 +74,13 @@ export function buildTurns(messages: ChatMessage[], live: LiveTurn): Turn[] {
   const last = turns.at(-1);
   if (last && live.running) {
     last.running = true;
-    if (live.reasoning) last.steps.push({ kind: 'thinking', text: live.reasoning, live: true });
+    if (live.reasoning)
+      // 思考只在仍在流式推理时视为 live：一旦开始调工具或输出正文，思考即结束、折叠收起
+      last.steps.push({
+        kind: 'thinking',
+        text: live.reasoning,
+        live: !live.text && live.activeTools.length === 0,
+      });
     for (const call of live.activeTools) pushCall(last.steps, call);
     if (live.text)
       last.steps.push({ kind: 'text', text: live.text, live: true, partial: false, key: 'live' });

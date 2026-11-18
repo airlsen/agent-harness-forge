@@ -2818,6 +2818,9 @@ textarea:focus-visible {
 .enterprise-chat .step-label {
   color: var(--text-secondary);
 }
+.enterprise-chat .thinking-done > summary:hover {
+  color: var(--ink);
+}
 .enterprise-chat .step-thinking-text {
   color: var(--text-secondary);
   border-left-color: var(--line);
