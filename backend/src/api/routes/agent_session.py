@@ -100,6 +100,35 @@ async def files(session_id: int, db: AsyncSession = Depends(get_session)):
     return ResponseUtil.ok(await runner_client.call("GET", f"/v1/sessions/{row.runner_session_id}/files"))
 
 
+@router.get("/{session_id}/files/raw")
+async def file_raw(
+    session_id: int, path: str = Query(min_length=1, max_length=220), db: AsyncSession = Depends(get_session)
+):
+    """任意类型产物的原始字节：前端以 Blob 预览/下载。
+
+    始终以附件形式返回并附带 sandbox CSP：即使被直接打开，模型生成的 HTML/SVG 也无法在本站源下执行脚本。
+    """
+    from urllib.parse import quote
+
+    row = await session_service.row(db, session_id)
+    if not row.runner_session_id:
+        raise HTTPException(404, "会话尚未产生文件")
+    content, media_type = await runner_client.raw(
+        f"/v1/sessions/{row.runner_session_id}/raw?path={quote(path, safe='')}"
+    )
+    name = quote(path.rsplit("/", 1)[-1] or "file", safe="")
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{name}",
+            "Content-Security-Policy": "sandbox; default-src 'none'",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @router.get("/{session_id}/file")
 async def file(
     session_id: int, path: str = Query(min_length=1, max_length=220), db: AsyncSession = Depends(get_session)

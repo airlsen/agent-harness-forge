@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { api, post } from '../api/client';
 import { openEventStream } from '../api/events';
 import { usePlatform } from './platform';
+import type { WorkspaceFile } from '../utils/files';
 import type {
   Approval,
   ChatMessage,
@@ -86,7 +87,7 @@ export const useConversation = defineStore('conversation', {
     messages: [] as ChatMessage[],
     events: [] as KernelEvent[],
     approvals: [] as Approval[],
-    files: [] as { path: string; bytes: number }[],
+    files: [] as WorkspaceFile[],
     selectedScenarioId: null as number | null,
     previewScenarioId: null as number | null,
     selectedModelId: null as number | null,
@@ -486,7 +487,7 @@ export const useConversation = defineStore('conversation', {
             this.current.tokensIn = data.totalTokensIn;
             this.current.tokensOut = data.totalTokensOut;
             this.current.cost = data.cost;
-          } else if (event.kind === 'files') {
+          } else if (event.kind === 'files' || event.kind === 'deliverables') {
             this.panel = 'files';
             void this.refreshFiles();
           }
@@ -525,7 +526,7 @@ export const useConversation = defineStore('conversation', {
       const id = this.current?.id;
       if (!id) return;
       try {
-        const result = await api<{ items: { path: string; bytes: number }[] }>(`/agent/sessions/${id}/files`);
+        const result = await api<{ items: WorkspaceFile[] }>(`/agent/sessions/${id}/files`);
         if (this.current?.id === id) this.files = result.items;
       } catch {
         if (this.current?.id === id) this.files = [];

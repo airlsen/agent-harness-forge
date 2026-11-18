@@ -79,7 +79,8 @@ const server = http.createServer(async (req, res) => {
       instruction.includes('ESCAPE') ||
       instruction.includes('TIME') ||
       instruction.includes('LIST') ||
-      instruction.includes('READ')) &&
+      instruction.includes('READ') ||
+      instruction.includes('PRESENT')) &&
     !answeredTool
   ) {
     const tool = instruction.includes('TIME')
@@ -88,8 +89,11 @@ const server = http.createServer(async (req, res) => {
         ? 'workspace_list'
         : instruction.includes('READ')
           ? 'workspace_read'
-          : 'workspace_write';
-    if (instruction.includes('THINK')) send({ choices: [{ delta: { reasoning_content: '需要先查时间。' } }] });
+          : instruction.includes('PRESENT')
+            ? 'workspace_present'
+            : 'workspace_write';
+    if (instruction.includes('THINK'))
+      send({ choices: [{ delta: { reasoning_content: '需要先查时间。' } }] });
     const path = instruction.includes('ESCAPE')
       ? '../escape.txt'
       : instruction.includes('DENY')
@@ -99,7 +103,9 @@ const server = http.createServer(async (req, res) => {
       ? '{}'
       : tool === 'workspace_read'
         ? JSON.stringify({ path: 'report.md' })
-        : JSON.stringify({ path, content: '# Integration fixture\n' });
+        : tool === 'workspace_present'
+          ? JSON.stringify({ files: [{ path: 'report.md', description: '集成报告' }] })
+          : JSON.stringify({ path, content: '# Integration fixture\n' });
     send({
       choices: [
         {
@@ -212,10 +218,10 @@ try {
       tokensOut: 10,
     }),
   );
-  check('only whitelisted schemas are exposed', () =>
+  check('only whitelisted schemas are exposed (present rides on workspace_write)', () =>
     assert.deepEqual(
       requests[0].tools.map((tool) => tool.function.name).sort(),
-      bundle.meta.builtin_tools.toSorted(),
+      [...bundle.meta.builtin_tools, 'workspace_present'].toSorted(),
     ),
   );
   events = await turn('THINK');
@@ -278,6 +284,29 @@ try {
       '# Integration fixture\n',
     ),
   );
+  events = await turn('PRESENT');
+  check('present is enabled with workspace_write and declares deliverables without approval', () => {
+    assert.equal(
+      events.some((event) => event.kind === 'approval_required'),
+      false,
+    );
+    const result = events.find((event) => event.kind === 'tool_result');
+    assert.equal(result?.payload.isError, false);
+    assert.deepEqual(JSON.parse(result.payload.result).files, [
+      { path: 'report.md', bytes: 22, description: '集成报告' },
+    ]);
+    assert.deepEqual(events.find((event) => event.kind === 'deliverables')?.payload.files, [
+      { path: 'report.md', bytes: 22, description: '集成报告' },
+    ]);
+  });
+  const listed = (await kernel.listFiles(id)).find((file) => file.path === 'report.md');
+  const raw = await kernel.readRaw(id, 'report.md');
+  check('Runner lists MIME/mtime and serves exact raw bytes', () => {
+    assert.equal(listed.mime, 'text/markdown');
+    assert.ok(!Number.isNaN(Date.parse(listed.modifiedAt)));
+    assert.equal(raw.mime, 'text/markdown');
+    assert.equal(raw.data.toString('utf8'), '# Integration fixture\n');
+  });
   approvalAction = 'deny';
   events = await turn('WRITE DENY');
   check('denied approval never writes a file', () =>
@@ -297,6 +326,9 @@ try {
   await writeFile(sentinel, 'protected');
   await symlink(sentinel, join(dir, 'sessions', id, 'workspace', 'link.txt'));
   await assert.rejects(() => kernel.readFile(id, 'link.txt'));
+  await assert.rejects(() => kernel.readRaw(id, 'link.txt'), /符号链接/);
+  await assert.rejects(() => kernel.readRaw(id, '../runtime.patch.json'), /超出/);
+  await assert.rejects(() => kernel.readRaw(id, 'missing.png'), /不存在/);
   check('Runner artifact reader also rejects traversal and symlinks', () => assert.ok(true));
   approvalAction = 'wait';
   events = await turn('WRITE DENY');

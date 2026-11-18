@@ -96,6 +96,17 @@ app.get<{ Params: { id: string } }>('/v1/sessions/:id/files', async (req) => ({
 app.get<{ Params: { id: string }; Querystring: { path: string } }>('/v1/sessions/:id/file', async (req) => ({
   content: await kernel.readFile(req.params.id, req.query.path),
 }));
+app.get<{ Params: { id: string }; Querystring: { path: string } }>(
+  '/v1/sessions/:id/raw',
+  async (req, reply) => {
+    const file = await kernel.readRaw(req.params.id, req.query.path);
+    return reply
+      .header('content-type', file.mime)
+      .header('content-length', String(file.bytes))
+      .header('x-content-type-options', 'nosniff')
+      .send(file.data);
+  },
+);
 app.addHook('onClose', async () => {
   await kernel.dispose();
   await pluginWorker.dispose();

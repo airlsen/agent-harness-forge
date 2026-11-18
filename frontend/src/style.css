@@ -1483,48 +1483,7 @@ button:disabled:hover {
   max-height: 300px;
   overflow: auto;
 }
-.artifact-file {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: white;
-  border: 1px solid #e6ecf4;
-  border-radius: 7px;
-  padding: 12px 9px;
-  text-align: left;
-  width: 100%;
-  margin: 9px 0;
-}
-.file-icon {
-  display: grid;
-  place-items: center;
-  width: 31px;
-  height: 35px;
-  background: #f3f6fa;
-  color: #4e627e;
-  border-radius: 5px;
-  flex-shrink: 0;
-}
-.artifact-file div {
-  min-width: 0;
-}
-.artifact-file strong {
-  font-size: 10px;
-  font-weight: 500;
-  color: #526175;
-  display: block;
-  overflow-wrap: anywhere;
-}
-.artifact-file small {
-  font-size: 10px;
-  color: #4f627d;
-  margin-top: 5px;
-  display: block;
-}
-.artifact-file > svg {
-  margin-left: auto;
-  color: #526075;
-}
+
 /* Conversation messages and approval */
 .conversation-messages {
   max-width: 830px;
@@ -3724,19 +3683,6 @@ table td > .tag {
   color: #415f8b;
   margin-top: 8px;
 }
-.file-preview > pre {
-  flex: 1;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  margin: 0;
-  padding: 25px 27px;
-  font-size: 12px;
-  line-height: 1.9;
-  color: #41618b;
-  background: #fafcff;
-  min-height: 200px;
-}
 .file-preview > footer {
   border-top: 1px solid #e8effa;
   padding: 17px 26px;
@@ -5434,10 +5380,6 @@ table td > .tag {
   }
   .file-preview > header h2 {
     font-size: 16px;
-  }
-  .file-preview > pre {
-    padding: 19px;
-    font-size: 10px;
   }
   .file-preview > footer {
     padding: 15px 19px;

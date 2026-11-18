@@ -26,7 +26,7 @@ bash scripts/start-runner.sh
 
 ## 实际限制
 
-仅 `current_time / workspace_list / workspace_read / workspace_write`。原生 shell、原生文件和工作目录工具在业务 patch 禁用，业务白名单进一步限制可见与可执行工具。不允许外部插件安装；这不是容器级隔离。
+仅 `current_time / workspace_list / workspace_read / workspace_write`；可写工作区的会话另开放 `workspace_present`（把工作区文件声明为交付物，界面在该轮回复下展示文件卡片）。`workspace_write` 支持 `encoding: "base64"` 保存二进制文件；`GET /v1/sessions/:id/raw` 按原始字节读取任意类型文件供预览与下载。原生 shell、原生文件和工作目录工具在业务 patch 禁用，业务白名单进一步限制可见与可执行工具。不允许外部插件安装；这不是容器级隔离。
 
 审批为一次性允许 / 拒绝 / 超时拒绝 / 中止取消；没有人工改参提交或 IM 审批。中止关闭进程，同 Runner 内下一轮可打开本地日志；整个 Runner 重启后不会恢复旧执行，但保留磁盘时文件读取仍可用。
 

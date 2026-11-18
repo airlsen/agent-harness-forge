@@ -36,7 +36,7 @@
 
 - 不 fork dsh；版本固定为 `@deepseek-ai/dsh@0.2.2-rc.1`。
 - 会话锁定场景版本、策略、模型和价格；模型凭据的加密快照不进入 Bundle / 导出接口。
-- 工具仅有 `current_time`、`workspace_list`、`workspace_read`、`workspace_write`。不开放任意 Shell / 外部网络工具 / 外部插件安装。
+- 工具仅有 `current_time`、`workspace_list`、`workspace_read`、`workspace_write`，以及随写入权限开放的 `workspace_present`（声明交付文件，只读元数据）。不开放任意 Shell / 外部网络工具 / 外部插件安装。
 - 默认 SQLite（WAL），本地工作区；**不是容器级安全沙箱，不具备多租户生产隔离**。
 
 ## 快速开始

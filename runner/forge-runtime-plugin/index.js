@@ -7,6 +7,20 @@ export const name = 'forge-runtime';
 export const inject = ['llm', 'tools', 'approval'];
 const notify = (method, params) =>
   process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n');
+const utf8 = new TextDecoder('utf-8', { fatal: true });
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+const MAX_FILE_BYTES = 256000;
+const MAX_FILES = 100;
+const MAX_TOTAL_BYTES = 10000000;
+const MAX_PRESENTED = 4;
+/** 写入内容转字节：utf8 为默认文本；base64 用于图片等二进制产物（按解码后字节计入配额）。 */
+function contentBytes(content, encoding = 'utf8') {
+  if (encoding === 'utf8') return Buffer.from(String(content), 'utf8');
+  if (encoding !== 'base64') throw new Error('encoding 仅支持 utf8 或 base64');
+  const compact = String(content).replace(/\s+/g, '');
+  if (compact.length % 4 === 1 || !BASE64.test(compact)) throw new Error('content 不是合法的 base64');
+  return Buffer.from(compact, 'base64');
+}
 const visibleText = (content) =>
   Array.isArray(content)
     ? content
@@ -316,34 +330,84 @@ export async function apply(ctx, config) {
     async ({ path }) => {
       const full = await checkedPath(root, path);
       const stat = await lstat(full);
-      if (!stat.isFile() || stat.size > 256000) throw new Error('仅允许读取 256 KB 内的文本文件');
-      return { path, content: await readFile(full, 'utf8') };
+      if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('仅允许读取 256 KB 内的文本文件');
+      try {
+        return { path, content: utf8.decode(await readFile(full)) };
+      } catch {
+        throw new Error('这是二进制文件，无法按文本读取；用户可在结果面板预览或下载');
+      }
     },
   );
   add(
     'workspace_write',
-    'Create a text artifact in this session workspace. User approval may be required.',
-    { path: { type: 'string' }, content: { type: 'string' } },
+    'Create or overwrite a file in this session workspace. Text by default; set encoding to "base64" to save binary content such as images. User approval may be required.',
+    {
+      path: { type: 'string' },
+      content: { type: 'string' },
+      encoding: { type: 'string', enum: ['utf8', 'base64'], description: 'Content encoding, default utf8.' },
+    },
     ['path', 'content'],
-    async ({ path, content }) =>
+    async ({ path, content, encoding }) =>
       exclusiveWrite(async () => {
-        if (Buffer.byteLength(String(content)) > 256000) throw new Error('单文件不能超过 256 KB');
+        const data = contentBytes(content, encoding);
+        if (data.length > MAX_FILE_BYTES) throw new Error('单文件不能超过 256 KB');
         const full = await checkedPath(root, path, true);
         const existing = await workspaceFiles(root);
         const previous = existing.find((file) => file.path === relative(root, full));
-        if (!previous && existing.length >= 100) throw new Error('每个会话最多保存 100 个文本产物');
+        if (!previous && existing.length >= MAX_FILES) throw new Error('每个会话最多保存 100 个文件');
         if (
-          existing.reduce((sum, file) => sum + file.bytes, 0) -
-            (previous?.bytes ?? 0) +
-            Buffer.byteLength(String(content)) >
-          10000000
+          existing.reduce((sum, file) => sum + file.bytes, 0) - (previous?.bytes ?? 0) + data.length >
+          MAX_TOTAL_BYTES
         )
           throw new Error('会话产物总量不能超过 10 MB');
         await mkdir(dirname(full), { recursive: true });
-        await writeFile(full, String(content), { mode: 0o600 });
-        notify('forge.artifact', { path, bytes: Buffer.byteLength(String(content)) });
-        return { path, bytes: Buffer.byteLength(String(content)), saved: true };
+        await writeFile(full, data, { mode: 0o600 });
+        notify('forge.artifact', { path, bytes: data.length });
+        return { path, bytes: data.length, saved: true };
       }),
+  );
+  add(
+    'workspace_present',
+    'Declare existing files in this session workspace as final deliverables for the user. The interface shows them as file cards under your reply with preview and download, and lists them first in the results panel. Call it once the files are final, choosing the 1-2 most important files (at most 4 per call); do not present drafts or intermediate files. Prefer your final response alone when no separate file is needed.',
+    {
+      files: {
+        type: 'array',
+        minItems: 1,
+        maxItems: MAX_PRESENTED,
+        items: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Path relative to the session workspace.' },
+            description: { type: 'string', description: 'Optional one-line description for the user.' },
+          },
+          required: ['path'],
+          additionalProperties: false,
+        },
+      },
+    },
+    ['files'],
+    async ({ files }) => {
+      if (!Array.isArray(files) || !files.length || files.length > MAX_PRESENTED)
+        throw new Error(`每次需声明 1 到 ${MAX_PRESENTED} 个文件`);
+      const presented = [];
+      for (const file of files) {
+        let full, stat;
+        try {
+          full = await checkedPath(root, file?.path);
+          stat = await lstat(full);
+        } catch (error) {
+          if (error.code === 'ENOENT') throw new Error(`文件不存在：${file.path}，请先写入工作区再声明交付`);
+          throw error;
+        }
+        if (!stat.isFile()) throw new Error(`不是普通文件：${file.path}`);
+        const path = relative(root, full).split(sep).join('/');
+        if (presented.some((item) => item.path === path)) continue;
+        const description = typeof file.description === 'string' ? file.description.trim().slice(0, 200) : '';
+        presented.push({ path, bytes: stat.size, ...(description ? { description } : {}) });
+      }
+      notify('forge.present', { files: presented });
+      return { files: presented };
+    },
   );
   // restrict() 必须通过 agent.ctx 安装；全局上下文会被 dsh 拒绝。
   // agent/created 为串行、可等待事件，首轮提示词装配前即生效。

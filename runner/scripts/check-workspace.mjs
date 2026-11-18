@@ -155,6 +155,68 @@ try {
       9999600,
     );
   });
+  await clear();
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff]);
+  await check('base64 writes save exact binary bytes and count decoded size', async () => {
+    const result = await execute('workspace_write', {
+      path: 'img/chart.png',
+      content: png.toString('base64'),
+      encoding: 'base64',
+    });
+    assert.equal(result.bytes, png.length);
+    assert.deepEqual(await readFile(join(root, 'img/chart.png')), png);
+  });
+  await check('invalid base64 and unknown encodings are rejected', async () => {
+    await assert.rejects(
+      () => execute('workspace_write', { path: 'bad.bin', content: '***', encoding: 'base64' }),
+      /base64/,
+    );
+    await assert.rejects(
+      () => execute('workspace_write', { path: 'bad.bin', content: 'x', encoding: 'latin1' }),
+      /encoding/,
+    );
+  });
+  await check('binary over 256 KB after decoding is rejected', () =>
+    assert.rejects(
+      () =>
+        execute('workspace_write', {
+          path: 'big.bin',
+          content: Buffer.alloc(256001).toString('base64'),
+          encoding: 'base64',
+        }),
+      /256 KB/,
+    ),
+  );
+  await check('binary files cannot be read back as text', () =>
+    assert.rejects(() => read('img/chart.png'), /二进制/),
+  );
+  await check('present declares existing workspace files with normalized paths and sizes', async () => {
+    await write('report.md', '# 报告');
+    const result = await execute('workspace_present', {
+      files: [
+        { path: './report.md', description: '  最终报告  ' },
+        { path: 'img/chart.png' },
+        { path: 'report.md' },
+      ],
+    });
+    assert.deepEqual(result.files, [
+      { path: 'report.md', bytes: Buffer.byteLength('# 报告'), description: '最终报告' },
+      { path: 'img/chart.png', bytes: png.length },
+    ]);
+  });
+  await check('present rejects missing, escaping, hidden, directory and too many files', async () => {
+    const present = (files) => execute('workspace_present', { files });
+    await assert.rejects(() => present([{ path: 'missing.md' }]), /不存在/);
+    await assert.rejects(() => present([{ path: '../escape.md' }]), /超出/);
+    await assert.rejects(() => present([{ path: '.private' }]), /隐藏/);
+    await assert.rejects(() => present([{ path: 'img' }]), /普通文件/);
+    await assert.rejects(() => present([]), /1 到 4/);
+    await assert.rejects(() => present(Array.from({ length: 5 }, () => ({ path: 'report.md' }))), /1 到 4/);
+  });
+  await check('present never follows symlinks', async () => {
+    await symlink(sentinel, join(root, 'linked.md'));
+    await assert.rejects(() => execute('workspace_present', { files: [{ path: 'linked.md' }] }), /符号链接/);
+  });
   console.log(
     JSON.stringify({
       scope: 'formal workspace executors, no model, not approval integration',

@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router';
 import { usePlatform } from '../../stores/platform';
 import { useConversation } from '../../stores/conversation';
-import { api, downloadResponse } from '../../api/client';
+import { downloadResponse } from '../../api/client';
 import { formatBytes, sessionState } from '../../utils/presentation';
 import { trapTabKey } from '../../utils/focus';
 import type { KernelEvent } from '../../types/platform';
@@ -13,7 +13,16 @@ import Markdown from '../../components/MarkdownContent.vue';
 import ToolCallGroup from '../../components/ToolCallGroup.vue';
 import TaskComposer from '../../components/TaskComposer.vue';
 import ConversationStart from '../../components/ConversationStart.vue';
-import DialogShell from '../../components/DialogShell.vue';
+import FileCard from '../../components/FileCard.vue';
+import FilePreview from '../../components/FilePreview.vue';
+import {
+  BUILTIN_TOOL_TITLES,
+  fileName,
+  rawFileUrl,
+  withListing,
+  type Deliverable,
+  type FileRef,
+} from '../../utils/files';
 
 const app = usePlatform();
 const chat = useConversation();
@@ -53,19 +62,10 @@ onMounted(() => {
   panelMedia.addEventListener('change', resizePanel);
   window.addEventListener('keydown', panelKeyboard);
 });
-const previewFile = ref<{ path: string; content: string } | null>(null);
-const fileLoading = ref('');
-const fileError = ref('');
-let fileRequest = 0;
-watch(
-  () => chat.panelOpen,
-  (open) => {
-    if (!open) {
-      ++fileRequest;
-      fileLoading.value = '';
-    }
-  },
-);
+/** 正在预览的会话文件（预览弹窗自行读取原始字节） */
+const previewFile = ref<FileRef | null>(null);
+/** 正在下载的文件路径，用于按钮的加载态 */
+const downloading = ref('');
 const approvalBusy = ref<number | null>(null);
 const loadError = ref('');
 const stickToBottom = ref(true);
@@ -131,6 +131,42 @@ const turns = computed(() =>
     activeTools: pendingTools.value,
   }),
 );
+/** 整个会话的交付物：最近一轮声明的排在最前，同一路径只保留最新一次声明 */
+const sessionDeliverables = computed<FileRef[]>(() => {
+  const seen = new Set<string>();
+  const out: Deliverable[] = [];
+  for (const turn of [...turns.value].reverse())
+    for (const file of turn.deliverables)
+      if (!seen.has(file.path)) {
+        seen.add(file.path);
+        out.push(file);
+      }
+  return out.map((file) => withListing(file, chat.files));
+});
+/** 未被声明为交付物的其余文件（中间产物等），最近修改的在前 */
+const otherFiles = computed<FileRef[]>(() => {
+  const presented = new Set(sessionDeliverables.value.map((file) => file.path));
+  return chat.files
+    .filter((file) => !presented.has(file.path))
+    .sort((a, b) => (b.modifiedAt ?? '').localeCompare(a.modifiedAt ?? '') || a.path.localeCompare(b.path));
+});
+function turnFile(file: Deliverable) {
+  return withListing(file, chat.files);
+}
+function openPreview(file: FileRef) {
+  if (chat.current) previewFile.value = file;
+}
+async function downloadFile(file: FileRef) {
+  if (!chat.current || downloading.value) return;
+  downloading.value = file.path;
+  try {
+    await downloadResponse(rawFileUrl(chat.current.id, file.path), fileName(file.path));
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  } finally {
+    downloading.value = '';
+  }
+}
 function turnIdle(turn: Turn) {
   const last = turn.steps.at(-1);
   return (
@@ -159,9 +195,6 @@ async function loadSession(value: unknown) {
   const generation = ++routeGeneration;
   loadError.value = '';
   previewFile.value = null;
-  ++fileRequest;
-  fileLoading.value = '';
-  fileError.value = '';
   stickToBottom.value = true;
   if (value && (!/^\d+$/.test(String(value)) || !Number.isSafeInteger(Number(value)))) {
     chat.prepareStart();
@@ -195,7 +228,6 @@ watch(
 );
 onBeforeUnmount(() => {
   ++routeGeneration;
-  ++fileRequest;
   chat.disconnect();
   panelMedia.removeEventListener('change', resizePanel);
   window.removeEventListener('keydown', panelKeyboard);
@@ -214,7 +246,7 @@ function showPanel(panel: 'files' | 'trajectory' | 'context') {
   chat.panel = panel;
 }
 function toolTitle(name: string) {
-  return app.tools.find((t) => t.name === name)?.title ?? name;
+  return app.tools.find((t) => t.name === name)?.title ?? BUILTIN_TOOL_TITLES[name] ?? name;
 }
 function formatArgs(value: unknown) {
   try {
@@ -237,24 +269,6 @@ function eventText(event: KernelEvent) {
   if (event.kind === 'error') return '执行出现异常';
   return event.payload.partial ? '保留了部分输出' : '收到一条回复';
 }
-async function openFile(path: string) {
-  if (!chat.current || fileLoading.value) return;
-  const id = chat.current.id;
-  const request = ++fileRequest;
-  fileLoading.value = path;
-  fileError.value = '';
-  try {
-    const data = await api<{ content: string }>(
-      `/agent/sessions/${id}/file?path=${encodeURIComponent(path)}`,
-    );
-    if (request === fileRequest && chat.current?.id === id)
-      previewFile.value = { path, content: data.content };
-  } catch (error) {
-    if (request === fileRequest) fileError.value = (error as Error).message;
-  } finally {
-    if (request === fileRequest) fileLoading.value = '';
-  }
-}
 async function exportSession() {
   if (!chat.current) return;
   try {
@@ -265,17 +279,6 @@ async function exportSession() {
   } catch (error) {
     app.toast((error as Error).message, 'error');
   }
-}
-function downloadFile() {
-  if (!previewFile.value) return;
-  const url = URL.createObjectURL(
-    new Blob([previewFile.value.content], { type: 'text/plain;charset=utf-8' }),
-  );
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = previewFile.value.path.split('/').at(-1) ?? 'artifact.txt';
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 async function decide(id: number, action: 'approve' | 'deny') {
   approvalBusy.value = id;
@@ -422,6 +425,21 @@ async function copyMessage(text: string) {
                   <span class="thinking-dots"><i></i><i></i><i></i></span
                   ><span>{{ turn.steps.length ? '正在继续…' : '正在处理这项工作' }}</span>
                 </div>
+                <div
+                  v-if="turn.deliverables.length"
+                  class="turn-deliverables"
+                  role="group"
+                  aria-label="本轮交付文件"
+                >
+                  <FileCard
+                    v-for="file in turn.deliverables"
+                    :key="file.path"
+                    :file="turnFile(file)"
+                    :downloading="downloading === file.path"
+                    @preview="openPreview"
+                    @download="downloadFile"
+                  />
+                </div>
                 <div v-if="!turn.running && !turn.steps.length" class="turn-empty">（本轮没有输出）</div>
               </div>
             </div>
@@ -436,20 +454,6 @@ async function copyMessage(text: string) {
           <div v-if="chat.connectionWarning" class="form-alert" role="status">
             <Icon name="info" :size="16" />{{ chat.connectionWarning }}
           </div>
-          <button
-            v-if="chat.files.length && !chat.running"
-            class="session-result-receipt"
-            @click="
-              chat.panel = 'files';
-              chat.panelOpen = true;
-            "
-          >
-            <span><Icon name="folder" :size="20" /></span>
-            <div>
-              <strong>{{ chat.files.length }} 个文件可查看</strong><small>当前会话实际生成的文本文件</small>
-            </div>
-            <span class="receipt-action">查看结果 <Icon name="arrow" :size="15" /></span>
-          </button>
         </div>
       </div>
       <div v-if="!loadError && !welcome && !chat.loading" class="composer-area enterprise-composer-area">
@@ -662,29 +666,39 @@ async function copyMessage(text: string) {
         </div>
       </div>
       <div v-else class="panel-scroll">
-        <div class="panel-description">实际生成的内容与文件，不自动发布到公共目录。</div>
-        <div v-if="fileLoading" class="file-loading-state" role="status">
-          <span class="loader small"></span>正在读取 {{ fileLoading }}…
-        </div>
-        <div v-if="fileError" class="form-alert error" role="alert">
-          <Icon name="info" :size="16" />{{ fileError }}，可重新点击文件重试。
-        </div>
-        <h3 v-if="chat.files.length" class="result-section-title">
-          文件 <span>{{ chat.files.length }}</span>
-        </h3>
-        <button
-          v-for="file in chat.files"
-          :key="file.path"
-          class="artifact-file"
-          :disabled="Boolean(fileLoading)"
-          @click="openFile(file.path)"
-        >
-          <span class="file-icon"><Icon name="file" :size="19" /></span>
-          <div>
-            <strong>{{ file.path }}</strong><small>{{ formatBytes(file.bytes) }} · 文本文件</small>
+        <div class="panel-description">本会话生成的文件保存在服务端，切换会话后依然可以预览与下载。</div>
+        <template v-if="sessionDeliverables.length">
+          <h3 class="result-section-title">
+            交付物 <span>{{ sessionDeliverables.length }}</span>
+          </h3>
+          <div class="result-file-list">
+            <FileCard
+              v-for="file in sessionDeliverables"
+              :key="file.path"
+              :file="file"
+              compact
+              :downloading="downloading === file.path"
+              @preview="openPreview"
+              @download="downloadFile"
+            />
           </div>
-          <Icon name="arrow" :size="14" />
-        </button>
+        </template>
+        <template v-if="otherFiles.length">
+          <h3 class="result-section-title">
+            {{ sessionDeliverables.length ? '其他文件' : '文件' }} <span>{{ otherFiles.length }}</span>
+          </h3>
+          <div class="result-file-list">
+            <FileCard
+              v-for="file in otherFiles"
+              :key="file.path"
+              :file="file"
+              compact
+              :downloading="downloading === file.path"
+              @preview="openPreview"
+              @download="downloadFile"
+            />
+          </div>
+        </template>
         <div v-if="lastAnswer" class="latest-answer">
           <div class="latest-answer-heading">
             <h3>最近回复</h3>
@@ -695,33 +709,18 @@ async function copyMessage(text: string) {
           <span v-if="lastAnswer.meta.partial" class="tag warning">部分输出 · 执行未完成</span
           ><Markdown :text="lastAnswer.content" />
         </div>
-        <div v-if="!chat.files.length && !lastAnswer" class="panel-empty">
+        <div v-if="!chat.files.length && !sessionDeliverables.length && !lastAnswer" class="panel-empty">
           <Icon name="folder" :size="31" /><strong>结果会留在这里</strong>
           <p>执行后的回复与实际生成文件，可以随时回来查看。</p>
         </div>
       </div>
     </aside>
-    <DialogShell
-      v-if="previewFile"
-      variant="modal"
-      label="产物预览"
-      panel-class="file-preview"
+    <FilePreview
+      v-if="previewFile && chat.current"
+      :key="previewFile.path"
+      :session-id="chat.current.id"
+      :file="previewFile"
       @close="previewFile = null"
-      ><header>
-        <div>
-          <h2>{{ previewFile.path }}</h2>
-          <p>当前会话 · 文本文件</p>
-        </div>
-        <button class="icon-button" aria-label="关闭产物" @click="previewFile = null">
-          <Icon name="close" :size="20" />
-        </button>
-      </header>
-      <pre>{{ previewFile.content }}</pre>
-      <footer>
-        <button class="button secondary" @click="downloadFile">
-          <Icon name="download" :size="16" />下载文件</button
-        ><button class="button primary" @click="previewFile = null">完成</button>
-      </footer></DialogShell
-    >
+    />
   </div>
 </template>

@@ -4,11 +4,14 @@ import { mkdir, writeFile, readFile, readdir, lstat } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DshProcess } from './dsh-process.js';
+import { mimeType } from './mime.js';
 import { buildSystemPrompt } from './system-prompt.js';
 import type { PluginWorkerClient } from '../plugin-worker-client.js';
 import type { AgentKernel, Bundle, KernelEvent, SessionHandle, TurnOpts, UserCtx } from './types.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const PRESENT_TOOL = 'workspace_present';
+const MAX_RAW_BYTES = 20 * 1024 * 1024;
 const DATA = resolve(process.env.FORGE_RUNNER_DATA_DIR ?? join(ROOT, 'data', 'sessions'));
 export interface RuntimeModel {
   baseUrl: string;
@@ -38,13 +41,13 @@ function failure(message: string, statusCode = 400) {
 export function validModel(model?: RuntimeModel): model is RuntimeModel {
   return Boolean(
     model &&
-      typeof model.baseUrl === 'string' &&
-      model.baseUrl &&
-      typeof model.model === 'string' &&
-      model.model &&
-      (model.apiKey === undefined || typeof model.apiKey === 'string') &&
-      (model.contextWindow === undefined ||
-        (Number.isSafeInteger(model.contextWindow) && model.contextWindow > 0)),
+    typeof model.baseUrl === 'string' &&
+    model.baseUrl &&
+    typeof model.model === 'string' &&
+    model.model &&
+    (model.apiKey === undefined || typeof model.apiKey === 'string') &&
+    (model.contextWindow === undefined ||
+      (Number.isSafeInteger(model.contextWindow) && model.contextWindow > 0)),
   );
 }
 /**
@@ -158,6 +161,13 @@ export class DshKernel implements AgentKernel {
     const builtinTools = (entry.bundle.meta?.builtin_tools as string[]) ?? [];
     const pluginTools = (entry.bundle.meta?.plugin_tools as string[]) ?? [];
     const allowed = [...new Set([...builtinTools, ...pluginTools])];
+    // 交付声明只读取文件元数据、不写盘：凡可写工作区的会话都随之开放，无需改动已有场景与策略。
+    if (allowed.includes('workspace_write')) allowed.push(PRESENT_TOOL);
+    const policyTools: string[] | undefined = Array.isArray(policy.allowedTools)
+      ? policy.allowedTools.includes('workspace_write')
+        ? [...policy.allowedTools, PRESENT_TOOL]
+        : policy.allowedTools
+      : undefined;
     const pluginBindings = Array.isArray(entry.bundle.meta?.pluginBindings)
       ? entry.bundle.meta.pluginBindings
       : [];
@@ -166,7 +176,7 @@ export class DshKernel implements AgentKernel {
       name: pathToFileURL(join(ROOT, 'forge-runtime-plugin', 'index.js')).href,
       config: {
         workspace: entry.workspace,
-        allowedTools: allowed.filter((name) => (policy.allowedTools ?? allowed).includes(name)),
+        allowedTools: allowed.filter((name) => (policyTools ?? allowed).includes(name)),
         requireWriteApproval: policy.requireWriteApproval ?? true,
         maxOutputTokens: policy.maxOutputTokens ?? 4096,
         requestTimeoutSeconds: policy.requestTimeoutSeconds ?? 120,
@@ -178,7 +188,7 @@ export class DshKernel implements AgentKernel {
           name: pathToFileURL(join(ROOT, 'skill-authoring-plugin', 'index.js')).href,
           config: {
             ...((entry.bundle.meta?.skillAuthoring as Record<string, unknown>) ?? {}),
-            allowedTools: allowed.filter((name) => (policy.allowedTools ?? allowed).includes(name)),
+            allowedTools: allowed.filter((name) => (policyTools ?? allowed).includes(name)),
           },
         }
       : null;
@@ -291,6 +301,7 @@ export class DshKernel implements AgentKernel {
     else if (method === 'forge.plugin_loaded') this.emit(entry, 'plugin_loaded', params, 'tools');
     else if (method === 'forge.plugin_call') this.emit(entry, 'plugin_call', params, 'tools');
     else if (method === 'forge.artifact') this.emit(entry, 'files', { files: [params] }, 'tools');
+    else if (method === 'forge.present') this.emit(entry, 'deliverables', params, 'tools');
     else if (method === 'session.event') {
       const event = params.event;
       this.emit(
@@ -486,34 +497,57 @@ export class DshKernel implements AgentKernel {
   }
   async listFiles(id: string) {
     const root = await this.workspace(id);
-    const out: { path: string; bytes: number }[] = [];
+    const out: { path: string; bytes: number; mime: string; modifiedAt: string }[] = [];
     const walk = async (dir: string, depth = 0): Promise<void> => {
       if (depth > 8 || out.length >= 100) return;
       for (const item of await readdir(dir, { withFileTypes: true })) {
         if (item.isSymbolicLink() || item.name.startsWith('.')) continue;
         const full = join(dir, item.name);
         if (item.isDirectory()) await walk(full, depth + 1);
-        else if (item.isFile())
-          out.push({ path: full.slice(root.length + 1), bytes: (await lstat(full)).size });
+        else if (item.isFile()) {
+          const stat = await lstat(full);
+          const path = full
+            .slice(root.length + 1)
+            .split(sep)
+            .join('/');
+          out.push({ path, bytes: stat.size, mime: mimeType(path), modifiedAt: stat.mtime.toISOString() });
+        }
         if (out.length >= 100) break;
       }
     };
     await walk(root);
     return out;
   }
-  async readFile(id: string, path: string) {
+  /** 校验并解析工作区内的文件路径：禁止越界、隐藏文件与符号链接。 */
+  private async workspaceFile(id: string, path: string) {
     const root = await this.workspace(id),
       full = resolve(root, path ?? '');
     if (!path || full === root || !full.startsWith(root + sep)) throw failure('文件路径超出会话工作区', 422);
     let current = root;
-    for (const part of full.slice(root.length + 1).split(sep)) {
-      if (part.startsWith('.')) throw failure('不允许读取隐藏文件', 422);
-      current = join(current, part);
-      if ((await lstat(current)).isSymbolicLink()) throw failure('不允许符号链接', 422);
+    try {
+      for (const part of full.slice(root.length + 1).split(sep)) {
+        if (part.startsWith('.')) throw failure('不允许读取隐藏文件', 422);
+        current = join(current, part);
+        if ((await lstat(current)).isSymbolicLink()) throw failure('不允许符号链接', 422);
+      }
+    } catch (error: any) {
+      if (error?.code === 'ENOENT') throw failure('文件不存在或已被删除', 404);
+      throw error;
     }
     const stat = await lstat(full);
-    if (!stat.isFile() || stat.size > 256000) throw failure('仅支持 256 KB 内的文本文件', 422);
+    if (!stat.isFile()) throw failure('不是普通文件', 422);
+    return { full, stat };
+  }
+  async readFile(id: string, path: string) {
+    const { full, stat } = await this.workspaceFile(id, path);
+    if (stat.size > 256000) throw failure('仅支持 256 KB 内的文本文件', 422);
     return readFile(full, 'utf8');
+  }
+  /** 原始字节读取：用于任意类型文件的预览与下载（工作区总量本身不超过 10 MB）。 */
+  async readRaw(id: string, path: string) {
+    const { full, stat } = await this.workspaceFile(id, path);
+    if (stat.size > MAX_RAW_BYTES) throw failure('文件过大，无法读取', 413);
+    return { data: await readFile(full), mime: mimeType(full), bytes: stat.size };
   }
 }
 function timeout<T>(promise: Promise<T>, ms: number) {

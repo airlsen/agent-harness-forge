@@ -29,6 +29,21 @@ class RunnerClient:
         except httpx.HTTPError as error:
             raise HTTPException(503, "执行内核暂不可用，请稍后重试") from error
 
+    async def raw(self, path):
+        """读取工作区文件原始字节，返回 (内容, MIME)。工作区总量有上限，整体读入内存即可。"""
+        try:
+            async with self.client() as client:
+                response = await client.get(path)
+                if response.status_code >= 400:
+                    try:
+                        message = response.json().get("message", "文件读取失败")
+                    except ValueError:
+                        message = "文件读取失败"
+                    raise HTTPException(response.status_code if response.status_code < 500 else 502, message)
+                return response.content, response.headers.get("content-type", "application/octet-stream")
+        except httpx.HTTPError as error:
+            raise HTTPException(503, "执行内核暂不可用，请稍后重试") from error
+
     async def health(self):
         try:
             return await self.call("GET", "/v1/runtime")
