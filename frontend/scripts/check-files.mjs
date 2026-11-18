@@ -121,6 +121,121 @@ try {
       '/agent/sessions/7/files/raw?path=%E5%9B%BE%E8%A1%A8%2Fa%20b%26c.png',
     );
   });
+  check('archive, delete and diff URLs are encoded', () => {
+    assert.equal(files.archiveUrl(7), '/agent/sessions/7/files/archive');
+    assert.equal(
+      files.archiveUrl(7, '图表/out'),
+      '/agent/sessions/7/files/archive?dir=%E5%9B%BE%E8%A1%A8%2Fout',
+    );
+    assert.equal(files.fileUrl(7, 'a b.md'), '/agent/sessions/7/files?path=a%20b.md');
+    assert.equal(files.changeDiffUrl(7, 42), '/agent/sessions/7/files/changes/42');
+  });
+  check('turn changes are parsed defensively and totalled', () => {
+    assert.equal(files.parseChanges(null), null);
+    assert.equal(files.parseChanges({ total: 0, files: [] }), null);
+    const changes = files.parseChanges({
+      messageId: 9,
+      added: 1,
+      modified: 1,
+      deleted: 1,
+      total: 4,
+      files: [
+        { id: 1, path: 'a.md', action: 'added', bytes: 10, linesAdded: 3, linesRemoved: 0 },
+        { id: 2, path: 'b.md', action: 'modified', bytes: 5, linesAdded: 1, linesRemoved: 2 },
+        { id: 3, path: 'c.png', action: 'deleted', bytes: 99, linesAdded: null, linesRemoved: null },
+        { id: 4, path: 'bad', action: 'renamed' },
+        { path: 'no-id.md', action: 'added' },
+      ],
+    });
+    assert.equal(changes.total, 4);
+    assert.deepEqual(
+      changes.files.map((file) => [file.id, file.action, file.linesAdded]),
+      [
+        [1, 'added', 3],
+        [2, 'modified', 1],
+        [3, 'deleted', null],
+      ],
+    );
+    assert.deepEqual(files.changeLineTotals(changes), { added: 4, removed: 2 });
+    assert.equal(
+      files.changeLineTotals({ ...changes, files: changes.files.filter((file) => file.id === 3) }),
+      null,
+    );
+  });
+  check('file tree groups directories first with counts, sizes and collapse state', () => {
+    const tree = files.buildFileTree([
+      { path: 'z.txt', bytes: 1 },
+      { path: 'out/file10.csv', bytes: 10 },
+      { path: 'out/file2.csv', bytes: 20 },
+      { path: 'out/deep/x.md', bytes: 5 },
+      { path: 'a.md', bytes: 2 },
+    ]);
+    assert.equal(tree.files, 5);
+    assert.deepEqual(
+      tree.children.map((node) => [node.type, node.name]),
+      [
+        ['dir', 'out'],
+        ['file', 'a.md'],
+        ['file', 'z.txt'],
+      ],
+    );
+    const out = tree.children[0];
+    assert.equal(out.files, 3);
+    assert.equal(out.bytes, 35);
+    // 目录在前，文件名按数字自然排序
+    assert.deepEqual(
+      out.children.map((node) => node.name),
+      ['deep', 'file2.csv', 'file10.csv'],
+    );
+    const rows = files.treeRows(tree, new Set());
+    assert.deepEqual(
+      rows.map((row) => [row.type, row.depth, row.type === 'dir' ? row.node.path : row.file.path]),
+      [
+        ['dir', 0, 'out'],
+        ['dir', 1, 'out/deep'],
+        ['file', 2, 'out/deep/x.md'],
+        ['file', 1, 'out/file2.csv'],
+        ['file', 1, 'out/file10.csv'],
+        ['file', 0, 'a.md'],
+        ['file', 0, 'z.txt'],
+      ],
+    );
+    assert.deepEqual(
+      files.treeRows(tree, new Set(['out'])).map((row) => (row.type === 'dir' ? row.open : row.file.path)),
+      [false, 'a.md', 'z.txt'],
+    );
+    assert.equal(files.defaultCollapsed(tree).size, 0);
+    assert.deepEqual([...files.defaultCollapsed(tree, 2)], ['out/deep']);
+  });
+  check('unified diffs carry line kinds and old/new line numbers', () => {
+    const lines = files.parseUnifiedDiff(
+      [
+        '--- a/r.md',
+        '+++ b/r.md',
+        '@@ -1,3 +1,3 @@',
+        ' keep',
+        '-old',
+        '--- not a header',
+        '+new',
+        ' tail',
+        '',
+      ].join('\n'),
+    );
+    assert.deepEqual(
+      lines.map((line) => [line.kind, line.oldLine, line.newLine, line.text]),
+      [
+        ['meta', null, null, '--- a/r.md'],
+        ['meta', null, null, '+++ b/r.md'],
+        ['hunk', null, null, '@@ -1,3 +1,3 @@'],
+        ['context', 1, 1, 'keep'],
+        ['remove', 2, null, 'old'],
+        ['remove', 3, null, '-- not a header'],
+        ['add', null, 2, 'new'],
+        ['context', 4, 3, 'tail'],
+      ],
+    );
+    assert.deepEqual(files.parseUnifiedDiff(''), []);
+  });
 } finally {
   await vite.close();
 }

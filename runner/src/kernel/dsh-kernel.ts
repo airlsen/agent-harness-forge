@@ -1,6 +1,6 @@
 /** 业务内核：独立 dsh 进程、真实模型出口、受限文件工具、逐次审批。 */
 import { randomUUID, createHash } from 'node:crypto';
-import { mkdir, writeFile, readFile, readdir, lstat } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, readdir, lstat, rm, rmdir, unlink } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DshProcess } from './dsh-process.js';
@@ -12,6 +12,8 @@ import type { AgentKernel, Bundle, KernelEvent, SessionHandle, TurnOpts, UserCtx
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const PRESENT_TOOL = 'workspace_present';
 const MAX_RAW_BYTES = 20 * 1024 * 1024;
+/** 清单上限：远高于插件的 100 个文件配额；达到上限时标记 truncated，控制面不会据此删除记录 */
+export const MAX_LISTED_FILES = 1000;
 const DATA = resolve(process.env.FORGE_RUNNER_DATA_DIR ?? join(ROOT, 'data', 'sessions'));
 export interface RuntimeModel {
   baseUrl: string;
@@ -497,9 +499,9 @@ export class DshKernel implements AgentKernel {
   }
   async listFiles(id: string) {
     const root = await this.workspace(id);
-    const out: { path: string; bytes: number; mime: string; modifiedAt: string }[] = [];
+    const out: { path: string; bytes: number; mime: string; modifiedAt: string; sha256: string }[] = [];
     const walk = async (dir: string, depth = 0): Promise<void> => {
-      if (depth > 8 || out.length >= 100) return;
+      if (depth > 8 || out.length >= MAX_LISTED_FILES) return;
       for (const item of await readdir(dir, { withFileTypes: true })) {
         if (item.isSymbolicLink() || item.name.startsWith('.')) continue;
         const full = join(dir, item.name);
@@ -510,9 +512,19 @@ export class DshKernel implements AgentKernel {
             .slice(root.length + 1)
             .split(sep)
             .join('/');
-          out.push({ path, bytes: stat.size, mime: mimeType(path), modifiedAt: stat.mtime.toISOString() });
+          // 内容哈希供控制面增量同步：未变化的文件无需重新拉取
+          const sha256 = createHash('sha256')
+            .update(await readFile(full))
+            .digest('hex');
+          out.push({
+            path,
+            bytes: stat.size,
+            mime: mimeType(path),
+            modifiedAt: stat.mtime.toISOString(),
+            sha256,
+          });
         }
-        if (out.length >= 100) break;
+        if (out.length >= MAX_LISTED_FILES) break;
       }
     };
     await walk(root);
@@ -542,6 +554,27 @@ export class DshKernel implements AgentKernel {
     const { full, stat } = await this.workspaceFile(id, path);
     if (stat.size > 256000) throw failure('仅支持 256 KB 内的文本文件', 422);
     return readFile(full, 'utf8');
+  }
+  /** 用户在界面上删除文件：执行中拒绝，删除后清理空目录。 */
+  async deleteFile(id: string, path: string) {
+    if (this.sessions.get(id)?.busy) throw failure('会话正在执行，请等待本轮结束后再删除文件', 409);
+    const root = await this.workspace(id);
+    const { full } = await this.workspaceFile(id, path);
+    await unlink(full);
+    for (let dir = dirname(full); dir !== root && dir.startsWith(root + sep); dir = dirname(dir)) {
+      try {
+        await rmdir(dir);
+      } catch {
+        break; // 目录非空
+      }
+    }
+  }
+  /** 保留期限到期：清空会话工作区（目录本身保留，会话仍可继续使用）。 */
+  async purgeWorkspace(id: string) {
+    if (this.sessions.get(id)?.busy) throw failure('会话正在执行，暂不能清理文件', 409);
+    const root = await this.workspace(id);
+    await rm(root, { recursive: true, force: true });
+    await mkdir(root, { recursive: true, mode: 0o700 });
   }
   /** 原始字节读取：用于任意类型文件的预览与下载（工作区总量本身不超过 10 MB）。 */
   async readRaw(id: string, path: string) {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
-import { api, put } from '../../api/client';
+import { api, post, put } from '../../api/client';
+import { formatBytes } from '../../utils/presentation';
 import { usePlatform } from '../../stores/platform';
 import Icon from '../../components/ForgeIcon.vue';
 const app = usePlatform(),
@@ -13,10 +14,56 @@ const policy = reactive({
   maxOutputTokens: 4096,
   requestTimeoutSeconds: 120,
   approvalTimeoutSeconds: 120,
+  fileRetentionDays: 30,
 });
+interface StorageStats {
+  files: number;
+  bytes: number;
+  sessions: number;
+  storedObjects: number;
+  storedBytes: number;
+  retentionDays: number;
+  lastCleanup: {
+    purgedSessions: number;
+    backfilledSessions?: number;
+    failedSessions: number;
+    freedBytes: number;
+    ranAt: string;
+  } | null;
+}
+const storage = ref<StorageStats | null>(null),
+  cleaning = ref(false);
+async function loadStorage() {
+  try {
+    storage.value = await api<StorageStats>('/governance/storage');
+  } catch {
+    storage.value = null;
+  }
+}
+async function cleanup() {
+  cleaning.value = true;
+  try {
+    const result = await post<NonNullable<StorageStats['lastCleanup']>>('/governance/storage/cleanup', {});
+    const parts = [];
+    if (result.purgedSessions || result.freedBytes)
+      parts.push(`已清理 ${result.purgedSessions} 个过期会话的文件，释放 ${formatBytes(result.freedBytes)}`);
+    if (result.backfilledSessions) parts.push(`${result.backfilledSessions} 个旧会话的文件已补存到服务端`);
+    if (result.failedSessions) parts.push(`${result.failedSessions} 个会话处理失败，将在下次自动重试`);
+    app.toast(parts.join('；') || '没有需要清理的文件', result.failedSessions ? 'error' : 'success');
+    await loadStorage();
+  } catch (e) {
+    app.toast((e as Error).message, 'error');
+  } finally {
+    cleaning.value = false;
+  }
+}
+function cleanupTime(value: string) {
+  return new Date(value).toLocaleString('zh-CN', { hour12: false });
+}
 onMounted(async () => {
   try {
     Object.assign(policy, await api('/governance/policies'));
+    void loadStorage();
     await app.refreshRuntime();
   } catch (e) {
     app.toast((e as Error).message, 'error');
@@ -28,7 +75,8 @@ async function save() {
   saving.value = true;
   try {
     await put('/governance/policies', policy);
-    app.toast('策略已保存，将应用于新建会话');
+    app.toast('策略已保存：执行限额应用于新建会话，文件保留期限即时生效');
+    void loadStorage();
   } catch (e) {
     app.toast((e as Error).message, 'error');
   } finally {
@@ -48,7 +96,7 @@ async function save() {
       </div>
       <div class="policy-intro">
         <Icon name="info" :size="18" /><span
-          >修改只影响<b>新建会话</b>。已开始的会话继续使用启动时锁定的场景与策略快照。</span
+          >工具与执行限额只影响<b>新建会话</b>，已开始的会话继续使用启动时锁定的场景与策略快照；文件保留期限对所有会话即时生效。</span
         >
       </div>
       <div class="settings-layout">
@@ -145,6 +193,58 @@ async function save() {
                 max="600"
               />
             </div>
+          </div>
+          <div class="form-divider"></div>
+          <div class="settings-section-heading">
+            <Icon name="folder" :size="20" />
+            <h2>会话文件</h2>
+          </div>
+          <p class="section-description">
+            每轮结束后，会话工作区的文件会保存到服务端磁盘，切换会话或服务重启后仍可查看。会话最后一次活动超过保留期限后，其文件会被自动清理。
+          </p>
+          <div class="form-grid">
+            <div>
+              <label for="file-retention">文件保留天数</label
+              ><input
+                id="file-retention"
+                v-model.number="policy.fileRetentionDays"
+                type="number"
+                min="0"
+                max="3650"
+                step="1"
+                required
+              />
+              <small class="field-hint">0 表示永久保留；修改后对所有会话即时生效。</small>
+            </div>
+          </div>
+          <div v-if="storage" class="storage-summary">
+            <dl>
+              <div>
+                <dt>文件</dt>
+                <dd>{{ storage.files }} 个 · {{ storage.sessions }} 个会话</dd>
+              </div>
+              <div>
+                <dt>文件总大小</dt>
+                <dd>{{ formatBytes(storage.bytes) }}</dd>
+              </div>
+              <div>
+                <dt>磁盘占用（含历史版本，已去重）</dt>
+                <dd>{{ formatBytes(storage.storedBytes) }}</dd>
+              </div>
+              <div>
+                <dt>最近清理</dt>
+                <dd>
+                  <template v-if="storage.lastCleanup"
+                    >{{ cleanupTime(storage.lastCleanup.ranAt) }} ·
+                    {{ storage.lastCleanup.purgedSessions }} 个会话</template
+                  ><template v-else>尚未执行</template>
+                </dd>
+              </div>
+            </dl>
+            <button type="button" class="button secondary" :disabled="cleaning" @click="cleanup">
+              <span v-if="cleaning" class="loader small"></span
+              ><Icon v-else name="trash" :size="15" />立即清理过期文件
+            </button>
           </div>
           <footer class="settings-footer">
             <span>配置保存后立即持久化</span

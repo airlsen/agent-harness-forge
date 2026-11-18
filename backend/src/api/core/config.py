@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     callback_base_url: str = "http://127.0.0.1:8000"
     model_gateway_url: str = ""
     event_raw_retention_days: int = 180
+    # 会话工作区文件的服务端存储目录（默认 data/session-files）与过期清理的检查间隔
+    file_store_dir: Path | None = None
+    file_cleanup_interval_seconds: int = 3600
 
     @property
     def runner_endpoint_list(self) -> list[str]:

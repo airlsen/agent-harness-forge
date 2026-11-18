@@ -66,6 +66,7 @@ async def env(monkeypatch):
     runner = FakeRunner()
     monkeypatch.setattr(session_module, "SessionFactory", sessions)
     monkeypatch.setattr(session_module, "runner_client", runner)
+    monkeypatch.setattr(session_module.file_service, "sessions", sessions)
     async with sessions() as db:
         models = {
             "chat": await create_connection(db, model("Chat", "chat-v1", inputPrice=1, outputPrice=2)),
@@ -258,3 +259,64 @@ async def test_legacy_session_snapshot_is_migrated_into_the_first_segment(env):
     }
     listed = next(item for item in await service.list() if item["id"] == legacy_id)
     assert listed["modelId"] == env["models"]["chat"]["id"] and listed["modelName"] == "Chat"
+
+
+class FileRunner(FakeRunner):
+    """第一轮执行中写入两个文件、第二轮修改其中一个，验证本轮改动记录。"""
+
+    def __init__(self):
+        super().__init__()
+        self.files: dict[str, bytes] = {}
+
+    async def call(self, method, path, _body=None):
+        from hashlib import sha256
+
+        if method == "GET" and path.endswith("/files"):
+            return {
+                "items": [
+                    {"path": name, "bytes": len(data), "mime": "text/plain", "sha256": sha256(data).hexdigest()}
+                    for name, data in self.files.items()
+                ]
+            }
+        return await super().call(method, path, _body)
+
+    async def raw(self, path):
+        from urllib.parse import unquote
+
+        return self.files[unquote(path.split("path=", 1)[1])], "text/plain"
+
+    async def events(self, runner_id, message, model_config=None):
+        if message == "第一轮":
+            self.files = {"report.md": b"# v1\n", "notes.txt": b"a\n"}
+        else:
+            self.files["report.md"] = b"# v2\nmore\n"
+        yield {"kind": "files", "source": "tools", "payload": {"paths": sorted(self.files)}}
+        async for event in super().events(runner_id, message, model_config):
+            yield event
+
+
+@pytest.mark.asyncio
+async def test_each_turn_records_its_workspace_changes(env, tmp_path, monkeypatch):
+    from src.api.services.file_store import FileStore
+
+    runner = FileRunner()
+    monkeypatch.setattr(session_module, "runner_client", runner)
+    monkeypatch.setattr(session_module.file_service, "store", FileStore(tmp_path))
+    service = session_module.SessionService()
+    session = await service.create(env["scenario"]["id"], model_id=env["models"]["chat"]["id"])
+
+    first = await turn(service, session["id"], "第一轮")
+    second = await turn(service, session["id"], "第二轮")
+    async with env["sessions"]() as db:
+        one = (await db.get(SessionMessage, first["messageId"])).meta["workspaceChanges"]
+        two = (await db.get(SessionMessage, second["messageId"])).meta["workspaceChanges"]
+    assert (one["added"], one["modified"], one["total"]) == (2, 0, 2)
+    assert [(f["path"], f["action"]) for f in two["files"]] == [("report.md", "modified")]
+    assert (two["files"][0]["linesAdded"], two["files"][0]["linesRemoved"]) == (2, 1)
+    events = await service.events(session["id"])
+    kinds = [event["kind"] for event in events]
+    assert kinds.count("workspace_changes") == 2
+    # 改动事件在本轮 done 之前发布，客户端收到 done 时已能展示
+    assert kinds.index("workspace_changes") < kinds.index("done")
+    detail = await service.detail(session["id"])
+    assert any(m.get("meta", {}).get("workspaceChanges") for m in detail["messages"])

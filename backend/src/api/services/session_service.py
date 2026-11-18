@@ -1,6 +1,7 @@
 """业务会话：不可变场景/策略/模型快照、后台执行、持久化消息与可重连事件。"""
 
 import asyncio
+import logging
 from dataclasses import asdict
 from datetime import datetime, timezone
 from fastapi import HTTPException
@@ -12,11 +13,14 @@ from ..models.agent_session import AgentSession, AgentSessionModel, SessionEvent
 from ..models.platform import PlatformSetting, SessionMessage
 from ..models.approval_ticket import ApprovalTicket
 from ..schemas.agent_scenario import ScenarioPayload
+from .file_service import file_service
 from .runner_client import runner_client
 from .scenario_service import scenario_service, iso
 from .scenario_assembler import Bundle
 from .plugin_service import ensure_bindings_available
 from .settings_service import environment_ref, get_policy, resolve_session_connection
+
+log = logging.getLogger(__name__)
 
 
 def model_ref(segment: AgentSessionModel | None, row=None) -> dict:
@@ -373,7 +377,7 @@ class SessionService:
                 await db.commit()
                 await db.refresh(user)
                 runner_id = row.runner_session_id
-                turn = {"segmentId": segment.id, "ref": model_ref(segment)}
+                turn = {"segmentId": segment.id, "ref": model_ref(segment), "messageId": user.id}
                 current = segment_view(segment)
             task = asyncio.create_task(self.pump(session_id, runner_id, message, pump_cursor, runtime, turn))
             self.tasks[session_id] = task
@@ -489,10 +493,24 @@ class SessionService:
                 )
                 await db.commit()
 
+        # 轮前文件快照：本轮结束时与之对比得到改动记录（旧会话先补一次同步，避免把已有文件算作新增）。
+        baseline = None
+        try:
+            async with SessionFactory() as db:
+                await file_service.ensure_synced(await self.row(db, session_id), runner_client)
+            baseline = await file_service.snapshot(session_id)
+        except Exception:  # 文件记录失败不影响执行
+            log.warning("会话 %s 的轮前文件快照失败", session_id, exc_info=True)
         try:
             await persist("session", {"sessionId": session_id, "workspaceUri": "session://" + runner_id})
             async for event in runner_client.events(runner_id, message, runtime):
                 kind, payload = event["kind"], event.get("payload") or {}
+                if kind == "files":
+                    # 先同步再发布事件：客户端收到事件后刷新清单时即可看到新文件
+                    try:
+                        await file_service.sync(session_id, runner_id, runner_client)
+                    except Exception:
+                        log.warning("会话 %s 的文件同步失败", session_id, exc_info=True)
                 if kind == "error":
                     failed = True
                 elif kind == "message_delta":
@@ -541,6 +559,15 @@ class SessionService:
                 ).all()
             for ticket_id in pending:
                 await persist("approval_resolved", {"ticketId": ticket_id, "action": "cancelled"}, "tools")
+            if baseline is not None and turn.get("messageId"):
+                try:
+                    summary = await file_service.finish_turn(
+                        session_id, runner_id, turn["messageId"], baseline, runner_client
+                    )
+                    if summary:
+                        await persist("workspace_changes", summary, "tools")
+                except Exception:
+                    log.warning("会话 %s 的本轮文件改动记录失败", session_id, exc_info=True)
             await persist("done", {"status": "error" if failed else "idle"})
 
     async def events(self, session_id, after=0, source=None, limit=1000):

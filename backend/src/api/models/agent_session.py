@@ -26,6 +26,10 @@ class AgentSession(Base):
     cost_known: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 工作区文件首次同步到服务端存储的时间（旧会话在首次访问时补同步）
+    files_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 超过保留期限、文件被清理的时间；之后再有新文件会重新计时
+    files_purged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class SessionEventIndex(Base):

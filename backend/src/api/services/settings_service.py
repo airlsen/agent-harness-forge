@@ -53,6 +53,8 @@ DEFAULT_POLICY = {
     "maxOutputTokens": 4096,
     "requestTimeoutSeconds": 120,
     "approvalTimeoutSeconds": 120,
+    # 会话文件保留天数（从会话最后一次活动起算），0 表示永久保留；对所有会话即时生效
+    "fileRetentionDays": 30,
 }
 
 
@@ -107,6 +109,7 @@ class PolicyInput(BaseModel):
     maxOutputTokens: int = Field(default=4096, ge=256, le=16384)
     requestTimeoutSeconds: int = Field(default=120, ge=15, le=300)
     approvalTimeoutSeconds: int = Field(default=120, ge=15, le=600)
+    fileRetentionDays: int = Field(default=30, ge=0, le=3650)
 
     @model_validator(mode="after")
     def known_tools(self):

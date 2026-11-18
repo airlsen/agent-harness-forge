@@ -1,7 +1,7 @@
 /** 业务 Runner 入口。仅控制面凭内部 Token 可访问，浏览器永不直连。 */
 import Fastify from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
-import { DshKernel, validModel, type RuntimeModel } from './kernel/dsh-kernel.js';
+import { DshKernel, MAX_LISTED_FILES, validModel, type RuntimeModel } from './kernel/dsh-kernel.js';
 import { PluginWorkerClient } from './plugin-worker-client.js';
 import type { Bundle, UserCtx } from './kernel/types.js';
 
@@ -90,9 +90,21 @@ app.post<{ Params: { id: string; ticket: string } }>(
     return { ok: true };
   },
 );
-app.get<{ Params: { id: string } }>('/v1/sessions/:id/files', async (req) => ({
-  items: await kernel.listFiles(req.params.id),
-}));
+app.get<{ Params: { id: string } }>('/v1/sessions/:id/files', async (req) => {
+  const items = await kernel.listFiles(req.params.id);
+  return { items, truncated: items.length >= MAX_LISTED_FILES };
+});
+app.delete<{ Params: { id: string }; Querystring: { path: string } }>(
+  '/v1/sessions/:id/file',
+  async (req) => {
+    await kernel.deleteFile(req.params.id, req.query.path);
+    return { ok: true };
+  },
+);
+app.delete<{ Params: { id: string } }>('/v1/sessions/:id/workspace', async (req) => {
+  await kernel.purgeWorkspace(req.params.id);
+  return { ok: true };
+});
 app.get<{ Params: { id: string }; Querystring: { path: string } }>('/v1/sessions/:id/file', async (req) => ({
   content: await kernel.readFile(req.params.id, req.query.path),
 }));

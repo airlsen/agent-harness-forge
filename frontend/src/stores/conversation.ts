@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia';
-import { api, post } from '../api/client';
+import { api, post, remove } from '../api/client';
 import { openEventStream } from '../api/events';
 import { usePlatform } from './platform';
-import type { WorkspaceFile } from '../utils/files';
+import { fileUrl, type FileRetention, type WorkspaceFile } from '../utils/files';
 import type {
   Approval,
   ChatMessage,
@@ -88,6 +88,9 @@ export const useConversation = defineStore('conversation', {
     events: [] as KernelEvent[],
     approvals: [] as Approval[],
     files: [] as WorkspaceFile[],
+    fileRetention: null as FileRetention | null,
+    /** 文件清单已从服务端读取过（用于区分「加载中」与「文件已被删除」） */
+    filesLoaded: false,
     selectedScenarioId: null as number | null,
     previewScenarioId: null as number | null,
     selectedModelId: null as number | null,
@@ -157,6 +160,8 @@ export const useConversation = defineStore('conversation', {
       this.events = [];
       this.approvals = [];
       this.files = [];
+      this.fileRetention = null;
+      this.filesLoaded = false;
       this.liveText = '';
       this.liveReasoning = '';
       this.runError = '';
@@ -490,6 +495,11 @@ export const useConversation = defineStore('conversation', {
           } else if (event.kind === 'files' || event.kind === 'deliverables') {
             this.panel = 'files';
             void this.refreshFiles();
+          } else if (event.kind === 'workspace_changes') {
+            // 本轮改动记录挂到对应的用户消息上，结算回读数据库前即可展示
+            const message = this.messages.find((item) => item.id === data.messageId);
+            if (message) message.meta = { ...message.meta, workspaceChanges: data };
+            void this.refreshFiles();
           }
         },
         settled: () => {
@@ -526,10 +536,26 @@ export const useConversation = defineStore('conversation', {
       const id = this.current?.id;
       if (!id) return;
       try {
-        const result = await api<{ items: WorkspaceFile[] }>(`/agent/sessions/${id}/files`);
-        if (this.current?.id === id) this.files = result.items;
+        const result = await api<{ items: WorkspaceFile[]; retention?: FileRetention }>(
+          `/agent/sessions/${id}/files`,
+        );
+        if (this.current?.id === id) {
+          this.files = result.items;
+          this.fileRetention = result.retention ?? null;
+          this.filesLoaded = true;
+        }
       } catch {
-        if (this.current?.id === id) this.files = [];
+        // 读取失败时保留已展示的列表，避免短暂网络错误清空面板
+      }
+    },
+    /** 删除会话文件：同时删除执行工作区与服务端副本 */
+    async deleteFile(path: string) {
+      const id = this.current?.id;
+      if (!id) return;
+      await remove(fileUrl(id, path));
+      if (this.current?.id === id) {
+        this.files = this.files.filter((file) => file.path !== path);
+        void this.refreshFiles();
       }
     },
     async interrupt() {

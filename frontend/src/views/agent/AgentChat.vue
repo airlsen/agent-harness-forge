@@ -15,12 +15,18 @@ import TaskComposer from '../../components/TaskComposer.vue';
 import ConversationStart from '../../components/ConversationStart.vue';
 import FileCard from '../../components/FileCard.vue';
 import FilePreview from '../../components/FilePreview.vue';
+import FileTree from '../../components/FileTree.vue';
+import FileDiff from '../../components/FileDiff.vue';
+import TurnChanges from '../../components/TurnChanges.vue';
 import {
   BUILTIN_TOOL_TITLES,
+  archiveUrl,
   fileName,
+  previewable,
   rawFileUrl,
   withListing,
   type Deliverable,
+  type FileChange,
   type FileRef,
 } from '../../utils/files';
 
@@ -66,6 +72,12 @@ onMounted(() => {
 const previewFile = ref<FileRef | null>(null);
 /** 正在下载的文件路径，用于按钮的加载态 */
 const downloading = ref('');
+/** 正在删除的文件路径 */
+const deleting = ref('');
+/** 正在打包下载的目录（'' 表示全部文件），null 表示空闲 */
+const archiving = ref<string | null>(null);
+/** 正在查看对比的改动记录 */
+const diffChange = ref<FileChange | null>(null);
 const approvalBusy = ref<number | null>(null);
 const loadError = ref('');
 const stickToBottom = ref(true);
@@ -92,6 +104,7 @@ const processEvents = computed(() =>
   chat.events.filter((e) =>
     [
       'model_switched',
+      'workspace_changes',
       'tool_use_start',
       'tool_result',
       'approval_required',
@@ -143,12 +156,25 @@ const sessionDeliverables = computed<FileRef[]>(() => {
       }
   return out.map((file) => withListing(file, chat.files));
 });
+const existingPaths = computed(() => new Set(chat.files.map((file) => file.path)));
+/** 声明为交付物、但已被删除或按保留期限清理的文件 */
+function missing(file: FileRef) {
+  return chat.filesLoaded && !existingPaths.value.has(file.path);
+}
+/** 右侧面板只列出仍存在的交付物（已删除的仍留在原轮次下方作为记录） */
+const panelDeliverables = computed(() => sessionDeliverables.value.filter((file) => !missing(file)));
 /** 未被声明为交付物的其余文件（中间产物等），最近修改的在前 */
 const otherFiles = computed<FileRef[]>(() => {
   const presented = new Set(sessionDeliverables.value.map((file) => file.path));
-  return chat.files
-    .filter((file) => !presented.has(file.path))
-    .sort((a, b) => (b.modifiedAt ?? '').localeCompare(a.modifiedAt ?? '') || a.path.localeCompare(b.path));
+  return chat.files.filter((file) => !presented.has(file.path));
+});
+const retentionNote = computed(() => {
+  const retention = chat.fileRetention;
+  if (!retention || !chat.files.length) return '';
+  if (!retention.days) return '文件永久保留。';
+  if (!retention.expiresAt) return `会话最后一次活动 ${retention.days} 天后自动清理文件。`;
+  const date = new Date(retention.expiresAt).toLocaleDateString('zh-CN');
+  return `文件保留至 ${date}（会话最后一次活动 ${retention.days} 天后自动清理）。`;
 });
 function turnFile(file: Deliverable) {
   return withListing(file, chat.files);
@@ -165,6 +191,43 @@ async function downloadFile(file: FileRef) {
     app.toast((error as Error).message, 'error');
   } finally {
     downloading.value = '';
+  }
+}
+/** 从改动记录打开文件：可预览的打开预览，其余直接下载 */
+function openChangedFile(path: string) {
+  const file = chat.files.find((item) => item.path === path);
+  if (!file) return;
+  if (previewable(file)) openPreview(file);
+  else void downloadFile(file);
+}
+async function deleteFile(file: FileRef) {
+  if (!chat.current || deleting.value || chat.running) return;
+  if (!window.confirm(`确定删除“${file.path}”吗？文件会同时从执行工作区和服务端存储中删除，无法恢复。`))
+    return;
+  deleting.value = file.path;
+  try {
+    await chat.deleteFile(file.path);
+    if (previewFile.value?.path === file.path) previewFile.value = null;
+    app.toast(`已删除 ${fileName(file.path)}`);
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  } finally {
+    deleting.value = '';
+  }
+}
+async function downloadArchive(dir = '') {
+  if (!chat.current || archiving.value !== null) return;
+  archiving.value = dir;
+  const folder = dir.split('/').pop();
+  try {
+    await downloadResponse(
+      archiveUrl(chat.current.id, dir),
+      `forge-session-${chat.current.id}-${folder || 'files'}.zip`,
+    );
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  } finally {
+    archiving.value = null;
   }
 }
 function turnIdle(turn: Turn) {
@@ -195,6 +258,7 @@ async function loadSession(value: unknown) {
   const generation = ++routeGeneration;
   loadError.value = '';
   previewFile.value = null;
+  diffChange.value = null;
   stickToBottom.value = true;
   if (value && (!/^\d+$/.test(String(value)) || !Number.isSafeInteger(Number(value)))) {
     chat.prepareStart();
@@ -267,6 +331,7 @@ function eventText(event: KernelEvent) {
   if (event.kind === 'model_switched')
     return `模型切换 · ${event.payload.from?.name ?? '未记录'} → ${event.payload.to?.name ?? '未记录'}`;
   if (event.kind === 'error') return '执行出现异常';
+  if (event.kind === 'workspace_changes') return `文件改动 · ${event.payload.total ?? 0} 个文件`;
   return event.payload.partial ? '保留了部分输出' : '收到一条回复';
 }
 async function exportSession() {
@@ -436,10 +501,18 @@ async function copyMessage(text: string) {
                     :key="file.path"
                     :file="turnFile(file)"
                     :downloading="downloading === file.path"
+                    :missing="missing(file)"
                     @preview="openPreview"
                     @download="downloadFile"
                   />
                 </div>
+                <TurnChanges
+                  v-if="turn.changes && !turn.running"
+                  :changes="turn.changes"
+                  :existing="existingPaths"
+                  @diff="diffChange = $event"
+                  @open="openChangedFile"
+                />
                 <div v-if="!turn.running && !turn.steps.length" class="turn-empty">（本轮没有输出）</div>
               </div>
             </div>
@@ -646,7 +719,9 @@ async function copyMessage(text: string) {
                         ? 'message'
                         : event.kind === 'model_switched'
                           ? 'cpu'
-                          : 'wrench'
+                          : event.kind === 'workspace_changes'
+                            ? 'folder'
+                            : 'wrench'
                 "
                 :size="14"
             /></span>
@@ -666,38 +741,58 @@ async function copyMessage(text: string) {
         </div>
       </div>
       <div v-else class="panel-scroll">
-        <div class="panel-description">本会话生成的文件保存在服务端，切换会话后依然可以预览与下载。</div>
-        <template v-if="sessionDeliverables.length">
+        <div class="panel-description">
+          本会话生成的文件保存在服务端，切换会话或服务重启后依然可以预览与下载。{{ retentionNote }}
+        </div>
+        <div v-if="chat.files.length" class="result-toolbar">
+          <span
+            >{{ chat.files.length }} 个文件 ·
+            {{ formatBytes(chat.files.reduce((sum, file) => sum + file.bytes, 0)) }}</span
+          >
+          <button
+            type="button"
+            class="button secondary small"
+            :disabled="archiving !== null"
+            @click="downloadArchive()"
+          >
+            <span v-if="archiving === ''" class="loader small"></span
+            ><Icon v-else name="download" :size="14" />打包下载全部
+          </button>
+        </div>
+        <template v-if="panelDeliverables.length">
           <h3 class="result-section-title">
-            交付物 <span>{{ sessionDeliverables.length }}</span>
+            交付物 <span>{{ panelDeliverables.length }}</span>
           </h3>
           <div class="result-file-list">
             <FileCard
-              v-for="file in sessionDeliverables"
+              v-for="file in panelDeliverables"
               :key="file.path"
               :file="file"
               compact
+              :deletable="!chat.running"
               :downloading="downloading === file.path"
+              :deleting="deleting === file.path"
               @preview="openPreview"
               @download="downloadFile"
+              @delete="deleteFile"
             />
           </div>
         </template>
         <template v-if="otherFiles.length">
           <h3 class="result-section-title">
-            {{ sessionDeliverables.length ? '其他文件' : '文件' }} <span>{{ otherFiles.length }}</span>
+            {{ panelDeliverables.length ? '其他文件' : '文件' }} <span>{{ otherFiles.length }}</span>
           </h3>
-          <div class="result-file-list">
-            <FileCard
-              v-for="file in otherFiles"
-              :key="file.path"
-              :file="file"
-              compact
-              :downloading="downloading === file.path"
-              @preview="openPreview"
-              @download="downloadFile"
-            />
-          </div>
+          <FileTree
+            :files="otherFiles"
+            :downloading="downloading"
+            :deleting="deleting"
+            :archiving="archiving"
+            :deletable="!chat.running"
+            @preview="openPreview"
+            @download="downloadFile"
+            @delete="deleteFile"
+            @archive="downloadArchive"
+          />
         </template>
         <div v-if="lastAnswer" class="latest-answer">
           <div class="latest-answer-heading">
@@ -709,7 +804,7 @@ async function copyMessage(text: string) {
           <span v-if="lastAnswer.meta.partial" class="tag warning">部分输出 · 执行未完成</span
           ><Markdown :text="lastAnswer.content" />
         </div>
-        <div v-if="!chat.files.length && !sessionDeliverables.length && !lastAnswer" class="panel-empty">
+        <div v-if="!chat.files.length && !panelDeliverables.length && !lastAnswer" class="panel-empty">
           <Icon name="folder" :size="31" /><strong>结果会留在这里</strong>
           <p>执行后的回复与实际生成文件，可以随时回来查看。</p>
         </div>
@@ -721,6 +816,13 @@ async function copyMessage(text: string) {
       :session-id="chat.current.id"
       :file="previewFile"
       @close="previewFile = null"
+    />
+    <FileDiff
+      v-if="diffChange && chat.current"
+      :key="diffChange.id"
+      :session-id="chat.current.id"
+      :change="diffChange"
+      @close="diffChange = null"
     />
   </div>
 </template>

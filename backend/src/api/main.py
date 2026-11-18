@@ -1,5 +1,6 @@
 """Forge 业务控制面正式入口。工作台、场景、会话、模型与治理共用数据库。"""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
@@ -12,6 +13,7 @@ from .core.security import initialize_security, require_auth
 from .routes import agent_scenario, agent_session, approval, audit, governance, registry, auth, model, skill
 from .services.scenario_service import seed_scenarios
 from .services.plugin_service import seed_plugins
+from .services.file_service import file_service
 from .services.session_service import session_service
 from .services.runner_client import runner_client
 from .services.settings_service import get_connection
@@ -27,7 +29,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with SessionFactory() as db:
         await seed_plugins(db)
         await seed_scenarios(db)
+    # 按保留期限定期清理过期会话文件
+    cleanup = asyncio.create_task(file_service.retention_loop(runner_client))
     yield
+    cleanup.cancel()
     await session_service.shutdown()
     await close_db()
 
