@@ -9,8 +9,10 @@ from ..services.settings_service import (
     delete_connection,
     get_connection,
     list_connections,
+    list_model_options,
     save_connection,
     set_connection_availability,
+    set_default_connection,
     test_connection,
 )
 from ..utils.response import ResponseUtil
@@ -21,6 +23,13 @@ router = APIRouter()
 @router.get("")
 async def list_models(db: AsyncSession = Depends(get_session)):
     return ResponseUtil.ok({"items": await list_connections(db)})
+
+
+# 必须注册在 /{connection_id} 之前，否则 "options" 会被当作 ID 解析。
+@router.get("/options")
+async def options(db: AsyncSession = Depends(get_session)):
+    """聊天模型选择：仅启用的模型，不含服务地址与凭据。"""
+    return ResponseUtil.ok(await list_model_options(db))
 
 
 @router.post("")
@@ -53,6 +62,11 @@ async def update_availability(
     connection_id: int, payload: ModelAvailabilityInput, db: AsyncSession = Depends(get_session)
 ):
     return ResponseUtil.ok(await set_connection_availability(db, connection_id, enabled=payload.enabled))
+
+
+@router.put("/{connection_id}/default")
+async def make_default(connection_id: int, db: AsyncSession = Depends(get_session)):
+    return ResponseUtil.ok(await set_default_connection(db, connection_id))
 
 
 @router.get("/{connection_id}")

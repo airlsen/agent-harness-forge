@@ -14,6 +14,8 @@ router = APIRouter()
 
 class NewSession(BaseModel):
     scenarioId: int = Field(gt=0)
+    # 本次会话使用的模型配置；不传则使用平台默认模型。
+    modelId: int | None = Field(default=None, gt=0)
 
 
 class Turn(BaseModel):
@@ -27,7 +29,7 @@ async def list_sessions():
 
 @router.post("")
 async def create(payload: NewSession):
-    return ResponseUtil.ok(await session_service.create(payload.scenarioId))
+    return ResponseUtil.ok(await session_service.create(payload.scenarioId, model_id=payload.modelId))
 
 
 @router.get("/{session_id}")

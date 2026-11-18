@@ -5,6 +5,7 @@ import { useConversation } from '../stores/conversation';
 import { usePlatform } from '../stores/platform';
 import { isAvailableScenario } from '../utils/presentation';
 import Icon from './ForgeIcon.vue';
+import ModelPicker from './ModelPicker.vue';
 
 const props = withDefaults(defineProps<{ hero?: boolean }>(), { hero: false });
 const emit = defineEmits<{ submitted: [id: number]; capabilities: [] }>();
@@ -15,6 +16,7 @@ const picker = ref(false);
 const root = ref<HTMLElement | null>(null);
 const textarea = ref<HTMLTextAreaElement | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
+const modelPicker = ref<InstanceType<typeof ModelPicker> | null>(null);
 const attaching = ref(false);
 const submitting = ref(false);
 const selected = computed(
@@ -57,8 +59,9 @@ onBeforeUnmount(() => {
 
 async function send() {
   if (!canSend.value || chat.running) return;
-  if (!app.connection?.configured) {
-    app.toast('模型尚未连接，请由管理员在「模型连接」完成配置', 'info');
+  // 已有会话使用创建时锁定的模型快照；只有新会话需要一个当前可用的模型。
+  if (!chat.current && !app.modelOptions.length) {
+    app.toast('尚无可用模型，请由管理员在「模型管理」添加并启用模型', 'info');
     await router.push('/agent/models');
     return;
   }
@@ -145,7 +148,10 @@ defineExpose({ focus: () => textarea.value?.focus() });
             :aria-expanded="picker"
             aria-label="选择场景"
             aria-controls="scenario-options"
-            @click="picker = !picker"
+            @click="
+              picker = !picker;
+              modelPicker?.close();
+            "
             @keydown.esc.stop="picker = false"
           >
             <Icon
@@ -187,6 +193,7 @@ defineExpose({ focus: () => textarea.value?.focus() });
             <RouterLink to="/agent/scenarios">浏览企业场景 <Icon name="arrow" :size="14" /></RouterLink>
           </div>
         </div>
+        <ModelPicker ref="modelPicker" @opened="picker = false" @selected="textarea?.focus()" />
         <span class="composer-option-divider"></span>
         <button
           class="icon-button"
@@ -237,7 +244,7 @@ defineExpose({ focus: () => textarea.value?.focus() });
   <div :class="['task-composer-footnote', { 'task-composer-shortcuts': hero }]">
     <span v-if="!hero"
       ><Icon name="layers" :size="12" />{{
-        chat.current ? '场景与策略快照已锁定' : '新会话将引用所选场景'
+        chat.current ? '场景、策略与模型已锁定' : '新会话将使用所选场景与模型'
       }}</span
     >
     <span>Enter 发送 <i>·</i> Shift + Enter 换行</span>

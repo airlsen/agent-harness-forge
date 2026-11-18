@@ -17,6 +17,7 @@ const editorOpen = ref(false);
 const editing = ref<ModelConnection | null>(null);
 const saving = ref(false);
 const deletingId = ref<number | null>(null);
+const defaultingId = ref<number | null>(null);
 const testingId = ref<number | null>(null);
 const changingAvailabilityId = ref<number | null>(null);
 const actionMenuId = ref<number | null>(null);
@@ -174,6 +175,24 @@ async function toggleAvailability(model: ModelConnection) {
     changingAvailabilityId.value = null;
   }
 }
+async function setDefault(model: ModelConnection) {
+  if (!model.id || !model.enabled || model.isDefault || defaultingId.value !== null) return;
+  actionMenuId.value = null;
+  defaultingId.value = model.id;
+  try {
+    const updated = await put<ModelConnection>(`/models/${model.id}/default`, {});
+    // 平台只有一个默认模型：其余配置的默认标记同步清除。
+    models.value = models.value.map((item) =>
+      item.id === updated.id ? updated : { ...item, isDefault: false },
+    );
+    await app.refreshRuntime();
+    app.toast(`“${model.name}”已设为平台默认模型，新会话将默认使用它`, 'success');
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  } finally {
+    defaultingId.value = null;
+  }
+}
 async function deleteModel(model: ModelConnection) {
   if (!model.id || deletingId.value !== null) return;
   actionMenuId.value = null;
@@ -203,7 +222,9 @@ onBeforeUnmount(() => document.removeEventListener('click', closeActionMenu));
       <div class="page-heading model-management-heading">
         <div>
           <h1>模型管理</h1>
-          <p>维护企业模型配置，为聊天工作台后续的模型选择提供统一来源；密钥只保存在服务端。</p>
+          <p>
+            维护企业模型配置。已启用的模型可在聊天中为每个新会话选择，未选择时使用平台默认模型；密钥只保存在服务端。
+          </p>
           <p v-if="models.length && !loading" class="model-management-summary" aria-live="polite">
             <span
               ><strong>{{ models.length }}</strong> 个模型配置</span
@@ -277,7 +298,18 @@ onBeforeUnmount(() => document.removeEventListener('click', closeActionMenu));
             </button>
           </div>
           <div class="model-card-copy">
-            <h2>{{ model.name }}</h2>
+            <h2>
+              <span>{{ model.name }}</span><em
+                v-if="model.id === app.defaultModelId"
+                :class="['model-default-tag', { 'is-implicit': !model.isDefault }]"
+                :title="
+                  model.isDefault
+                    ? '平台默认模型：新会话未选择模型时使用'
+                    : '尚未设置平台默认模型，暂时自动使用最早启用的模型；可在更多操作中设为默认'
+                "
+                >{{ model.isDefault ? '默认' : '默认 · 自动' }}</em
+              >
+            </h2>
             <p>{{ model.model }}</p>
           </div>
           <dl class="model-card-details">
@@ -323,14 +355,25 @@ onBeforeUnmount(() => document.removeEventListener('click', closeActionMenu));
                   aria-label="更多模型操作"
                   :aria-expanded="actionMenuId === model.id"
                   :disabled="
-                    testingId === model.id || changingAvailabilityId === model.id || deletingId === model.id
+                    testingId === model.id ||
+                    changingAvailabilityId === model.id ||
+                    deletingId === model.id ||
+                    defaultingId === model.id
                   "
                   @click.stop="toggleActionMenu(model.id)"
                 >
                   <Icon name="more" :size="18" />
                 </button>
                 <div v-if="actionMenuId === model.id" class="model-card-menu-list" role="menu" @click.stop>
-                  <button type="button" role="menuitem" @click="deleteModel(model)">
+                  <button
+                    v-if="model.enabled && !model.isDefault"
+                    type="button"
+                    role="menuitem"
+                    @click="setDefault(model)"
+                  >
+                    <Icon name="check" :size="15" />设为默认
+                  </button>
+                  <button type="button" role="menuitem" class="danger" @click="deleteModel(model)">
                     <Icon name="trash" :size="15" />删除模型
                   </button>
                 </div>
