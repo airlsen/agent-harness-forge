@@ -76,8 +76,30 @@ try {
       ['tools', 'thinking', 'tools', 'text'],
     );
     assert.equal(turns[1].steps[2].calls[0].pending, true);
-    assert.equal(turns[1].steps[1].live, true);
+    // 思考一旦开始输出正文/调工具即结束：不再是 live（前端折叠成「已思考」）
+    assert.equal(turns[1].steps[1].live, false);
     assert.equal(turns[1].steps[3].live, true);
+  });
+
+  check('只在推理流式时思考保持 live；开始调工具或出正文即视为思考结束', () => {
+    const thinkingOnly = buildTurns([user(1)], {
+      running: true,
+      reasoning: '推理中',
+      text: '',
+      activeTools: [],
+    });
+    assert.equal(thinkingOnly[0].steps[0].live, true);
+    const toolStarted = buildTurns([user(1)], {
+      running: true,
+      reasoning: '推理中',
+      text: '',
+      activeTools: [{ id: 'c1', tool: 'workspace_read', pending: true }],
+    });
+    assert.equal(toolStarted[0].steps[0].live, false);
+    assert.deepEqual(
+      toolStarted[0].steps.map((s) => s.kind),
+      ['thinking', 'tools'],
+    );
   });
 
   check('进行中的调用并入紧邻的连续工具组', () => {

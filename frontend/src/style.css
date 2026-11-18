@@ -1739,6 +1739,25 @@ button:disabled:hover {
 .step-label .thinking-dots {
   margin-left: 2px;
 }
+/* 思考结束后折叠成一行摘要，点击展开原文 */
+.thinking-done > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  width: fit-content;
+}
+.thinking-done > summary::-webkit-details-marker {
+  display: none;
+}
+.thinking-done > summary:hover {
+  color: #2e3a49;
+}
+.thinking-done .step-chevron {
+  transition: transform 0.16s ease;
+}
+.thinking-done[open] .step-chevron {
+  transform: rotate(90deg);
+}
 .step-thinking-text {
   font-size: 12px;
   line-height: 1.8;

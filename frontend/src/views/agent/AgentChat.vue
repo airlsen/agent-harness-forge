@@ -72,6 +72,7 @@ const stickToBottom = ref(true);
 const selected = computed(
   () => app.scenarios.find((s) => s.id === chat.selectedScenarioId) ?? app.availableScenarios[0],
 );
+const agentName = computed(() => chat.current?.scenarioName ?? selected.value?.payload.name ?? 'Forge');
 const sceneIcon = computed(
   () => chat.current?.bundle?.meta?.scenarioIcon ?? selected.value?.payload.icon ?? 'sparkles',
 );
@@ -346,16 +347,27 @@ async function copyMessage(text: string) {
             <div class="message-row assistant">
               <span class="message-avatar agent"><Icon name="sparkles" :size="18" /></span>
               <div class="message-main">
-                <div class="message-author">
-                  Forge <span>{{ turn.running ? '正在工作' : '助手' }}</span>
-                </div>
+                <div class="message-author">{{ agentName }}<span v-if="turn.running">正在工作</span></div>
                 <template v-for="(step, index) in turn.steps" :key="index">
                   <section v-if="step.kind === 'thinking'" class="step-thinking">
-                    <div class="step-label" :class="{ live: step.live }">
-                      <Icon name="think" :size="13" />{{ step.live ? '正在思考' : '已思考'
-                      }}<span v-if="step.live" class="thinking-dots"><i></i><i></i><i></i></span>
-                    </div>
-                    <div class="step-thinking-text">{{ step.text }}</div>
+                    <template v-if="step.live">
+                      <div class="step-label live">
+                        <Icon name="think" :size="13" />正在思考<span class="thinking-dots"
+                          ><i></i><i></i><i></i
+                        ></span>
+                      </div>
+                      <div class="step-thinking-text">{{ step.text }}</div>
+                    </template>
+                    <details v-else class="thinking-done">
+                      <summary class="step-label">
+                        <Icon name="think" :size="13" />已思考<Icon
+                          name="chevron"
+                          :size="12"
+                          class="step-chevron"
+                        />
+                      </summary>
+                      <div class="step-thinking-text">{{ step.text }}</div>
+                    </details>
                   </section>
                   <ToolCallGroup v-else-if="step.kind === 'tools'" :calls="step.calls" />
                   <section v-else class="step-text">
