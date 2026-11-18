@@ -15,7 +15,8 @@ const route = useRoute();
 const router = useRouter();
 const help = ref(false);
 const loggingOut = ref(false);
-const managementExpanded = ref(false);
+const managementOpen = ref(false);
+const managementMenu = ref<HTMLElement | null>(null);
 const adminRoutes = ['/agent/models', '/agent/governance', '/agent/runtime', '/agent/audit'];
 const isAdministration = computed(() => adminRoutes.includes(route.path));
 const navigation = [
@@ -30,18 +31,23 @@ const management = [
   { path: '/agent/runtime', label: '运行状态', icon: 'server' },
   { path: '/agent/audit', label: '运行审计', icon: 'activity' },
 ];
-watch(
-  isAdministration,
-  (active) => {
-    // An active child is never hidden. It keeps orientation clear after a deep link or refresh.
-    if (active) managementExpanded.value = true;
-  },
-  { immediate: true },
-);
-function toggleManagement() {
-  // The parent is an expander, not a redundant overview destination. Keep the active branch visible.
-  if (!isAdministration.value) managementExpanded.value = !managementExpanded.value;
+function closeManagementMenu() {
+  managementOpen.value = false;
 }
+function toggleManagementMenu() {
+  managementOpen.value = !managementOpen.value;
+}
+function dismissManagementMenu(event: PointerEvent) {
+  if (!managementOpen.value || !(event.target instanceof Node)) return;
+  if (!managementMenu.value?.contains(event.target)) closeManagementMenu();
+}
+function handleNavigationKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') closeManagementMenu();
+}
+watch(
+  () => route.path,
+  () => closeManagementMenu(),
+);
 function newChat() {
   if (chat.requestNewConversation()) void router.push('/agent/chat');
 }
@@ -87,6 +93,8 @@ let sessionRefreshPending = false;
 onMounted(async () => {
   window.addEventListener('forge:unauthorized', unauthorized);
   window.addEventListener('beforeunload', protectDrafts);
+  window.addEventListener('pointerdown', dismissManagementMenu);
+  window.addEventListener('keydown', handleNavigationKeydown);
   try {
     await app.checkAuth();
     if (app.authenticated) await app.initialize();
@@ -119,6 +127,8 @@ onUnmounted(() => {
   if (sessionTimer) clearInterval(sessionTimer);
   window.removeEventListener('forge:unauthorized', unauthorized);
   window.removeEventListener('beforeunload', protectDrafts);
+  window.removeEventListener('pointerdown', dismissManagementMenu);
+  window.removeEventListener('keydown', handleNavigationKeydown);
   chat.disconnect();
 });
 </script>
@@ -189,27 +199,37 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="enterprise-sidebar-footer">
-        <section class="enterprise-management-nav" aria-label="平台管理">
+        <section ref="managementMenu" class="enterprise-management-nav" aria-label="平台管理">
           <button
             type="button"
             :class="['enterprise-management-link', { selected: isAdministration }]"
-            :aria-expanded="managementExpanded"
-            aria-controls="platform-management-links"
-            @click="toggleManagement"
+            :aria-expanded="managementOpen"
+            aria-controls="platform-management-menu"
+            aria-haspopup="true"
+            @click="toggleManagementMenu"
           >
             <Icon name="settings" :size="18" /><span>平台管理</span
             ><Icon name="chevronDown" :size="14" class="management-chevron" />
           </button>
-          <div v-show="managementExpanded" id="platform-management-links" class="enterprise-management-links">
-            <RouterLink
-              v-for="item in management"
-              :key="item.path"
-              :to="item.path"
-              :class="{ selected: route.path === item.path }"
+          <Transition name="management-menu">
+            <nav
+              v-if="managementOpen"
+              id="platform-management-menu"
+              class="enterprise-management-popover"
+              aria-label="平台管理页面"
             >
-              <Icon :name="item.icon" :size="15" /><span>{{ item.label }}</span>
-            </RouterLink>
-          </div>
+              <span class="enterprise-management-popover-title">平台管理</span>
+              <RouterLink
+                v-for="item in management"
+                :key="item.path"
+                :to="item.path"
+                :class="{ selected: route.path === item.path }"
+                @click="closeManagementMenu"
+              >
+                <Icon :name="item.icon" :size="16" /><span>{{ item.label }}</span>
+              </RouterLink>
+            </nav>
+          </Transition>
         </section>
         <button
           class="enterprise-help-link"

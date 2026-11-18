@@ -3,7 +3,6 @@ import { onMounted, reactive, ref } from 'vue';
 import { api, put } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
 import Icon from '../../components/ForgeIcon.vue';
-import PlatformBreadcrumb from '../../components/PlatformBreadcrumb.vue';
 const app = usePlatform(),
   saving = ref(false),
   loaded = ref(false);
@@ -40,7 +39,6 @@ async function save() {
 <template>
   <main class="page-content enterprise-page">
     <div class="enterprise-page-inner">
-      <PlatformBreadcrumb current="执行策略" />
       <div class="page-heading">
         <div>
           <h1>执行策略</h1>

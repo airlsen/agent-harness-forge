@@ -2,7 +2,6 @@
 import { computed, ref } from 'vue';
 import { usePlatform } from '../../stores/platform';
 import Icon from '../../components/ForgeIcon.vue';
-import PlatformBreadcrumb from '../../components/PlatformBreadcrumb.vue';
 
 const app = usePlatform();
 const refreshing = ref(false);
@@ -35,7 +34,6 @@ async function refresh() {
 <template>
   <main class="page-content enterprise-page runtime-status-page">
     <div class="enterprise-page-inner">
-      <PlatformBreadcrumb current="运行状态" />
       <div class="page-heading">
         <div>
           <h1>运行状态</h1>
