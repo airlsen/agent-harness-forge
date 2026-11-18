@@ -52,7 +52,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <figure class="code-block">
+  <figure class="code-block is-code">
     <figcaption class="code-head">
       <span class="code-lang">{{ displayLang }}</span>
       <button class="code-copy" type="button" @click="copy(code)">

@@ -2814,20 +2814,25 @@ textarea:focus-visible {
 .enterprise-chat .markdown-body a {
   color: var(--ink);
 }
-.enterprise-chat .markdown-body .code-block {
+.enterprise-chat .markdown-body .diagram-block,
+.enterprise-chat .markdown-body .chart-block {
   border-color: var(--line);
-  background: var(--panel);
+  background: var(--surface);
 }
-.enterprise-chat .code-head {
+.enterprise-chat .diagram-block > .code-head,
+.enterprise-chat .chart-block > .code-head {
   border-bottom-color: var(--line);
   background: var(--surface-subtle);
 }
-.enterprise-chat .code-lang,
-.enterprise-chat .code-copy,
+.enterprise-chat .diagram-block > .code-head .code-lang,
+.enterprise-chat .chart-block > .code-head .code-lang,
+.enterprise-chat .diagram-block > .code-head .code-copy,
+.enterprise-chat .chart-block > .code-head .code-copy,
 .enterprise-chat .diagram-pending {
   color: var(--text-secondary);
 }
-.enterprise-chat .code-copy:hover {
+.enterprise-chat .diagram-block > .code-head .code-copy:hover,
+.enterprise-chat .chart-block > .code-head .code-copy:hover {
   color: var(--ink);
   background: var(--border-soft);
 }

@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import CodeBlock from './CodeBlock.vue';
 import { useCopy } from '../utils/useCopy';
+import { VEGA_CONFIG } from '../utils/vizTheme';
 import Icon from './ForgeIcon.vue';
 
 const props = withDefaults(defineProps<{ code: string; closed: boolean; live?: boolean }>(), {
@@ -45,6 +46,7 @@ async function renderChart() {
       actions: { export: true, source: false, compiled: false, editor: false },
       renderer: 'svg',
       tooltip: true,
+      config: VEGA_CONFIG,
     });
     if (my !== seq) {
       result.view.finalize();

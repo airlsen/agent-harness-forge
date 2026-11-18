@@ -4,6 +4,7 @@
  */
 import type { HighlighterCore } from 'shiki/core';
 import DOMPurify from 'dompurify';
+import { CODE_THEME, loadCodeTheme } from './vizTheme';
 
 const SUPPORTED: Record<string, () => Promise<unknown>> = {
   javascript: () => import('@shikijs/langs/javascript'),
@@ -80,7 +81,7 @@ function getHighlighter(): Promise<HighlighterCore> {
     highlighterPromise = Promise.all([import('shiki/core'), import('shiki/engine/javascript')]).then(
       ([{ createHighlighterCore }, { createJavaScriptRegexEngine }]) =>
         createHighlighterCore({
-          themes: [import('@shikijs/themes/github-light')],
+          themes: [loadCodeTheme()],
           langs: [],
           engine: createJavaScriptRegexEngine(),
         }),
@@ -100,6 +101,6 @@ export async function highlightCode(code: string, rawLang: string): Promise<stri
     await highlighter.loadLanguage(SUPPORTED[lang] as never);
     loadedLangs.add(lang);
   }
-  const html = highlighter.codeToHtml(code, { lang, theme: 'github-light' });
+  const html = highlighter.codeToHtml(code, { lang, theme: CODE_THEME });
   return DOMPurify.sanitize(html, { ADD_ATTR: ['style', 'tabindex'] });
 }

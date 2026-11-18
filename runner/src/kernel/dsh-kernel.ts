@@ -4,6 +4,7 @@ import { mkdir, writeFile, readFile, readdir, lstat } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DshProcess } from './dsh-process.js';
+import { buildSystemPrompt } from './system-prompt.js';
 import type { PluginWorkerClient } from '../plugin-worker-client.js';
 import type { AgentKernel, Bundle, KernelEvent, SessionHandle, TurnOpts, UserCtx } from './types.js';
 
@@ -228,20 +229,7 @@ export class DshKernel implements AgentKernel {
         }),
     );
     proc.hostHandlers.set('user-question/ask', async () => ({ cancelled: true }));
-    const prompt = entry.bundle.profile_patch.systemPrompt as any;
-    const system =
-      typeof prompt === 'object'
-        ? [
-            prompt.identity,
-            prompt.domain,
-            ...(prompt.safety ?? []),
-            ...(prompt.workspace ?? []),
-            ...(prompt.output ?? []),
-            '所有文件操作仅限当前会话工作区。不可声称执行了未实际调用的工具。',
-          ]
-            .filter(Boolean)
-            .join('\n\n')
-        : String(prompt ?? '你是 Forge 企业智能体，请准确、清晰地回答用户。');
+    const system = buildSystemPrompt(entry.bundle.profile_patch.systemPrompt);
     await proc.start({
       binPath: join(ROOT, 'scripts', 'dsh-launch.mjs'),
       profile: 'sdk-minimal',
