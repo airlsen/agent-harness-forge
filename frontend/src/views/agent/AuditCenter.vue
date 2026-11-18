@@ -4,7 +4,6 @@ import { api } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
 import type { Conversation } from '../../types/platform';
 import Icon from '../../components/ForgeIcon.vue';
-import PlatformBreadcrumb from '../../components/PlatformBreadcrumb.vue';
 const app = usePlatform(),
   rows = ref<Conversation[]>([]),
   query = ref(''),
@@ -46,7 +45,6 @@ function status(value: string) {
 <template>
   <main class="page-content enterprise-page">
     <div class="enterprise-page-inner">
-      <PlatformBreadcrumb current="运行审计" />
       <div class="page-heading">
         <div>
           <h1>运行审计</h1>

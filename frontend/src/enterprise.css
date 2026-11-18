@@ -344,6 +344,7 @@ textarea:focus-visible {
   flex-shrink: 0;
 }
 .enterprise-management-nav {
+  position: relative;
   margin-bottom: 4px;
 }
 .enterprise-management-link {
@@ -356,12 +357,14 @@ textarea:focus-visible {
   height: 14px;
   justify-self: end;
   color: var(--text-secondary);
+  transition: transform 0.15s ease;
 }
 .enterprise-management-link[aria-expanded='true'] .management-chevron {
   transform: rotate(180deg);
 }
 .enterprise-management-link:hover,
-.enterprise-management-link.selected {
+.enterprise-management-link.selected,
+.enterprise-management-link[aria-expanded='true'] {
   background: var(--accent-soft);
   color: var(--accent-ink);
 }
@@ -371,35 +374,61 @@ textarea:focus-visible {
 .enterprise-management-link.selected > svg:first-child {
   stroke-width: 2;
 }
-.enterprise-management-links {
-  display: grid;
-  gap: 2px;
-  margin: 3px 0 6px 21px;
-  padding: 4px 0 4px 13px;
-  border-left: 1px solid var(--border-strong);
+/* This menu is deliberately out of flow: opening it must never move Help or Account. */
+.enterprise-management-popover {
+  position: absolute;
+  z-index: 140;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: 248px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: 0 14px 34px #26334a1a;
+  transform-origin: bottom left;
 }
-.enterprise-management-links > a {
+.enterprise-management-popover-title {
+  display: block;
+  padding: 7px 9px 8px;
+  color: var(--text-subtle);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.45px;
+}
+.enterprise-management-popover > a {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  padding: 6px 8px;
-  border-radius: 5px;
+  gap: 9px;
+  min-height: 38px;
+  padding: 8px 9px;
+  border-radius: 6px;
   color: var(--text-secondary);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 550;
 }
-.enterprise-management-links > a:hover,
-.enterprise-management-links > a.selected {
+.enterprise-management-popover > a:hover,
+.enterprise-management-popover > a.selected {
   color: var(--accent-ink);
   background: var(--accent-soft);
 }
-.enterprise-management-links > a.selected {
+.enterprise-management-popover > a.selected {
   font-weight: 650;
 }
-.enterprise-management-links > a > svg {
+.enterprise-management-popover > a > svg {
   justify-self: center;
+}
+.management-menu-enter-active,
+.management-menu-leave-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.management-menu-enter-from,
+.management-menu-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
 }
 .enterprise-help-link {
   display: grid;
@@ -564,22 +593,6 @@ textarea:focus-visible {
   margin: 0 auto;
   width: 100%;
   min-width: 0;
-}
-.platform-breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 13px;
-  color: var(--text-subtle);
-  font-size: 11px;
-  font-weight: 500;
-}
-.platform-breadcrumb > svg {
-  color: var(--muted);
-}
-.platform-breadcrumb > strong {
-  color: var(--text-secondary);
-  font-weight: 600;
 }
 .enterprise-view .page-heading {
   align-items: flex-start;
@@ -2045,9 +2058,6 @@ textarea:focus-visible {
   margin-block: 16px;
 }
 /* Runtime status is an actionable destination, not a replacement for the old management menu. */
-.runtime-status-page .platform-breadcrumb {
-  margin-bottom: 12px;
-}
 .runtime-status-hero {
   display: flex;
   align-items: stretch;
@@ -3371,25 +3381,11 @@ textarea:focus-visible {
   .enterprise-management-nav {
     width: 100%;
   }
-  .enterprise-management-links {
-    gap: 3px;
-    margin: 2px 0 5px;
-    padding: 4px 0;
-    border-left: 0;
-  }
-  .enterprise-management-links > a {
-    grid-template-columns: minmax(0, 1fr);
-    justify-items: center;
-    gap: 3px;
-    min-height: 45px;
-    padding: 5px 2px;
-    font-size: 9px;
-    line-height: 12px;
-    text-align: center;
-  }
-  .enterprise-management-links > a > svg {
-    width: 15px;
-    height: 15px;
+  .enterprise-management-popover {
+    position: fixed;
+    bottom: 12px;
+    left: calc(var(--sidebar) + 10px);
+    width: min(248px, calc(100vw - var(--sidebar) - 20px));
   }
   .enterprise-profile {
     padding: 9px 0;
