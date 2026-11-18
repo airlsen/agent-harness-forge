@@ -590,7 +590,9 @@ async function versions(scenario: Scenario) {
         <div class="static-form-row">
           <span>模型路由</span
           ><strong
-            >平台默认连接<small>{{ app.connection?.model || '尚未配置模型' }}</small></strong
+            >与场景无关，由会话选择<small
+              >试运行使用平台默认模型 · {{ app.connection?.model || '尚未配置模型' }}</small
+            ></strong
           >
         </div>
         <div class="static-form-row"><span>执行方式</span><strong>标准会话</strong></div>

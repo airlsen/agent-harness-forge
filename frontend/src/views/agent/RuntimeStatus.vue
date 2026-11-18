@@ -116,8 +116,8 @@ async function refresh() {
           <header>
             <Icon name="cpu" :size="19" />
             <div>
-              <h2>已启用模型出口</h2>
-              <p>聊天模型选择器上线前，兼容运行时只会读取已启用的模型配置。</p>
+              <h2>平台默认模型</h2>
+              <p>新会话未选择模型时使用；聊天中可为每个新会话单独选择已启用的模型。</p>
             </div>
           </header>
           <div class="runtime-model-connection">

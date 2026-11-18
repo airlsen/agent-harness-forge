@@ -83,7 +83,7 @@ async def init_db() -> None:
 
         await conn.run_sync(ensure_plugin_columns)
 
-        # Additive compatibility for model availability controls.
+        # Additive compatibility for model availability controls and the platform default model.
         def ensure_model_connection_columns(sync_conn):
             from sqlalchemy import inspect, text
 
@@ -91,11 +91,19 @@ async def init_db() -> None:
             if "model_connection" not in inspector.get_table_names():
                 return
             existing = {column["name"] for column in inspector.get_columns("model_connection")}
+            postgres = sync_conn.dialect.name == "postgresql"
             if "enabled" not in existing:
-                default = "TRUE" if sync_conn.dialect.name == "postgresql" else "1"
+                default = "TRUE" if postgres else "1"
                 sync_conn.execute(
                     text(
                         f"ALTER TABLE model_connection ADD COLUMN enabled BOOLEAN NOT NULL DEFAULT {default}"
+                    )
+                )
+            if "is_default" not in existing:
+                default = "FALSE" if postgres else "0"
+                sync_conn.execute(
+                    text(
+                        f"ALTER TABLE model_connection ADD COLUMN is_default BOOLEAN NOT NULL DEFAULT {default}"
                     )
                 )
 

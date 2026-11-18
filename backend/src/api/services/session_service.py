@@ -16,7 +16,13 @@ from .runner_client import runner_client
 from .scenario_service import scenario_service, iso
 from .scenario_assembler import Bundle
 from .plugin_service import ensure_bindings_available
-from .settings_service import get_connection, get_policy, environment_ref
+from .settings_service import environment_ref, get_policy, resolve_session_connection
+
+
+def message_model(row) -> dict:
+    meta = row.bundle_snapshot.get("meta", {})
+    model = meta.get("model", "")
+    return {"model": model, "modelName": meta.get("modelName") or model} if model else {}
 
 
 class SessionService:
@@ -46,15 +52,17 @@ class SessionService:
             "cost": row.cost if row.cost_known else None,
             "createdAt": iso(row.created_at),
             "model": meta.get("model", ""),
+            # 旧会话没有记录配置 ID 与显示名：分别回退为 None 与模型 ID。
+            "modelId": meta.get("modelConnectionId"),
+            "modelName": meta.get("modelName") or meta.get("model", ""),
             "isTest": meta.get("isTest", False),
         }
 
-    async def create(self, scenario_id, *, is_test=False):
+    async def create(self, scenario_id, *, model_id=None, is_test=False):
         async with SessionFactory() as db:
             scenario = await scenario_service.row(db, scenario_id)
-            config = await get_connection(db, secret=True)
-            if not config["configured"]:
-                raise HTTPException(409, "没有已启用的模型配置，请先到模型管理启用至少一个模型")
+            # 模型属于本次会话，与场景无关：显式选择优先，否则使用平台默认模型。
+            config = await resolve_session_connection(db, model_id)
             version = await scenario_service.version(db, scenario)
             payload = ScenarioPayload.model_validate(version.bundle_json["payload"])
             stored_bundle = version.bundle_json.get("bundle")
@@ -69,6 +77,8 @@ class SessionService:
             bundle.meta.update(
                 {
                     "model": config["model"],
+                    "modelName": config["name"],
+                    "modelConnectionId": config["id"],
                     "isTest": is_test,
                     "modelRevision": config.get("revision", ""),
                     "environmentRef": await environment_ref(db),
@@ -91,6 +101,7 @@ class SessionService:
             await db.flush()
             # 执行连接同样锁定。密钥仅存独立加密记录，不进入可导出的 Bundle。
             snapshot = {key: config[key] for key in ("baseUrl", "model", "contextWindow")}
+            snapshot.update(connectionId=config["id"], name=config["name"])
             snapshot["credential"] = encrypt(config.get("apiKey", ""))
             db.add(PlatformSetting(key=f"session-model:{row.id}", value=snapshot))
             await db.commit()
@@ -175,7 +186,12 @@ class SessionService:
                 saved = await db.get(PlatformSetting, f"session-model:{session_id}")
                 if not saved:
                     raise HTTPException(409, "此会话没有完整的模型快照，请新建会话")
-                config = {key: value for key, value in saved.value.items() if key != "credential"}
+                # 只把运行所需的连接参数交给 Runner；connectionId/name 仅用于展示与追溯。
+                config = {
+                    key: saved.value[key]
+                    for key in ("baseUrl", "model", "contextWindow")
+                    if key in saved.value
+                }
                 config["apiKey"] = decrypt(saved.value.get("credential", ""))
                 if row.runner_session_id:
                     try:
@@ -278,6 +294,8 @@ class SessionService:
                             meta={
                                 "runtimeMessageId": payload.get("runtimeMessageId"),
                                 "partial": payload.get("partial", False),
+                                # 每条回复记录生成它的模型，为后续会话内切换模型保留可追溯性。
+                                **message_model(row),
                                 **({"reasoning": payload["reasoning"]} if payload.get("reasoning") else {}),
                             },
                         )

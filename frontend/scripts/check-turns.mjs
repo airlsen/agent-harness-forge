@@ -118,6 +118,24 @@ try {
     const settled = buildTurns([user(1)], { ...idle, text: '不应出现' });
     assert.equal(settled[0].steps.length, 0);
   });
+
+  check('每轮记录生成回复的模型显示名，旧消息回退为模型 ID，未记录时为空', () => {
+    const turns = buildTurns(
+      [
+        user(1),
+        assistant(2, '回答', { model: 'deepseek-chat', modelName: '企业 Chat' }),
+        user(3),
+        assistant(4, '旧回答', { model: 'deepseek-chat' }),
+        user(5),
+        assistant(6, '更早', {}),
+      ],
+      idle,
+    );
+    assert.deepEqual(
+      turns.map((turn) => turn.model),
+      ['企业 Chat', 'deepseek-chat', ''],
+    );
+  });
 } finally {
   await vite.close();
 }

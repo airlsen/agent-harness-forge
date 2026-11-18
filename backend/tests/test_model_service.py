@@ -52,7 +52,7 @@ async def test_model_connections_are_independent_safe_and_only_enabled_at_runtim
         assert updated["name"] == "Reasoner 2"
         assert (await get_connection(db, secret=True, connection_id=second["id"]))["apiKey"] == "secret"
 
-        # The compatibility runtime only considers enabled configurations; it never exposes a product default.
+        # Without an explicit platform default, the runtime falls back to the earliest enabled configuration.
         assert (await get_connection(db))["id"] == first["id"]
         disabled = await set_connection_availability(db, first["id"], enabled=False)
         assert not disabled["enabled"]

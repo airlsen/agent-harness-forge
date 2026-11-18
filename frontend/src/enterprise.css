@@ -954,6 +954,46 @@ textarea:focus-visible {
   opacity: 0.85;
   color: var(--accent-ink);
 }
+.task-composer .model-picker-wrap {
+  position: static;
+  min-width: 0;
+}
+.task-composer .model-trigger {
+  font-size: 11px;
+  min-height: 31px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--text-secondary);
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
+  max-width: 200px;
+}
+.task-composer .model-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-composer .model-trigger:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--surface-subtle);
+}
+.task-composer .model-trigger:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+.task-composer .model-trigger.is-empty {
+  color: #806327;
+  border-style: dashed;
+}
+.task-composer .model-popover strong > small.model-status-badge.is-failed {
+  color: #b54a3c;
+}
+.task-composer .model-popover strong > small.model-status-badge.is-untested {
+  color: var(--text-subtle);
+}
 .composer-option-divider {
   width: 1px;
   height: 15px;
@@ -2176,12 +2216,35 @@ textarea:focus-visible {
   margin-top: 18px;
 }
 .model-card-copy h2 {
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
   color: var(--ink);
   font-size: 16px;
   font-weight: 600;
+}
+.model-card-copy h2 > span {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.model-default-tag {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--accent-line);
+  border-radius: 4px;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 16px;
+}
+.model-default-tag.is-implicit {
+  border-style: dashed;
+  color: var(--text-secondary);
+  background: transparent;
 }
 .model-card-copy p {
   overflow: hidden;
@@ -2310,12 +2373,20 @@ textarea:focus-visible {
   padding: 0 8px;
   border: 0;
   border-radius: 4px;
-  color: var(--red, #a13c3c);
+  color: var(--text-secondary);
   background: transparent;
   font-size: 11px;
   text-align: left;
+  white-space: nowrap;
 }
 .model-card-menu-list button:hover {
+  color: var(--ink);
+  background: var(--surface-subtle);
+}
+.model-card-menu-list button.danger {
+  color: var(--red, #a13c3c);
+}
+.model-card-menu-list button.danger:hover {
   background: #fff2f2;
 }
 .model-management-card.is-disabled {
@@ -2791,6 +2862,21 @@ textarea:focus-visible {
 }
 .enterprise-chat .message-author > span.done {
   color: #2e7d4f;
+}
+.message-author > .message-model {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 16px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
 }
 .enterprise-chat .user-message-text {
   color: #fff;
@@ -3969,6 +4055,15 @@ textarea:focus-visible {
   }
   .task-composer .scenario-trigger > svg:first-child {
     width: 14px;
+  }
+  .task-composer .model-trigger {
+    font-size: 10px;
+    gap: 4px;
+    max-width: 118px;
+    padding: 5px 6px;
+  }
+  .message-author > .message-model {
+    max-width: 140px;
   }
   .task-composer-hero .task-send {
     padding: 7px 9px;

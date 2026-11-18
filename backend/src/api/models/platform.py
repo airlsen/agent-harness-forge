@@ -26,6 +26,8 @@ class ModelConnection(Base):
     output_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_test: Mapped[dict] = mapped_column(JSON, default=dict)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 平台默认模型：新会话未显式选择模型时使用；全平台至多一个，且必须处于启用状态。
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

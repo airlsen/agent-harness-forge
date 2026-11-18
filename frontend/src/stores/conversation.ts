@@ -17,12 +17,38 @@ interface TaskDraft {
   input: string;
   attachments: { name: string; content: string }[];
   scenarioId: number | null;
+  /** 新会话所选模型；已有会话的模型在创建时锁定，不随草稿变化 */
+  modelId: number | null;
   preview: boolean;
+}
+// 「上次使用的模型」是按账号区分的偏好（不是草稿内容），保存在本机；读写失败时静默回退到平台默认。
+const LAST_MODEL_KEY = 'forge.last-model.v1';
+function readLastModel(username?: string): number | null {
+  if (!username || typeof localStorage === 'undefined') return null;
+  try {
+    const value = (JSON.parse(localStorage.getItem(LAST_MODEL_KEY) ?? '{}') as Record<string, unknown>)[
+      username
+    ];
+    return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+function rememberLastModel(username: string | undefined, id: number | null) {
+  if (!username || id === null || typeof localStorage === 'undefined') return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAST_MODEL_KEY) ?? '{}');
+    const map = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+    localStorage.setItem(LAST_MODEL_KEY, JSON.stringify({ ...map, [username]: id }));
+  } catch {
+    // 存储不可用（隐私模式、配额已满）不影响发送。
+  }
 }
 function sameDraft(left: TaskDraft, right: TaskDraft) {
   return (
     left.id === right.id &&
     left.scenarioId === right.scenarioId &&
+    left.modelId === right.modelId &&
     left.preview === right.preview &&
     left.input === right.input &&
     JSON.stringify(left.attachments) === JSON.stringify(right.attachments)
@@ -51,6 +77,7 @@ export const useConversation = defineStore('conversation', {
     files: [] as { path: string; bytes: number }[],
     selectedScenarioId: null as number | null,
     previewScenarioId: null as number | null,
+    selectedModelId: null as number | null,
     input: '',
     draftAttachments: [] as { name: string; content: string }[],
     draftRevision: 0,
@@ -94,6 +121,7 @@ export const useConversation = defineStore('conversation', {
         input: this.input,
         attachments: this.draftAttachments.map((file) => ({ ...file })),
         scenarioId: this.selectedScenarioId,
+        modelId: this.selectedModelId,
         preview: this.selectedScenarioId !== null && this.selectedScenarioId === this.previewScenarioId,
       };
     },
@@ -143,6 +171,17 @@ export const useConversation = defineStore('conversation', {
       );
       this.selectedScenarioId = selected?.id ?? platform.availableScenarios[0]?.id ?? null;
       this.previewScenarioId = selected?.status === 'draft' ? selected.id : null;
+      this.selectedModelId = this.availableModel(draft?.modelId);
+    },
+    /** 所选模型仍可用则保留，否则依次回退到本人上次使用的模型、平台默认模型。 */
+    availableModel(id?: number | null): number | null {
+      const platform = usePlatform();
+      const usable = (value: number | null | undefined): value is number =>
+        value != null && platform.modelOptions.some((option) => option.id === value);
+      if (usable(id)) return id;
+      const last = readLastModel(platform.user?.username);
+      if (usable(last)) return last;
+      return platform.defaultModelId ?? platform.modelOptions[0]?.id ?? null;
     },
     prepareStart() {
       // Returning home parks this session's reply, not its execution. A new-task draft
@@ -164,6 +203,8 @@ export const useConversation = defineStore('conversation', {
           this.selectedScenarioId = platform.availableScenarios[0]?.id ?? null;
           this.previewScenarioId = null;
         }
+        // 模型可能在模型管理中被停用或删除：回到工作台时重新校验。
+        this.selectedModelId = this.availableModel(this.selectedModelId);
         if (!this.draftId) this.draftId = ++this.draftSequence;
       }
     },
@@ -195,7 +236,24 @@ export const useConversation = defineStore('conversation', {
       this.draftId = ++this.draftSequence;
       this.selectedScenarioId = null;
       this.previewScenarioId = null;
+      this.selectedModelId = null;
       this.pendingNewConversation = null;
+    },
+    /** 可选模型变化（首次加载、模型管理中停用/删除）后校正新会话草稿的模型。 */
+    syncModel() {
+      if (!this.current) this.selectedModelId = this.availableModel(this.selectedModelId);
+    },
+    /** 只有尚未创建的新会话可以选模型；已有会话的模型在创建时锁定。 */
+    selectModel(id: number): boolean {
+      if (
+        this.current ||
+        this.running ||
+        this.loading ||
+        !usePlatform().modelOptions.some((option) => option.id === id)
+      )
+        return false;
+      this.selectedModelId = id;
+      return true;
     },
     selectScenario(id: number): boolean {
       if (
@@ -267,6 +325,10 @@ export const useConversation = defineStore('conversation', {
         platform.scenarios.find((scenario) => scenario.id === this.selectedScenarioId)?.id ??
         platform.availableScenarios[0]?.id;
       if (!scenarioId) throw new Error('请先选择一个场景');
+      // 新会话才需要模型；所选模型失效时回退到推荐模型，而不是静默交给后端兜底。
+      const modelId = this.current ? null : this.availableModel(this.selectedModelId);
+      if (!this.current && modelId === null)
+        throw new Error('没有可用的模型，请由管理员在「模型管理」启用模型');
       const message = [
         this.input.trim(),
         ...this.draftAttachments.map((file) => `\n附件：${file.name}\n\`\`\`text\n${file.content}\n\`\`\``),
@@ -274,6 +336,7 @@ export const useConversation = defineStore('conversation', {
       if (message.length > 64000) throw new Error('任务与文本附件合计不能超过 64000 字符');
       const generation = openGeneration;
       this.selectedScenarioId = scenarioId;
+      if (!this.current) this.selectedModelId = modelId;
       const submittedDraft = this.snapshotDraft();
       const originKey = this.draftKey;
       this.sending = true;
@@ -287,9 +350,10 @@ export const useConversation = defineStore('conversation', {
           throw new Error('这份草稿仍在提交，请稍后再试；不会重复发送。');
         const session =
           this.current ??
-          (prepared?.scenarioId === scenarioId
+          (prepared?.scenarioId === scenarioId && prepared.modelId === modelId
             ? prepared
-            : await post<SessionDetail>('/agent/sessions', { scenarioId }));
+            : await post<SessionDetail>('/agent/sessions', { scenarioId, modelId }));
+        if (!this.current) rememberLastModel(platform.user?.username, session.modelId ?? modelId);
         // A navigation/new draft during an in-flight create must never attach its receipt
         // or text to another conversation. Backend execution, once accepted, continues.
         if (generation !== openGeneration) {

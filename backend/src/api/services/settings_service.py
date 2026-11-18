@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 import httpx
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.security import decrypt, encrypt
@@ -132,6 +132,7 @@ def _connection_view(row: ModelConnection) -> dict:
         "inputPrice": row.input_price,
         "outputPrice": row.output_price,
         "enabled": row.enabled,
+        "isDefault": bool(row.is_default),
         "lastTest": row.last_test or {},
     }
 
@@ -147,6 +148,7 @@ def _unconfigured_connection() -> dict:
         "inputPrice": None,
         "outputPrice": None,
         "enabled": False,
+        "isDefault": False,
         "lastTest": {},
     }
 
@@ -156,9 +158,10 @@ async def _connection_row(
 ) -> ModelConnection | None:
     if connection_id is not None:
         return await db.get(ModelConnection, connection_id)
-    # Compatibility bridge until the chat composer exposes an explicit model picker.
-    # Only enabled configurations may be used to run work; creation order is not a product-level default.
-    statement = select(ModelConnection).order_by(ModelConnection.id).limit(1)
+    # 未显式指定时取平台默认模型；尚未设置默认（或旧数据）时回退到最早创建的启用配置。
+    statement = (
+        select(ModelConnection).order_by(ModelConnection.is_default.desc(), ModelConnection.id).limit(1)
+    )
     if available_only:
         statement = statement.where(ModelConnection.enabled.is_(True))
     return await db.scalar(statement)
@@ -179,6 +182,75 @@ async def get_connection(db: AsyncSession, *, secret=False, connection_id: int |
 async def list_connections(db: AsyncSession) -> list[dict]:
     rows = (await db.scalars(select(ModelConnection).order_by(ModelConnection.id))).all()
     return [_connection_view(row) for row in rows]
+
+
+def _test_status(row: ModelConnection) -> str:
+    last = row.last_test or {}
+    if last.get("ok"):
+        return "ok"
+    return "failed" if last.get("at") else "untested"
+
+
+async def list_model_options(db: AsyncSession) -> dict:
+    """聊天模型选择的数据源：只含启用的配置，且不返回服务地址与任何凭据信息。
+
+    连接测试不是启用的前置条件，因此测试状态只作为提示（status），不参与过滤。
+    defaultId 是新会话未显式选择时实际会使用的模型（显式默认优先，否则为最早的启用配置）。
+    """
+    rows = (
+        await db.scalars(
+            select(ModelConnection).where(ModelConnection.enabled.is_(True)).order_by(ModelConnection.id)
+        )
+    ).all()
+    default = next((row for row in rows if row.is_default), rows[0] if rows else None)
+    items = [
+        {
+            "id": row.id,
+            "name": row.name,
+            "model": row.model,
+            "contextWindow": row.context_window,
+            "inputPrice": row.input_price,
+            "outputPrice": row.output_price,
+            "isDefault": bool(row.is_default),
+            "status": _test_status(row),
+        }
+        for row in rows
+    ]
+    return {"items": items, "defaultId": default.id if default else None}
+
+
+async def set_default_connection(db: AsyncSession, connection_id: int) -> dict:
+    row = await db.get(ModelConnection, connection_id)
+    if not row:
+        raise HTTPException(404, "模型配置不存在")
+    if not row.enabled:
+        raise HTTPException(409, "已停用的模型不能设为默认，请先启用")
+    await db.execute(
+        update(ModelConnection).where(ModelConnection.id != connection_id).values(is_default=False)
+    )
+    row.is_default = True
+    await _touch_model_revision(db)
+    await db.commit()
+    await db.refresh(row)
+    return _connection_view(row)
+
+
+async def resolve_session_connection(db: AsyncSession, connection_id: int | None = None) -> dict:
+    """新会话使用的模型（含解密后的密钥，仅供服务端快照）。
+
+    显式选择时必须存在且已启用；未选择时使用平台默认模型。
+    """
+    if connection_id is None:
+        config = await get_connection(db, secret=True)
+        if not config["configured"]:
+            raise HTTPException(409, "没有已启用的模型配置，请先到模型管理启用至少一个模型")
+        return config
+    row = await db.get(ModelConnection, connection_id)
+    if not row:
+        raise HTTPException(404, "所选模型不存在或已被删除，请重新选择")
+    if not row.enabled:
+        raise HTTPException(409, "所选模型已停用，请重新选择")
+    return await get_connection(db, secret=True, connection_id=connection_id)
 
 
 async def _touch_model_revision(db: AsyncSession) -> None:
@@ -234,6 +306,9 @@ async def set_connection_availability(db: AsyncSession, connection_id: int, *, e
     if not row:
         raise HTTPException(404, "模型配置不存在")
     row.enabled = enabled
+    if not enabled:
+        # 停用的模型不能继续作为默认；新会话回退到最早的启用配置。
+        row.is_default = False
     await _touch_model_revision(db)
     await db.commit()
     await db.refresh(row)

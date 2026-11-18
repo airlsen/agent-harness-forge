@@ -33,12 +33,12 @@ async function chooseScenario(scenario: Scenario) {
       <div class="conversation-start-composer">
         <TaskComposer ref="composer" hero @submitted="(id) => emit('submitted', id)" />
         <div
-          v-if="!app.connection?.configured && !app.loading"
+          v-if="!app.modelOptions.length && !app.loading"
           class="connect-model-prompt enterprise-model-prompt"
           role="status"
         >
           <Icon name="plug" :size="17" />
-          <div><strong>模型尚未连接</strong><span>管理员完成配置后，即可开始真实执行。</span></div>
+          <div><strong>尚无可用模型</strong><span>管理员添加并启用模型后，即可开始真实执行。</span></div>
           <RouterLink to="/agent/models">配置连接 <Icon name="arrow" :size="14" /></RouterLink>
         </div>
       </div>

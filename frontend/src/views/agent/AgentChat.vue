@@ -354,7 +354,12 @@ async function copyMessage(text: string) {
               <span class="message-avatar agent"><Icon name="sparkles" :size="18" /></span>
               <div class="message-main">
                 <div class="message-author">
-                  Agent<span v-if="turn.running">正在工作</span
+                  Agent<em
+                    v-if="turn.model || chat.current?.modelName"
+                    class="message-model"
+                    :title="`由 ${turn.model || chat.current?.modelName} 生成`"
+                    >{{ turn.model || chat.current?.modelName }}</em
+                  ><span v-if="turn.running">正在工作</span
                   ><span v-else-if="turnIndex === turns.length - 1 && lastTurnCompleted" class="done"
                     ><Icon name="check" :size="11" />已完成</span
                   >
@@ -553,9 +558,15 @@ async function copyMessage(text: string) {
           </ul>
         </div>
         <div class="context-section">
-          <h3>模型连接</h3>
-          <p class="small-text muted-text">
-            {{ chat.current?.model || app.connection?.model || '尚未配置' }}
+          <h3>模型</h3>
+          <p v-if="chat.current" class="small-text muted-text" :title="chat.current.model">
+            {{ chat.current.modelName || chat.current.model || '未记录'
+            }}<template v-if="chat.current.modelName && chat.current.modelName !== chat.current.model">
+              · {{ chat.current.model }}</template
+            >
+          </p>
+          <p v-else class="small-text muted-text">
+            {{ app.modelOptions.find((option) => option.id === chat.selectedModelId)?.name || '尚未配置' }}
           </p>
           <p v-if="chat.current" class="small-text muted-text">
             累计 {{ (chat.current.tokensIn + chat.current.tokensOut).toLocaleString() }} tokens ·

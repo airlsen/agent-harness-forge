@@ -1,6 +1,13 @@
 import { defineStore } from 'pinia';
 import { api, post, setCsrf, setPreviewSession } from '../api/client';
-import type { Conversation, ModelConnection, RuntimeStatus, Scenario, Tool } from '../types/platform';
+import type {
+  Conversation,
+  ModelConnection,
+  ModelOption,
+  RuntimeStatus,
+  Scenario,
+  Tool,
+} from '../types/platform';
 import { isAvailableScenario } from '../utils/presentation';
 
 export const usePlatform = defineStore('platform', {
@@ -13,6 +20,9 @@ export const usePlatform = defineStore('platform', {
     conversations: [] as Conversation[],
     tools: [] as Tool[],
     connection: null as ModelConnection | null,
+    // 聊天模型选择：仅启用的模型；defaultId 为平台默认（未设置时为最早的启用配置）
+    modelOptions: [] as ModelOption[],
+    defaultModelId: null as number | null,
     runtime: null as RuntimeStatus | null,
     loading: false,
     notice: null as null | { message: string; type: 'success' | 'error' | 'info' },
@@ -84,18 +94,21 @@ export const usePlatform = defineStore('platform', {
     async initialize() {
       this.loading = true;
       try {
-        const [scenarios, sessions, tools, connection, runtime] = await Promise.all([
+        const [scenarios, sessions, tools, connection, runtime, models] = await Promise.all([
           api<Scenario[]>('/agent-scenarios'),
           api<{ items: Conversation[] }>('/agent/sessions'),
           api<{ items: Tool[] }>('/registry/tools'),
           api<ModelConnection>('/models/connection'),
           api<RuntimeStatus>('/runtime/status'),
+          api<{ items: ModelOption[]; defaultId: number | null }>('/models/options'),
         ]);
         this.scenarios = scenarios;
         this.conversations = sessions.items;
         this.tools = tools.items;
         this.connection = connection;
         this.runtime = runtime;
+        this.modelOptions = models.items;
+        this.defaultModelId = models.defaultId;
       } finally {
         this.loading = false;
       }
@@ -108,9 +121,20 @@ export const usePlatform = defineStore('platform', {
       const result = await api<{ items: Conversation[] }>('/agent/sessions');
       if (this.authenticated && this.user?.username === identity) this.conversations = result.items;
     },
+    async refreshModelOptions() {
+      const models = await api<{ items: ModelOption[]; defaultId: number | null }>('/models/options');
+      this.modelOptions = models.items;
+      this.defaultModelId = models.defaultId;
+    },
     async refreshRuntime() {
-      this.runtime = await api<RuntimeStatus>('/runtime/status');
-      this.connection = await api<ModelConnection>('/models/connection');
+      // 模型管理的任何改动（增删、启停、设为默认）都经由这里刷新聊天可选模型。
+      const [runtime, connection] = await Promise.all([
+        api<RuntimeStatus>('/runtime/status'),
+        api<ModelConnection>('/models/connection'),
+        this.refreshModelOptions(),
+      ]);
+      this.runtime = runtime;
+      this.connection = connection;
     },
   },
 });

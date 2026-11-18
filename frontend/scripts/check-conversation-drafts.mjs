@@ -15,6 +15,17 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: false, watch: { ignored: ['**/*'] } },
 });
 const realFetch = globalThis.fetch;
+const storage = new Map();
+const realLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+// Node has no Web Storage by default: a Map-backed stub stands in for the "last used model" preference.
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: {
+    getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+    setItem: (key, value) => storage.set(key, String(value)),
+    removeItem: (key) => storage.delete(key),
+  },
+});
 const checks = [];
 const calls = [];
 const database = new Map();
@@ -39,9 +50,22 @@ const response = (data, status = 200) =>
       headers: { 'Content-Type': 'application/json' },
     },
   );
-const detail = (id, scenarioId = 1) => ({
+const modelOption = (id, isDefault = false) => ({
+  id,
+  name: `Model ${id}`,
+  model: `model-${id}`,
+  contextWindow: 64000,
+  inputPrice: null,
+  outputPrice: null,
+  isDefault,
+  status: 'untested',
+});
+const detail = (id, scenarioId = 1, modelId = 7) => ({
   id,
   scenarioId,
+  modelId,
+  model: `model-${modelId}`,
+  modelName: `Model ${modelId}`,
   scenarioName: `Scenario ${scenarioId}`,
   scenarioVersion: 1,
   title: `Session ${id}`,
@@ -90,12 +114,18 @@ try {
   app.user = { username: 'unit-fixture-only' };
   app.connection = { configured: true };
   app.scenarios = [scenario(1), scenario(2, 'published'), scenario(3, 'draft')];
+  const defaultModels = () => {
+    app.modelOptions = [modelOption(7, true), modelOption(8)];
+    app.defaultModelId = 7;
+  };
+  defaultModels();
   globalThis.fetch = async (url, options = {}) => {
     const method = options.method ?? 'GET';
-    calls.push({ url, method });
+    calls.push({ url, method, body: options.body ? JSON.parse(options.body) : undefined });
     if (url === '/api/agent/sessions' && method === 'GET') return response({ items: [...database.values()] });
     if (url === '/api/agent/sessions' && method === 'POST') {
-      const row = detail(++nextSession, JSON.parse(options.body).scenarioId);
+      const body = JSON.parse(options.body);
+      const row = detail(++nextSession, body.scenarioId, body.modelId);
       database.set(row.id, row);
       if (createGate) await createGate.promise;
       return response(row);
@@ -146,6 +176,8 @@ try {
     detailGate = null;
     failTurn = false;
     failDetailId = null;
+    storage.clear();
+    defaultModels();
     database.clear();
     database.set(11, detail(11));
     database.set(12, detail(12, 2));
@@ -439,6 +471,67 @@ try {
     'auth-boundary clear purges active and parked text/files, preview state and replacement dialogs from tab memory',
   );
 
+  reset();
+  assert.equal(chat.selectedModelId, 7);
+  assert.equal(chat.selectModel(99), false);
+  assert.equal(chat.selectModel(8), true);
+  chat.input = 'Use the reasoning model';
+  chat.prepareStart();
+  assert.equal(chat.selectedModelId, 8);
+  const chosenId = await chat.submit();
+  const created = calls.find((call) => call.method === 'POST' && call.url === '/api/agent/sessions');
+  assert.deepEqual(created.body, { scenarioId: 1, modelId: 8 });
+  assert.equal(chat.current.modelId, 8);
+  assert.equal(chat.selectModel(7), false);
+  assert.equal(chat.selectedModelId, 8);
+  assert.equal(database.get(chosenId).modelId, 8);
+  chat.newConversation();
+  assert.equal(chat.selectedModelId, 8);
+  passed(
+    'new-session model is chosen per draft, sent with the create request, locked once the session exists and remembered for the next task',
+  );
+
+  reset();
+  chat.selectModel(8);
+  chat.input = 'Model removed before sending';
+  app.modelOptions = [modelOption(7, true)];
+  chat.syncModel();
+  assert.equal(chat.selectedModelId, 7);
+  app.modelOptions = [modelOption(8)];
+  app.defaultModelId = 8;
+  await chat.submit();
+  assert.deepEqual(calls.find((call) => call.method === 'POST' && call.url === '/api/agent/sessions').body, {
+    scenarioId: 1,
+    modelId: 8,
+  });
+  reset();
+  app.modelOptions = [];
+  app.defaultModelId = null;
+  chat.syncModel();
+  chat.input = 'No model available';
+  await assert.rejects(chat.submit(), /没有可用的模型/);
+  assert.equal(count(/^\/api\/agent\/sessions$/, 'POST'), 0);
+  assert.equal(chat.input, 'No model available');
+  passed(
+    'disabled or deleted models fall back to the platform default, and no model blocks creation without losing the draft',
+  );
+
+  reset();
+  chat.input = 'Retry with another model';
+  failTurn = true;
+  await assert.rejects(chat.submit(), /Unit fixture request failed/);
+  assert.equal(count(/^\/api\/agent\/sessions$/, 'POST'), 1);
+  chat.selectModel(8);
+  await chat.submit();
+  const creates = calls.filter((call) => call.method === 'POST' && call.url === '/api/agent/sessions');
+  assert.deepEqual(
+    creates.map((call) => call.body.modelId),
+    [7, 8],
+  );
+  passed(
+    'a prepared session is reused only for the same scenario and model; changing the model creates a fresh session',
+  );
+
   console.log(
     JSON.stringify({
       result: 'passed',
@@ -449,5 +542,7 @@ try {
 } finally {
   chat?.clear();
   globalThis.fetch = realFetch;
+  if (realLocalStorage) Object.defineProperty(globalThis, 'localStorage', realLocalStorage);
+  else delete globalThis.localStorage;
   await vite.close();
 }

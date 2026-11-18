@@ -39,7 +39,12 @@ export interface Conversation {
   tokensOut: number;
   cost: number | null;
   createdAt: string;
+  /** 模型 ID（如 deepseek-chat） */
   model: string;
+  /** 会话使用的模型配置 ID；第一期之前创建的旧会话为 null */
+  modelId: number | null;
+  /** 模型显示名；旧会话回退为模型 ID */
+  modelName: string;
   isTest: boolean;
 }
 export interface ChatMessage {
@@ -87,7 +92,20 @@ export interface ModelConnection {
   inputPrice: number | null;
   outputPrice: number | null;
   enabled: boolean;
+  isDefault?: boolean;
   lastTest: { ok?: boolean; message?: string; latencyMs?: number; httpStatus?: number; at?: string };
+}
+/** 聊天模型选择项：仅启用的模型，不含服务地址与凭据 */
+export interface ModelOption {
+  id: number;
+  name: string;
+  model: string;
+  contextWindow: number;
+  inputPrice: number | null;
+  outputPrice: number | null;
+  isDefault: boolean;
+  /** 最近一次连接测试：测试不是启用的前置条件，只作提示 */
+  status: 'ok' | 'failed' | 'untested';
 }
 export interface RuntimeStatus {
   controlPlane: string;
