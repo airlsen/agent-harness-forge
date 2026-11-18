@@ -114,7 +114,7 @@ function focusComposer() {
           <RouterLink to="/agent/capabilities?tab=mcp" class="workbench-ability-item"
             ><span class="ability-mini-icon mcp"><Icon name="plug" :size="20" /></span>
             <div>
-              <strong>MCP 服务 <small>尚未接入</small></strong>
+              <strong>MCP 服务 <small>连接管理已开放</small></strong>
               <p>连接企业业务系统与数据</p>
             </div>
             <Icon name="chevron" :size="15"

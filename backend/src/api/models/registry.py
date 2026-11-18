@@ -5,7 +5,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, DateTime, Float, Integer, String, func
+from sqlalchemy import JSON, BigInteger, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.database import Base
@@ -22,6 +22,24 @@ class PluginRegistry(Base):
     signature: Mapped[str] = mapped_column(String(128), default="")
     audit_status: Mapped[str] = mapped_column(String(16), default="pending")  # pending/approved/rejected
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class McpServer(Base):
+    """管理员接入的远程 MCP 服务；认证头加密保存，不随 API/场景返回。"""
+
+    __tablename__ = "mcp_server"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(96), unique=True, index=True)
+    url: Mapped[str] = mapped_column(String(2048))
+    headers_encrypted: Mapped[str] = mapped_column(Text, default="")
+    enabled: Mapped[bool] = mapped_column(default=False, index=True)
+    tools_json: Mapped[list] = mapped_column(JSON, default=list)
+    server_info: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(24), default="unverified", index=True)
+    last_error: Mapped[str] = mapped_column(String(512), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 class ModelRegistry(Base):
