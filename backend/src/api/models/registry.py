@@ -32,6 +32,7 @@ class McpServer(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(96), unique=True, index=True)
     url: Mapped[str] = mapped_column(String(2048))
+    transport: Mapped[str] = mapped_column(String(24), default="streamable-http")
     headers_encrypted: Mapped[str] = mapped_column(Text, default="")
     enabled: Mapped[bool] = mapped_column(default=False, index=True)
     tools_json: Mapped[list] = mapped_column(JSON, default=list)
