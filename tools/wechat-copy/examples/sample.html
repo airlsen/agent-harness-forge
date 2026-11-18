@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>示例文章</title>
+<style>
+  body { font-family: "PingFang SC", sans-serif; color: #333; }
+  h1.title {
+    font-size: 22px; color: #1a5276; text-align: center;
+    border-bottom: 2px solid #1a5276; padding-bottom: 10px;
+  }
+  .lead { background: #eaf2f8; padding: 14px 18px; border-left: 4px solid #1a5276; border-radius: 4px; }
+  .card { background: #fef9e7; border: 1px solid #f7dc6f; border-radius: 8px; padding: 16px; margin: 16px 0; }
+  .card h3 { margin: 0 0 8px; color: #b7950b; }
+  code.inline { background: #f0f0f0; color: #c0392b; padding: 2px 6px; border-radius: 4px; font-family: Menlo, monospace; }
+  pre.codeblock { background: #2d2d2d; color: #f8f8f2; padding: 14px; border-radius: 8px; font-family: Menlo, monospace; font-size: 13px; }
+  table.data { border-collapse: collapse; width: 100%; }
+  table.data th { background: #1a5276; color: #fff; padding: 8px; border: 1px solid #ddd; }
+  table.data td { padding: 8px; border: 1px solid #ddd; }
+  .dangerous { position: fixed; top: 0; box-shadow: 0 0 10px #000; }
+</style>
+</head>
+<body>
+  <h1 class="title">这是一篇测试文章</h1>
+  <p class="lead">导语：这段文字带底色和左边框，用来验证 class 样式能否正确内联化。</p>
+
+  <p>正文里有一段 <code class="inline">inline_code()</code> 行内代码。</p>
+
+  <div class="card">
+    <h3>💡 小贴士卡片</h3>
+    <p>卡片样式：底色 + 边框 + 圆角，粘贴到公众号后应该完整保留。</p>
+  </div>
+
+  <pre class="codeblock">def hello():
+    print("代码块样式测试")</pre>
+
+  <table class="data">
+    <tr><th>名称</th><th>说明</th></tr>
+    <tr><td>juice</td><td>CSS 内联化</td></tr>
+    <tr><td>cheerio</td><td>HTML 清洗</td></tr>
+  </table>
+
+  <p class="dangerous" onclick="alert(1)">这段含 position:fixed 和 onclick，应被清洗。</p>
+  <script>console.log("这个 script 应该被删除");</script>
+</body>
+</html>
