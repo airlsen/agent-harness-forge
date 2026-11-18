@@ -308,11 +308,6 @@ async function copyMessage(text: string) {
         </div>
         <ConversationStart v-else-if="welcome" @submitted="(id) => router.replace(`/agent/chat/${id}`)" />
         <div v-else class="conversation-messages">
-          <div class="conversation-start">
-            <Icon name="layers" :size="13" />{{ chat.current?.scenarioName }} · v{{
-              chat.current?.scenarioVersion
-            }}<button @click="showPanel('context')">查看本次能力 <Icon name="chevron" :size="12" /></button>
-          </div>
           <article v-for="message in chat.messages" :key="message.id" :class="['message-row', message.role]">
             <template v-if="message.role === 'user'"
               ><span class="message-avatar user">{{ avatar }}</span>
