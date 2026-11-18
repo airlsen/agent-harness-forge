@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { post, put } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
 import Icon from '../../components/ForgeIcon.vue';
+import PlatformBreadcrumb from '../../components/PlatformBreadcrumb.vue';
 const app = usePlatform(),
   saving = ref(false),
   testing = ref(false),
@@ -84,8 +85,9 @@ async function test() {
 }
 </script>
 <template>
-  <main class="page-content">
+  <main class="page-content enterprise-page">
     <div class="enterprise-page-inner">
+      <PlatformBreadcrumb current="模型连接" />
       <div class="page-heading">
         <div>
           <h1>模型连接</h1>

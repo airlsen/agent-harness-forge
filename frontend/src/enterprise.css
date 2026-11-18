@@ -343,14 +343,22 @@ textarea:focus-visible {
   padding-top: 20px;
   flex-shrink: 0;
 }
+.enterprise-management-nav {
+  margin-bottom: 4px;
+}
 .enterprise-management-link {
+  width: 100%;
   color: var(--text-secondary);
+  background: transparent;
 }
 .enterprise-management-link > svg:last-child {
   width: 14px;
   height: 14px;
   justify-self: end;
   color: var(--text-secondary);
+}
+.enterprise-management-link[aria-expanded='true'] .management-chevron {
+  transform: rotate(180deg);
 }
 .enterprise-management-link:hover,
 .enterprise-management-link.selected {
@@ -362,6 +370,36 @@ textarea:focus-visible {
 }
 .enterprise-management-link.selected > svg:first-child {
   stroke-width: 2;
+}
+.enterprise-management-links {
+  display: grid;
+  gap: 2px;
+  margin: 3px 0 6px 21px;
+  padding: 4px 0 4px 13px;
+  border-left: 1px solid var(--border-strong);
+}
+.enterprise-management-links > a {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.enterprise-management-links > a:hover,
+.enterprise-management-links > a.selected {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+.enterprise-management-links > a.selected {
+  font-weight: 650;
+}
+.enterprise-management-links > a > svg {
+  justify-self: center;
 }
 .enterprise-help-link {
   display: grid;
@@ -503,32 +541,6 @@ textarea:focus-visible {
   outline: none;
   position: relative;
 }
-.enterprise-admin-tabs {
-  display: flex;
-  align-items: center;
-  padding: 0;
-  gap: 28px;
-  border-bottom: 1px solid var(--line);
-  background: #fff;
-  min-height: 52px;
-  overflow-x: auto;
-  flex-shrink: 0;
-  padding-inline: max(var(--page-padding-x), calc((100% - var(--page-max-width)) / 2));
-}
-.enterprise-admin-tabs > a {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  padding: 15px 0;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  border-bottom: 2px solid transparent;
-}
-.enterprise-admin-tabs > a.selected {
-  color: var(--accent-ink);
-  border-bottom-color: var(--accent);
-}
 .enterprise-shell .global-progress {
   top: 0;
   background: linear-gradient(90deg, transparent, #e5ad8d, transparent);
@@ -552,6 +564,22 @@ textarea:focus-visible {
   margin: 0 auto;
   width: 100%;
   min-width: 0;
+}
+.platform-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 13px;
+  color: var(--text-subtle);
+  font-size: 11px;
+  font-weight: 500;
+}
+.platform-breadcrumb > svg {
+  color: var(--muted);
+}
+.platform-breadcrumb > strong {
+  color: var(--text-secondary);
+  font-weight: 600;
 }
 .enterprise-view .page-heading {
   align-items: flex-start;
@@ -2016,6 +2044,260 @@ textarea:focus-visible {
   padding-left: 17px;
   margin-block: 16px;
 }
+/* Runtime status is an actionable destination, not a replacement for the old management menu. */
+.runtime-status-page .platform-breadcrumb {
+  margin-bottom: 12px;
+}
+.runtime-status-hero {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 28px;
+  margin-bottom: 18px;
+  padding: 25px 27px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.runtime-status-hero > div:first-child {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+}
+.runtime-health-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border: 1px solid #eadbc6;
+  border-radius: 8px;
+  color: #806132;
+  background: #fbf4e7;
+}
+.runtime-health-mark.online {
+  border-color: #dcebdd;
+  color: var(--green);
+  background: #eef7ef;
+}
+.runtime-status-kicker {
+  display: block;
+  color: var(--text-subtle);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.55px;
+}
+.runtime-status-hero h2 {
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.25px;
+}
+.runtime-status-hero p {
+  max-width: 540px;
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.75;
+}
+.runtime-capacity {
+  width: 180px;
+  flex: 0 0 180px;
+  padding-left: 25px;
+  border-left: 1px solid var(--line);
+}
+.runtime-capacity strong {
+  display: block;
+  color: var(--ink);
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -0.7px;
+  line-height: 1;
+}
+.runtime-capacity > span {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.runtime-capacity-track {
+  height: 4px;
+  overflow: hidden;
+  margin-top: 16px;
+  border-radius: 3px;
+  background: var(--surface-subtle);
+}
+.runtime-capacity-track > i {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.runtime-capacity small {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+.runtime-status-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.7fr);
+  gap: 18px;
+}
+.runtime-status-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.runtime-status-card > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+.runtime-status-card > header > svg {
+  width: 20px;
+  color: var(--accent-ink);
+  margin-top: 1px;
+}
+.runtime-status-card h2 {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+}
+.runtime-status-card header p {
+  margin-top: 5px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.runtime-status-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 17px 28px;
+  margin: 24px 0 0;
+}
+.runtime-status-card dl > div {
+  min-width: 0;
+}
+.runtime-status-card dt {
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+.runtime-status-card dd {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.runtime-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 3px #e7f1e8;
+}
+.runtime-dot.offline {
+  background: #aa7b30;
+  box-shadow: 0 0 0 3px #f7eedc;
+}
+.runtime-model-connection {
+  margin: 24px 0 18px;
+  padding: 15px;
+  border-radius: 7px;
+  background: var(--surface-subtle);
+}
+.runtime-model-connection h3 {
+  margin-top: 13px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+.runtime-model-connection p {
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.runtime-model-connection small {
+  display: block;
+  margin-top: 11px;
+  color: var(--text-subtle);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.runtime-model-status > .text-link {
+  margin-top: auto;
+  color: var(--accent-ink);
+  font-size: 12px;
+}
+.runtime-boundaries {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.35fr) minmax(0, 0.65fr);
+  gap: 28px;
+  align-items: start;
+  margin-top: 18px;
+  padding: 23px 24px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-subtle);
+}
+.runtime-boundaries > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.runtime-boundaries > header > svg {
+  color: var(--accent-ink);
+  margin-top: 1px;
+}
+.runtime-boundaries h2 {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+.runtime-boundaries header p,
+.runtime-boundary-empty {
+  margin-top: 5px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.75;
+}
+.runtime-boundaries ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.runtime-boundaries li {
+  position: relative;
+  padding-left: 13px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.runtime-boundaries li::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
 .guide-step {
   display: flex;
   align-items: flex-start;
@@ -2958,6 +3240,13 @@ textarea:focus-visible {
     top: 22px;
     font-size: 9px;
   }
+  .runtime-status-grid {
+    grid-template-columns: 1fr;
+  }
+  .runtime-boundaries {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
   .conversation-table-head,
   .conversation-table-row {
     grid-template-columns: minmax(0, 1fr) 90px 85px;
@@ -3078,6 +3367,29 @@ textarea:focus-visible {
   }
   .enterprise-sidebar-footer {
     padding-top: 12px;
+  }
+  .enterprise-management-nav {
+    width: 100%;
+  }
+  .enterprise-management-links {
+    gap: 3px;
+    margin: 2px 0 5px;
+    padding: 4px 0;
+    border-left: 0;
+  }
+  .enterprise-management-links > a {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 3px;
+    min-height: 45px;
+    padding: 5px 2px;
+    font-size: 9px;
+    line-height: 12px;
+    text-align: center;
+  }
+  .enterprise-management-links > a > svg {
+    width: 15px;
+    height: 15px;
   }
   .enterprise-profile {
     padding: 9px 0;
@@ -3236,6 +3548,29 @@ textarea:focus-visible {
     font-size: 11px;
     line-height: 16px;
     text-align: center;
+  }
+  .runtime-status-hero {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 19px;
+    gap: 18px;
+  }
+  .runtime-capacity {
+    width: 100%;
+    padding: 14px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+  .runtime-status-card {
+    padding: 19px;
+  }
+  .runtime-status-card dl {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin-top: 20px;
+  }
+  .runtime-boundaries {
+    padding: 19px;
   }
 }
 @media (max-width: 480px) {
@@ -3525,12 +3860,6 @@ textarea:focus-visible {
   }
   .management-banner p {
     font-size: 10px;
-  }
-  .enterprise-admin-tabs {
-    gap: 23px;
-  }
-  .enterprise-admin-tabs > a {
-    font-size: 11px;
   }
   .release-boundary {
     padding: 17px 15px;

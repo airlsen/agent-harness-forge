@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { api, put } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
 import Icon from '../../components/ForgeIcon.vue';
+import PlatformBreadcrumb from '../../components/PlatformBreadcrumb.vue';
 const app = usePlatform(),
   saving = ref(false),
   loaded = ref(false);
@@ -37,11 +38,12 @@ async function save() {
 }
 </script>
 <template>
-  <main class="page-content">
+  <main class="page-content enterprise-page">
     <div class="enterprise-page-inner">
+      <PlatformBreadcrumb current="执行策略" />
       <div class="page-heading">
         <div>
-          <h1>企业策略</h1>
+          <h1>执行策略</h1>
           <p>治理不是阻碍执行，而是让每次执行都有清晰的授权与责任。</p>
         </div>
         <span class="tag soft"><Icon name="shield" :size="13" />平台策略</span>
