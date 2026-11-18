@@ -1,8 +1,12 @@
 /**
  * 把扁平的消息列表聚合成「轮次」视图：一轮 = 一条用户消息 + 一个 AI 块。
- * AI 块内按发生顺序排列过程步骤：思考（流式时展开，思考结束后折叠成一行）、
- * 连续工具调用组（可折叠）、正文。live 覆盖项只落在最后一轮：
+ * AI 块内按发生顺序排列步骤（steps）：思考、连续工具调用组、正文。live 覆盖项只落在最后一轮：
  * 运行中的思考/工具/正文流式并入同一个 AI 块。
+ *
+ * 一轮通常包含多次模型请求（思考 → 调工具 → 再思考 → …），每次请求都会产生一段思考。
+ * 展示时按用户关心的「这一轮做了什么」组织，而不是按请求次数：
+ * - process：最终回答之前的全部过程（所有思考、工具调用、中间的过程说明），合成一个过程块；
+ * - answer：最后一次工具调用之后的正文，即最终回答。
  */
 import type { ChatMessage } from '../types/platform';
 import {
@@ -28,10 +32,17 @@ export type TurnStep =
   | { kind: 'tools'; calls: ToolCallView[] }
   | { kind: 'text'; text: string; live: boolean; partial: boolean; key: string | number };
 
+export type TextStep = Extract<TurnStep, { kind: 'text' }>;
+
 export interface Turn {
   key: string | number;
   user: ChatMessage | null;
+  /** 按发生顺序的全部步骤 */
   steps: TurnStep[];
+  /** 过程块：最终回答之前的思考、工具调用与中间说明（保持发生顺序） */
+  process: TurnStep[];
+  /** 最终回答：最后一次工具调用之后的正文 */
+  answer: TextStep[];
   running: boolean;
   /** 生成本轮回复的模型显示名；旧消息未记录时为空，由调用方回退为会话模型 */
   model: string;
@@ -77,6 +88,8 @@ export function buildTurns(messages: ChatMessage[], live: LiveTurn): Turn[] {
         key: message.id,
         user: message,
         steps: [],
+        process: [],
+        answer: [],
         running: false,
         model: modelLabel(message.meta),
         switch: switchLabel(message.meta),
@@ -121,9 +134,64 @@ export function buildTurns(messages: ChatMessage[], live: LiveTurn): Turn[] {
         text: live.reasoning,
         live: !live.text && live.activeTools.length === 0,
       });
-    for (const call of live.activeTools) pushCall(last.steps, call);
+    // 同一次模型请求里正文先于工具调用输出：有进行中的调用时，正文排在调用之前（随之归入过程块）
     if (live.text)
-      last.steps.push({ kind: 'text', text: live.text, live: true, partial: false, key: 'live' });
+      last.steps.push({
+        kind: 'text',
+        text: live.text,
+        live: live.activeTools.length === 0,
+        partial: false,
+        key: 'live',
+      });
+    for (const call of live.activeTools) pushCall(last.steps, call);
   }
+  for (const turn of turns) Object.assign(turn, splitSteps(turn.steps));
   return turns;
+}
+
+/**
+ * 拆分过程与最终回答：最后一个工具组之后的正文是最终回答，其余（含全部思考）归入过程。
+ * 运行中若正文之后又开始调用工具，这段正文随之成为过程说明，收进过程块。
+ */
+export function splitSteps(steps: TurnStep[]): { process: TurnStep[]; answer: TextStep[] } {
+  let lastTools = -1;
+  steps.forEach((step, index) => {
+    if (step.kind === 'tools') lastTools = index;
+  });
+  const process: TurnStep[] = [];
+  const answer: TextStep[] = [];
+  steps.forEach((step, index) => {
+    if (step.kind === 'text' && index > lastTools) answer.push(step);
+    else process.push(step);
+  });
+  return { process, answer };
+}
+
+export interface ProcessStats {
+  /** 是否包含思考 */
+  thinking: boolean;
+  /** 工具调用总数 */
+  calls: number;
+  /** 失败的工具调用数 */
+  failures: number;
+  /** 进行中的调用（按发生顺序） */
+  pending: ToolCallView[];
+}
+export function processStats(process: TurnStep[]): ProcessStats {
+  const calls = process.flatMap((step) => (step.kind === 'tools' ? step.calls : []));
+  return {
+    thinking: process.some((step) => step.kind === 'thinking'),
+    calls: calls.length,
+    failures: calls.filter((call) => !call.pending && call.isError).length,
+    pending: calls.filter((call) => call.pending),
+  };
+}
+/** 过程块结束后的一行摘要，如「已思考 · 调用 4 个工具」 */
+export function processSummary(stats: ProcessStats): string {
+  const parts = [
+    ...(stats.thinking ? ['已思考'] : []),
+    ...(stats.calls ? [`调用 ${stats.calls} 个工具`] : []),
+    ...(stats.failures ? [`${stats.failures} 个失败`] : []),
+  ];
+  return parts.join(' · ') || '执行过程';
 }

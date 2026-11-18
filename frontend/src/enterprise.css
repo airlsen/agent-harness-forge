@@ -2987,6 +2987,15 @@ textarea:focus-visible {
 .enterprise-chat .thinking-done > summary:hover {
   color: var(--ink);
 }
+.enterprise-chat .process-header {
+  color: var(--text-secondary);
+}
+.enterprise-chat .process-header:hover {
+  color: var(--ink);
+}
+.enterprise-chat .process-note {
+  color: var(--text-secondary);
+}
 .enterprise-chat .step-thinking-text {
   color: var(--text-secondary);
   border-left-color: var(--line);

@@ -8,7 +8,12 @@
 
 export const PRESENT_TOOL = 'workspace_present';
 /** 平台内置、但不在工具目录（不可单独授权）中的工具显示名 */
-export const BUILTIN_TOOL_TITLES: Record<string, string> = { [PRESENT_TOOL]: '交付文件' };
+export const BUILTIN_TOOL_TITLES: Record<string, string> = {
+  [PRESENT_TOOL]: '交付文件',
+  // Runner 基础能力中的 DSH 搜索插件
+  glob: '查找文件',
+  grep: '搜索文件内容',
+};
 
 export interface WorkspaceFile {
   path: string;

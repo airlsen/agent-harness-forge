@@ -10,7 +10,7 @@ import type { KernelEvent } from '../../types/platform';
 import { buildTurns, type ToolCallView, type Turn } from '../../utils/turns';
 import Icon from '../../components/ForgeIcon.vue';
 import Markdown from '../../components/MarkdownContent.vue';
-import ToolCallGroup from '../../components/ToolCallGroup.vue';
+import ProcessBlock from '../../components/ProcessBlock.vue';
 import TaskComposer from '../../components/TaskComposer.vue';
 import ConversationStart from '../../components/ConversationStart.vue';
 import FileCard from '../../components/FileCard.vue';
@@ -226,23 +226,20 @@ async function downloadArchive(dir = '') {
     archiving.value = null;
   }
 }
-function turnIdle(turn: Turn) {
-  const last = turn.steps.at(-1);
-  return (
-    !last ||
-    !(
-      (last.kind === 'thinking' && last.live) ||
-      (last.kind === 'text' && last.live) ||
-      (last.kind === 'tools' && last.calls.some((call) => call.pending))
-    )
-  );
+/** 过程块是否处于进行中：运行中且最终回答尚未开始流式输出 */
+function processActive(turn: Turn) {
+  return turn.running && !turn.answer.some((step) => step.live);
+}
+/** 运行中、但没有过程块可承载进度提示时（尚无输出，或无过程的回答已结束、等待后续）显示等待提示 */
+function turnWaiting(turn: Turn) {
+  return turn.running && !turn.process.length && !turn.answer.some((step) => step.live);
 }
 // 完成信号：最后一轮正常结束（有正式正文、非部分输出、无错误）时给出明确的「已完成」标记
 const lastTurnCompleted = computed(() => {
   if (chat.running || chat.runError) return false;
   const last = turns.value.at(-1);
   if (!last || last.running) return false;
-  return last.steps.some((step) => step.kind === 'text' && !step.partial);
+  return last.answer.some((step) => !step.partial);
 });
 const status = computed(() =>
   chat.approvals.length
@@ -452,47 +449,29 @@ async function copyMessage(text: string) {
                     ><Icon name="check" :size="11" />已完成</span
                   >
                 </div>
-                <template v-for="(step, index) in turn.steps" :key="index">
-                  <section v-if="step.kind === 'thinking'" class="step-thinking">
-                    <template v-if="step.live">
-                      <div class="step-label live">
-                        <Icon name="think" :size="13" />正在思考<span class="thinking-dots"
-                          ><i></i><i></i><i></i
-                        ></span>
-                      </div>
-                      <div class="step-thinking-text">{{ step.text }}</div>
-                    </template>
-                    <details v-else class="thinking-done">
-                      <summary class="step-label">
-                        <Icon name="think" :size="13" />已思考<Icon
-                          name="chevron"
-                          :size="12"
-                          class="step-chevron"
-                        />
-                      </summary>
-                      <div class="step-thinking-text">{{ step.text }}</div>
-                    </details>
-                  </section>
-                  <ToolCallGroup v-else-if="step.kind === 'tools'" :calls="step.calls" />
-                  <section v-else class="step-text">
-                    <Markdown :text="step.text" :live="step.live" /><span
-                      v-if="step.live"
-                      class="stream-cursor"
-                    ></span>
-                    <div v-if="!step.live" class="step-actions">
-                      <span v-if="step.partial" class="message-partial">执行未完成时保留的部分输出</span
-                      ><button
-                        class="message-copy"
-                        aria-label="复制回复"
-                        title="复制内容"
-                        @click="copyMessage(step.text)"
-                      >
-                        <Icon name="copy" :size="13" />复制
-                      </button>
-                    </div>
-                  </section>
-                </template>
-                <div v-if="turn.running && turnIdle(turn)" class="agent-working compact" role="status">
+                <ProcessBlock
+                  v-if="turn.process.length"
+                  :steps="turn.process"
+                  :active="processActive(turn)"
+                />
+                <section v-for="step in turn.answer" :key="step.key" class="step-text">
+                  <Markdown :text="step.text" :live="step.live" /><span
+                    v-if="step.live"
+                    class="stream-cursor"
+                  ></span>
+                  <div v-if="!step.live" class="step-actions">
+                    <span v-if="step.partial" class="message-partial">执行未完成时保留的部分输出</span
+                    ><button
+                      class="message-copy"
+                      aria-label="复制回复"
+                      title="复制内容"
+                      @click="copyMessage(step.text)"
+                    >
+                      <Icon name="copy" :size="13" />复制
+                    </button>
+                  </div>
+                </section>
+                <div v-if="turnWaiting(turn)" class="agent-working compact" role="status">
                   <span class="thinking-dots"><i></i><i></i><i></i></span
                   ><span>{{ turn.steps.length ? '正在继续…' : '正在处理这项工作' }}</span>
                 </div>

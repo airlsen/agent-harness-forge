@@ -1849,6 +1849,71 @@ button:disabled:hover {
 .thinking-dots i:nth-child(3) {
   animation-delay: 0.4s;
 }
+/* 过程块：一轮里的全部思考、工具调用与中间说明合成一个块，低视觉权重；最终回答在其后单独显示 */
+.process-block {
+  margin: 0 0 14px;
+}
+.process-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  color: #526175;
+  cursor: pointer;
+  text-align: left;
+}
+.process-header:hover {
+  color: #2e3a49;
+}
+.process-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.process-header .step-chevron {
+  flex-shrink: 0;
+  transition: transform 0.16s ease;
+}
+.process-block.open .process-header .step-chevron {
+  transform: rotate(90deg);
+}
+.process-timeline {
+  margin: 8px 0 0 6px;
+  display: grid;
+  gap: 10px;
+}
+.process-timeline .tool-group,
+.process-block .tool-group.flat {
+  margin: 0;
+}
+.process-block .process-current {
+  margin-top: 7px;
+  max-height: 7.2em;
+}
+.process-block .tool-group.flat {
+  margin-top: 6px;
+}
+.tool-group.flat .tool-group-calls {
+  margin: 0;
+  padding-left: 0;
+  border-left: none;
+}
+.process-note {
+  font-size: 13px;
+  color: #526271;
+}
+.process-note > :first-child {
+  margin-top: 0;
+}
+.process-note > :last-child {
+  margin-bottom: 0;
+}
 /* 过程步骤：思考与工具调用组，同在当前 AI 块内，低视觉权重 */
 .step-thinking {
   margin: 0 0 16px;
