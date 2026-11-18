@@ -95,8 +95,41 @@ try {
     const html = await highlightCode('const a = 1;', 'ts');
     assert.match(html, /<pre[^>]*class="shiki/);
     assert.match(html, /style="[^"]*color/);
+    // 深色主题：tokyo-night 关键字紫色，注释已提亮
+    assert.match(html, /color:#BB9AF7/i);
+    const comment = await highlightCode('// note', 'js');
+    assert.match(comment, /color:#7580A8/i);
     const plain = await highlightCode('<b>x</b>', 'unknown-lang');
     assert.doesNotMatch(plain, /<b>/);
+  });
+
+  const { sanitizeDiagramSvg } = await vite.ssrLoadModule('/src/utils/sanitizeSvg.ts');
+
+  await check('Mermaid SVG 消毒保留 foreignObject 节点文字，移除脚本与事件属性', () => {
+    const svg =
+      '<svg id="m" xmlns="http://www.w3.org/2000/svg"><style>#m p{margin:0}</style><g class="node"><rect/>' +
+      '<foreignObject width="80" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="line-height:1.5">' +
+      '<span class="nodeLabel"><p>开始</p></span><img src="x" onerror="alert(1)"/><script>alert(2)</script>' +
+      '</div></foreignObject></g><a href="javascript:alert(3)"><text onclick="alert(4)">65%</text></a></svg>';
+    const clean = sanitizeDiagramSvg(svg);
+    assert.match(clean, /<foreignObject[^>]*>.*<p>开始<\/p>/s);
+    assert.match(clean, /<style>/);
+    assert.match(clean, /65%/);
+    assert.doesNotMatch(clean, /<script|onerror|onclick|javascript:|<img/i);
+  });
+
+  const { MERMAID_CONFIG, VEGA_CONFIG, VIZ_PALETTE } = await vite.ssrLoadModule('/src/utils/vizTheme.ts');
+
+  await check('图与图表共用品牌色板，Mermaid 使用可自定义的 base 主题', () => {
+    assert.equal(MERMAID_CONFIG.theme, 'base');
+    assert.equal(MERMAID_CONFIG.securityLevel, 'strict');
+    const vars = MERMAID_CONFIG.themeVariables;
+    VIZ_PALETTE.forEach((color, i) => assert.equal(vars[`pie${i + 1}`], color));
+    // base 主题只认十六进制颜色
+    for (const [key, value] of Object.entries(vars))
+      if (/color|bkg|border|^pie\d/i.test(key) && key !== 'useGradient')
+        assert.match(value, /^#[0-9a-f]{6}$/i, key);
+    assert.deepEqual(VEGA_CONFIG.range.category, VIZ_PALETTE);
   });
 
   console.log(`\n${checks.length} checks passed`);

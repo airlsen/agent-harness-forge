@@ -1678,9 +1678,7 @@ button:disabled:hover {
 /* 代码块 / Mermaid 图 / 数据图表的卡片外壳 */
 .markdown-body .code-block {
   margin: 13px 0;
-  border: 1px solid #e8edf5;
-  border-radius: 8px;
-  background: #f7f9fc;
+  border-radius: 10px;
   overflow: hidden;
 }
 .markdown-body .code-block:first-child {
@@ -1694,32 +1692,21 @@ button:disabled:hover {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 10px 6px 14px;
-  border-bottom: 1px solid #e8edf5;
-  background: #eff3f9;
+  padding: 7px 10px 7px 16px;
 }
 .code-lang {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-  color: #526175;
+  font-size: 12px;
+  font-weight: 500;
 }
 .code-copy {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   border: none;
-  background: none;
-  padding: 3px 8px;
-  border-radius: 5px;
-  font-size: 10px;
-  color: #526175;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 11px;
   cursor: pointer;
-}
-.code-copy:hover {
-  color: #2e3a49;
-  background: #e3eaf4;
 }
 .code-body {
   overflow-x: auto;
@@ -1729,9 +1716,10 @@ button:disabled:hover {
   border: none;
   border-radius: 0;
   background: transparent;
-  padding: 14px 16px;
-  font-size: 12px;
-  line-height: 1.7;
+  padding: 16px 18px;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: inherit;
 }
 .markdown-body .code-block .code-body pre.shiki {
   background: transparent !important;
@@ -1743,13 +1731,74 @@ button:disabled:hover {
   color: inherit;
   font-size: inherit;
 }
-/* 图/图表块内嵌的源码回退块去掉重复外壳 */
+
+/* 代码块：默认深色（tokyo-night 配色，背景由外壳提供） */
+.markdown-body .code-block.is-code {
+  background: #1e2230;
+  color: #c0caf5;
+}
+.code-block.is-code .code-head {
+  background: #2b3142;
+}
+.code-block.is-code .code-lang {
+  font-family: 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
+  color: #d5dbee;
+}
+.code-block.is-code .code-copy {
+  background: #3c4459;
+  color: #e3e7f3;
+}
+.code-block.is-code .code-copy:hover {
+  background: #4b5470;
+  color: #ffffff;
+}
+.code-block.is-code .code-body ::selection {
+  background: #3d4a77;
+}
+.code-block.is-code .code-body::-webkit-scrollbar {
+  height: 8px;
+}
+.code-block.is-code .code-body::-webkit-scrollbar-thumb {
+  background: #3c4459;
+  border-radius: 4px;
+}
+
+/* Mermaid 图 / 数据图表：浅色卡片，图形本身带品牌色板 */
+.markdown-body .diagram-block,
+.markdown-body .chart-block {
+  border: 1px solid #e8edf5;
+  background: #ffffff;
+}
+.diagram-block > .code-head,
+.chart-block > .code-head {
+  border-bottom: 1px solid #eef1f5;
+  background: #f8f9fb;
+}
+.diagram-block > .code-head .code-lang,
+.chart-block > .code-head .code-lang {
+  font-size: 11px;
+  font-weight: 600;
+  color: #526175;
+}
+.diagram-block > .code-head .code-copy,
+.chart-block > .code-head .code-copy {
+  background: none;
+  color: #526175;
+}
+.diagram-block > .code-head .code-copy:hover,
+.chart-block > .code-head .code-copy:hover {
+  color: #2e3a49;
+  background: #eaeef4;
+}
+/* 图/图表块内嵌的源码（查看源码 / 渲染失败回退）：保留深色正文，去掉重复的外壳与头部 */
 .markdown-body .diagram-block > .code-block,
 .markdown-body .chart-block > .code-block {
   margin: 0;
-  border: none;
   border-radius: 0;
-  background: transparent;
+}
+.diagram-block > .code-block > .code-head,
+.chart-block > .code-block > .code-head {
+  display: none;
 }
 .diagram-actions {
   display: inline-flex;
@@ -1757,7 +1806,7 @@ button:disabled:hover {
   gap: 2px;
 }
 .diagram-body {
-  padding: 14px 16px;
+  padding: 18px 16px;
   overflow-x: auto;
 }
 .diagram-body svg {
@@ -1777,9 +1826,10 @@ button:disabled:hover {
   padding: 8px 16px 12px;
   font-size: 11px;
   color: #b45309;
+  background: #fffaf2;
 }
 .chart-body {
-  padding: 14px 16px;
+  padding: 16px 18px;
   overflow-x: auto;
 }
 .chart-body .vega-embed {

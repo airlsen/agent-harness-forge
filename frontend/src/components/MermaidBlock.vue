@@ -1,11 +1,13 @@
 <script lang="ts">
+import { MERMAID_CONFIG } from '../utils/vizTheme';
+
 /** mermaid 懒加载单例与全局渲染序号（模块级，跨组件实例共享，避免临时节点 id 冲突） */
 let mermaidReady: Promise<typeof import('mermaid').default> | null = null;
 let mermaidRenderSeq = 0;
 function getMermaid() {
   if (!mermaidReady)
     mermaidReady = import('mermaid').then((mod) => {
-      mod.default.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutral' });
+      mod.default.initialize(MERMAID_CONFIG);
       return mod.default;
     });
   return mermaidReady;
@@ -14,7 +16,7 @@ function getMermaid() {
 
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue';
-import DOMPurify from 'dompurify';
+import { sanitizeDiagramSvg } from '../utils/sanitizeSvg';
 import CodeBlock from './CodeBlock.vue';
 import { useCopy } from '../utils/useCopy';
 import Icon from './ForgeIcon.vue';
@@ -40,7 +42,7 @@ async function render() {
     const mermaid = await getMermaid();
     const result = await mermaid.render(id, props.code);
     if (my !== seq) return;
-    svg.value = DOMPurify.sanitize(result.svg, { USE_PROFILES: { svg: true, svgFilters: true } });
+    svg.value = sanitizeDiagramSvg(result.svg);
   } catch {
     // mermaid 渲染失败时会往 body 挂一个临时错误节点，清掉
     document.getElementById(`d${id}`)?.remove();
