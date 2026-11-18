@@ -77,6 +77,20 @@ async def init_db() -> None:
             sync_conn.execute(text("UPDATE plugin_registry SET plugin_id = package WHERE plugin_id = ''"))
 
         await conn.run_sync(ensure_plugin_columns)
+
+        # Additive compatibility for model availability controls.
+        def ensure_model_connection_columns(sync_conn):
+            from sqlalchemy import inspect, text
+
+            inspector = inspect(sync_conn)
+            if "model_connection" not in inspector.get_table_names():
+                return
+            existing = {column["name"] for column in inspector.get_columns("model_connection")}
+            if "enabled" not in existing:
+                default = "TRUE" if sync_conn.dialect.name == "postgresql" else "1"
+                sync_conn.execute(text(f"ALTER TABLE model_connection ADD COLUMN enabled BOOLEAN NOT NULL DEFAULT {default}"))
+
+        await conn.run_sync(ensure_model_connection_columns)
     # 重启时关闭所有孤立审批，为未完成的运行保留明确的中断记录。
     from datetime import datetime, timezone
     from sqlalchemy import select, func

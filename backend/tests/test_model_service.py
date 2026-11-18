@@ -11,6 +11,7 @@ from src.api.services.settings_service import (
     get_connection,
     list_connections,
     save_connection,
+    set_connection_availability,
 )
 
 
@@ -31,7 +32,7 @@ def model_payload(name: str, model: str, *, key: str = "secret") -> ModelInput:
 
 
 @pytest.mark.asyncio
-async def test_model_connections_are_independent_and_safe_to_list():
+async def test_model_connections_are_independent_safe_and_only_enabled_at_runtime(monkeypatch):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -44,16 +45,56 @@ async def test_model_connections_are_independent_and_safe_to_list():
         assert [row["name"] for row in listed] == ["Chat", "Reasoner"]
         assert all("apiKey" not in row for row in listed)
         assert all(row["apiKeyConfigured"] for row in listed)
+        assert all(row["enabled"] for row in listed)
 
         updated = await save_connection(db, model_payload("Reasoner 2", "reasoner-v2"), connection_id=second["id"])
         assert updated["id"] == second["id"]
         assert updated["name"] == "Reasoner 2"
         assert (await get_connection(db, secret=True, connection_id=second["id"]))["apiKey"] == "secret"
 
-        # Existing single-model callers keep a deterministic compatibility connection until chat selection lands.
+        # The compatibility runtime only considers enabled configurations; it never exposes a product default.
         assert (await get_connection(db))["id"] == first["id"]
-        await delete_connection(db, first["id"])
+        disabled = await set_connection_availability(db, first["id"], enabled=False)
+        assert not disabled["enabled"]
         assert (await get_connection(db))["id"] == second["id"]
+        await set_connection_availability(db, second["id"], enabled=False)
+        assert not (await get_connection(db))["configured"]
+        assert (await get_connection(db, connection_id=first["id"]))["configured"]
+        await set_connection_availability(db, first["id"], enabled=True)
+
+        requests = []
+
+        class FakeResponse:
+            status_code = 200
+            is_success = True
+
+            @staticmethod
+            def json():
+                return {"choices": [{"message": {"content": "OK"}}]}
+
+        class FakeClient:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return False
+
+            async def post(self, *args, **kwargs):
+                requests.append({"args": args, "kwargs": kwargs})
+                return FakeResponse()
+
+        monkeypatch.setattr(settings_service.httpx, "AsyncClient", FakeClient)
+        tested = await settings_service.test_connection(db, connection_id=first["id"])
+        assert tested["ok"]
+        assert tested["latencyMs"] >= 0
+        assert requests[0]["kwargs"]["json"]["max_tokens"] == 8
+        assert (await get_connection(db, connection_id=first["id"]))["lastTest"] == tested
+
+        await delete_connection(db, first["id"])
+        assert not (await get_connection(db))["configured"]
 
     await engine.dispose()
 
@@ -70,6 +111,7 @@ async def test_legacy_single_connection_save_still_creates_a_connection():
         row = await db.get(ModelConnection, saved["id"])
         assert row is not None
         assert saved["configured"]
+        assert saved["enabled"]
         assert isinstance(saved["id"], int)
 
     await engine.dispose()

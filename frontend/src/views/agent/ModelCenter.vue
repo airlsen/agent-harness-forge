@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { api, post, put, remove } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
 import type { ModelConnection } from '../../types/platform';
 import Icon from '../../components/ForgeIcon.vue';
 import DialogShell from '../../components/DialogShell.vue';
+
+type ModelHealthTone = 'normal' | 'attention' | 'unverified' | 'disabled';
+type ModelTestResult = ModelConnection['lastTest'];
 
 const app = usePlatform();
 const models = ref<ModelConnection[]>([]);
@@ -14,6 +17,9 @@ const editorOpen = ref(false);
 const editing = ref<ModelConnection | null>(null);
 const saving = ref(false);
 const deletingId = ref<number | null>(null);
+const testingId = ref<number | null>(null);
+const changingAvailabilityId = ref<number | null>(null);
+const actionMenuId = ref<number | null>(null);
 const form = reactive({
   name: '',
   baseUrl: '',
@@ -23,6 +29,11 @@ const form = reactive({
   inputPrice: null as number | null,
   outputPrice: null as number | null,
 });
+
+const enabledCount = computed(() => models.value.filter((model) => model.enabled).length);
+const attentionCount = computed(
+  () => models.value.filter((model) => model.enabled && modelHealth(model).tone !== 'normal').length,
+);
 
 function resetForm(model?: ModelConnection) {
   editing.value = model ?? null;
@@ -36,6 +47,7 @@ function resetForm(model?: ModelConnection) {
 }
 function openEditor(model?: ModelConnection) {
   resetForm(model);
+  actionMenuId.value = null;
   editorOpen.value = true;
 }
 function closeEditor() {
@@ -47,6 +59,47 @@ function endpointHost(baseUrl: string) {
   } catch {
     return baseUrl;
   }
+}
+function formatTestTime(at?: string) {
+  if (!at) return '';
+  const testedAt = new Date(at);
+  const elapsed = Date.now() - testedAt.getTime();
+  if (Number.isNaN(elapsed) || elapsed < 0) return '上次测试';
+  const minutes = Math.floor(elapsed / 60000);
+  if (minutes < 1) return '刚刚验证';
+  if (minutes < 60) return `${minutes} 分钟前验证`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前验证`;
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(testedAt);
+}
+function modelHealth(model: ModelConnection): { tone: ModelHealthTone; label: string; description: string } {
+  if (!model.enabled)
+    return { tone: 'disabled', label: '已停用', description: '此配置不会出现在聊天模型选择中' };
+  if (model.lastTest?.ok)
+    return {
+      tone: 'normal',
+      label: '连接正常',
+      description: `${formatTestTime(model.lastTest.at)}${model.lastTest.latencyMs !== undefined ? ` · ${model.lastTest.latencyMs} ms` : ''}`,
+    };
+  if (model.lastTest?.at)
+    return {
+      tone: 'attention',
+      label: '连接异常',
+      description: model.lastTest.message || `${formatTestTime(model.lastTest.at)}，请检查模型服务配置`,
+    };
+  return { tone: 'unverified', label: '尚未验证', description: '启用后可随时手动测试连接' };
+}
+function toggleActionMenu(id?: number) {
+  if (!id) return;
+  actionMenuId.value = actionMenuId.value === id ? null : id;
+}
+function closeActionMenu() {
+  actionMenuId.value = null;
 }
 async function load() {
   loading.value = true;
@@ -86,8 +139,44 @@ async function save() {
     saving.value = false;
   }
 }
+async function testModel(model: ModelConnection) {
+  if (!model.id || testingId.value !== null) return;
+  testingId.value = model.id;
+  try {
+    const result = await post<ModelTestResult>(`/models/${model.id}/test`);
+    model.lastTest = result;
+    await app.refreshRuntime();
+    app.toast(
+      result.ok ? `“${model.name}”连接验证通过` : result.message || `“${model.name}”连接异常`,
+      result.ok ? 'success' : 'error',
+    );
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  } finally {
+    testingId.value = null;
+  }
+}
+async function toggleAvailability(model: ModelConnection) {
+  if (!model.id || changingAvailabilityId.value !== null) return;
+  const enabled = !model.enabled;
+  changingAvailabilityId.value = model.id;
+  try {
+    const updated = await api<ModelConnection>(`/models/${model.id}/availability`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    });
+    models.value = models.value.map((item) => (item.id === model.id ? updated : item));
+    await app.refreshRuntime();
+    app.toast(enabled ? `“${model.name}”已启用，可供聊天工作台选择` : `“${model.name}”已停用`);
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  } finally {
+    changingAvailabilityId.value = null;
+  }
+}
 async function deleteModel(model: ModelConnection) {
   if (!model.id || deletingId.value !== null) return;
+  actionMenuId.value = null;
   if (!window.confirm(`确定删除模型“${model.name}”吗？历史会话仍保留已有模型快照。`)) return;
   deletingId.value = model.id;
   try {
@@ -101,7 +190,11 @@ async function deleteModel(model: ModelConnection) {
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  document.addEventListener('click', closeActionMenu);
+  void load();
+});
+onBeforeUnmount(() => document.removeEventListener('click', closeActionMenu));
 </script>
 
 <template>
@@ -111,9 +204,19 @@ onMounted(load);
         <div>
           <h1>模型管理</h1>
           <p>维护企业模型配置，为聊天工作台后续的模型选择提供统一来源；密钥只保存在服务端。</p>
+          <p v-if="models.length && !loading" class="model-management-summary" aria-live="polite">
+            <span
+              ><strong>{{ models.length }}</strong> 个模型配置</span
+            >
+            <span
+              ><strong>{{ enabledCount }}</strong> 个已启用</span
+            >
+            <span v-if="attentionCount" class="needs-attention"
+              ><strong>{{ attentionCount }}</strong> 个待验证或异常</span
+            >
+          </p>
         </div>
         <div class="page-heading-actions">
-          <span v-if="models.length" class="heading-count">{{ models.length }} 个模型</span>
           <button class="button primary" @click="openEditor()">
             <Icon name="plus" :size="16" />添加模型
           </button>
@@ -140,9 +243,38 @@ onMounted(load);
         </button>
       </section>
       <section v-else class="model-card-grid" aria-label="模型配置列表">
-        <article v-for="model in models" :key="model.id" class="model-management-card">
+        <article
+          v-for="model in models"
+          :key="model.id"
+          :class="[
+            'model-management-card',
+            {
+              'is-disabled': !model.enabled,
+              'needs-attention': model.enabled && modelHealth(model).tone === 'attention',
+            },
+          ]"
+        >
           <div class="model-card-top">
             <span class="model-card-icon"><Icon name="cpu" :size="20" /></span>
+            <button
+              type="button"
+              :class="['model-availability-toggle', { enabled: model.enabled }]"
+              role="switch"
+              :aria-checked="model.enabled"
+              :aria-label="`${model.name}：${model.enabled ? '已启用，点击停用' : '已停用，点击启用'}`"
+              :disabled="
+                !model.id ||
+                changingAvailabilityId === model.id ||
+                testingId === model.id ||
+                deletingId === model.id
+              "
+              @click="toggleAvailability(model)"
+            >
+              <span class="model-toggle-track" aria-hidden="true"><i></i></span>
+              <span>{{
+                changingAvailabilityId === model.id ? '正在更新…' : model.enabled ? '已启用' : '已停用'
+              }}</span>
+            </button>
           </div>
           <div class="model-card-copy">
             <h2>{{ model.name }}</h2>
@@ -158,15 +290,52 @@ onMounted(load);
               <dd>{{ model.contextWindow.toLocaleString() }}</dd>
             </div>
           </dl>
+          <div :class="['model-card-status', `is-${modelHealth(model).tone}`]">
+            <span class="model-status-dot" aria-hidden="true"></span>
+            <p>
+              <strong>{{ modelHealth(model).label }}</strong>
+              <span>{{ modelHealth(model).description }}</span>
+            </p>
+          </div>
           <footer>
-            <button class="button secondary small" @click="openEditor(model)">编辑</button>
             <button
-              class="button text small danger-text"
-              :disabled="deletingId === model.id"
-              @click="deleteModel(model)"
+              type="button"
+              class="button secondary small"
+              :disabled="
+                !model.id ||
+                testingId === model.id ||
+                changingAvailabilityId === model.id ||
+                deletingId === model.id
+              "
+              @click="testModel(model)"
             >
-              {{ deletingId === model.id ? '正在删除…' : '删除' }}
+              <span v-if="testingId === model.id" class="loader small"></span
+              ><Icon v-else name="activity" :size="14" />{{
+                testingId === model.id ? '正在测试…' : '测试连接'
+              }}
             </button>
+            <div class="model-card-actions">
+              <button type="button" class="button text small" @click="openEditor(model)">编辑</button>
+              <div class="model-card-menu">
+                <button
+                  type="button"
+                  class="icon-button small model-card-more"
+                  aria-label="更多模型操作"
+                  :aria-expanded="actionMenuId === model.id"
+                  :disabled="
+                    testingId === model.id || changingAvailabilityId === model.id || deletingId === model.id
+                  "
+                  @click.stop="toggleActionMenu(model.id)"
+                >
+                  <Icon name="more" :size="18" />
+                </button>
+                <div v-if="actionMenuId === model.id" class="model-card-menu-list" role="menu" @click.stop>
+                  <button type="button" role="menuitem" @click="deleteModel(model)">
+                    <Icon name="trash" :size="15" />删除模型
+                  </button>
+                </div>
+              </div>
+            </div>
           </footer>
         </article>
       </section>
@@ -183,7 +352,7 @@ onMounted(load);
     <header>
       <div>
         <h2>{{ editing ? '编辑模型' : '添加模型' }}</h2>
-        <p>填写模型服务的实际连接信息。保存后不会展示或回传 API Key 原文。</p>
+        <p>填写模型服务的实际连接信息。保存后可手动测试连接，测试不是启用前置条件。</p>
       </div>
       <button class="icon-button" aria-label="关闭模型配置" :disabled="saving" @click="closeEditor">
         <Icon name="close" :size="20" />

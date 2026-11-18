@@ -7,7 +7,7 @@ from ..core.database import get_session
 from ..models.registry import McpServer
 from ..services.mcp_service import import_servers, public_view, test_server
 from ..services.plugin_service import MAX_ARCHIVE_BYTES, import_archive, list_plugins, review_release, set_release_enabled
-from ..services.settings_service import TOOLS, get_connection
+from ..services.settings_service import TOOLS, list_connections
 from ..utils.response import ResponseUtil
 
 router = APIRouter()
@@ -113,13 +113,19 @@ async def mcp_delete(server_id: int, db: AsyncSession = Depends(get_session)):
 
 @router.get("/models")
 async def models(db: AsyncSession = Depends(get_session)):
-    config = await get_connection(db)
+    connections = await list_connections(db)
     return ResponseUtil.ok(
         {
             "items": [
-                {"id": "default", "name": config["model"], "provider": "OpenAI-compatible", "enabled": True}
+                {
+                    "id": str(connection["id"]),
+                    "name": connection["name"],
+                    "model": connection["model"],
+                    "provider": "OpenAI-compatible",
+                    "enabled": True,
+                }
+                for connection in connections
+                if connection["enabled"]
             ]
-            if config["configured"]
-            else []
         }
     )
