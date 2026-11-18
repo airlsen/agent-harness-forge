@@ -45,6 +45,8 @@ export interface Conversation {
   modelId: number | null;
   /** 模型显示名；旧会话回退为模型 ID */
   modelName: string;
+  /** 当前模型的上下文窗口；第一期之前创建、尚未继续过的旧会话为 null */
+  modelContextWindow: number | null;
   isTest: boolean;
 }
 export interface ChatMessage {
@@ -68,11 +70,30 @@ export interface Approval {
   reason?: string;
   timeoutSeconds?: number;
 }
+/** 会话模型分段（append-only）：会话创建时一段，每次会话内切换追加一段 */
+export interface SessionModelSegment {
+  /** 模型配置 ID；旧会话迁移的分段可能为 null */
+  id: number | null;
+  name: string;
+  model: string;
+  contextWindow: number;
+  inputPrice?: number | null;
+  outputPrice?: number | null;
+  /** 本段生效的第一条用户消息；null 表示自会话创建起 */
+  fromMessageId?: number | null;
+  tokensIn?: number;
+  tokensOut?: number;
+  /** 本段费用；未配置单价时为 null */
+  cost?: number | null;
+}
 export interface SessionDetail extends Conversation {
   messages: ChatMessage[];
   lastEventSeq: number;
   bundle: any;
   pendingApprovals: Approval[];
+  models?: SessionModelSegment[];
+  /** 最近一次模型请求的输入 tokens，约等于当前上下文规模 */
+  contextTokens?: number;
 }
 export interface Tool {
   name: string;

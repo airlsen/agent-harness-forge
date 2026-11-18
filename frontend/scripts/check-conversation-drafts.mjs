@@ -153,10 +153,24 @@ try {
         failTurn = false;
         return response(null, 409);
       }
+      const body = JSON.parse(options.body);
       const messageId = row.messages.length + 1;
-      row.messages.push({ id: messageId, role: 'user', content: JSON.parse(options.body).message, meta: {} });
+      const from = { id: row.modelId, name: row.modelName, model: row.model };
+      if (body.modelId !== undefined && body.modelId !== row.modelId) {
+        row.modelId = body.modelId;
+        row.modelName = `Model ${body.modelId}`;
+        row.model = `model-${body.modelId}`;
+      }
+      const to = { id: row.modelId, name: row.modelName, model: row.model };
+      const messageMeta = {
+        modelId: to.id,
+        modelName: to.name,
+        model: to.model,
+        ...(from.id !== to.id ? { modelSwitch: { messageId, from, to } } : {}),
+      };
+      row.messages.push({ id: messageId, role: 'user', content: body.message, meta: messageMeta });
       row.status = 'running';
-      return response({ messageId, cursor: 0 });
+      return response({ messageId, cursor: 0, messageMeta, model: { ...to, contextWindow: 64000 } });
     }
     if (suffix.startsWith('/events?')) {
       // Pending SSE is aborted by the real store's disconnect(), without a timer or network.
@@ -488,7 +502,7 @@ try {
   chat.newConversation();
   assert.equal(chat.selectedModelId, 8);
   passed(
-    'new-session model is chosen per draft, sent with the create request, locked once the session exists and remembered for the next task',
+    'new-session model is chosen per draft, sent with the create request, frozen while its first turn runs and remembered for the next task',
   );
 
   reset();
@@ -530,6 +544,71 @@ try {
   );
   passed(
     'a prepared session is reused only for the same scenario and model; changing the model creates a fresh session',
+  );
+
+  reset();
+  await chat.open(11);
+  assert.equal(chat.selectedModelId, 7);
+  chat.input = 'Same model reply';
+  await chat.submit();
+  const sameTurn = calls.find((call) => call.method === 'POST' && call.url.endsWith('/turns'));
+  assert.deepEqual(sameTurn.body, { message: 'Same model reply' });
+  assert.equal(chat.selectModel(8), false); // running: the model only changes between turns
+  database.get(11).status = 'idle';
+  await chat.open(11);
+  assert.equal(chat.selectModel(99), false);
+  assert.equal(chat.selectModel(8), true);
+  chat.input = 'Continue with the second model';
+  await chat.submit();
+  const switchTurn = calls.filter((call) => call.method === 'POST' && call.url.endsWith('/turns')).at(-1);
+  assert.deepEqual(switchTurn.body, { message: 'Continue with the second model', modelId: 8 });
+  assert.equal(chat.current.modelId, 8);
+  assert.equal(chat.current.modelName, 'Model 8');
+  assert.equal(chat.selectedModelId, 8);
+  assert.equal(chat.messages.at(-1).meta.modelSwitch.to.name, 'Model 8');
+  assert.equal(count(/^\/api\/agent\/sessions$/, 'POST'), 0);
+  passed(
+    'an existing session switches model only between turns: same-model turns send no modelId, a switch rides on the next turn and updates the session',
+  );
+
+  reset();
+  await chat.open(11);
+  assert.equal(chat.selectModel(8), true);
+  await chat.open(12);
+  assert.equal(chat.selectedModelId, 7);
+  await chat.open(11);
+  assert.equal(chat.selectedModelId, 8);
+  assert.equal(chat.hasUnsentDrafts, false);
+  assert.equal(chat.selectModel(7), true); // choosing the current model cancels the pending switch
+  await chat.open(12);
+  await chat.open(11);
+  assert.equal(chat.selectedModelId, 7);
+  assert.equal(chat.drafts['session:11'], undefined);
+  passed(
+    'a pending switch is kept per session without text, never counts as unsent work, and can be cancelled',
+  );
+
+  reset();
+  app.modelOptions = [modelOption(8, true)];
+  app.defaultModelId = 8;
+  await chat.open(11);
+  assert.equal(chat.selectedModelId, 7); // disabled current model keeps working until the user switches
+  chat.input = 'Keep the disabled current model';
+  await chat.submit();
+  assert.deepEqual(calls.filter((call) => call.url.endsWith('/turns')).at(-1).body, {
+    message: 'Keep the disabled current model',
+  });
+  database.get(11).status = 'idle';
+  await chat.open(11);
+  assert.equal(chat.selectModel(8), true);
+  assert.equal(chat.selectModel(7), true);
+  app.modelOptions = [modelOption(7, true)];
+  chat.selectModel(7);
+  chat.selectedModelId = 8; // a pending target that was disabled meanwhile
+  chat.syncModel();
+  assert.equal(chat.selectedModelId, 7);
+  passed(
+    'a disabled current model can continue or be kept explicitly; a pending target that disappears falls back to no switch',
   );
 
   console.log(

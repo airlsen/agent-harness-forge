@@ -35,6 +35,34 @@ type Entry = {
 function failure(message: string, statusCode = 400) {
   return Object.assign(new Error(message), { statusCode });
 }
+export function validModel(model?: RuntimeModel): model is RuntimeModel {
+  return Boolean(
+    model &&
+      typeof model.baseUrl === 'string' &&
+      model.baseUrl &&
+      typeof model.model === 'string' &&
+      model.model &&
+      (model.apiKey === undefined || typeof model.apiKey === 'string') &&
+      (model.contextWindow === undefined ||
+        (Number.isSafeInteger(model.contextWindow) && model.contextWindow > 0)),
+  );
+}
+/**
+ * compaction-basic 默认额外预留 65,536 tokens 余量：窗口 W − 输出上限 O ≤ 65,536 时（例如常见的 64K 模型），
+ * 自动压缩会被静默跳过，且会话内切换到该模型会被 dsh 直接拒绝。按模型窗口缩放余量，
+ * 大窗口模型仍不超过官方默认值；摘要输出上限与普通回复一致，避免向网关请求超出模型能力的 max_tokens。
+ */
+export function compactionConfig(contextWindow: number, outputTokens: number) {
+  const budget = contextWindow - outputTokens;
+  const headroomTokens = Math.max(1024, Math.min(65536, Math.floor(budget * 0.25)));
+  return { headroomTokens, maxTokens: Math.max(1, Math.min(headroomTokens, outputTokens)) };
+}
+/** 运行配置指纹：任一项变化都必须以新配置重启 dsh 进程（模型与密钥只在启动时注入）。 */
+export function modelFingerprint(model: RuntimeModel) {
+  return createHash('sha256')
+    .update(JSON.stringify([model.baseUrl, model.model, model.apiKey ?? '', model.contextWindow ?? 0]))
+    .digest('hex');
+}
 
 export class DshKernel implements AgentKernel {
   private sessions = new Map<string, Entry>();
@@ -71,7 +99,7 @@ export class DshKernel implements AgentKernel {
     }
   }
   async createSession(bundle: Bundle, _user: UserCtx, model?: RuntimeModel): Promise<SessionHandle> {
-    if (!model?.baseUrl || !model.model) throw failure('请先在模型中心配置真实模型网关', 422);
+    if (!validModel(model)) throw failure('请先在模型中心配置真实模型网关', 422);
     if (this.size >= this.capacity) throw failure('Runner 会话容量已满，请归档暂不使用的会话', 429);
     const approvedPlugins = new Set(['forge-runtime', 'skill-authoring', 'forge-plugin-bridge']);
     if (!Array.isArray(bundle.plugin_mounts) || bundle.plugin_mounts.some((p) => !approvedPlugins.has(p)))
@@ -179,6 +207,10 @@ export class DshKernel implements AgentKernel {
       : null;
     const patch = [
       { id: 'sessions', config: { root: join(dir, 'session-log'), compression: 'none' } },
+      {
+        id: 'compaction-basic',
+        config: compactionConfig(entry.model.contextWindow || 64000, policy.maxOutputTokens ?? 4096),
+      },
       ...[
         'persistent-bash',
         'persistent-pwsh',
@@ -354,12 +386,23 @@ export class DshKernel implements AgentKernel {
       }
     }
   }
-  async sendTurn(id: string, message: string, _opts?: TurnOpts) {
+  /**
+   * 执行一轮对话。model 为控制面下发的本轮运行配置：与当前进程不同（会话内切换模型）时，
+   * 先结束旧进程，再以新配置启动并通过 session/resume 接续同一份会话日志。
+   */
+  async sendTurn(id: string, message: string, _opts?: TurnOpts, model?: RuntimeModel) {
     const entry = this.entry(id);
     if (entry.busy) throw failure('会话正在执行，请等待或中止', 409);
+    if (model !== undefined && !validModel(model)) throw failure('本轮模型配置无效', 422);
     entry.busy = true;
     entry.error = null;
     try {
+      if (model && modelFingerprint(model) !== modelFingerprint(entry.model)) {
+        const previous = entry.proc;
+        entry.proc = null;
+        await previous?.dispose();
+        entry.model = model;
+      }
       if (!entry.proc) await this.boot(entry);
       await timeout(
         entry.proc!.request('session/prompt', {

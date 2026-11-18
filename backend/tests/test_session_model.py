@@ -6,7 +6,6 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.api.core.database import Base
-from src.api.models.platform import PlatformSetting
 from src.api.schemas.agent_scenario import ScenarioPayload
 from src.api.services import session_service as session_module
 from src.api.services import settings_service
@@ -172,14 +171,19 @@ async def test_new_session_snapshots_the_selected_model(sessions, monkeypatch):
     assert default["modelId"] == chat["id"] and default["modelName"] == "企业 Chat"
 
     async with sessions() as db:
-        snapshot = (await db.get(PlatformSetting, f"session-model:{chosen['id']}")).value
-        assert snapshot["connectionId"] == reasoner["id"]
-        assert snapshot["model"] == "reasoner-v1"
-        assert snapshot["credential"] == "encrypted:reasoner-v1-secret"
+        segments = await session_module.current_segments(db, [chosen["id"]])
+        segment = segments[chosen["id"]]
+        assert segment.connection_id == reasoner["id"]
+        assert segment.model == "reasoner-v1"
+        assert segment.from_message_id is None
+        assert segment.credential == "encrypted:reasoner-v1-secret"
         # 计费单价取自所选模型
-        row = await db.get(session_module.AgentSession, chosen["id"])
-        assert row.bundle_snapshot["meta"]["inputPrice"] == 4
-        assert session_module.message_model(row) == {"model": "reasoner-v1", "modelName": "企业 Reasoner"}
+        assert segment.input_price == 4 and segment.output_price == 16
+        assert session_module.model_ref(segment) == {
+            "modelId": reasoner["id"],
+            "model": "reasoner-v1",
+            "modelName": "企业 Reasoner",
+        }
 
     with pytest.raises(HTTPException) as missing:
         await service.create(scenario["id"], model_id=9999)
@@ -203,4 +207,9 @@ def test_legacy_session_view_falls_back_to_model_id():
     view = session_module.SessionService().view(Row())
     assert view["modelId"] is None
     assert view["modelName"] == "deepseek-chat"
-    assert session_module.message_model(Row()) == {"model": "deepseek-chat", "modelName": "deepseek-chat"}
+    assert view["modelContextWindow"] is None
+    assert session_module.model_ref(None, Row()) == {
+        "modelId": None,
+        "model": "deepseek-chat",
+        "modelName": "deepseek-chat",
+    }

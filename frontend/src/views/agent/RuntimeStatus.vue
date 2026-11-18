@@ -117,7 +117,7 @@ async function refresh() {
             <Icon name="cpu" :size="19" />
             <div>
               <h2>平台默认模型</h2>
-              <p>新会话未选择模型时使用；聊天中可为每个新会话单独选择已启用的模型。</p>
+              <p>新会话未选择模型时使用；聊天中可为会话选择已启用的模型，并在两轮之间切换。</p>
             </div>
           </header>
           <div class="runtime-model-connection">

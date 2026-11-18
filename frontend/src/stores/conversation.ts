@@ -2,7 +2,13 @@ import { defineStore } from 'pinia';
 import { api, post } from '../api/client';
 import { openEventStream } from '../api/events';
 import { usePlatform } from './platform';
-import type { Approval, ChatMessage, KernelEvent, SessionDetail } from '../types/platform';
+import type {
+  Approval,
+  ChatMessage,
+  KernelEvent,
+  SessionDetail,
+  SessionModelSegment,
+} from '../types/platform';
 let stream: { close: () => void } | null = null;
 let openGeneration = 0;
 // Reopening a conversation while its turn request is still in flight must read
@@ -17,7 +23,7 @@ interface TaskDraft {
   input: string;
   attachments: { name: string; content: string }[];
   scenarioId: number | null;
-  /** 新会话所选模型；已有会话的模型在创建时锁定，不随草稿变化 */
+  /** 新会话所选模型；已有会话中为「从下一条消息起使用」的模型（与当前模型不同即待切换） */
   modelId: number | null;
   preview: boolean;
 }
@@ -43,6 +49,12 @@ function rememberLastModel(username: string | undefined, id: number | null) {
   } catch {
     // 存储不可用（隐私模式、配额已满）不影响发送。
   }
+}
+interface TurnReceipt {
+  messageId: number;
+  cursor: number;
+  messageMeta?: Record<string, any>;
+  model?: SessionModelSegment;
 }
 function sameDraft(left: TaskDraft, right: TaskDraft) {
   return (
@@ -129,7 +141,9 @@ export const useConversation = defineStore('conversation', {
       // An opening session has not restored its cached draft yet. Do not overwrite it.
       if (this.loading || (this.draftKey !== 'new' && !this.current)) return;
       const draft = this.snapshotDraft();
-      if (draft.input || draft.attachments.length || this.draftKey === 'new')
+      // 已有会话里只选了待切换模型、尚未输入内容，同样保留这份选择。
+      const pendingModel = Boolean(this.current && draft.modelId !== this.current.modelId);
+      if (draft.input || draft.attachments.length || pendingModel || this.draftKey === 'new')
         this.drafts[this.draftKey] = draft;
       else delete this.drafts[this.draftKey];
     },
@@ -171,7 +185,16 @@ export const useConversation = defineStore('conversation', {
       );
       this.selectedScenarioId = selected?.id ?? platform.availableScenarios[0]?.id ?? null;
       this.previewScenarioId = selected?.status === 'draft' ? selected.id : null;
-      this.selectedModelId = this.availableModel(draft?.modelId);
+      this.selectedModelId = this.current
+        ? this.sessionModel(draft?.modelId)
+        : this.availableModel(draft?.modelId);
+    },
+    /** 已有会话：待切换的模型仍可用则保留，否则回到会话当前模型（即不切换）。 */
+    sessionModel(id?: number | null): number | null {
+      const current = this.current?.modelId ?? null;
+      return id != null && id !== current && usePlatform().modelOptions.some((option) => option.id === id)
+        ? id
+        : current;
     },
     /** 所选模型仍可用则保留，否则依次回退到本人上次使用的模型、平台默认模型。 */
     availableModel(id?: number | null): number | null {
@@ -241,16 +264,18 @@ export const useConversation = defineStore('conversation', {
     },
     /** 可选模型变化（首次加载、模型管理中停用/删除）后校正新会话草稿的模型。 */
     syncModel() {
-      if (!this.current) this.selectedModelId = this.availableModel(this.selectedModelId);
+      this.selectedModelId = this.current
+        ? this.sessionModel(this.selectedModelId)
+        : this.availableModel(this.selectedModelId);
     },
-    /** 只有尚未创建的新会话可以选模型；已有会话的模型在创建时锁定。 */
-    selectModel(id: number): boolean {
-      if (
-        this.current ||
-        this.running ||
-        this.loading ||
-        !usePlatform().modelOptions.some((option) => option.id === id)
-      )
+    /**
+     * 新会话：选择创建时使用的模型。已有会话：选择从下一条消息起使用的模型，
+     * 选回当前模型即取消切换；执行中不能切换（模型只在两轮之间变化）。
+     */
+    selectModel(id: number | null): boolean {
+      if (this.running || this.loading) return false;
+      const keepCurrent = Boolean(this.current) && id === (this.current?.modelId ?? null);
+      if (!keepCurrent && (id === null || !usePlatform().modelOptions.some((option) => option.id === id)))
         return false;
       this.selectedModelId = id;
       return true;
@@ -319,13 +344,18 @@ export const useConversation = defineStore('conversation', {
     async submit(): Promise<number | null> {
       const platform = usePlatform();
       if (this.running || this.loading || (!this.input.trim() && !this.draftAttachments.length)) return null;
-      if (!platform.connection?.configured) throw new Error('模型尚未连接，请由管理员在「模型连接」完成配置');
+      // 已有会话使用冻结的模型分段继续，不依赖平台当前是否还有启用的模型。
+      if (!this.current && !platform.connection?.configured)
+        throw new Error('模型尚未连接，请由管理员在「模型连接」完成配置');
       const scenarioId =
         this.current?.scenarioId ??
         platform.scenarios.find((scenario) => scenario.id === this.selectedScenarioId)?.id ??
         platform.availableScenarios[0]?.id;
       if (!scenarioId) throw new Error('请先选择一个场景');
-      // 新会话才需要模型；所选模型失效时回退到推荐模型，而不是静默交给后端兜底。
+      // 新会话：所选模型失效时回退到推荐模型，而不是静默交给后端兜底。
+      // 已有会话：只有选了不同且可用的模型才随本轮提交切换，否则沿用会话当前模型。
+      const switchTo = this.current ? this.sessionModel(this.selectedModelId) : null;
+      const turnModelId = this.current && switchTo !== this.current.modelId ? switchTo : null;
       const modelId = this.current ? null : this.availableModel(this.selectedModelId);
       if (!this.current && modelId === null)
         throw new Error('没有可用的模型，请由管理员在「模型管理」启用模型');
@@ -336,7 +366,7 @@ export const useConversation = defineStore('conversation', {
       if (message.length > 64000) throw new Error('任务与文本附件合计不能超过 64000 字符');
       const generation = openGeneration;
       this.selectedScenarioId = scenarioId;
-      if (!this.current) this.selectedModelId = modelId;
+      this.selectedModelId = this.current ? switchTo : modelId;
       const submittedDraft = this.snapshotDraft();
       const originKey = this.draftKey;
       this.sending = true;
@@ -362,8 +392,9 @@ export const useConversation = defineStore('conversation', {
         }
         if (pendingTurns.has(session.id)) throw new Error('这份草稿仍在提交，请稍后再试；不会重复发送。');
         if (!this.current) preparedSessions.set(submittedDraft.id, session);
-        const pending = post<{ messageId: number; cursor: number }>(`/agent/sessions/${session.id}/turns`, {
+        const pending = post<TurnReceipt>(`/agent/sessions/${session.id}/turns`, {
           message,
+          ...(turnModelId !== null ? { modelId: turnModelId } : {}),
         });
         pendingTurns.set(session.id, pending);
         let receipt;
@@ -380,7 +411,14 @@ export const useConversation = defineStore('conversation', {
         }
         this.current = session;
         this.draftKey = `session:${session.id}`;
-        this.messages.push({ id: receipt.messageId, role: 'user', content: message, meta: {} });
+        if (receipt.model) this.applyModel(receipt.model);
+        this.selectedModelId = this.sessionModel(this.selectedModelId);
+        this.messages.push({
+          id: receipt.messageId,
+          role: 'user',
+          content: message,
+          meta: receipt.messageMeta ?? {},
+        });
         this.current.status = 'running';
         this.follow(session.id, receipt.cursor);
         await platform.refreshSessions();
@@ -388,6 +426,14 @@ export const useConversation = defineStore('conversation', {
       } finally {
         if (generation === openGeneration) this.sending = false;
       }
+    },
+    /** 本地同步会话当前模型（来自轮次回执或 model_switched 事件）。 */
+    applyModel(model: { id: number | null; name: string; model: string; contextWindow?: number | null }) {
+      if (!this.current) return;
+      this.current.modelId = model.id;
+      this.current.modelName = model.name || model.model;
+      this.current.model = model.model;
+      if (model.contextWindow) this.current.modelContextWindow = model.contextWindow;
     },
     follow(id: number, after: number) {
       this.disconnect();
@@ -431,7 +477,12 @@ export const useConversation = defineStore('conversation', {
           else if (event.kind === 'approval_resolved')
             this.approvals = this.approvals.filter((approval) => approval.ticketId !== data.ticketId);
           else if (event.kind === 'error') this.runError = data.message;
-          else if (event.kind === 'cost_tick') {
+          else if (event.kind === 'model_switched') {
+            this.applyModel({ ...data.to, contextWindow: data.contextWindow });
+            this.selectedModelId = this.sessionModel(this.selectedModelId);
+          } else if (event.kind === 'cost_tick') {
+            // 单次模型请求的输入规模 ≈ 当前上下文，用于切换到小窗口模型前的提醒。
+            if (data.tokensIn) this.current.contextTokens = data.tokensIn;
             this.current.tokensIn = data.totalTokensIn;
             this.current.tokensOut = data.totalTokensOut;
             this.current.cost = data.cost;

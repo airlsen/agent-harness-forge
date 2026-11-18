@@ -27,6 +27,19 @@ export interface Turn {
   running: boolean;
   /** 生成本轮回复的模型显示名；旧消息未记录时为空，由调用方回退为会话模型 */
   model: string;
+  /** 本轮起切换了模型（会话内切换），用于渲染切换分隔线 */
+  switch: { from: string; to: string } | null;
+}
+function modelLabel(meta: Record<string, any> | undefined) {
+  const value = meta?.modelName || meta?.model;
+  return typeof value === 'string' ? value : '';
+}
+function switchLabel(meta: Record<string, any> | undefined): Turn['switch'] {
+  const change = meta?.modelSwitch;
+  if (!change || typeof change !== 'object') return null;
+  const from = change.from?.name || change.from?.model;
+  const to = change.to?.name || change.to?.model;
+  return typeof from === 'string' && typeof to === 'string' ? { from, to } : null;
 }
 
 export interface LiveTurn {
@@ -47,14 +60,21 @@ export function buildTurns(messages: ChatMessage[], live: LiveTurn): Turn[] {
   const turns: Turn[] = [];
   for (const message of messages) {
     if (message.role === 'user') {
-      turns.push({ key: message.id, user: message, steps: [], running: false, model: '' });
+      // 第二期起用户消息记录本轮模型：执行中、尚无回复时也能显示。
+      turns.push({
+        key: message.id,
+        user: message,
+        steps: [],
+        running: false,
+        model: modelLabel(message.meta),
+        switch: switchLabel(message.meta),
+      });
       continue;
     }
     const turn = turns.at(-1);
     if (!turn) continue;
     if (message.role === 'assistant') {
-      const model = message.meta?.modelName || message.meta?.model;
-      if (!turn.model && typeof model === 'string') turn.model = model;
+      if (!turn.model) turn.model = modelLabel(message.meta);
       const reasoning = typeof message.meta?.reasoning === 'string' ? message.meta.reasoning : '';
       if (reasoning) turn.steps.push({ kind: 'thinking', text: reasoning, live: false });
       if (message.content)

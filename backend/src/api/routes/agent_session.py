@@ -20,6 +20,8 @@ class NewSession(BaseModel):
 
 class Turn(BaseModel):
     message: str = Field(min_length=1, max_length=64000)
+    # 从本轮起使用的模型；不传或与当前相同则沿用会话当前模型。
+    modelId: int | None = Field(default=None, gt=0)
 
 
 @router.get("")
@@ -39,7 +41,7 @@ async def detail(session_id: int):
 
 @router.post("/{session_id}/turns", status_code=202)
 async def turn(session_id: int, payload: Turn):
-    return ResponseUtil.ok(await session_service.start(session_id, payload.message))
+    return ResponseUtil.ok(await session_service.start(session_id, payload.message, model_id=payload.modelId))
 
 
 @router.get("/{session_id}/events")

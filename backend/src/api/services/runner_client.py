@@ -40,10 +40,12 @@ class RunnerClient:
             "POST", "/v1/sessions", {"bundle": bundle, "userCtx": user_ctx, "modelConfig": model_config}
         )
 
-    async def events(self, runner_session_id: str, message: str):
+    async def events(self, runner_session_id: str, message: str, model_config: dict | None = None):
+        # 每轮都下发当前模型配置：Runner 比对指纹，不同（会话内切换）则以新配置重启并接续会话。
+        body = {"message": message, **({"modelConfig": model_config} if model_config else {})}
         async with self.client(stream=True) as client:
             async with client.stream(
-                "POST", f"/v1/sessions/{runner_session_id}/stream", json={"message": message}
+                "POST", f"/v1/sessions/{runner_session_id}/stream", json=body
             ) as response:
                 if response.status_code != 200:
                     await response.aread()

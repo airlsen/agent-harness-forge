@@ -1,0 +1,260 @@
+"""第二期：会话内切换模型（按轮生效、按段计价、旧会话迁移与 Runner 配置下发）。"""
+
+import asyncio
+
+import pytest
+import pytest_asyncio
+from fastapi import HTTPException
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from src.api.core.database import Base
+from src.api.models.agent_session import AgentSession, AgentSessionModel
+from src.api.models.platform import PlatformSetting, SessionMessage
+from src.api.schemas.agent_scenario import ScenarioPayload
+from src.api.services import session_service as session_module
+from src.api.services import settings_service
+from src.api.services.scenario_service import scenario_service
+from src.api.services.settings_service import ModelInput, create_connection, set_connection_availability
+
+
+class FakeRunner:
+    """记录每轮下发的模型配置，并回放一条回复与一次用量。"""
+
+    def __init__(self):
+        self.created: list[dict] = []
+        self.turns: list[tuple[str, str, dict | None]] = []
+        self.usage = (1000, 100)
+
+    async def create_session(self, _bundle, _user, config):
+        self.created.append(config)
+        return {"sessionId": f"runner-{len(self.created)}"}
+
+    async def call(self, _method, _path, _body=None):
+        return {"exists": True, "busy": False}
+
+    async def events(self, runner_id, message, model_config=None):
+        self.turns.append((runner_id, message, model_config))
+        yield {
+            "kind": "message",
+            "source": "llm",
+            "payload": {"text": f"re: {message}", "runtimeMessageId": "m"},
+        }
+        tokens_in, tokens_out = self.usage
+        yield {
+            "kind": "cost_tick",
+            "source": "llm",
+            "payload": {"tokensIn": tokens_in, "tokensOut": tokens_out},
+        }
+        yield {"kind": "done", "payload": {"status": "idle"}}
+
+
+@pytest.fixture(autouse=True)
+def fake_crypto(monkeypatch):
+    monkeypatch.setattr(settings_service, "encrypt", lambda value: f"encrypted:{value}")
+    monkeypatch.setattr(settings_service, "decrypt", lambda value: value.removeprefix("encrypted:"))
+    monkeypatch.setattr(session_module, "encrypt", lambda value: f"encrypted:{value}")
+    monkeypatch.setattr(session_module, "decrypt", lambda value: value.removeprefix("encrypted:"))
+
+
+@pytest_asyncio.fixture
+async def env(monkeypatch):
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    runner = FakeRunner()
+    monkeypatch.setattr(session_module, "SessionFactory", sessions)
+    monkeypatch.setattr(session_module, "runner_client", runner)
+    async with sessions() as db:
+        models = {
+            "chat": await create_connection(db, model("Chat", "chat-v1", inputPrice=1, outputPrice=2)),
+            "reasoner": await create_connection(
+                db, model("Reasoner", "reasoner-v1", inputPrice=4, outputPrice=16, contextWindow=32000)
+            ),
+            "free": await create_connection(db, model("Unpriced", "free-v1")),
+            "retired": await create_connection(db, model("Retired", "retired-v1")),
+        }
+        await set_connection_availability(db, models["retired"]["id"], enabled=False)
+        scenario = await scenario_service.create(
+            db, "admin", ScenarioPayload(name="通用助手", prompt_template="帮助用户")
+        )
+    yield {"sessions": sessions, "runner": runner, "models": models, "scenario": scenario}
+    await engine.dispose()
+
+
+def model(name: str, model_id: str, **extra) -> ModelInput:
+    extra.setdefault("contextWindow", 64000)
+    return ModelInput(
+        name=name,
+        baseUrl=f"https://{model_id}.example.com/v1",
+        model=model_id,
+        apiKey=f"{model_id}-secret",
+        **extra,
+    )
+
+
+async def turn(service, session_id, message, **kwargs):
+    receipt = await service.start(session_id, message, **kwargs)
+    task = service.tasks.get(session_id)
+    if task:
+        await task
+    return receipt
+
+
+@pytest.mark.asyncio
+async def test_switch_applies_from_the_next_turn_and_prices_each_segment(env):
+    service = session_module.SessionService()
+    chat, reasoner = env["models"]["chat"], env["models"]["reasoner"]
+    session = await service.create(env["scenario"]["id"], model_id=chat["id"])
+
+    first = await turn(service, session["id"], "第一轮")
+    assert "modelSwitch" not in first["messageMeta"]
+    assert env["runner"].created[0]["model"] == "chat-v1"
+    assert env["runner"].turns[0][2] == {
+        "baseUrl": "https://chat-v1.example.com/v1",
+        "model": "chat-v1",
+        "contextWindow": 64000,
+        "apiKey": "chat-v1-secret",
+    }
+
+    second = await turn(service, session["id"], "第二轮", model_id=reasoner["id"])
+    switch = second["messageMeta"]["modelSwitch"]
+    assert switch["from"] == {"id": chat["id"], "name": "Chat", "model": "chat-v1"}
+    assert switch["to"] == {"id": reasoner["id"], "name": "Reasoner", "model": "reasoner-v1"}
+    assert second["model"]["id"] == reasoner["id"] and second["model"]["contextWindow"] == 32000
+    # Runner 会话只创建一次；切换通过本轮配置下发，由 Runner 比对指纹后重启接续。
+    assert len(env["runner"].created) == 1
+    assert env["runner"].turns[1][2]["model"] == "reasoner-v1"
+    assert env["runner"].turns[1][2]["apiKey"] == "reasoner-v1-secret"
+
+    detail = await service.detail(session["id"])
+    assert detail["modelId"] == reasoner["id"] and detail["modelName"] == "Reasoner"
+    assert detail["modelContextWindow"] == 32000
+    assert detail["contextTokens"] == 1000
+    assert [(item["id"], item["fromMessageId"]) for item in detail["models"]] == [
+        (chat["id"], None),
+        (reasoner["id"], second["messageId"]),
+    ]
+    # 按段计价：(1000×1 + 100×2)/1e6 与 (1000×4 + 100×16)/1e6
+    assert detail["models"][0]["cost"] == pytest.approx(0.0012)
+    assert detail["models"][1]["cost"] == pytest.approx(0.0056)
+    assert detail["cost"] == pytest.approx(0.0068)
+    assert detail["tokensIn"] == 2000
+
+    assistants = [m for m in detail["messages"] if m["role"] == "assistant"]
+    assert [m["meta"]["modelName"] for m in assistants] == ["Chat", "Reasoner"]
+    users = [m for m in detail["messages"] if m["role"] == "user"]
+    assert users[0]["meta"]["modelName"] == "Chat" and "modelSwitch" not in users[0]["meta"]
+    assert users[1]["meta"]["modelSwitch"]["to"]["name"] == "Reasoner"
+
+    # 切换事件紧跟在返回游标之后，客户端订阅时可以收到。
+    events = await service.events(session["id"], after=second["cursor"])
+    assert events[0]["kind"] == "model_switched"
+    assert events[0]["payload"]["to"]["model"] == "reasoner-v1"
+    assert events[1]["kind"] == "session"
+
+    # 指定与当前相同的模型不算切换。
+    third = await turn(service, session["id"], "第三轮", model_id=reasoner["id"])
+    assert "modelSwitch" not in third["messageMeta"]
+    assert len((await service.detail(session["id"]))["models"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_invalid_switch_targets_and_running_sessions_are_rejected_without_side_effects(env):
+    service = session_module.SessionService()
+    session = await service.create(env["scenario"]["id"], model_id=env["models"]["chat"]["id"])
+    await turn(service, session["id"], "第一轮")
+
+    async def counts():
+        async with env["sessions"]() as db:
+            messages = await db.scalar(select(func.count()).select_from(SessionMessage))
+            segments = await db.scalar(select(func.count()).select_from(AgentSessionModel))
+            return messages, segments
+
+    before = await counts()
+    with pytest.raises(HTTPException) as retired:
+        await service.start(session["id"], "换到停用模型", model_id=env["models"]["retired"]["id"])
+    assert retired.value.status_code == 409
+    with pytest.raises(HTTPException) as missing:
+        await service.start(session["id"], "换到不存在的模型", model_id=9999)
+    assert missing.value.status_code == 404
+
+    blocker = asyncio.get_running_loop().create_future()
+    service.tasks[session["id"]] = blocker
+    with pytest.raises(HTTPException) as running:
+        await service.start(session["id"], "执行中切换", model_id=env["models"]["reasoner"]["id"])
+    assert running.value.status_code == 409
+    blocker.cancel()
+    service.tasks.pop(session["id"])
+    assert await counts() == before
+
+
+@pytest.mark.asyncio
+async def test_current_model_keeps_working_after_disable_and_unpriced_usage_marks_cost_unknown(env):
+    service = session_module.SessionService()
+    chat, free = env["models"]["chat"], env["models"]["free"]
+    session = await service.create(env["scenario"]["id"], model_id=chat["id"])
+    await turn(service, session["id"], "第一轮")
+    assert (await service.detail(session["id"]))["cost"] == pytest.approx(0.0012)
+
+    # 当前模型被停用后，沿用冻结的分段继续本会话；只是不能再切换回它。
+    async with env["sessions"]() as db:
+        await set_connection_availability(db, chat["id"], enabled=False)
+    await turn(service, session["id"], "继续")
+    assert env["runner"].turns[-1][2]["model"] == "chat-v1"
+
+    await turn(service, session["id"], "换到未定价模型", model_id=free["id"])
+    detail = await service.detail(session["id"])
+    assert detail["cost"] is None  # 存在未定价用量，费用不再完整
+    assert detail["models"][-1]["cost"] is None
+    assert detail["models"][0]["cost"] == pytest.approx(0.0024)
+
+
+@pytest.mark.asyncio
+async def test_legacy_session_snapshot_is_migrated_into_the_first_segment(env):
+    service = session_module.SessionService()
+    async with env["sessions"]() as db:
+        row = AgentSession(
+            scenario_id=env["scenario"]["id"],
+            bundle_hash="legacy",
+            bundle_snapshot={
+                "meta": {"model": "legacy-v1", "modelName": "Legacy", "inputPrice": 2, "outputPrice": 3}
+            },
+        )
+        db.add(row)
+        await db.flush()
+        db.add(
+            PlatformSetting(
+                key=f"session-model:{row.id}",
+                value={
+                    "baseUrl": "https://legacy.example.com/v1",
+                    "model": "legacy-v1",
+                    "contextWindow": 128000,
+                    "credential": "encrypted:legacy-secret",
+                },
+            )
+        )
+        await db.commit()
+        legacy_id = row.id
+
+    assert (await service.detail(legacy_id))["models"] == []
+    await turn(service, legacy_id, "旧会话继续")
+    assert env["runner"].created[-1] == {
+        "baseUrl": "https://legacy.example.com/v1",
+        "model": "legacy-v1",
+        "contextWindow": 128000,
+        "apiKey": "legacy-secret",
+    }
+    detail = await service.detail(legacy_id)
+    assert [(item["name"], item["id"]) for item in detail["models"]] == [("Legacy", None)]
+    assert detail["cost"] == pytest.approx((1000 * 2 + 100 * 3) / 1000000)
+
+    switched = await turn(service, legacy_id, "旧会话切换", model_id=env["models"]["chat"]["id"])
+    assert switched["messageMeta"]["modelSwitch"]["from"] == {
+        "id": None,
+        "name": "Legacy",
+        "model": "legacy-v1",
+    }
+    listed = next(item for item in await service.list() if item["id"] == legacy_id)
+    assert listed["modelId"] == env["models"]["chat"]["id"] and listed["modelName"] == "Chat"

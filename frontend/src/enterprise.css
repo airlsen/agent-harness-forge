@@ -984,6 +984,37 @@ textarea:focus-visible {
   cursor: default;
   opacity: 0.85;
 }
+.task-composer .model-trigger.is-pending {
+  color: var(--accent-ink);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+.task-composer .model-popover strong > small.model-current-badge {
+  color: var(--text-secondary);
+}
+.model-switch-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 7px 8px 7px 10px;
+  border: 1px solid var(--accent-line);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.model-switch-hint > p {
+  flex: 1;
+  min-width: 0;
+}
+.model-switch-hint strong {
+  font-weight: 600;
+}
+.model-switch-hint > .button {
+  flex: none;
+}
 .task-composer .model-trigger.is-empty {
   color: #806327;
   border-style: dashed;
@@ -2862,6 +2893,58 @@ textarea:focus-visible {
 }
 .enterprise-chat .message-author > span.done {
   color: #2e7d4f;
+}
+.model-switch-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 18px;
+  color: var(--text-subtle);
+  font-size: 11px;
+}
+.model-switch-divider::before,
+.model-switch-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.model-switch-divider > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-switch-divider strong {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.model-usage-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.model-usage-list > li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-top: 1px dashed var(--line);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.model-usage-list > li > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-usage-list > li > small {
+  flex: none;
+  color: var(--text-subtle);
 }
 .message-author > .message-model {
   max-width: 220px;

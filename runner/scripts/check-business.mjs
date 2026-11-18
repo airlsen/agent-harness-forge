@@ -12,7 +12,7 @@ import { once } from 'node:events';
 
 const dir = await mkdtemp(join(tmpdir(), 'forge-contract-'));
 process.env.FORGE_RUNNER_DATA_DIR = join(dir, 'sessions');
-const { DshKernel } = await import('../src/kernel/dsh-kernel.ts');
+const { DshKernel, compactionConfig } = await import('../src/kernel/dsh-kernel.ts');
 const kernel = new DshKernel(),
   requests = [],
   checks = [];
@@ -58,7 +58,7 @@ const server = http.createServer(async (req, res) => {
     res.on('close', () => clearTimeout(timer));
     return;
   }
-  if (instruction.includes('THINK')) {
+  if (instruction.includes('THINK') && !instruction.includes('TIME')) {
     send({ choices: [{ delta: { reasoning_content: '先分析' } }] });
     send({ choices: [{ delta: { reasoning_content: '一下。' } }] });
     send({ choices: [{ delta: { content: '思考后的' } }] });
@@ -89,6 +89,7 @@ const server = http.createServer(async (req, res) => {
         : instruction.includes('READ')
           ? 'workspace_read'
           : 'workspace_write';
+    if (instruction.includes('THINK')) send({ choices: [{ delta: { reasoning_content: '需要先查时间。' } }] });
     const path = instruction.includes('ESCAPE')
       ? '../escape.txt'
       : instruction.includes('DENY')
@@ -174,11 +175,28 @@ try {
     if (event.kind === 'approval_required' && approvalAction !== 'wait')
       void kernel.resolveApproval(id, event.payload.ticketId, { action: approvalAction });
   });
-  async function turn(text) {
+  async function turn(text, model) {
     const start = allEvents.length;
-    await kernel.sendTurn(id, text);
+    await kernel.sendTurn(id, text, undefined, model);
     return allEvents.slice(start);
   }
+  check('compaction budget fits every common context window (dsh compaction-basic formula)', () => {
+    for (const [window, output] of [
+      [8192, 4096],
+      [32000, 4096],
+      [64000, 4096],
+      [128000, 8192],
+      [1000000, 8192],
+    ]) {
+      const { headroomTokens, maxTokens } = compactionConfig(window, output);
+      const budget = window - output;
+      const threshold = Math.floor(Math.min(window * 0.8, budget - headroomTokens));
+      assert.ok(budget - headroomTokens > 0, `${window}: pressure budget`);
+      assert.ok(Math.floor(budget * 0.16) < threshold, `${window}: retain below threshold`);
+      assert.ok(maxTokens <= output && maxTokens <= headroomTokens, `${window}: summary cap`);
+      assert.ok(headroomTokens <= 65536, `${window}: never above dsh default`);
+    }
+  });
   let events = await turn('PLAIN');
   check('real dsh + formal gateway text stream', () =>
     assert.equal(events.find((event) => event.kind === 'message')?.payload.text, 'fixture response'),
@@ -218,11 +236,19 @@ try {
     }),
   );
   events = await turn('PLAIN');
-  check('settled reasoning replays to the gateway as provider history', () => {
+  check('reasoning from earlier turns is not replayed as provider history', () => {
     const assistant = requests
       .at(-1)
       .messages.find((message) => message.role === 'assistant' && message.content === '思考后的回答');
-    assert.equal(assistant?.reasoning_content, '先分析一下。');
+    assert.ok(assistant, 'earlier answer remains in history');
+    assert.equal(assistant.reasoning_content, undefined);
+  });
+  events = await turn('THINK TIME');
+  check('reasoning inside the current tool loop is replayed to the gateway', () => {
+    assert.ok(events.some((event) => event.kind === 'tool_result'));
+    const followUp = requests.at(-1).messages;
+    const call = followUp.find((message) => message.role === 'assistant' && message.tool_calls?.length);
+    assert.equal(call?.reasoning_content, '需要先查时间。');
   });
   events = await turn('WRITE');
   check('fragmented tool arguments and approval round trip', () => {
@@ -301,6 +327,29 @@ try {
       assert.equal(events.at(-1)?.payload.status, 'error');
     });
   }
+  const switched = {
+    baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+    model: 'switched-fixture-model',
+    apiKey: 'second-test-key',
+    contextWindow: 32000,
+  };
+  await assert.rejects(
+    () => kernel.sendTurn(id, 'PLAIN', undefined, { model: 'missing-base-url' }),
+    (error) => error.statusCode === 422,
+  );
+  assert.equal(kernel.isBusy(id), false);
+  const beforeSwitch = requests.length;
+  events = await turn('PLAIN', switched);
+  check('mid-session model switch restarts with the new model and resumes the same history', () => {
+    assert.ok(events.some((event) => event.kind === 'message'));
+    const request = requests[beforeSwitch];
+    assert.equal(request.model, 'switched-fixture-model');
+    assert.ok(request.messages.some((message) => message.role === 'user' && message.content === 'THINK'));
+  });
+  events = await turn('PLAIN');
+  check('the switched model stays in effect for later turns', () =>
+    assert.equal(requests.at(-1).model, 'switched-fixture-model'),
+  );
   const running = kernel.sendTurn(id, 'HOLD');
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {

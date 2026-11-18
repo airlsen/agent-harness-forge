@@ -136,6 +136,32 @@ try {
       ['企业 Chat', 'deepseek-chat', ''],
     );
   });
+
+  check('切换轮带切换标记，用户消息上的模型优先于回复（执行中也能显示）', () => {
+    const switched = {
+      modelName: 'Reasoner',
+      model: 'reasoner-v1',
+      modelSwitch: {
+        from: { name: 'Chat', model: 'chat-v1' },
+        to: { name: 'Reasoner', model: 'reasoner-v1' },
+      },
+    };
+    const turns = buildTurns(
+      [
+        { ...user(1), meta: { modelName: 'Chat' } },
+        assistant(2, '回答', { modelName: 'Chat' }),
+        { ...user(3), meta: switched },
+      ],
+      { running: true, reasoning: '', text: '流式中', activeTools: [] },
+    );
+    assert.deepEqual(
+      turns.map((turn) => [turn.model, turn.switch]),
+      [
+        ['Chat', null],
+        ['Reasoner', { from: 'Chat', to: 'Reasoner' }],
+      ],
+    );
+  });
 } finally {
   await vite.close();
 }

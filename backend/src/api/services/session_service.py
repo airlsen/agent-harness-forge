@@ -8,7 +8,7 @@ from sqlalchemy import select, func
 from ..core.config import settings
 from ..core.database import SessionFactory
 from ..core.security import encrypt, decrypt
-from ..models.agent_session import AgentSession, SessionEventIndex
+from ..models.agent_session import AgentSession, AgentSessionModel, SessionEventIndex
 from ..models.platform import PlatformSetting, SessionMessage
 from ..models.approval_ticket import ApprovalTicket
 from ..schemas.agent_scenario import ScenarioPayload
@@ -19,10 +19,78 @@ from .plugin_service import ensure_bindings_available
 from .settings_service import environment_ref, get_policy, resolve_session_connection
 
 
-def message_model(row) -> dict:
-    meta = row.bundle_snapshot.get("meta", {})
+def model_ref(segment: AgentSessionModel | None, row=None) -> dict:
+    """写入消息 meta 的模型标识；没有分段的旧会话回退到创建时的 Bundle 快照。"""
+    if segment is not None:
+        return {
+            "modelId": segment.connection_id,
+            "model": segment.model,
+            "modelName": segment.name or segment.model,
+        }
+    meta = row.bundle_snapshot.get("meta", {}) if row is not None else {}
     model = meta.get("model", "")
-    return {"model": model, "modelName": meta.get("modelName") or model} if model else {}
+    if not model:
+        return {}
+    return {
+        "modelId": meta.get("modelConnectionId"),
+        "model": model,
+        "modelName": meta.get("modelName") or model,
+    }
+
+
+def segment_view(segment: AgentSessionModel) -> dict:
+    priced = segment.input_price is not None and segment.output_price is not None
+    return {
+        "id": segment.connection_id,
+        "name": segment.name or segment.model,
+        "model": segment.model,
+        "contextWindow": segment.context_window,
+        "inputPrice": segment.input_price,
+        "outputPrice": segment.output_price,
+        "fromMessageId": segment.from_message_id,
+        "tokensIn": segment.tokens_in,
+        "tokensOut": segment.tokens_out,
+        "cost": segment.cost if priced else None,
+    }
+
+
+def segment_from_connection(session_id: int, config: dict, from_message_id: int | None = None):
+    return AgentSessionModel(
+        session_id=session_id,
+        from_message_id=from_message_id,
+        connection_id=config["id"],
+        name=config["name"],
+        model=config["model"],
+        base_url=config["baseUrl"],
+        context_window=config["contextWindow"],
+        credential=encrypt(config.get("apiKey", "")),
+        input_price=config.get("inputPrice"),
+        output_price=config.get("outputPrice"),
+    )
+
+
+def runtime_config(segment: AgentSessionModel) -> dict:
+    """交给 Runner 的本轮运行配置：只含执行所需字段。"""
+    return {
+        "baseUrl": segment.base_url,
+        "model": segment.model,
+        "contextWindow": segment.context_window,
+        "apiKey": decrypt(segment.credential or ""),
+    }
+
+
+async def current_segments(db, session_ids) -> dict[int, AgentSessionModel]:
+    """批量读取各会话的当前模型分段（最新一段），避免会话列表逐条查询。"""
+    if not session_ids:
+        return {}
+    rows = (
+        await db.scalars(
+            select(AgentSessionModel)
+            .where(AgentSessionModel.session_id.in_(list(session_ids)))
+            .order_by(AgentSessionModel.id)
+        )
+    ).all()
+    return {segment.session_id: segment for segment in rows}
 
 
 class SessionService:
@@ -36,8 +104,9 @@ class SessionService:
             raise HTTPException(404, "会话不存在")
         return row
 
-    def view(self, row):
+    def view(self, row, segment: AgentSessionModel | None = None):
         meta = row.bundle_snapshot.get("meta", {})
+        current = model_ref(segment, row)
         return {
             "id": row.id,
             "sessionId": row.id,
@@ -51,10 +120,11 @@ class SessionService:
             "tokensOut": row.tokens_out,
             "cost": row.cost if row.cost_known else None,
             "createdAt": iso(row.created_at),
-            "model": meta.get("model", ""),
-            # 旧会话没有记录配置 ID 与显示名：分别回退为 None 与模型 ID。
-            "modelId": meta.get("modelConnectionId"),
-            "modelName": meta.get("modelName") or meta.get("model", ""),
+            # 当前模型取最新分段（会话内可切换）；旧会话回退到创建时快照，缺失的配置 ID 为 None。
+            "model": current.get("model", ""),
+            "modelId": current.get("modelId"),
+            "modelName": current.get("modelName", ""),
+            "modelContextWindow": segment.context_window if segment else None,
             "isTest": meta.get("isTest", False),
         }
 
@@ -99,14 +169,12 @@ class SessionService:
             )
             db.add(row)
             await db.flush()
-            # 执行连接同样锁定。密钥仅存独立加密记录，不进入可导出的 Bundle。
-            snapshot = {key: config[key] for key in ("baseUrl", "model", "contextWindow")}
-            snapshot.update(connectionId=config["id"], name=config["name"])
-            snapshot["credential"] = encrypt(config.get("apiKey", ""))
-            db.add(PlatformSetting(key=f"session-model:{row.id}", value=snapshot))
+            # 首个模型分段冻结执行连接。密钥仅存加密值，不进入可导出的 Bundle。
+            segment = segment_from_connection(row.id, config)
+            db.add(segment)
             await db.commit()
             await db.refresh(row)
-            return self.view(row)
+            return self.view(row, segment)
 
     async def list(self, *, include_tests=False, include_archived=False):
         async with SessionFactory() as db:
@@ -114,8 +182,9 @@ class SessionService:
             if not include_archived:
                 query = query.where(AgentSession.status != "archived")
             rows = (await db.scalars(query)).all()
+            segments = await current_segments(db, [row.id for row in rows])
             return [
-                self.view(row)
+                self.view(row, segments.get(row.id))
                 for row in rows
                 if include_tests or not row.bundle_snapshot.get("meta", {}).get("isTest")
             ]
@@ -147,10 +216,26 @@ class SessionService:
                 )
                 or 0
             )
+            segments = (
+                await db.scalars(
+                    select(AgentSessionModel)
+                    .where(AgentSessionModel.session_id == session_id)
+                    .order_by(AgentSessionModel.id)
+                )
+            ).all()
+            # 最近一次模型请求的输入 tokens ≈ 当前上下文规模，用于切换到较小窗口模型前的提醒。
+            last_usage = await db.scalar(
+                select(SessionEventIndex.attrs)
+                .where(SessionEventIndex.session_id == session_id, SessionEventIndex.kind == "cost_tick")
+                .order_by(SessionEventIndex.seq.desc())
+                .limit(1)
+            )
             return {
-                **self.view(row),
+                **self.view(row, segments[-1] if segments else None),
                 "bundle": row.bundle_snapshot,
                 "lastEventSeq": cursor,
+                "models": [segment_view(segment) for segment in segments],
+                "contextTokens": (last_usage or {}).get("tokensIn", 0),
                 "messages": [
                     {
                         "id": message.id,
@@ -172,27 +257,56 @@ class SessionService:
                 ],
             }
 
-    async def start(self, session_id, message):
+    async def _current_segment(self, db, row) -> AgentSessionModel | None:
+        """当前模型分段；第二期之前创建的旧会话按原快照补建第一段（仅首次）。"""
+        segment = await db.scalar(
+            select(AgentSessionModel)
+            .where(AgentSessionModel.session_id == row.id)
+            .order_by(AgentSessionModel.id.desc())
+            .limit(1)
+        )
+        if segment:
+            return segment
+        saved = await db.get(PlatformSetting, f"session-model:{row.id}")
+        if not saved or not saved.value.get("baseUrl") or not saved.value.get("model"):
+            return None
+        meta = row.bundle_snapshot.get("meta", {})
+        segment = AgentSessionModel(
+            session_id=row.id,
+            connection_id=saved.value.get("connectionId", meta.get("modelConnectionId")),
+            name=saved.value.get("name") or meta.get("modelName") or saved.value["model"],
+            model=saved.value["model"],
+            base_url=saved.value["baseUrl"],
+            context_window=saved.value.get("contextWindow") or 64000,
+            credential=saved.value.get("credential", ""),
+            input_price=meta.get("inputPrice"),
+            output_price=meta.get("outputPrice"),
+        )
+        db.add(segment)
+        await db.flush()
+        return segment
+
+    async def start(self, session_id, message, *, model_id=None):
         if not message.strip():
             raise HTTPException(422, "任务内容不能为空")
         lock = self.locks.setdefault(session_id, asyncio.Lock())
         async with lock:
+            # 执行中不能提交新一轮，也就不能切换模型：模型只在两轮之间变化。
             if session_id in self.tasks and not self.tasks[session_id].done():
                 raise HTTPException(409, "本会话正在执行，请等待或中止后再提交")
             async with SessionFactory() as db:
                 row = await self.row(db, session_id)
                 if row.status == "archived":
                     raise HTTPException(409, "此会话已归档")
-                saved = await db.get(PlatformSetting, f"session-model:{session_id}")
-                if not saved:
+                previous = await self._current_segment(db, row)
+                if not previous:
                     raise HTTPException(409, "此会话没有完整的模型快照，请新建会话")
-                # 只把运行所需的连接参数交给 Runner；connectionId/name 仅用于展示与追溯。
-                config = {
-                    key: saved.value[key]
-                    for key in ("baseUrl", "model", "contextWindow")
-                    if key in saved.value
-                }
-                config["apiKey"] = decrypt(saved.value.get("credential", ""))
+                segment = previous
+                if model_id is not None and model_id != previous.connection_id:
+                    # 切换目标必须存在且已启用（404 / 409）；沿用当前模型则不受其后启停影响。
+                    config = await resolve_session_connection(db, model_id)
+                    segment = segment_from_connection(session_id, config)
+                runtime = runtime_config(segment)
                 if row.runner_session_id:
                     try:
                         await runner_client.call("GET", f"/v1/sessions/{row.runner_session_id}")
@@ -210,7 +324,7 @@ class SessionService:
                             "userId": settings.admin_username,
                             "roles": ["workspace-admin"],
                         },
-                        config,
+                        runtime,
                     )
                     row.runner_session_id, row.runner_id = handle["sessionId"], "local-runner"
                     row.workspace_uri = "session://" + handle["sessionId"]
@@ -224,20 +338,59 @@ class SessionService:
                 )
                 user = SessionMessage(session_id=session_id, role="user", content=message)
                 db.add(user)
+                await db.flush()
+                switch = None
+                if segment is not previous:
+                    segment.from_message_id = user.id
+                    db.add(segment)
+                    await db.flush()
+                    switch = {
+                        "messageId": user.id,
+                        "from": {
+                            "id": previous.connection_id,
+                            "name": previous.name,
+                            "model": previous.model,
+                        },
+                        "to": {"id": segment.connection_id, "name": segment.name, "model": segment.model},
+                    }
+                # 用户消息记录本轮模型；切换轮额外记录来源，供聊天页渲染切换分隔线。
+                user.meta = {**model_ref(segment), **({"modelSwitch": switch} if switch else {})}
+                pump_cursor = cursor
+                if switch:
+                    pump_cursor += 1
+                    db.add(
+                        SessionEventIndex(
+                            session_id=session_id,
+                            seq=pump_cursor,
+                            source="system",
+                            kind="model_switched",
+                            attrs={**switch, "contextWindow": segment.context_window},
+                        )
+                    )
                 if row.title == "新会话":
                     row.title = message.strip().split("\n")[0][:50]
                 row.status = "running"
                 await db.commit()
                 await db.refresh(user)
                 runner_id = row.runner_session_id
-            task = asyncio.create_task(self.pump(session_id, runner_id, message, cursor))
+                turn = {"segmentId": segment.id, "ref": model_ref(segment)}
+                current = segment_view(segment)
+            task = asyncio.create_task(self.pump(session_id, runner_id, message, pump_cursor, runtime, turn))
             self.tasks[session_id] = task
             task.add_done_callback(
                 lambda done: self.tasks.pop(session_id, None) if self.tasks.get(session_id) is done else None
             )
-            return {"sessionId": session_id, "messageId": user.id, "cursor": cursor}
+            # 返回切换事件之前的游标，客户端订阅时会收到 model_switched。
+            return {
+                "sessionId": session_id,
+                "messageId": user.id,
+                "cursor": cursor,
+                "messageMeta": user.meta,
+                "model": current,
+            }
 
-    async def pump(self, session_id, runner_id, message, cursor):
+    async def pump(self, session_id, runner_id, message, cursor, runtime, turn):
+        """转发一轮执行事件并落库。turn 为本轮模型分段：回复署名与计费都以它为准。"""
         failed, got_done, partial, partial_reasoning = False, False, "", ""
 
         async def persist(kind, payload, source="system"):
@@ -294,22 +447,32 @@ class SessionService:
                             meta={
                                 "runtimeMessageId": payload.get("runtimeMessageId"),
                                 "partial": payload.get("partial", False),
-                                # 每条回复记录生成它的模型，为后续会话内切换模型保留可追溯性。
-                                **message_model(row),
+                                # 每条回复记录生成它的模型（会话内可切换，需逐条追溯）。
+                                **turn["ref"],
                                 **({"reasoning": payload["reasoning"]} if payload.get("reasoning") else {}),
                             },
                         )
                     )
                 elif kind == "cost_tick":
-                    row.tokens_in += payload.get("tokensIn", 0)
-                    row.tokens_out += payload.get("tokensOut", 0)
-                    meta = row.bundle_snapshot.get("meta", {})
-                    if meta.get("inputPrice") is not None and meta.get("outputPrice") is not None:
-                        row.cost_known = True
-                        row.cost += (
-                            payload.get("tokensIn", 0) * meta["inputPrice"]
-                            + payload.get("tokensOut", 0) * meta["outputPrice"]
-                        ) / 1000000
+                    tokens_in, tokens_out = payload.get("tokensIn", 0), payload.get("tokensOut", 0)
+                    had_usage = row.tokens_in + row.tokens_out > 0
+                    row.tokens_in += tokens_in
+                    row.tokens_out += tokens_out
+                    # 按本轮模型分段的单价计费：切换模型后新单价只作用于之后的用量。
+                    segment = await db.get(AgentSessionModel, turn["segmentId"])
+                    segment.tokens_in += tokens_in
+                    segment.tokens_out += tokens_out
+                    if tokens_in or tokens_out:
+                        if segment.input_price is not None and segment.output_price is not None:
+                            amount = (
+                                tokens_in * segment.input_price + tokens_out * segment.output_price
+                            ) / 1000000
+                            segment.cost += amount
+                            row.cost += amount
+                            # 只有全部用量都有单价时，会话费用才是完整的。
+                            row.cost_known = row.cost_known or not had_usage
+                        else:
+                            row.cost_known = False
                     payload = {
                         **payload,
                         "totalTokensIn": row.tokens_in,
@@ -328,7 +491,7 @@ class SessionService:
 
         try:
             await persist("session", {"sessionId": session_id, "workspaceUri": "session://" + runner_id})
-            async for event in runner_client.events(runner_id, message):
+            async for event in runner_client.events(runner_id, message, runtime):
                 kind, payload = event["kind"], event.get("payload") or {}
                 if kind == "error":
                     failed = True
@@ -360,7 +523,7 @@ class SessionService:
             await persist("error", {"message": text[:600] or "执行连接中断，请稍后重试"})
         finally:
             if partial or partial_reasoning:
-                meta = {"partial": True}
+                meta = {"partial": True, **turn["ref"]}
                 if partial_reasoning:
                     meta["reasoning"] = partial_reasoning
                 async with SessionFactory() as db:

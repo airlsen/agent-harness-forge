@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { useConversation } from '../stores/conversation';
 import { usePlatform } from '../stores/platform';
 import { isAvailableScenario } from '../utils/presentation';
+import { contextPressure, tokenLabel } from '../utils/modelContext';
 import Icon from './ForgeIcon.vue';
 import ModelPicker from './ModelPicker.vue';
 
@@ -19,6 +20,15 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const modelPicker = ref<InstanceType<typeof ModelPicker> | null>(null);
 const attaching = ref(false);
 const submitting = ref(false);
+/** 已有会话中待切换的目标模型（与当前模型不同）；下一条消息起生效。 */
+const switchTarget = computed(() =>
+  chat.current && chat.selectedModelId !== chat.current.modelId
+    ? (app.modelOptions.find((option) => option.id === chat.selectedModelId) ?? null)
+    : null,
+);
+const switchTight = computed(
+  () => switchTarget.value && contextPressure(chat.current?.contextTokens, switchTarget.value.contextWindow),
+);
 const selected = computed(
   () => app.scenarios.find((s) => s.id === chat.selectedScenarioId) ?? app.availableScenarios[0],
 );
@@ -116,6 +126,23 @@ defineExpose({ focus: () => textarea.value?.focus() });
 </script>
 <template>
   <div ref="root" :class="['task-composer', { 'task-composer-hero': hero }]">
+    <div v-if="switchTarget" class="model-switch-hint" role="status">
+      <Icon name="cpu" :size="14" />
+      <p>
+        下一条消息起改用 <strong>{{ switchTarget.name }}</strong><template v-if="switchTight"
+          >；当前对话约 {{ tokenLabel(chat.current?.contextTokens ?? 0) }} tokens，接近该模型
+          {{ tokenLabel(switchTarget.contextWindow) }} 的上下文窗口，较早的内容会先被压缩为摘要</template
+        >
+      </p>
+      <button
+        type="button"
+        class="button text small"
+        :disabled="chat.running || chat.loading"
+        @click="chat.selectModel(chat.current?.modelId ?? null)"
+      >
+        取消切换
+      </button>
+    </div>
     <div v-if="chat.draftAttachments.length" class="attachment-chips">
       <span v-for="(file, index) in chat.draftAttachments" :key="index">
         <Icon name="file" :size="14" />{{ file.name }}
@@ -244,7 +271,7 @@ defineExpose({ focus: () => textarea.value?.focus() });
   <div :class="['task-composer-footnote', { 'task-composer-shortcuts': hero }]">
     <span v-if="!hero"
       ><Icon name="layers" :size="12" />{{
-        chat.current ? '场景、策略与模型已锁定' : '新会话将使用所选场景与模型'
+        chat.current ? '场景与策略已锁定 · 模型可在两轮之间切换' : '新会话将使用所选场景与模型'
       }}</span
     >
     <span>Enter 发送 <i>·</i> Shift + Enter 换行</span>
