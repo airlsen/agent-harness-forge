@@ -171,8 +171,8 @@ async def seed_scenarios(db):
             "通用助手",
             "日常问答、思路梳理与任务拆解，让复杂工作有一个清晰起点。",
             "sparkles",
-            "你是一位严谨而友好的工作助手。先理解用户目标，必要时澄清问题，再提供清晰、可执行的回答。",
-            ["current_time"],
+            "你是一位严谨而友好的工作助手。先理解用户目标，必要时澄清问题，再提供清晰、可执行的回答。用户需要文件时保存到工作区。",
+            ["current_time", "workspace_list", "workspace_read", "workspace_write"],
         ),
         (
             "代码与研发",

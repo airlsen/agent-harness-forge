@@ -90,15 +90,19 @@ const sceneIcon = computed(
 const sceneDescription = computed(
   () => chat.current?.bundle?.meta?.scenarioDescription ?? selected.value?.payload.description ?? '',
 );
-const selectedTools = computed(() =>
-  app.tools.filter((t) =>
-    (
-      chat.current?.bundle?.meta?.builtin_tools ??
-      selected.value?.payload.capabilities.builtin_tool_names ??
-      []
-    ).includes(t.name),
-  ),
-);
+// Runner 为每个会话补齐基础能力（时间、文件列表/读取/写入），平台策略 allowedTools 仍是上限
+const BASE_TOOLS = ['current_time', 'workspace_list', 'workspace_read', 'workspace_write'];
+const selectedTools = computed(() => {
+  const declared =
+    chat.current?.bundle?.meta?.builtin_tools ??
+    selected.value?.payload.capabilities.builtin_tool_names ??
+    [];
+  const ceiling = chat.current?.bundle?.meta?.policy?.allowedTools;
+  const names = new Set(
+    [...BASE_TOOLS, ...declared].filter((name) => !Array.isArray(ceiling) || ceiling.includes(name)),
+  );
+  return app.tools.filter((t) => names.has(t.name));
+});
 const welcome = computed(() => !chat.messages.length && !loadError.value);
 const processEvents = computed(() =>
   chat.events.filter((e) =>

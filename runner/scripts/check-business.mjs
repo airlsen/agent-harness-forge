@@ -13,7 +13,7 @@ import { once } from 'node:events';
 
 const dir = await mkdtemp(join(tmpdir(), 'forge-contract-'));
 process.env.FORGE_RUNNER_DATA_DIR = join(dir, 'sessions');
-const { DshKernel, compactionConfig } = await import('../src/kernel/dsh-kernel.ts');
+const { DshKernel, compactionConfig, BASE_TOOLS, SEARCH_TOOLS } = await import('../src/kernel/dsh-kernel.ts');
 const kernel = new DshKernel(),
   requests = [],
   checks = [];
@@ -71,6 +71,40 @@ const server = http.createServer(async (req, res) => {
         prompt_tokens_details: { cached_tokens: 20 },
         completion_tokens_details: { reasoning_tokens: 7 },
       },
+    });
+    res.end('data: [DONE]\n\n');
+    return;
+  }
+  const search = ['GREP_ESCAPE', 'GREP_LINK', 'GREP_ALL', 'GREP', 'GLOB'].find((value) =>
+    instruction.includes(value),
+  );
+  if (search && !answeredTool) {
+    const args = {
+      GREP_ESCAPE: { pattern: 'protected', path: dir },
+      GREP_LINK: { pattern: 'protected', path: 'link.txt' },
+      GREP_ALL: { pattern: 'protected' },
+      GREP: { pattern: 'Integration' },
+      GLOB: { pattern: '*.md' },
+    }[search];
+    send({
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: 'fixture-call-' + requests.length,
+                type: 'function',
+                function: { name: search === 'GLOB' ? 'glob' : 'grep', arguments: JSON.stringify(args) },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    send({
+      choices: [{ delta: {}, finish_reason: 'tool_calls' }],
+      usage: { prompt_tokens: 100, completion_tokens: 10 },
     });
     res.end('data: [DONE]\n\n');
     return;
@@ -152,7 +186,8 @@ const bundle = {
   model_route: { primary: 'default', fallbacks: [] },
   policy_ref: 'test',
   meta: {
-    builtin_tools: ['current_time', 'workspace_list', 'workspace_read', 'workspace_write'],
+    // 与「通用助手」一样只声明 current_time：文件读写与搜索由 Runner 基础能力补齐
+    builtin_tools: ['current_time'],
     policy: {
       allowedTools: ['current_time', 'workspace_list', 'workspace_read', 'workspace_write'],
       requireWriteApproval: true,
@@ -219,12 +254,18 @@ try {
       tokensOut: 10,
     }),
   );
-  check('only whitelisted schemas are exposed (present rides on workspace_write)', () =>
+  check('base capabilities load without scenario grants (present rides on write, search on read)', () =>
     assert.deepEqual(
       requests[0].tools.map((tool) => tool.function.name).sort(),
-      [...bundle.meta.builtin_tools, 'workspace_present'].toSorted(),
+      [...BASE_TOOLS, 'workspace_present', ...SEARCH_TOOLS].toSorted(),
     ),
   );
+  check('system prompt tells the model to save requested files with workspace_write', () => {
+    const system = requests[0].messages[0].content;
+    assert.ok(system.includes('必须调用 workspace_write'));
+    assert.ok(system.includes('workspace_present'));
+    assert.ok(system.includes('grep 按正则搜索'));
+  });
   events = await turn('THINK');
   check('reasoning streams live and settles onto the message', () => {
     assert.deepEqual(
@@ -347,6 +388,39 @@ try {
   await assert.rejects(() => kernel.readRaw(id, '../runtime.patch.json'), /超出/);
   await assert.rejects(() => kernel.readRaw(id, 'missing.png'), /不存在/);
   check('Runner artifact reader also rejects traversal and symlinks', () => assert.ok(true));
+  const toolResult = (list) => list.find((event) => event.kind === 'tool_result')?.payload;
+  events = await turn('GREP');
+  check('DSH grep (pinned search plugin) searches the session workspace', () => {
+    const result = toolResult(events);
+    assert.equal(result?.isError, false);
+    assert.match(result.result, /report\.md/);
+    assert.match(result.result, /Line 1: # Integration fixture/);
+  });
+  events = await turn('GLOB');
+  check('DSH glob lists workspace files by pattern', () => {
+    const result = toolResult(events);
+    assert.equal(result?.isError, false);
+    assert.match(result.result, /report\.md/);
+  });
+  events = await turn('GREP_ESCAPE');
+  check('search outside the workspace is denied before ripgrep runs', () => {
+    const result = toolResult(events);
+    assert.equal(result?.isError, true);
+    assert.match(result.result, /超出当前会话工作区/);
+    assert.doesNotMatch(result.result, /sentinel/);
+  });
+  events = await turn('GREP_LINK');
+  check('search through a workspace symlink is denied', () => {
+    const result = toolResult(events);
+    assert.equal(result?.isError, true);
+    assert.match(result.result, /符号链接/);
+  });
+  events = await turn('GREP_ALL');
+  check('workspace-wide search does not follow symlinks out of the workspace', () => {
+    const result = toolResult(events);
+    assert.equal(result?.isError, false);
+    assert.doesNotMatch(result.result, /link\.txt|sentinel/);
+  });
   approvalAction = 'wait';
   events = await turn('WRITE DENY');
   check('approval timeout defaults to rejection', () => {

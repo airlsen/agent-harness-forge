@@ -4,11 +4,12 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { apply } from '../forge-runtime-plugin/index.js';
+import { apply, searchPathDenial } from '../forge-runtime-plugin/index.js';
 
 const temporary = await mkdtemp(join(tmpdir(), 'forge-workspace-check-'));
 const root = join(temporary, 'workspace');
 const tools = new Map();
+const guards = [];
 const oldConfig = process.env.FORGE_MODEL_CONFIG;
 process.env.FORGE_MODEL_CONFIG = JSON.stringify({
   baseUrl: 'http://unused.invalid/v1',
@@ -37,13 +38,16 @@ try {
           tools.set(tool.name, tool);
           return () => {};
         },
-        guard: () => () => {},
+        guard: (guard) => {
+          guards.push(guard);
+          return () => {};
+        },
       },
       on: () => () => {},
     },
     {
       workspace: root,
-      allowedTools: ['workspace_list', 'workspace_read', 'workspace_write'],
+      allowedTools: ['workspace_list', 'workspace_read', 'workspace_write', 'glob', 'grep'],
       requireWriteApproval: true,
     },
   );
@@ -90,6 +94,24 @@ try {
     await assert.rejects(() => read('link.txt'), /符号链接/);
     await assert.rejects(() => write('link.txt', 'changed'), /符号链接/);
     assert.equal(await readFile(sentinel, 'utf8'), 'protected');
+  });
+  // glob/grep 由 DSH 搜索插件执行，guard 在执行前把 path 收窄到工作区
+  const guarded = (name, args) => guards.map((guard) => guard({ name, arguments: args })).find(Boolean);
+  await check('search tools may only target workspace-relative paths', async () => {
+    assert.equal(guarded('grep', { pattern: 'x' }), undefined);
+    assert.equal(guarded('glob', { pattern: '*.md', path: '.' }), undefined);
+    assert.equal(guarded('grep', { pattern: 'x', path: 'one/two' }), undefined);
+    assert.equal(guarded('grep', { pattern: 'x', path: 'not-yet-created' }), undefined);
+    for (const path of ['../', temporary, '/etc', 'one/../../x', sentinel])
+      assert.match(guarded('grep', { pattern: 'x', path }), /超出/, path);
+    assert.match(guarded('glob', { pattern: '*', path: '.hidden' }), /隐藏/);
+    assert.match(guarded('grep', { pattern: 'x', path: 'link.txt' }), /符号链接/);
+    assert.match(guarded('grep', { pattern: 'x', path: '' }), /无效/);
+    assert.match(guarded('grep', { pattern: 'x', path: 7 }), /无效/);
+    // 其他工具不受搜索路径规则影响；未授权工具由白名单 guard 拒绝
+    assert.equal(guarded('workspace_read', { path: '/etc/passwd' }), undefined);
+    assert.match(guarded('bash', { command: 'ls' }), /禁止/);
+    assert.equal(searchPathDenial(root, undefined), undefined);
   });
   await check('symlinks and hidden files are absent from listing', async () => {
     await writeFile(join(root, '.private'), 'hidden');
@@ -187,6 +209,23 @@ try {
       /256 KB/,
     ),
   );
+  await check('workspace_read returns a line range with totals for grep follow-ups', async () => {
+    await write('lines.md', ['a', 'b', 'c', 'd', 'e'].join('\n') + '\n');
+    assert.deepEqual(await execute('workspace_read', { path: 'lines.md', offset: 2, limit: 2 }), {
+      path: 'lines.md',
+      content: 'b\nc',
+      startLine: 2,
+      endLine: 3,
+      totalLines: 5,
+    });
+    const tail = await execute('workspace_read', { path: 'lines.md', offset: 5 });
+    assert.equal(tail.content, 'e');
+    assert.equal(tail.endLine, 5);
+    const past = await execute('workspace_read', { path: 'lines.md', offset: 9, limit: 3 });
+    assert.equal(past.content, '');
+    assert.equal(past.endLine, 8);
+    assert.equal((await read('lines.md')).content, 'a\nb\nc\nd\ne\n');
+  });
   await check('binary files cannot be read back as text', () =>
     assert.rejects(() => read('img/chart.png'), /二进制/),
   );

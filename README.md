@@ -41,6 +41,11 @@
 
 ### 会话文件
 
+- **基础能力**：Runner 为每个会话默认加载时间、`workspace_list` / `workspace_read`（支持 `offset`/`limit` 分页）/
+  `workspace_write`，以及版本固定的 DSH 搜索插件 `@deepseek-ai/dsh-tool-fs-search`（`glob` / `grep`），
+  场景无需逐个授权即可生成、查找和读取文件。「治理」中的平台策略仍是上限：关闭写入即不加载写入与交付声明，
+  关闭读取即不加载搜索插件；Skill 编辑会话只保留 `skill_*` 工具。搜索路径在执行前被限制在会话工作区内
+  （拒绝 `..`、绝对路径越界、隐藏目录与符号链接），写入仍需按策略审批。
 - **服务端保存**：执行中每次写入、每轮结束时，控制面按 Runner 清单（含 SHA-256）把变化的文件拉取到服务端磁盘
   （默认 `data/session-files`，可用 `FORGE_FILE_STORE_DIR` 修改；清理间隔 `FORGE_FILE_CLEANUP_INTERVAL_SECONDS`），同一内容只存一份；数据库只记录元数据。
   Runner 离线、重启或会话被回收后，文件清单、预览、下载、打包仍然可用。升级前的旧会话在首次访问时补同步。

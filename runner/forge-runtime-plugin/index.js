@@ -1,5 +1,6 @@
 /** Forge 业务插件：真实 OpenAI-compatible 模型出口 + 受限会话工具 + 门控。无假模型。 */
 import { LlmAdapter, attributionHeaders } from '@deepseek-ai/dsh-llm';
+import { lstatSync } from 'node:fs';
 import { mkdir, readFile, writeFile, readdir, lstat } from 'node:fs/promises';
 import { resolve, relative, dirname, sep } from 'node:path';
 
@@ -13,6 +14,35 @@ const MAX_FILE_BYTES = 256000;
 const MAX_FILES = 100;
 const MAX_TOTAL_BYTES = 10000000;
 const MAX_PRESENTED = 4;
+const MAX_READ_LINES = 2000;
+/** DSH 搜索插件（dsh-tool-fs-search）提供的工具：由 Runner 基础 patch 加载，执行前由本插件限制搜索路径。 */
+export const SEARCH_TOOLS = ['glob', 'grep'];
+/**
+ * glob/grep 的 path 参数会原样交给 ripgrep，而 ripgrep 可以读取宿主机任意路径：
+ * 只允许会话工作区内的相对路径，不允许隐藏目录与符号链接。返回拒绝原因，允许时返回 undefined。
+ */
+export function searchPathDenial(root, args) {
+  const path = args && typeof args === 'object' ? args.path : undefined;
+  if (path === undefined) return undefined;
+  if (typeof path !== 'string' || !path.trim() || path.length > 400 || path.includes('\0'))
+    return '搜索路径无效';
+  const full = resolve(root, path);
+  if (full !== root && !full.startsWith(root + sep))
+    return '搜索路径超出当前会话工作区，请使用工作区内的相对路径';
+  const parts = relative(root, full).split(sep).filter(Boolean);
+  if (parts.some((part) => part.startsWith('.'))) return '不允许搜索隐藏文件或目录';
+  let current = root;
+  for (const part of parts) {
+    current = resolve(current, part);
+    try {
+      if (lstatSync(current).isSymbolicLink()) return '不允许通过符号链接搜索';
+    } catch (error) {
+      // 路径不存在时交给 ripgrep 报告「找不到」；其他错误一律拒绝
+      return error.code === 'ENOENT' ? undefined : '搜索路径无法访问';
+    }
+  }
+  return undefined;
+}
 /** 写入内容转字节：utf8 为默认文本；base64 用于图片等二进制产物（按解码后字节计入配额）。 */
 function contentBytes(content, encoding = 'utf8') {
   if (encoding === 'utf8') return Buffer.from(String(content), 'utf8');
@@ -319,23 +349,52 @@ export async function apply(ctx, config) {
     iso: new Date().toISOString(),
     timezone: 'UTC',
   }));
-  add('workspace_list', 'List text artifacts in this session workspace only.', {}, [], async () => {
-    return { files: await workspaceFiles(root) };
-  });
+  add(
+    'workspace_list',
+    'List files in this session workspace only, with sizes in bytes.',
+    {},
+    [],
+    async () => {
+      return { files: await workspaceFiles(root) };
+    },
+  );
   add(
     'workspace_read',
-    'Read a text artifact from this session workspace.',
-    { path: { type: 'string' } },
+    'Read a text file from this session workspace (read-only, workspace-relative path). Optionally pass offset (1-based start line) and limit (number of lines) to read a range, e.g. around a grep match.',
+    {
+      path: { type: 'string', description: 'Path relative to the session workspace.' },
+      offset: { type: 'integer', minimum: 1, description: 'First line to return, 1-based. Default 1.' },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: MAX_READ_LINES,
+        description: `Maximum number of lines to return (at most ${MAX_READ_LINES}).`,
+      },
+    },
     ['path'],
-    async ({ path }) => {
+    async ({ path, offset, limit }) => {
       const full = await checkedPath(root, path);
       const stat = await lstat(full);
       if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('仅允许读取 256 KB 内的文本文件');
+      let content;
       try {
-        return { path, content: utf8.decode(await readFile(full)) };
+        content = utf8.decode(await readFile(full));
       } catch {
         throw new Error('这是二进制文件，无法按文本读取；用户可在结果面板预览或下载');
       }
+      if (offset === undefined && limit === undefined) return { path, content };
+      const start = Number.isInteger(offset) && offset > 0 ? offset : 1;
+      const count = Number.isInteger(limit) && limit > 0 ? Math.min(limit, MAX_READ_LINES) : MAX_READ_LINES;
+      const lines = content.split(/\r?\n/);
+      if (lines.length > 1 && lines.at(-1) === '') lines.pop();
+      const slice = lines.slice(start - 1, start - 1 + count);
+      return {
+        path,
+        content: slice.join('\n'),
+        startLine: start,
+        endLine: slice.length ? start + slice.length - 1 : start - 1,
+        totalLines: lines.length,
+      };
     },
   );
   add(
@@ -419,6 +478,12 @@ export async function apply(ctx, config) {
   // guard 只有 deny，没有 allow，后续插件无法重新放开被禁用的工具。
   disposers.push(
     ctx.tools.guard((exec) => (allowed.has(exec.name) ? undefined : 'Forge 当前部署禁止执行此工具')),
+  );
+  // 搜索工具来自 DSH 官方插件，其路径参数不受工作区约束；在执行前统一收窄到会话工作区。
+  disposers.push(
+    ctx.tools.guard((exec) =>
+      SEARCH_TOOLS.includes(exec.name) ? searchPathDenial(root, exec.arguments) : undefined,
+    ),
   );
   disposers.push(
     ctx.on('tools/pre-execute', (exec, next) => {
