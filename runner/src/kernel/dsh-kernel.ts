@@ -4,6 +4,7 @@ import { mkdir, writeFile, readFile, readdir, lstat } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DshProcess } from './dsh-process.js';
+import type { PluginWorkerClient } from '../plugin-worker-client.js';
 import type { AgentKernel, Bundle, KernelEvent, SessionHandle, TurnOpts, UserCtx } from './types.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -36,6 +37,7 @@ function failure(message: string, statusCode = 400) {
 
 export class DshKernel implements AgentKernel {
   private sessions = new Map<string, Entry>();
+  constructor(private readonly pluginWorker?: PluginWorkerClient) {}
   get size() {
     return this.sessions.size;
   }
@@ -70,11 +72,26 @@ export class DshKernel implements AgentKernel {
   async createSession(bundle: Bundle, _user: UserCtx, model?: RuntimeModel): Promise<SessionHandle> {
     if (!model?.baseUrl || !model.model) throw failure('请先在模型中心配置真实模型网关', 422);
     if (this.size >= this.capacity) throw failure('Runner 会话容量已满，请归档暂不使用的会话', 429);
-    const approvedPlugins = new Set(['forge-runtime', 'skill-authoring']);
+    const approvedPlugins = new Set(['forge-runtime', 'skill-authoring', 'forge-plugin-bridge']);
     if (!Array.isArray(bundle.plugin_mounts) || bundle.plugin_mounts.some((p) => !approvedPlugins.has(p)))
       throw failure('包含未审核的插件', 422);
     if (bundle.plugin_mounts.includes('skill-authoring') && !bundle.meta?.skillAuthoring)
       throw failure('Skill 编辑插件缺少当前 Skill 草稿上下文', 422);
+    const pluginBindings = Array.isArray(bundle.meta?.pluginBindings) ? bundle.meta.pluginBindings : [];
+    const pluginTools = Array.isArray(bundle.meta?.plugin_tools) ? bundle.meta.plugin_tools : [];
+    if (bundle.plugin_mounts.includes('forge-plugin-bridge') !== (pluginBindings.length > 0))
+      throw failure('受管插件装配信息不完整', 422);
+    const boundToolNames = pluginBindings.flatMap((binding: any) =>
+      Array.isArray(binding?.tools) ? binding.tools.map((tool: any) => tool?.name) : [],
+    );
+    if (
+      pluginTools.some((name) => typeof name !== 'string' || !name) ||
+      new Set(pluginTools).size !== pluginTools.length ||
+      new Set(boundToolNames).size !== boundToolNames.length ||
+      pluginTools.length !== boundToolNames.length ||
+      pluginTools.some((name) => !boundToolNames.includes(name))
+    )
+      throw failure('插件工具装配信息无效', 422);
     const id = randomUUID();
     const entry: Entry = {
       id,
@@ -109,7 +126,12 @@ export class DshKernel implements AgentKernel {
     const dir = join(DATA, entry.id);
     await mkdir(entry.workspace, { recursive: true, mode: 0o700 });
     const policy = (entry.bundle.meta?.policy as any) ?? {};
-    const allowed = (entry.bundle.meta?.builtin_tools as string[]) ?? [];
+    const builtinTools = (entry.bundle.meta?.builtin_tools as string[]) ?? [];
+    const pluginTools = (entry.bundle.meta?.plugin_tools as string[]) ?? [];
+    const allowed = [...new Set([...builtinTools, ...pluginTools])];
+    const pluginBindings = Array.isArray(entry.bundle.meta?.pluginBindings)
+      ? entry.bundle.meta.pluginBindings
+      : [];
     const plugin = {
       id: 'forge-runtime',
       name: pathToFileURL(join(ROOT, 'forge-runtime-plugin', 'index.js')).href,
@@ -131,6 +153,20 @@ export class DshKernel implements AgentKernel {
           },
         }
       : null;
+    if (entry.bundle.plugin_mounts.includes('forge-plugin-bridge') && !this.pluginWorker)
+      throw failure('受管插件 Worker 不可用，已拒绝启动插件会话', 503);
+    const pluginBridge = entry.bundle.plugin_mounts.includes('forge-plugin-bridge')
+      ? {
+          id: 'forge-plugin-bridge',
+          name: pathToFileURL(join(ROOT, 'forge-plugin-bridge', 'index.js')).href,
+          config: {
+            bindings: pluginBindings,
+            allowedTools: pluginTools,
+            gatewayUrl: this.pluginWorker!.url,
+            lease: this.pluginWorker!.issueLease(entry.id),
+          },
+        }
+      : null;
     const patch = [
       { id: 'sessions', config: { root: join(dir, 'session-log'), compression: 'none' } },
       ...[
@@ -145,6 +181,7 @@ export class DshKernel implements AgentKernel {
         insert: [
           { id: 'forge-user-approval', name: '@deepseek-ai/dsh-user-approval', config: { policy: 'ask' } },
           plugin,
+          ...(pluginBridge ? [pluginBridge] : []),
           ...(skillAuthoringPlugin ? [skillAuthoringPlugin] : []),
         ],
       },
@@ -220,6 +257,8 @@ export class DshKernel implements AgentKernel {
       this.emit(entry, 'error', params);
     } else if (method === 'forge.policy') this.emit(entry, 'policy_decision', params, 'tools');
     else if (method === 'forge.skill_revision') this.emit(entry, 'skill_revision', params, 'tools');
+    else if (method === 'forge.plugin_loaded') this.emit(entry, 'plugin_loaded', params, 'tools');
+    else if (method === 'forge.plugin_call') this.emit(entry, 'plugin_call', params, 'tools');
     else if (method === 'forge.artifact') this.emit(entry, 'files', { files: [params] }, 'tools');
     else if (method === 'session.event') {
       const event = params.event;

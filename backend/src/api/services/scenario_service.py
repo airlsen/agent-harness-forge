@@ -72,8 +72,8 @@ class ScenarioService:
 
     async def create(self, db: AsyncSession, owner_id: str, payload: ScenarioPayload, *, official=False):
         payload = ScenarioPayload.model_validate(payload.model_dump())
-        bundle = self.assembler.compile(
-            payload, tenant_policy=await get_policy(db), rendered_prompt=payload.prompt_template
+        bundle = await self.assembler.compile(
+            db, payload, tenant_policy=await get_policy(db), rendered_prompt=payload.prompt_template
         )
         row = AgentScenario(
             tenant_id="sandbox",
@@ -105,8 +105,8 @@ class ScenarioService:
         row = await self.row(db, scenario_id)
         self.editable(row, owner_id)
         clean = ScenarioPayload.model_validate(payload.model_dump())
-        bundle = self.assembler.compile(
-            clean, tenant_policy=await get_policy(db), rendered_prompt=clean.prompt_template
+        bundle = await self.assembler.compile(
+            db, clean, tenant_policy=await get_policy(db), rendered_prompt=clean.prompt_template
         )
         row.name, row.description, row.icon = clean.name.strip(), clean.description, clean.icon
         row.current_version += 1
@@ -153,6 +153,8 @@ class ScenarioService:
                 "changeLog": v.change_log,
                 "createdAt": iso(v.created_at),
                 "payload": v.bundle_json["payload"],
+                # Bundle 是已发布版本的不可变装配结果；不包含模型凭据或外部密钥。
+                "bundle": v.bundle_json.get("bundle", {}),
             }
             for v in versions
         ]

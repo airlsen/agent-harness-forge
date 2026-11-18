@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "test": "node scripts/check-workspace.mjs && node --import tsx scripts/check-business.mjs && node scripts/check-skill-authoring.mjs",
+    "test": "node scripts/check-workspace.mjs && node --import tsx scripts/check-business.mjs && node scripts/check-skill-authoring.mjs && node scripts/check-plugin-bridge.mjs && node --import tsx scripts/check-plugin-worker.mjs",
     "test:workspace": "node scripts/check-workspace.mjs",
     "poc": "tsx scripts/poc.mjs",
     "poc:boot-only": "tsx scripts/poc.mjs --boot-only",

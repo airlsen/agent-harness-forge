@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "id": "forge-demo-crm",
+  "package": "@forge/demo-crm",
+  "displayName": "演示 CRM 连接器",
+  "description": "Forge 托管的演示 CRM 适配器。读取客户档案；新增跟进备注属于写入动作，必须逐次确认。",
+  "version": "0.1.0",
+  "runtime": "forge-bridge",
+  "source": "builtin-demo-gateway",
+  "compatibility": {
+    "forge": ">=0.2.0 <0.3.0",
+    "dsh": ">=0.2.2-rc.1 <0.3.0"
+  },
+  "extensionPoints": ["ctx.tools", "tools/pre-execute"],
+  "permissions": ["crm:customers:read", "crm:notes:write"],
+  "tools": [
+    {
+      "name": "crm_find_customer",
+      "title": "查询 CRM 客户",
+      "description": "按名称或邮箱查询演示 CRM 客户档案。只读，不会发送外部请求。",
+      "permission": "read",
+      "risk": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "query": { "type": "string", "minLength": 1, "maxLength": 120, "description": "客户名称或邮箱关键词。" } },
+        "required": ["query"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": { "customers": { "type": "array", "items": { "type": "object" } } },
+        "required": ["customers"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "crm_add_customer_note",
+      "title": "新增 CRM 跟进备注",
+      "description": "向演示 CRM 客户档案新增一条跟进备注。每次写入均需要用户确认。",
+      "permission": "approval",
+      "risk": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "string", "minLength": 1, "maxLength": 80, "description": "客户编号。" },
+          "note": { "type": "string", "minLength": 1, "maxLength": 2000, "description": "将保存的跟进备注。" }
+        },
+        "required": ["customerId", "note"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": { "customerId": { "type": "string" }, "noteId": { "type": "string" }, "saved": { "type": "boolean" } },
+        "required": ["customerId", "noteId", "saved"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

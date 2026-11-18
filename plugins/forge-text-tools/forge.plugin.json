@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "forge-text-tools",
+  "package": "@forge/text-tools",
+  "displayName": "文本提炼工具包",
+  "description": "由 Forge 维护的受管文本整理工具。仅处理当前调用显式传入的文本，不访问网络、文件或外部业务系统。",
+  "version": "0.1.0",
+  "runtime": "forge-bridge",
+  "source": "builtin",
+  "compatibility": {
+    "forge": ">=0.2.0 <0.3.0",
+    "dsh": ">=0.2.2-rc.1 <0.3.0"
+  },
+  "extensionPoints": ["ctx.tools"],
+  "permissions": ["session-text"],
+  "tools": [
+    {
+      "name": "text_extract_outline",
+      "title": "提取文本结构",
+      "description": "从调用中明确提供的文本中提取标题、项目符号和关键句，形成简洁结构。不会读取文件或访问外部系统。",
+      "permission": "read",
+      "risk": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "需要整理的文本，最多 30000 个字符。" },
+          "maxItems": { "type": "integer", "minimum": 1, "maximum": 20, "description": "最多返回的结构项数，默认 8。" }
+        },
+        "required": ["text"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "type": "string" } },
+          "characterCount": { "type": "integer" }
+        },
+        "required": ["items", "characterCount"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

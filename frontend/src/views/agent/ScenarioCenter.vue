@@ -6,6 +6,7 @@ import { useConversation } from '../../stores/conversation';
 import { api, post, put, remove } from '../../api/client';
 import { formatDate, isAvailableScenario, scenarioSource, scenarioState } from '../../utils/presentation';
 import type { Scenario, ScenarioPayload } from '../../types/platform';
+import type { PluginPackage } from '../../types/plugin';
 import Icon from '../../components/ForgeIcon.vue';
 import DialogShell from '../../components/DialogShell.vue';
 
@@ -22,8 +23,10 @@ const busy = ref(false);
 const testing = ref<number | null>(null);
 const toDelete = ref<Scenario | null>(null);
 const deleting = ref(false);
+const plugins = ref<PluginPackage[]>([]);
+const pluginsLoading = ref(false);
 const versionHistory = ref<
-  { version: number; createdAt: string; changeLog: string; bundleHash: string; payload: unknown }[] | null
+  { version: number; createdAt: string; changeLog: string; bundleHash: string; payload: unknown; bundle?: unknown }[] | null
 >(null);
 const historyTitle = ref('');
 const maintenance = computed(() => route.query.view === 'maintain');
@@ -34,6 +37,7 @@ const blank = (): ScenarioPayload => ({
   prompt_template: '',
   capabilities: {
     plugin_names: ['forge-runtime'],
+    plugin_tools: {},
     builtin_tool_names: [],
     skill_ids: [],
     mcp_server_ids: [],
@@ -66,10 +70,58 @@ function toggleMaintenance() {
   filter.value = 'all';
   void router.replace({ query: maintenance.value ? {} : { view: 'maintain' } });
 }
+async function loadPlugins() {
+  if (pluginsLoading.value) return;
+  pluginsLoading.value = true;
+  try {
+    plugins.value = (await api<{ items: PluginPackage[] }>('/registry/plugins')).items;
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  } finally {
+    pluginsLoading.value = false;
+  }
+}
+function normalizePayload(scenario?: Scenario): ScenarioPayload {
+  if (!scenario) return blank();
+  const source = JSON.parse(JSON.stringify(scenario.payload)) as Partial<ScenarioPayload>;
+  return {
+    ...blank(),
+    ...source,
+    capabilities: {
+      ...blank().capabilities,
+      ...source.capabilities,
+      plugin_names: source.capabilities?.plugin_names ?? ['forge-runtime'],
+      plugin_tools: source.capabilities?.plugin_tools ?? {},
+    },
+  };
+}
+function pluginSelected(plugin: PluginPackage) {
+  return draft.capabilities.plugin_names.includes(plugin.package);
+}
+function setPluginSelected(plugin: PluginPackage, enabled: boolean) {
+  const selected = new Set(draft.capabilities.plugin_names);
+  if (enabled) selected.add(plugin.package);
+  else {
+    selected.delete(plugin.package);
+    delete draft.capabilities.plugin_tools[plugin.package];
+  }
+  selected.add('forge-runtime');
+  draft.capabilities.plugin_names = [...selected];
+}
+function setPluginTool(plugin: PluginPackage, toolName: string, enabled: boolean) {
+  const selected = new Set(draft.capabilities.plugin_tools[plugin.package] ?? []);
+  if (enabled) selected.add(toolName);
+  else selected.delete(toolName);
+  draft.capabilities.plugin_tools[plugin.package] = [...selected];
+}
+function pluginToolSelected(plugin: PluginPackage, toolName: string) {
+  return (draft.capabilities.plugin_tools[plugin.package] ?? []).includes(toolName);
+}
 function edit(scenario?: Scenario) {
   editing.value = scenario ?? null;
-  Object.assign(draft, scenario ? JSON.parse(JSON.stringify(scenario.payload)) : blank());
+  Object.assign(draft, normalizePayload(scenario));
   drawer.value = true;
+  void loadPlugins();
 }
 function useScenario(scenario: Scenario) {
   detail.value = null;
@@ -476,9 +528,56 @@ async function versions(scenario: Scenario) {
           </div>
           <Icon v-if="tool.permission === 'approval'" name="shield" :size="15"
         /></label>
-        <p class="field-hint">
-          当前可装配基础工具。MCP 服务支持导入与连接测试，场景授权和聊天调用开发中；Skills 尚未接入。
-        </p>
+        <section class="scenario-plugin-picker" aria-labelledby="scenario-plugin-title">
+          <header>
+            <div>
+              <h3 id="scenario-plugin-title">已批准插件</h3>
+              <p>选择审核通过的插件及具体工具。插件工具会随场景版本固定，不能在会话中临时扩大权限。</p>
+            </div>
+            <span v-if="pluginsLoading" class="loader small"></span>
+          </header>
+          <p v-if="!pluginsLoading && !plugins.length" class="field-hint">当前没有可用于场景的已批准插件。</p>
+          <label v-for="plugin in plugins" :key="plugin.package" class="scenario-plugin-option"
+            ><input
+              type="checkbox"
+              :checked="pluginSelected(plugin)"
+              :disabled="plugin.auditStatus !== 'approved' || !plugin.enabled"
+              @change="setPluginSelected(plugin, ($event.target as HTMLInputElement).checked)"
+            /><span class="tool-checkbox-icon"><Icon name="blocks" :size="18" /></span>
+            <div>
+              <strong>{{ plugin.displayName }}</strong><small
+                >{{ plugin.description }} · v{{ plugin.version }}</small
+              >
+            </div>
+            <span
+              :class="['tag', plugin.auditStatus === 'approved' && plugin.enabled ? 'success' : 'neutral']"
+              >{{ plugin.auditStatus === 'approved' && plugin.enabled ? '已批准' : '不可用' }}</span
+            ></label
+          >
+          <div
+            v-for="plugin in plugins.filter(pluginSelected)"
+            :key="`${plugin.package}-tools`"
+            class="scenario-plugin-tools"
+          >
+            <strong>{{ plugin.displayName }} · 选择工具</strong
+            ><label v-for="tool in plugin.tools" :key="tool.name" class="scenario-plugin-tool"
+              ><input
+                type="checkbox"
+                :checked="pluginToolSelected(plugin, tool.name)"
+                @change="setPluginTool(plugin, tool.name, ($event.target as HTMLInputElement).checked)"
+              /><span
+                ><b>{{ tool.title }}</b
+                ><small>{{ tool.description }}</small></span
+              ><span :class="['tag', tool.permission === 'approval' ? 'warm' : 'neutral']">{{
+                tool.permission === 'approval' ? '需审批' : '只读'
+              }}</span></label
+            >
+          </div>
+          <p class="field-hint">
+            当前只装配审核通过的受管插件。MCP、Skill 与项目能力将在后续场景装配阶段接入；不会安装或执行任意
+            npm、GitHub 插件。
+          </p>
+        </section>
         <div class="form-section-title"><span>04</span>运行配置</div>
         <div class="static-form-row">
           <span>模型路由</span
@@ -535,7 +634,7 @@ async function versions(scenario: Scenario) {
           <code>SHA256 {{ version.bundleHash.slice(0, 24) }}…</code>
           <details>
             <summary>查看此版本装配单</summary>
-            <pre>{{ JSON.stringify(version.payload, null, 2) }}</pre>
+            <pre>{{ JSON.stringify({ payload: version.payload, bundle: version.bundle }, null, 2) }}</pre>
           </details>
         </article>
       </div></DialogShell

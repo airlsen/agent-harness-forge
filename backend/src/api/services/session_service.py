@@ -14,6 +14,8 @@ from ..models.approval_ticket import ApprovalTicket
 from ..schemas.agent_scenario import ScenarioPayload
 from .runner_client import runner_client
 from .scenario_service import scenario_service, iso
+from .scenario_assembler import Bundle
+from .plugin_service import ensure_bindings_available
 from .settings_service import get_connection, get_policy, environment_ref
 
 
@@ -55,9 +57,15 @@ class SessionService:
                 raise HTTPException(409, "模型未配置，请先到模型中心保存真实模型连接")
             version = await scenario_service.version(db, scenario)
             payload = ScenarioPayload.model_validate(version.bundle_json["payload"])
-            bundle = scenario_service.assembler.compile(
-                payload, tenant_policy=await get_policy(db), rendered_prompt=payload.prompt_template
-            )
+            stored_bundle = version.bundle_json.get("bundle")
+            if stored_bundle:
+                bundle = Bundle(**stored_bundle)
+            else:
+                # 兼容早期版本；新场景发布后始终使用版本内的不可变装配快照。
+                bundle = await scenario_service.assembler.compile(
+                    db, payload, tenant_policy=await get_policy(db), rendered_prompt=payload.prompt_template
+                )
+            await ensure_bindings_available(db, list(bundle.meta.get("pluginBindings", [])))
             bundle.meta.update(
                 {
                     "model": config["model"],

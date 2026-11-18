@@ -11,6 +11,7 @@ from .core.config import settings
 from .core.security import initialize_security, require_auth
 from .routes import agent_scenario, agent_session, approval, audit, governance, registry, auth, model, skill
 from .services.scenario_service import seed_scenarios
+from .services.plugin_service import seed_plugins
 from .services.session_service import session_service
 from .services.runner_client import runner_client
 from .services.settings_service import get_connection
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         raise RuntimeError("FORGE_RUNNER_TOKEN 未设置，请先初始化并加载 data/business.env")
     await init_db()
     async with SessionFactory() as db:
+        await seed_plugins(db)
         await seed_scenarios(db)
     yield
     await session_service.shutdown()

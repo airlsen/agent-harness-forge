@@ -44,6 +44,30 @@ async def init_db() -> None:
                 sync_conn.execute(text("ALTER TABLE mcp_server ADD COLUMN transport VARCHAR(24) NOT NULL DEFAULT 'streamable-http'"))
 
         await conn.run_sync(ensure_mcp_transport)
+
+        # Additive compatibility for the managed-plugin registry introduced after the first sandbox schema.
+        def ensure_plugin_columns(sync_conn):
+            from sqlalchemy import inspect, text
+
+            inspector = inspect(sync_conn)
+            if "plugin_registry" not in inspector.get_table_names():
+                return
+            existing = {column["name"] for column in inspector.get_columns("plugin_registry")}
+            postgres = sync_conn.dialect.name == "postgresql"
+            additions = {
+                "display_name": "VARCHAR(128) NOT NULL DEFAULT ''",
+                "description": "VARCHAR(512) NOT NULL DEFAULT ''",
+                "runtime": "VARCHAR(32) NOT NULL DEFAULT 'forge-bridge'",
+                "source_ref": "VARCHAR(256) NOT NULL DEFAULT ''",
+                "artifact_hash": "VARCHAR(128) NOT NULL DEFAULT ''",
+                "tools_json": "JSON NOT NULL DEFAULT '[]'",
+                "enabled": "BOOLEAN NOT NULL DEFAULT " + ("FALSE" if postgres else "0"),
+            }
+            for name, ddl in additions.items():
+                if name not in existing:
+                    sync_conn.execute(text(f"ALTER TABLE plugin_registry ADD COLUMN {name} {ddl}"))
+
+        await conn.run_sync(ensure_plugin_columns)
     # 重启时关闭所有孤立审批，为未完成的运行保留明确的中断记录。
     from datetime import datetime, timezone
     from sqlalchemy import select, func
