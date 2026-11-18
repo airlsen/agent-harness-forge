@@ -25,7 +25,7 @@ type McpServer = {
   enabled: boolean;
   status: string;
   lastError: string;
-  tools: { name: string; description: string }[];
+  tools: { name: string; description: string; inputSchema?: Record<string, any> }[];
   serverInfo: Record<string, unknown>;
   hasCredentials: boolean;
 };
@@ -51,6 +51,10 @@ function changeMcpTransport() {
 const mcpBusy = ref(false);
 const mcpMessage = ref('');
 const mcpEditorOpen = ref(false);
+const selectedMcp = ref<McpServer | null>(null);
+const mcpToolQuery = ref('');
+const visibleMcpTools = computed(() => (selectedMcp.value?.tools ?? []).filter(tool => `${tool.name} ${tool.description}`.toLowerCase().includes(mcpToolQuery.value.trim().toLowerCase())));
+function openMcpTools(server: McpServer) { selectedMcp.value = server; mcpToolQuery.value = ''; }
 const detail = ref<Tool | null>(null);
 const componentDetail = ref<RuntimeComponent | null>(null);
 const tab = computed(() =>
@@ -206,7 +210,7 @@ onMounted(load);
         </div>
         <span class="enterprise-shared-label"><Icon name="building" :size="14" />公共能力目录</span>
       </div>
-      <section v-if="tab === 'tools'" class="capabilities-intro">
+      <section class="capabilities-intro">
         <span class="capabilities-intro-icon"><Icon name="blocks" :size="27" /></span>
         <div>
           <h2>能力统一维护，场景按需引用。</h2>
@@ -326,47 +330,27 @@ onMounted(load);
         </div>
         <div v-else class="mcp-server-list">
           <article v-for="server in mcp.items" :key="server.id" class="mcp-server-card">
-            <div class="mcp-server-card-head">
-              <div>
-                <strong>{{ server.name }}</strong><span
-                  :class="[
-                    'tag',
-                    server.status === 'connected'
-                      ? 'success'
-                      : server.status === 'error'
-                        ? 'danger'
-                        : 'neutral',
-                  ]"
-                  >{{
-                    server.status === 'connected'
-                      ? '连接正常'
-                      : server.status === 'error'
-                        ? '连接失败'
-                        : '待测试'
-                  }}</span
-                >
+            <div class="mcp-card-main">
+              <span class="mcp-card-icon"><Icon name="plug" :size="20" /></span>
+              <div class="mcp-card-info">
+                <div class="mcp-card-title">
+                  <h3>{{ server.name }}</h3>
+                  <span :class="['tag', server.status === 'connected' ? 'success' : server.status === 'error' ? 'danger' : 'neutral']">{{ server.status === 'connected' ? '连接正常' : server.status === 'error' ? '连接失败' : '待测试' }}</span>
+                  <span class="mcp-transport-badge">{{ server.transport === 'stdio' ? 'stdio' : server.transport === 'sse' ? '旧版 SSE' : 'Streamable HTTP' }}</span>
+                </div>
+                <p class="mcp-card-description">{{ server.serverInfo?.name || (server.transport === 'stdio' ? '本机 MCP 进程' : server.url) }}<span v-if="server.serverInfo?.version"> · {{ server.serverInfo.version }}</span></p>
               </div>
-              <div class="mcp-endpoint"><span class="mcp-transport-badge">{{ server.transport === 'sse' ? 'SSE' : 'Streamable HTTP' }}</span><code>{{ server.url }}</code></div>
+              <button class="button secondary small mcp-view-tools" :disabled="!server.tools.length" @click="openMcpTools(server)">查看工具 <span>{{ server.tools.length }}</span><Icon name="arrow" :size="14" /></button>
             </div>
             <p v-if="server.lastError" class="mcp-server-error">{{ server.lastError }}</p>
-            <div v-if="server.tools.length" class="mcp-tool-list">
-              <strong>{{ server.tools.length }} 项工具</strong
-              ><span v-for="tool in server.tools" :key="tool.name" :title="tool.description">{{
-                tool.name
-              }}</span>
-            </div>
-            <div class="mcp-server-controls">
-              <span v-if="server.hasCredentials" class="mcp-credential-note">认证信息已保存</span
-              ><button class="button secondary small" :disabled="mcpBusy" @click="testMcp(server)">
-                测试连接</button
-              ><button
-                class="button secondary small"
-                :disabled="server.status !== 'connected'"
-                @click="toggleMcp(server)"
-              >
-                {{ server.enabled ? '停用' : '启用' }}</button
-              ><button class="button text small" @click="deleteMcp(server)">移除</button>
-            </div>
+            <footer class="mcp-card-footer">
+              <span v-if="server.hasCredentials" class="mcp-credential-note">认证信息已加密保存</span><span v-else class="mcp-credential-note">{{ server.transport === 'stdio' ? '本机进程' : '无需认证' }}</span>
+              <div class="mcp-card-actions">
+                <button class="button text small" :disabled="mcpBusy" @click="testMcp(server)">测试连接</button>
+                <button class="button secondary small" :disabled="server.status !== 'connected'" @click="toggleMcp(server)">{{ server.enabled ? '停用' : '启用' }}</button>
+                <button class="button text small danger-text" @click="deleteMcp(server)">移除</button>
+              </div>
+            </footer>
           </article>
         </div>
       </section>
@@ -419,6 +403,17 @@ onMounted(load);
           {{ mcpBusy ? '处理中…' : '导入配置' }}
         </button>
       </footer>
+    </DialogShell>
+    <DialogShell v-if="selectedMcp" variant="modal" :label="`${selectedMcp.name} 工具清单`" panel-class="mcp-tools-dialog" @close="selectedMcp = null">
+      <header class="mcp-tools-header">
+        <div><span class="mcp-transport-badge">{{ selectedMcp.transport === 'stdio' ? 'stdio' : selectedMcp.transport === 'sse' ? '旧版 SSE' : 'Streamable HTTP' }}</span><h2>{{ selectedMcp.name }}</h2><p>{{ selectedMcp.tools.length }} 项工具 · 由 MCP 服务提供</p></div>
+        <button class="icon-button" aria-label="关闭工具清单" @click="selectedMcp = null"><Icon name="close" :size="20" /></button>
+      </header>
+      <label class="mcp-tools-search"><Icon name="search" :size="16" /><input v-model="mcpToolQuery" placeholder="搜索工具名称或用途" /></label>
+      <div class="mcp-tools-list">
+        <article v-for="tool in visibleMcpTools" :key="tool.name" class="mcp-tool-row"><span class="mcp-tool-symbol"><Icon name="wrench" :size="16" /></span><div><strong>{{ tool.name }}</strong><p>{{ tool.description || '此工具未提供用途说明。' }}</p></div></article>
+        <div v-if="!visibleMcpTools.length" class="mcp-tools-empty">{{ selectedMcp.tools.length ? '没有匹配的工具' : '服务尚未返回工具清单，请先测试连接。' }}</div>
+      </div>
     </DialogShell>
     <DialogShell v-if="detail" label="工具详情" panel-class="capability-detail" @close="closeTool"
       ><header>
