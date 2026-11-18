@@ -80,6 +80,11 @@ class ScenarioAssembler:
                         "插件工具的权限不高于场景和平台策略；写入或对外动作必须等待审批。",
                     ],
                     "workspace": ["所有产物仅允许保存在当前会话的受限工作区。"],
+                    "output": [
+                        "回答支持 Markdown 渲染：代码一律用标注了语言的围栏代码块输出。",
+                        "需要画流程图、时序图、架构图或甘特图时，用 ```mermaid 围栏代码块输出合法 Mermaid 源码。",
+                        "需要展示柱状图、折线图、饼图等数据图表时，用 ```vega 围栏代码块输出一个合法、自包含的 Vega-Lite JSON 规范（数据直接写在 values 字段内，不要引用外部 URL）。",
+                    ],
                 },
             },
             plugin_mounts=["forge-runtime", *(["forge-plugin-bridge"] if bindings else [])],

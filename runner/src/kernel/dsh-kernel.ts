@@ -236,6 +236,7 @@ export class DshKernel implements AgentKernel {
             prompt.domain,
             ...(prompt.safety ?? []),
             ...(prompt.workspace ?? []),
+            ...(prompt.output ?? []),
             '所有文件操作仅限当前会话工作区。不可声称执行了未实际调用的工具。',
           ]
             .filter(Boolean)

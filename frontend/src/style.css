@@ -1675,6 +1675,116 @@ button:disabled:hover {
 .markdown-body th {
   background: #f7f9fc;
 }
+/* 代码块 / Mermaid 图 / 数据图表的卡片外壳 */
+.markdown-body .code-block {
+  margin: 13px 0;
+  border: 1px solid #e8edf5;
+  border-radius: 8px;
+  background: #f7f9fc;
+  overflow: hidden;
+}
+.markdown-body .code-block:first-child {
+  margin-top: 0;
+}
+.markdown-body .code-block:last-child {
+  margin-bottom: 0;
+}
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px 6px 14px;
+  border-bottom: 1px solid #e8edf5;
+  background: #eff3f9;
+}
+.code-lang {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #526175;
+}
+.code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: none;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 10px;
+  color: #526175;
+  cursor: pointer;
+}
+.code-copy:hover {
+  color: #2e3a49;
+  background: #e3eaf4;
+}
+.code-body {
+  overflow-x: auto;
+}
+.markdown-body .code-block .code-body pre {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 14px 16px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.markdown-body .code-block .code-body pre.shiki {
+  background: transparent !important;
+}
+.markdown-body .code-block .code-body pre code {
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: inherit;
+}
+/* 图/图表块内嵌的源码回退块去掉重复外壳 */
+.markdown-body .diagram-block > .code-block,
+.markdown-body .chart-block > .code-block {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.diagram-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.diagram-body {
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+.diagram-body svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+.diagram-pending {
+  margin: 0;
+  padding: 14px 16px;
+  font-size: 11px;
+  color: #526175;
+}
+.diagram-error {
+  margin: 0;
+  padding: 8px 16px 12px;
+  font-size: 11px;
+  color: #b45309;
+}
+.chart-body {
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+.chart-body .vega-embed {
+  max-width: 100%;
+}
 .message-copy {
   display: flex;
   align-items: center;
