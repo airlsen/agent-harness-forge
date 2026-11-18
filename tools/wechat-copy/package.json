@@ -1,0 +1,17 @@
+{
+  "name": "wechat-copy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "把任意 HTML 转换成可直接粘贴进微信公众号编辑器、且样式不丢失的页面",
+  "type": "module",
+  "bin": {
+    "wechat-copy": "./inline-wechat.js"
+  },
+  "scripts": {
+    "build": "node inline-wechat.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "juice": "^10.0.1"
+  }
+}
