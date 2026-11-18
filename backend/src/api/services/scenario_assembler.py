@@ -63,9 +63,9 @@ class ScenarioAssembler:
             for tool in binding["tools"]
             if "*" in enterprise_plugin_allow or tool["name"] in enterprise_plugin_allow
         ]
-        rejected_by_enterprise = {
-            tool["name"] for binding in bindings for tool in binding["tools"]
-        } - set(plugin_tools)
+        rejected_by_enterprise = {tool["name"] for binding in bindings for tool in binding["tools"]} - set(
+            plugin_tools
+        )
         if rejected_by_enterprise:
             raise HTTPException(422, "企业策略未允许插件工具：" + "、".join(sorted(rejected_by_enterprise)))
         policy_json = json.dumps(tenant_policy, sort_keys=True)
@@ -82,7 +82,7 @@ class ScenarioAssembler:
                     "workspace": ["所有产物仅允许保存在当前会话的受限工作区。"],
                 },
             },
-            plugin_mounts=["forge-runtime", *( ["forge-plugin-bridge"] if bindings else [] )],
+            plugin_mounts=["forge-runtime", *(["forge-plugin-bridge"] if bindings else [])],
             skill_files={},
             mcp=[],
             model_route={"primary": "default", "fallbacks": []},

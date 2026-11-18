@@ -61,6 +61,7 @@ export const useConversation = defineStore('conversation', {
     draftSequence: 0,
     pendingNewConversation: null as null | { scenarioId?: number; draftId: number },
     liveText: '',
+    liveReasoning: '',
     sending: false,
     loading: false,
     runError: '',
@@ -114,6 +115,7 @@ export const useConversation = defineStore('conversation', {
       this.approvals = [];
       this.files = [];
       this.liveText = '';
+      this.liveReasoning = '';
       this.runError = '';
       this.connectionWarning = '';
       this.sending = false;
@@ -243,7 +245,11 @@ export const useConversation = defineStore('conversation', {
         if (detail.status === 'running') {
           for (const event of events) {
             if (event.kind === 'message_delta') this.liveText += event.payload.text;
-            else if (event.kind === 'message') this.liveText = '';
+            else if (event.kind === 'reasoning_delta') this.liveReasoning += event.payload.text;
+            else if (event.kind === 'message') {
+              this.liveText = '';
+              this.liveReasoning = '';
+            }
           }
           // detail 的消息快照与事件读取可能有时间差；结算时统一回读数据库去重。
           this.follow(id, events.at(-1)?.seq ?? 0);
@@ -274,6 +280,7 @@ export const useConversation = defineStore('conversation', {
       this.runError = '';
       this.connectionWarning = '';
       this.liveText = '';
+      this.liveReasoning = '';
       try {
         const prepared = preparedSessions.get(submittedDraft.id);
         if (prepared && pendingTurns.has(prepared.id))
@@ -328,6 +335,7 @@ export const useConversation = defineStore('conversation', {
           this.events.push(event);
           const data = event.payload;
           if (event.kind === 'message_delta') this.liveText += data.text;
+          else if (event.kind === 'reasoning_delta') this.liveReasoning += data.text;
           else if (event.kind === 'message') {
             if (
               !this.messages.some(
@@ -340,9 +348,14 @@ export const useConversation = defineStore('conversation', {
                 id: data.runtimeMessageId ?? `live-${event.seq}`,
                 role: 'assistant',
                 content: data.text,
-                meta: { partial: data.partial, runtimeMessageId: data.runtimeMessageId },
+                meta: {
+                  partial: data.partial,
+                  runtimeMessageId: data.runtimeMessageId,
+                  ...(data.reasoning ? { reasoning: data.reasoning } : {}),
+                },
               });
             this.liveText = '';
+            this.liveReasoning = '';
           } else if (event.kind === 'tool_result') {
             if (
               !this.messages.some(
@@ -386,6 +399,7 @@ export const useConversation = defineStore('conversation', {
         this.messages = detail.messages;
         this.approvals = detail.pendingApprovals;
         this.liveText = '';
+        this.liveReasoning = '';
         await usePlatform().refreshSessions();
         await this.refreshFiles();
       } catch (error) {

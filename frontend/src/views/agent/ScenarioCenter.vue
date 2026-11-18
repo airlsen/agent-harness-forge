@@ -26,7 +26,15 @@ const deleting = ref(false);
 const plugins = ref<PluginPackage[]>([]);
 const pluginsLoading = ref(false);
 const versionHistory = ref<
-  { version: number; createdAt: string; changeLog: string; bundleHash: string; payload: unknown; bundle?: unknown }[] | null
+  | {
+      version: number;
+      createdAt: string;
+      changeLog: string;
+      bundleHash: string;
+      payload: unknown;
+      bundle?: unknown;
+    }[]
+  | null
 >(null);
 const historyTitle = ref('');
 const maintenance = computed(() => route.query.view === 'maintain');

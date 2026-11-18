@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.database import get_session
 from ..models.registry import McpServer
 from ..services.mcp_service import import_servers, public_view, test_server
-from ..services.plugin_service import MAX_ARCHIVE_BYTES, import_archive, list_plugins, review_release, set_release_enabled
+from ..services.plugin_service import (
+    MAX_ARCHIVE_BYTES,
+    import_archive,
+    list_plugins,
+    review_release,
+    set_release_enabled,
+)
 from ..services.settings_service import TOOLS, list_connections
 from ..utils.response import ResponseUtil
 

@@ -222,7 +222,7 @@ class SessionService:
             return {"sessionId": session_id, "messageId": user.id, "cursor": cursor}
 
     async def pump(self, session_id, runner_id, message, cursor):
-        failed, got_done, partial = False, False, ""
+        failed, got_done, partial, partial_reasoning = False, False, "", ""
 
         async def persist(kind, payload, source="system"):
             nonlocal cursor
@@ -274,10 +274,11 @@ class SessionService:
                         SessionMessage(
                             session_id=session_id,
                             role="assistant",
-                            content=payload["text"],
+                            content=payload.get("text", ""),
                             meta={
                                 "runtimeMessageId": payload.get("runtimeMessageId"),
                                 "partial": payload.get("partial", False),
+                                **({"reasoning": payload["reasoning"]} if payload.get("reasoning") else {}),
                             },
                         )
                     )
@@ -315,8 +316,11 @@ class SessionService:
                     failed = True
                 elif kind == "message_delta":
                     partial += payload.get("text", "")
+                elif kind == "reasoning_delta":
+                    partial_reasoning += payload.get("text", "")
                 elif kind == "message":
                     partial = ""
+                    partial_reasoning = ""
                 elif kind == "done":
                     got_done = True
                     failed = failed or payload.get("status") == "error"
@@ -337,12 +341,13 @@ class SessionService:
             text = error.detail if isinstance(error, HTTPException) else str(error)
             await persist("error", {"message": text[:600] or "执行连接中断，请稍后重试"})
         finally:
-            if partial:
+            if partial or partial_reasoning:
+                meta = {"partial": True}
+                if partial_reasoning:
+                    meta["reasoning"] = partial_reasoning
                 async with SessionFactory() as db:
                     db.add(
-                        SessionMessage(
-                            session_id=session_id, role="assistant", content=partial, meta={"partial": True}
-                        )
+                        SessionMessage(session_id=session_id, role="assistant", content=partial, meta=meta)
                     )
                     await db.commit()
             async with SessionFactory() as db:

@@ -103,6 +103,12 @@ class GatewayFixture(BaseHTTPRequestHandler):
             ]
         else:
             chunks = [
+                {
+                    "choices": [
+                        {"delta": {"reasoning_content": "Protocol fixture thinking. "}}
+                    ]
+                },
+                {"choices": [{"delta": {"reasoning_content": "Still reasoning."}}]},
                 {"choices": [{"delta": {"content": "Protocol fixture response. "}}]},
                 {
                     "choices": [
@@ -357,6 +363,14 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                 and any(m["role"] == "assistant" for m in detail["messages"]),
             )
             check(
+                "reasoning settles into assistant message meta",
+                any(
+                    m["role"] == "assistant"
+                    and "Protocol fixture thinking." in m["meta"].get("reasoning", "")
+                    for m in detail["messages"]
+                ),
+            )
+            check(
                 "usage and snapshot pricing calculated",
                 detail["tokensIn"] == 200
                 and detail["tokensOut"] == 20
@@ -375,7 +389,8 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                 "SSE carries durable event IDs and a settled event",
                 "event: kernel" in events_response.text
                 and "event: settled" in events_response.text
-                and "approval_required" in events_response.text,
+                and "approval_required" in events_response.text
+                and "reasoning_delta" in events_response.text,
             )
             export = client.get(f"/api/agent/sessions/{sid}/export")
             check(

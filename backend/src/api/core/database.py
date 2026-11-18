@@ -33,6 +33,7 @@ async def init_db() -> None:
 
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
         # Additive compatibility for existing workspaces created before MCP transport selection.
         def ensure_mcp_transport(sync_conn):
             from sqlalchemy import inspect, text
@@ -41,7 +42,11 @@ async def init_db() -> None:
             if "mcp_server" in inspector.get_table_names() and "transport" not in {
                 column["name"] for column in inspector.get_columns("mcp_server")
             }:
-                sync_conn.execute(text("ALTER TABLE mcp_server ADD COLUMN transport VARCHAR(24) NOT NULL DEFAULT 'streamable-http'"))
+                sync_conn.execute(
+                    text(
+                        "ALTER TABLE mcp_server ADD COLUMN transport VARCHAR(24) NOT NULL DEFAULT 'streamable-http'"
+                    )
+                )
 
         await conn.run_sync(ensure_mcp_transport)
 
@@ -88,7 +93,11 @@ async def init_db() -> None:
             existing = {column["name"] for column in inspector.get_columns("model_connection")}
             if "enabled" not in existing:
                 default = "TRUE" if sync_conn.dialect.name == "postgresql" else "1"
-                sync_conn.execute(text(f"ALTER TABLE model_connection ADD COLUMN enabled BOOLEAN NOT NULL DEFAULT {default}"))
+                sync_conn.execute(
+                    text(
+                        f"ALTER TABLE model_connection ADD COLUMN enabled BOOLEAN NOT NULL DEFAULT {default}"
+                    )
+                )
 
         await conn.run_sync(ensure_model_connection_columns)
     # 重启时关闭所有孤立审批，为未完成的运行保留明确的中断记录。
