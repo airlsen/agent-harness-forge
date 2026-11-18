@@ -8,7 +8,7 @@ import Icon from './ForgeIcon.vue';
 
 /**
  * 聊天输入框的模型选择。模型属于本次会话、与场景无关：
- * 新会话选择创建时使用的模型；已有会话可切换模型，从下一条消息起生效，已有回复保持原模型。
+ * 选择会话使用的模型：选哪个，下一条消息就用哪个；已有回复保持原模型。
  */
 const emit = defineEmits<{ selected: []; opened: [] }>();
 const app = usePlatform();
@@ -26,27 +26,22 @@ const currentId = computed(() => chat.current?.modelId ?? null);
 const selected = computed(
   () => app.modelOptions.find((option) => option.id === chat.selectedModelId) ?? null,
 );
-/** 会话当前模型已停用、删除或是未记录配置的旧会话：列表里单独列出，便于取消切换。 */
+/** 会话当前模型已停用、删除或是未记录配置的旧会话：列表里单独列出，便于选回。 */
 const currentUnlisted = computed(
   () =>
     inSession.value &&
     !app.modelOptions.some((option) => option.id !== null && option.id === currentId.value),
 );
-const pending = computed(() => inSession.value && chat.selectedModelId !== currentId.value);
+/** 选中的是会话原模型且它已不在可选列表中 */
+const keepsUnlisted = computed(() => currentUnlisted.value && chat.selectedModelId === currentId.value);
 const label = computed(() => {
-  if (inSession.value) {
-    if (pending.value && selected.value) return selected.value.name;
+  if (inSession.value && (keepsUnlisted.value || !selected.value))
     return chat.current?.modelName || chat.current?.model || '未记录模型';
-  }
   if (!app.modelOptions.length) return '未配置模型';
   return selected.value?.name ?? '选择模型';
 });
 const title = computed(() => {
-  if (inSession.value) {
-    if (pending.value && selected.value)
-      return `下一条消息起改用 ${selected.value.name}（当前：${chat.current?.modelName}）`;
-    return `本会话当前模型：${chat.current?.model || '未记录'} · 可切换，从下一条消息起生效`;
-  }
+  if (inSession.value && (keepsUnlisted.value || !selected.value)) return chat.current?.model || '未记录模型';
   if (!app.modelOptions.length) return '尚无可用模型，请由管理员在「模型管理」启用';
   return selected.value ? `${selected.value.name} · ${selected.value.model}` : '选择本次会话使用的模型';
 });
@@ -99,7 +94,7 @@ defineExpose({ close: () => (open.value = false) });
     <button
       v-else
       type="button"
-      :class="['model-trigger', { 'is-pending': pending }]"
+      class="model-trigger"
       :disabled="chat.running || chat.loading"
       :aria-expanded="open"
       aria-label="选择模型"
@@ -118,24 +113,24 @@ defineExpose({ close: () => (open.value = false) });
       class="scenario-popover model-popover"
       @keydown.esc.stop="open = false"
     >
-      <div class="popover-label">
-        {{
-          inSession ? '切换模型 · 从下一条消息起生效，已有回复保持原模型' : '本次会话使用的模型 · 与场景无关'
-        }}
-      </div>
-      <button v-if="currentUnlisted" type="button" :class="{ selected: !pending }" @click="choose(currentId)">
+      <div class="popover-label">选择模型</div>
+      <button
+        v-if="currentUnlisted"
+        type="button"
+        :class="{ selected: keepsUnlisted }"
+        @click="choose(currentId)"
+      >
         <Icon name="cpu" :size="17" />
         <div>
           <strong
             >{{ chat.current?.modelName || chat.current?.model || '未记录模型'
-            }}<small class="model-current-badge">当前</small
-            ><small class="model-status-badge is-failed">{{
+            }}<small class="model-status-badge is-failed">{{
               currentId === null ? '未记录配置' : '已停用'
             }}</small></strong
           >
           <span>不在可选列表中，切换后无法再切回</span>
         </div>
-        <Icon v-if="!pending" name="check" :size="15" />
+        <Icon v-if="keepsUnlisted" name="check" :size="15" />
       </button>
       <button
         v-for="option in app.modelOptions"
@@ -148,8 +143,7 @@ defineExpose({ close: () => (open.value = false) });
         <div>
           <strong
             >{{ option.name
-            }}<small v-if="inSession && option.id === currentId" class="model-current-badge">当前</small
-            ><small v-if="option.id === app.defaultModelId" class="model-default-badge">默认</small
+            }}<small v-if="option.id === app.defaultModelId" class="model-default-badge">默认</small
             ><small v-if="statusLabel(option)" :class="['model-status-badge', `is-${option.status}`]">{{
               statusLabel(option)
             }}</small
