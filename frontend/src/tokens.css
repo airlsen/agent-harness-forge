@@ -1,0 +1,35 @@
+/* Warm workspace design tokens. Responsive layout overrides stay in enterprise.css. */
+:root {
+  --accent: #b95735;
+  --accent-hover: #a2482b;
+  --accent-soft: #faeee7;
+  --accent-ink: #a34e30;
+  --accent-solid: var(--accent);
+  --accent-solid-hover: var(--accent-hover);
+  --accent-line: #efd8cc;
+  --accent-wash: #fffbf8;
+  --accent-focus: #b95735;
+  --accent-focus-ring: rgb(185 87 53 / 10%);
+  --ink: #242933;
+  --muted: #667085;
+  --text-secondary: #596273;
+  --text-subtle: #667085;
+  --line: #e6e8ec;
+  --border-soft: #edf0f4;
+  --border-strong: #dde1e6;
+  --surface: #fff;
+  --canvas: #fafbfc;
+  --surface-subtle: #f6f7f9;
+  --panel: var(--surface-subtle);
+  --sidebar: 240px;
+  --header: 0px;
+  --page-padding-top: 32px;
+  --page-padding-x: 40px;
+  --page-title-size: 24px;
+  --page-max-width: 1200px;
+  --page-heading-gap: 24px;
+  --radius-control: 8px;
+  --radius-panel: 12px;
+  --radius-composer: 16px;
+  --shadow-composer: 0 4px 20px rgb(24 32 48 / 4%);
+}

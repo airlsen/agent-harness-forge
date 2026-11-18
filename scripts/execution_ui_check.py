@@ -137,6 +137,10 @@ async def check_execution_ui(
             await fetched_file.finished()
             assert fetched_file.status == 200
             await expect(page.get_by_role("dialog", name="产物预览")).to_be_visible()
+            await expect(page.locator(".file-preview-content h1")).to_have_text(
+                "API integration fixture"
+            )
+            await page.get_by_role("button", name="原文", exact=True).click()
             await expect(page.locator(".file-preview>pre")).to_contain_text(
                 "# API integration fixture"
             )

@@ -493,7 +493,7 @@ async def main():
             fixture_id = None
             check("confirmed soft delete works and leaves a real search empty state")
             await page.get_by_role("link", name="企业能力中心", exact=True).click()
-            await expect(page.locator(".enterprise-tool-card")).to_have_count(4)
+            await expect(page.locator(".capability-tool-row")).to_have_count(4)
             await expect(page.locator(".plugin-card")).to_have_count(0)
             await page.get_by_label("搜索能力").fill("nonexistent-tool")
             await expect(
@@ -655,13 +655,13 @@ async def main():
                 assert abs(geometry["sidebar"]["x"]) < 1, (width, height, geometry)
                 assert abs(geometry["body"]["x"] - geometry["sidebar"]["right"]) < 1
                 assert abs(geometry["body"]["right"] - width) < 1
-                assert geometry["accent"] == "#da724d"
+                assert geometry["accent"] == "#b95735"
                 assert not any(
                     item["labelHidden"] or item["labelClipped"]
                     for item in geometry["items"]
                 )
                 items = geometry["items"]
-                assert all(item["fontWeight"] >= 600 for item in items)
+                assert all(item["fontWeight"] >= 500 for item in items)
                 assert all(
                     item["fontSize"] == ("14px" if width > 700 else "11px")
                     for item in items
@@ -669,7 +669,7 @@ async def main():
                 assert all(item["svgIcon"] and not item["emojiIcon"] for item in items)
                 await expect(
                     page.locator(".enterprise-primary > a.is-active")
-                ).to_have_css("font-weight", "700")
+                ).to_have_css("font-weight", "600")
                 icon_centres = [
                     item["icon"]["x"] + item["icon"]["width"] / 2 for item in items
                 ]

@@ -26,7 +26,15 @@ const deleting = ref(false);
 const plugins = ref<PluginPackage[]>([]);
 const pluginsLoading = ref(false);
 const versionHistory = ref<
-  { version: number; createdAt: string; changeLog: string; bundleHash: string; payload: unknown; bundle?: unknown }[] | null
+  | {
+      version: number;
+      createdAt: string;
+      changeLog: string;
+      bundleHash: string;
+      payload: unknown;
+      bundle?: unknown;
+    }[]
+  | null
 >(null);
 const historyTitle = ref('');
 const maintenance = computed(() => route.query.view === 'maintain');
@@ -241,18 +249,7 @@ async function versions(scenario: Scenario) {
           </button>
         </div>
       </div>
-      <section v-if="!maintenance" class="enterprise-scenario-intro">
-        <div>
-          <span class="enterprise-shared-label"><Icon name="building" :size="14" />一份场景，共同复用</span>
-          <h2>选择工作方式，<span>带着专业能力开始。</span></h2>
-          <p>预先组合提示词、工具与执行边界。选好场景，直接描述这次要完成的目标。</p>
-        </div>
-        <div class="scenario-stack-art" aria-hidden="true">
-          <span><Icon name="file" :size="23" /></span><span><Icon name="sparkles" :size="31" /></span
-          ><span><Icon name="code" :size="23" /></span>
-        </div>
-      </section>
-      <div v-else class="maintenance-notice">
+      <div v-if="maintenance" class="maintenance-notice">
         <Icon name="edit" :size="19" />
         <div>
           <strong>场景维护视图</strong>

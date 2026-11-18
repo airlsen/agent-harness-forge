@@ -240,12 +240,14 @@ async def main(args):
                     assert not geometry["horizontalOverflow"], (route, geometry)
                     assert not geometry["sidebarInert"], (route, geometry)
                     assert geometry["titleCount"] == 1, (route, geometry)
-                    assert geometry["titleSize"] == geometry["titleToken"]
+                    assert geometry["titleSize"] == (
+                        "28px" if route == "workbench" else geometry["titleToken"]
+                    )
                     assert abs(body["y"]) < 1
                     assert abs(view["y"] - (52 if admin else 0)) < 1
                     assert abs(view["height"] + view["y"] - height) < 1
                     if route == "workbench":
-                        assert geometry["startMaxWidth"] == 820
+                        assert geometry["startMaxWidth"] == 760
                         assert geometry["suggestionCount"] == 3
                         assert geometry["start"]
                         free_height = max(
@@ -290,7 +292,7 @@ async def main(args):
                         )
                         < 1
                     )
-                    assert geometry["accent"] == "#da724d"
+                    assert geometry["accent"] == "#b95735"
                     layouts.append(
                         {"route": route, "width": width, "height": height, **geometry}
                     )
@@ -389,7 +391,7 @@ async def main(args):
                 "native coarse-pointer touch opens on the first avatar tap, toggles closed and dismisses outside without sticky hover"
             )
 
-            # Verify the actual CJK font, not just computed font-weight.
+            # Verify local CJK glyphs and the new selected/unselected weight hierarchy.
             await page.set_viewport_size({"width": 1440, "height": 1000})
             await go("workbench")
             client = await page.context.new_cdp_session(page)
@@ -409,13 +411,13 @@ async def main(args):
                     await client.send("CSS.getPlatformFontsForNode", {"nodeId": node})
                 )["fonts"]
                 # These labels contain Chinese only; allow local Noto, PingFang or YaHei faces.
-                assert any(
-                    face["glyphCount"] > 0 and "bold" in face["postScriptName"].lower()
-                    for face in faces
-                ), faces
+                assert any(face["glyphCount"] > 0 for face in faces), faces
+                await expect(page.locator(selector).first).to_have_css(
+                    "font-weight", "500" if ":not(" in selector else "600"
+                )
                 fonts.append({"selector": selector, "fonts": faces})
             passed(
-                "persistent sidebar retains real CJK bold faces and the original orange/SVG rules"
+                "persistent sidebar retains local CJK glyphs, 500/600 weight hierarchy and warm orange/SVG rules"
             )
 
             for width, height in [(1440, 1000), (820, 1000), (390, 844), (820, 480)]:

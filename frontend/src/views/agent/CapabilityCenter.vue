@@ -323,14 +323,6 @@ onMounted(load);
           <span class="enterprise-shared-label"><Icon name="building" :size="14" />公共能力目录</span>
         </div>
       </div>
-      <section class="capabilities-intro">
-        <span class="capabilities-intro-icon"><Icon name="blocks" :size="27" /></span>
-        <div>
-          <h2>能力统一维护，场景按需引用。</h2>
-          <p>了解它能做什么，再从适用场景开始。不需要为每个账号重复安装。</p>
-        </div>
-        <RouterLink to="/agent/scenarios">浏览企业场景 <Icon name="arrow" :size="15" /></RouterLink>
-      </section>
       <div class="collection-toolbar enterprise-collection-toolbar">
         <div class="collection-tabs" aria-label="能力分类">
           <button
@@ -367,30 +359,19 @@ onMounted(load);
           >
           <p>通过场景调用 · 仅展示审核且由 Forge 托管的版本</p>
         </div>
-        <div v-if="visibleTools.length" class="enterprise-tool-grid">
-          <article v-for="tool in visibleTools" :key="tool.name" class="enterprise-tool-card">
-            <div class="enterprise-tool-top">
-              <span :class="['scene-icon', tool.permission === 'approval' ? 'book' : 'shield']"
-                ><Icon :name="tool.icon" :size="24" /></span
-              ><span :class="['tag', tool.permission === 'approval' ? 'warm' : 'success']"
-                ><Icon :name="tool.permission === 'approval' ? 'shield' : 'eye'" :size="12" />{{
-                  tool.permission === 'approval' ? '默认需确认' : '只读'
-                }}</span
-              >
+        <div v-if="visibleTools.length" class="capability-tool-list">
+          <article v-for="tool in visibleTools" :key="tool.name" class="capability-tool-row">
+            <span class="scene-icon"><Icon :name="tool.icon" :size="18" /></span>
+            <div>
+              <h2>{{ tool.title }}</h2>
+              <p>{{ tool.description }}</p>
             </div>
-            <h2>{{ tool.title }}</h2>
-            <p>{{ tool.description }}</p>
-            <div class="tool-use-example">
-              <Icon name="message" :size="14" /><span>{{
-                guidance[tool.name]?.example ?? '在允许使用此工具的场景中描述你的目标。'
-              }}</span>
-            </div>
-            <footer>
-              <span>平台基础工具</span
-              ><button :aria-label="`查看${tool.title}详情`" @click="detail = tool">
-                查看详情 <Icon name="arrow" :size="15" />
-              </button>
-            </footer>
+            <span :class="['tag', tool.permission === 'approval' ? 'warm' : 'neutral']">
+              {{ tool.permission === 'approval' ? '需确认' : '只读' }}
+            </span>
+            <button class="text-link" :aria-label="`查看${tool.title}详情`" @click="detail = tool">
+              查看详情 <Icon name="arrow" :size="14" />
+            </button>
           </article>
         </div>
         <div v-else class="enterprise-empty">

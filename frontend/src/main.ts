@@ -16,6 +16,7 @@ import SkillCreate from './views/agent/SkillCreate.vue';
 import SkillEditor from './views/agent/SkillEditor.vue';
 import TrajectoryView from './views/agent/TrajectoryView.vue';
 import './style.css';
+import './tokens.css';
 import './enterprise.css';
 
 const router = createRouter({

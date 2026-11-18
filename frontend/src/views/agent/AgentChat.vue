@@ -52,6 +52,8 @@ onMounted(() => {
   window.addEventListener('keydown', panelKeyboard);
 });
 const previewFile = ref<{ path: string; content: string } | null>(null);
+const previewMode = ref<'preview' | 'source'>('preview');
+const isMarkdownFile = computed(() => /\.(md|markdown)$/i.test(previewFile.value?.path ?? ''));
 const fileLoading = ref('');
 const fileError = ref('');
 let fileRequest = 0;
@@ -192,6 +194,7 @@ function eventText(event: KernelEvent) {
   return event.payload.partial ? '保留了部分输出' : '收到一条回复';
 }
 async function openFile(path: string) {
+  previewMode.value = 'preview';
   if (!chat.current || fileLoading.value) return;
   const id = chat.current.id;
   const request = ++fileRequest;
@@ -610,16 +613,17 @@ async function copyMessage(text: string) {
           </div>
           <Icon name="arrow" :size="14" />
         </button>
-        <div v-if="lastAnswer" class="latest-answer">
+        <details v-if="lastAnswer" class="latest-answer">
+          <summary>最近回复</summary>
           <div class="latest-answer-heading">
-            <h3>最近回复</h3>
+            <span>会话中的最新输出</span>
             <button class="icon-button" aria-label="复制最近回复" @click="copyMessage(lastAnswer.content)">
               <Icon name="copy" :size="14" />
             </button>
           </div>
           <span v-if="lastAnswer.meta.partial" class="tag warning">部分输出 · 执行未完成</span
           ><Markdown :text="lastAnswer.content" />
-        </div>
+        </details>
         <div v-if="!chat.files.length && !lastAnswer" class="panel-empty">
           <Icon name="folder" :size="31" /><strong>结果会留在这里</strong>
           <p>执行后的回复与实际生成文件，可以随时回来查看。</p>
@@ -641,7 +645,14 @@ async function copyMessage(text: string) {
           <Icon name="close" :size="20" />
         </button>
       </header>
-      <pre>{{ previewFile.content }}</pre>
+      <div v-if="isMarkdownFile" class="file-preview-tabs" role="group" aria-label="文件显示方式">
+        <button :aria-pressed="previewMode === 'preview'" @click="previewMode = 'preview'">预览</button>
+        <button :aria-pressed="previewMode === 'source'" @click="previewMode = 'source'">原文</button>
+      </div>
+      <div v-if="isMarkdownFile && previewMode === 'preview'" class="file-preview-content">
+        <Markdown :text="previewFile.content" />
+      </div>
+      <pre v-else>{{ previewFile.content }}</pre>
       <footer>
         <button class="button secondary" @click="downloadFile">
           <Icon name="download" :size="16" />下载文件</button

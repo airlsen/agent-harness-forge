@@ -127,7 +127,7 @@ onUnmounted(() => {
         </RouterLink>
       </div>
       <button class="enterprise-new-chat" @click="newChat">
-        <Icon name="plus" :size="18" /><span>新建会话</span><Icon name="edit" :size="15" />
+        <Icon name="plus" :size="18" /><span>新建会话</span>
       </button>
       <div class="enterprise-sidebar-content">
         <nav class="primary-navigation enterprise-primary" aria-label="主导航">
