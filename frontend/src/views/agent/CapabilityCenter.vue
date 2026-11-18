@@ -5,6 +5,7 @@ import { api } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
 import { useConversation } from '../../stores/conversation';
 import type { Scenario, Tool } from '../../types/platform';
+import type { SkillSummary } from '../../types/skill';
 import Icon from '../../components/ForgeIcon.vue';
 import DialogShell from '../../components/DialogShell.vue';
 
@@ -29,7 +30,6 @@ type McpServer = {
   serverInfo: Record<string, unknown>;
   hasCredentials: boolean;
 };
-type Availability = { items: unknown[]; available: boolean; reason: string };
 const app = usePlatform();
 const chat = useConversation();
 const route = useRoute();
@@ -38,7 +38,7 @@ const query = ref('');
 const loading = ref(true);
 const loadError = ref('');
 const components = ref<RuntimeComponent[]>([]);
-const skills = ref<Availability | null>(null);
+const skills = ref<{ items: SkillSummary[] } | null>(null);
 const mcp = ref<{ items: McpServer[]; available: boolean; reason: string } | null>(null);
 const mcpJson = ref('');
 const mcpTransport = ref<'streamable-http' | 'sse' | 'stdio'>('streamable-http');
@@ -99,7 +99,7 @@ async function load() {
   try {
     const [plugins, skillResult, mcpResult] = await Promise.all([
       api<{ items: RuntimeComponent[] }>('/registry/plugins'),
-      api<Availability>('/registry/skills'),
+      api<{ items: SkillSummary[] }>('/skills'),
       api<{ items: McpServer[]; available: boolean; reason: string }>('/registry/mcp-servers'),
     ]);
     components.value = plugins.items;
@@ -354,11 +354,24 @@ onMounted(load);
           </article>
         </div>
       </section>
-      <section v-else-if="tab === 'skills' && skills" class="enterprise-empty">
-        <span class="enterprise-empty-symbol"><Icon name="book" :size="29" /></span>
-        <h2>管理可复用的工作方法</h2>
-        <p>创建 Skill 草稿，与助手一起完善内容，并在确认后发布版本。</p>
-        <button class="button primary" @click="router.push('/agent/skills')">打开 Skill 管理</button>
+      <section v-else-if="tab === 'skills' && skills" class="mcp-directory skill-capability-directory">
+        <header class="capability-list-heading">
+          <div><h2>Skills 技能</h2><span>{{ skills.items.length }} 个可复用工作方法</span></div>
+          <div class="skill-capability-actions"><RouterLink v-if="skills.items.length" to="/agent/skills" class="button secondary small">管理全部 <Icon name="arrow" :size="14" /></RouterLink><RouterLink to="/agent/skills/new" class="button primary small"><Icon name="plus" :size="15" />新建 Skill</RouterLink></div>
+        </header>
+        <div v-if="!skills.items.length" class="enterprise-empty">
+          <span class="enterprise-empty-symbol"><Icon name="book" :size="29" /></span>
+          <h2>还没有 Skill</h2>
+          <p>从一项常用工作开始，定义目标、步骤与输出要求；创建后可以由助手协助完善草稿。</p>
+          <RouterLink to="/agent/skills/new" class="button primary"><Icon name="plus" :size="16" />创建第一个 Skill</RouterLink>
+        </div>
+        <div v-else class="capability-skill-grid">
+          <RouterLink v-for="skill in skills.items" :key="skill.id" :to="`/agent/skills/${skill.id}`" class="capability-skill-card">
+            <div class="capability-skill-card-top"><span class="capability-skill-icon"><Icon name="book" :size="19" /></span><span :class="['tag', skill.status === 'published' ? 'success' : 'neutral']">{{ skill.status === 'published' ? `已发布 · v${skill.publishedVersion}` : '草稿' }}</span></div>
+            <div><h3>{{ skill.name }}</h3><p>{{ skill.description || '尚未添加用途说明。' }}</p></div>
+            <footer><span>修订 r{{ skill.revision ?? 1 }}</span><span>打开工作台 <Icon name="arrow" :size="14" /></span></footer>
+          </RouterLink>
+        </div>
       </section>
       <div v-if="tab === 'tools'" class="page-note">
         <Icon name="shield" :size="14" /><span

@@ -12,6 +12,8 @@ import ModelCenter from './views/agent/ModelCenter.vue';
 import GovernanceCenter from './views/agent/GovernanceCenter.vue';
 import AuditCenter from './views/agent/AuditCenter.vue';
 import SkillCenter from './views/agent/SkillCenter.vue';
+import SkillCreate from './views/agent/SkillCreate.vue';
+import SkillEditor from './views/agent/SkillEditor.vue';
 import TrajectoryView from './views/agent/TrajectoryView.vue';
 import './style.css';
 import './enterprise.css';
@@ -26,7 +28,9 @@ const router = createRouter({
     { path: '/agent/conversations', component: ConversationCenter, meta: { title: '我的会话' } },
     { path: '/agent/scenarios', component: ScenarioCenter, meta: { title: '企业场景' } },
     { path: '/agent/capabilities', component: CapabilityCenter, meta: { title: '企业能力中心' } },
-    { path: '/agent/skills', component: SkillCenter, meta: { title: 'Skill 管理' } },
+    { path: '/agent/skills', component: SkillCenter, meta: { title: 'Skill 库' } },
+    { path: '/agent/skills/new', component: SkillCreate, meta: { title: '新建 Skill' } },
+    { path: '/agent/skills/:id', component: SkillEditor, meta: { title: 'Skill 工作台' } },
     { path: '/agent/manage', component: ManagementHome, meta: { title: '平台管理' } },
     { path: '/agent/models', component: ModelCenter, meta: { title: '模型连接' } },
     { path: '/agent/governance', component: GovernanceCenter, meta: { title: '企业策略' } },
