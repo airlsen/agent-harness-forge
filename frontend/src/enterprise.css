@@ -3801,8 +3801,38 @@ textarea:focus-visible {
   font-size: 12px;
 }
 .mcp-import-dialog {
+  position: relative;
   width: min(560px, calc(100vw - 32px));
   padding: 24px;
+}
+.mcp-import-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+  padding-right: 34px;
+}
+.mcp-import-dialog > header .icon-button {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  place-items: center;
+}
+.mcp-format-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mcp-transport-select {
+  max-width: 270px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  font-size: 12px;
 }
 .mcp-import-body {
   display: grid;

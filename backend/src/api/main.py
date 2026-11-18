@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from .core.database import close_db, init_db, SessionFactory
 from .core.config import settings
 from .core.security import initialize_security, require_auth
-from .routes import agent_scenario, agent_session, approval, audit, governance, registry, auth, model
+from .routes import agent_scenario, agent_session, approval, audit, governance, registry, auth, model, skill
 from .services.scenario_service import seed_scenarios
 from .services.session_service import session_service
 from .services.runner_client import runner_client
@@ -79,6 +79,7 @@ app.include_router(agent_session.router, prefix="/api/agent/sessions", tags=["se
 app.include_router(approval.router, prefix="/api/agent/approvals", tags=["approval"])
 app.include_router(registry.router, prefix="/api/registry", tags=["registry"])
 app.include_router(model.router, prefix="/api/models", tags=["models"])
+app.include_router(skill.router, prefix="/api/skills", tags=["skills"])
 app.include_router(governance.router, prefix="/api/governance", tags=["governance"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 

@@ -21,6 +21,7 @@ type McpServer = {
   id: number;
   name: string;
   url: string;
+  transport: string;
   enabled: boolean;
   status: string;
   lastError: string;
@@ -40,6 +41,13 @@ const components = ref<RuntimeComponent[]>([]);
 const skills = ref<Availability | null>(null);
 const mcp = ref<{ items: McpServer[]; available: boolean; reason: string } | null>(null);
 const mcpJson = ref('');
+const mcpTransport = ref<'streamable-http' | 'sse' | 'stdio'>('streamable-http');
+const mcpExample = computed(() => JSON.stringify({ mcpServers: { 'my-service': mcpTransport.value === 'stdio' ? { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/path/to/allowed-folder'], env: {} } : { type: mcpTransport.value, url: mcpTransport.value === 'sse' ? 'https://mcp.example.com/sse' : 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer <token>' } } } }, null, 2));
+const mcpTemplate = ref('');
+function changeMcpTransport() {
+  if (mcpJson.value === mcpTemplate.value) mcpJson.value = mcpExample.value;
+  mcpTemplate.value = mcpExample.value;
+}
 const mcpBusy = ref(false);
 const mcpMessage = ref('');
 const mcpEditorOpen = ref(false);
@@ -101,7 +109,9 @@ async function load() {
 }
 function openMcpEditor() {
   mcpMessage.value = '';
-  mcpJson.value = '';
+  mcpTransport.value = 'streamable-http';
+  mcpJson.value = mcpExample.value;
+  mcpTemplate.value = mcpExample.value;
   mcpEditorOpen.value = true;
 }
 async function importMcpJson() {
@@ -112,6 +122,11 @@ async function importMcpJson() {
   } catch {
     mcpMessage.value = 'JSON 格式不正确，请检查括号和引号。';
     return;
+  }
+  if (config && typeof config === 'object' && 'mcpServers' in config && config.mcpServers && typeof config.mcpServers === 'object') {
+    for (const entry of Object.values(config.mcpServers as Record<string, Record<string, unknown>>)) {
+      entry.type = mcpTransport.value;
+    }
   }
   mcpBusy.value = true;
   try {
@@ -331,7 +346,7 @@ onMounted(load);
                   }}</span
                 >
               </div>
-              <code>{{ server.url }}</code>
+              <div class="mcp-endpoint"><span class="mcp-transport-badge">{{ server.transport === 'sse' ? 'SSE' : 'Streamable HTTP' }}</span><code>{{ server.url }}</code></div>
             </div>
             <p v-if="server.lastError" class="mcp-server-error">{{ server.lastError }}</p>
             <div v-if="server.tools.length" class="mcp-tool-list">
@@ -357,8 +372,9 @@ onMounted(load);
       </section>
       <section v-else-if="tab === 'skills' && skills" class="enterprise-empty">
         <span class="enterprise-empty-symbol"><Icon name="book" :size="29" /></span>
-        <h2>Skill 管理暂未开放</h2>
-        <p>接入后可将工作规范与步骤沉淀为企业可复用的能力。</p>
+        <h2>管理可复用的工作方法</h2>
+        <p>创建 Skill 草稿，与助手一起完善内容，并在确认后发布版本。</p>
+        <button class="button primary" @click="router.push('/agent/skills')">打开 Skill 管理</button>
       </section>
       <div v-if="tab === 'tools'" class="page-note">
         <Icon name="shield" :size="14" /><span
@@ -377,23 +393,24 @@ onMounted(load);
       <header>
         <div>
           <h2>导入 MCP 服务</h2>
-          <p>粘贴远程 HTTPS 服务的 mcpServers JSON。</p>
+          <p>选择 Streamable HTTP 或旧版 SSE，粘贴远程 HTTPS 服务的 mcpServers JSON。</p>
         </div>
         <button class="icon-button" aria-label="关闭" @click="mcpEditorOpen = false">
           <Icon name="close" :size="20" />
         </button>
       </header>
       <div class="mcp-import-body">
-        <label class="mcp-json-label" for="mcp-import-json">配置 JSON</label>
+        <div class="mcp-format-row"><label class="mcp-json-label" for="mcp-import-json">连接协议</label><select v-model="mcpTransport" class="mcp-transport-select" @change="changeMcpTransport"><option value="streamable-http">Streamable HTTP（推荐）</option><option value="sse">SSE（旧版 HTTP）</option><option value="stdio">stdio（本机进程）</option></select></div>
+        <label class="mcp-json-label" for="mcp-import-json">mcpServers 配置 JSON</label>
         <textarea
           id="mcp-import-json"
           v-model="mcpJson"
           class="mcp-json-input"
           rows="8"
           spellcheck="false"
-          placeholder='{\n  "mcpServers": {\n    "my-service": {\n      "type": "http",\n      "url": "https://mcp.example.com/mcp"\n    }\n  }\n}'
+          :placeholder="mcpExample"
         ></textarea>
-        <p class="mcp-import-hint">认证信息会加密保存在本机，不会在服务列表中显示。导入后需先测试连接。</p>
+        <p class="mcp-import-hint">凭据和 stdio 参数会加密保存在本机，不会在服务列表中显示。stdio 命令会以 Forge 服务进程权限启动，请只配置可信 MCP 程序；导入后需先测试连接。</p>
         <div v-if="mcpMessage" class="mcp-feedback" role="alert">{{ mcpMessage }}</div>
       </div>
       <footer>

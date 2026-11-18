@@ -33,6 +33,17 @@ async def init_db() -> None:
 
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Additive compatibility for existing workspaces created before MCP transport selection.
+        def ensure_mcp_transport(sync_conn):
+            from sqlalchemy import inspect, text
+
+            inspector = inspect(sync_conn)
+            if "mcp_server" in inspector.get_table_names() and "transport" not in {
+                column["name"] for column in inspector.get_columns("mcp_server")
+            }:
+                sync_conn.execute(text("ALTER TABLE mcp_server ADD COLUMN transport VARCHAR(24) NOT NULL DEFAULT 'streamable-http'"))
+
+        await conn.run_sync(ensure_mcp_transport)
     # 重启时关闭所有孤立审批，为未完成的运行保留明确的中断记录。
     from datetime import datetime, timezone
     from sqlalchemy import select, func

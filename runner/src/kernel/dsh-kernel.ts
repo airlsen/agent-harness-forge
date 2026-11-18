@@ -70,8 +70,11 @@ export class DshKernel implements AgentKernel {
   async createSession(bundle: Bundle, _user: UserCtx, model?: RuntimeModel): Promise<SessionHandle> {
     if (!model?.baseUrl || !model.model) throw failure('请先在模型中心配置真实模型网关', 422);
     if (this.size >= this.capacity) throw failure('Runner 会话容量已满，请归档暂不使用的会话', 429);
-    if (!Array.isArray(bundle.plugin_mounts) || bundle.plugin_mounts.some((p) => p !== 'forge-runtime'))
+    const approvedPlugins = new Set(['forge-runtime', 'skill-authoring']);
+    if (!Array.isArray(bundle.plugin_mounts) || bundle.plugin_mounts.some((p) => !approvedPlugins.has(p)))
       throw failure('包含未审核的插件', 422);
+    if (bundle.plugin_mounts.includes('skill-authoring') && !bundle.meta?.skillAuthoring)
+      throw failure('Skill 编辑插件缺少当前 Skill 草稿上下文', 422);
     const id = randomUUID();
     const entry: Entry = {
       id,
@@ -118,6 +121,16 @@ export class DshKernel implements AgentKernel {
         requestTimeoutSeconds: policy.requestTimeoutSeconds ?? 120,
       },
     };
+    const skillAuthoringPlugin = entry.bundle.plugin_mounts.includes('skill-authoring')
+      ? {
+          id: 'skill-authoring',
+          name: pathToFileURL(join(ROOT, 'skill-authoring-plugin', 'index.js')).href,
+          config: {
+            ...((entry.bundle.meta?.skillAuthoring as Record<string, unknown>) ?? {}),
+            allowedTools: allowed.filter((name) => (policy.allowedTools ?? allowed).includes(name)),
+          },
+        }
+      : null;
     const patch = [
       { id: 'sessions', config: { root: join(dir, 'session-log'), compression: 'none' } },
       ...[
@@ -132,6 +145,7 @@ export class DshKernel implements AgentKernel {
         insert: [
           { id: 'forge-user-approval', name: '@deepseek-ai/dsh-user-approval', config: { policy: 'ask' } },
           plugin,
+          ...(skillAuthoringPlugin ? [skillAuthoringPlugin] : []),
         ],
       },
     ];
@@ -205,6 +219,7 @@ export class DshKernel implements AgentKernel {
       entry.error = params.message;
       this.emit(entry, 'error', params);
     } else if (method === 'forge.policy') this.emit(entry, 'policy_decision', params, 'tools');
+    else if (method === 'forge.skill_revision') this.emit(entry, 'skill_revision', params, 'tools');
     else if (method === 'forge.artifact') this.emit(entry, 'files', { files: [params] }, 'tools');
     else if (method === 'session.event') {
       const event = params.event;
