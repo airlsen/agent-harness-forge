@@ -111,7 +111,6 @@ const status = computed(() =>
     ? { label: '等待确认', tone: 'warning', icon: 'shield' }
     : sessionState(chat.current?.status ?? 'idle'),
 );
-const avatar = computed(() => app.user?.username?.slice(0, 1)?.toUpperCase() || 'A');
 let routeGeneration = 0;
 async function loadSession(value: unknown) {
   const generation = ++routeGeneration;
@@ -310,18 +309,9 @@ async function copyMessage(text: string) {
         </div>
         <ConversationStart v-else-if="welcome" @submitted="(id) => router.replace(`/agent/chat/${id}`)" />
         <div v-else class="conversation-messages">
-          <div class="conversation-start">
-            <Icon name="layers" :size="13" />{{ chat.current?.scenarioName }} · v{{
-              chat.current?.scenarioVersion
-            }}<button @click="showPanel('context')">查看本次能力 <Icon name="chevron" :size="12" /></button>
-          </div>
           <article v-for="message in chat.messages" :key="message.id" :class="['message-row', message.role]">
             <template v-if="message.role === 'user'"
-              ><span class="message-avatar user">{{ avatar }}</span>
-              <div class="message-main">
-                <div class="message-author">你</div>
-                <div class="user-message-text">{{ message.content }}</div>
-              </div></template
+              ><div class="user-message-text">{{ message.content }}</div></template
             >
             <template v-else-if="message.role === 'tool'"
               ><div class="tool-card">

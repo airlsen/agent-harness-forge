@@ -1530,27 +1530,14 @@ button:disabled:hover {
   max-width: 830px;
   margin: 0 auto;
 }
-.conversation-start {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-size: 10px;
-  color: #526075;
-  border-bottom: 1px solid #f1f3f7;
-  padding: 0 5px 21px;
-  margin-bottom: 29px;
-}
-.conversation-start > span {
-  font-size: 10px;
-  color: #526175;
-  margin-left: 6px;
-}
 .message-row {
   display: flex;
   gap: 13px;
   margin: 26px 0;
   align-items: flex-start;
+}
+.message-row.user {
+  justify-content: flex-end;
 }
 .message-avatar {
   height: 29px;
@@ -1560,10 +1547,6 @@ button:disabled:hover {
   display: grid;
   place-items: center;
   font-size: 11px;
-}
-.message-avatar.user {
-  background: #e9e5df;
-  color: #726454;
 }
 .message-avatar.agent {
   background: #faefe5;
@@ -1593,12 +1576,12 @@ button:disabled:hover {
   white-space: pre-wrap;
   font-size: 13px;
   line-height: 1.9;
-  color: #566271;
+  color: #fff;
   overflow-wrap: anywhere;
-  background: #f8f9fb;
-  border: 1px solid #edf0f5;
-  border-radius: 8px;
+  background: var(--accent);
+  border-radius: 12px;
   padding: 13px 16px;
+  max-width: 78%;
 }
 .markdown-body {
   font-size: 13px;
@@ -4557,16 +4540,6 @@ table td > .tag {
   .scenario-popover > button div > span {
     font-size: 10px;
     max-width: 185px;
-  }
-  .conversation-start {
-    flex-wrap: wrap;
-    line-height: 1.9;
-    font-size: 10px;
-    margin-bottom: 22px;
-  }
-  .conversation-start > span {
-    font-size: 10px;
-    margin-left: 0;
   }
   .message-row {
     gap: 9px;
