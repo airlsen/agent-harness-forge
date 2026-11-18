@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { usePlatform } from './stores/platform';
 import { useConversation } from './stores/conversation';
@@ -15,7 +15,8 @@ const route = useRoute();
 const router = useRouter();
 const help = ref(false);
 const loggingOut = ref(false);
-const adminRoutes = ['/agent/manage', '/agent/models', '/agent/governance', '/agent/audit'];
+const managementExpanded = ref(false);
+const adminRoutes = ['/agent/models', '/agent/governance', '/agent/runtime', '/agent/audit'];
 const isAdministration = computed(() => adminRoutes.includes(route.path));
 const navigation = [
   { path: '/agent/workbench', label: '工作台', icon: 'home' },
@@ -24,11 +25,23 @@ const navigation = [
   { path: '/agent/conversations', label: '我的会话', icon: 'message' },
 ];
 const management = [
-  { path: '/agent/manage', label: '管理概览', icon: 'settings' },
   { path: '/agent/models', label: '模型连接', icon: 'cpu' },
-  { path: '/agent/governance', label: '企业策略', icon: 'shield' },
+  { path: '/agent/governance', label: '执行策略', icon: 'shield' },
+  { path: '/agent/runtime', label: '运行状态', icon: 'server' },
   { path: '/agent/audit', label: '运行审计', icon: 'activity' },
 ];
+watch(
+  isAdministration,
+  (active) => {
+    // An active child is never hidden. It keeps orientation clear after a deep link or refresh.
+    if (active) managementExpanded.value = true;
+  },
+  { immediate: true },
+);
+function toggleManagement() {
+  // The parent is an expander, not a redundant overview destination. Keep the active branch visible.
+  if (!isAdministration.value) managementExpanded.value = !managementExpanded.value;
+}
 function newChat() {
   if (chat.requestNewConversation()) void router.push('/agent/chat');
 }
@@ -176,12 +189,28 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="enterprise-sidebar-footer">
-        <RouterLink
-          to="/agent/manage"
-          :class="['enterprise-management-link', { selected: isAdministration }]"
-          aria-label="平台管理"
-          ><Icon name="settings" :size="18" /><span>平台管理</span><Icon name="chevron" :size="14"
-        /></RouterLink>
+        <section class="enterprise-management-nav" aria-label="平台管理">
+          <button
+            type="button"
+            :class="['enterprise-management-link', { selected: isAdministration }]"
+            :aria-expanded="managementExpanded"
+            aria-controls="platform-management-links"
+            @click="toggleManagement"
+          >
+            <Icon name="settings" :size="18" /><span>平台管理</span
+            ><Icon name="chevronDown" :size="14" class="management-chevron" />
+          </button>
+          <div v-show="managementExpanded" id="platform-management-links" class="enterprise-management-links">
+            <RouterLink
+              v-for="item in management"
+              :key="item.path"
+              :to="item.path"
+              :class="{ selected: route.path === item.path }"
+            >
+              <Icon :name="item.icon" :size="15" /><span>{{ item.label }}</span>
+            </RouterLink>
+          </div>
+        </section>
         <button
           class="enterprise-help-link"
           aria-label="使用帮助"
@@ -195,15 +224,6 @@ onUnmounted(() => {
       </div>
     </aside>
     <div class="app-body enterprise-body">
-      <nav v-if="isAdministration" class="enterprise-admin-tabs" aria-label="平台管理导航">
-        <RouterLink
-          v-for="item in management"
-          :key="item.path"
-          :to="item.path"
-          :class="{ selected: route.path === item.path }"
-          ><Icon :name="item.icon" :size="16" />{{ item.label }}</RouterLink
-        >
-      </nav>
       <div v-if="app.loading" class="global-progress"></div>
       <div id="main-content" class="enterprise-view" tabindex="-1"><RouterView /></div>
     </div>
@@ -291,8 +311,8 @@ onUnmounted(() => {
           <Icon name="info" :size="17" />
           <div>
             <p>模型连接、执行策略及当前部署限制，统一在平台管理中查看。</p>
-            <RouterLink to="/agent/manage" class="text-link" @click="help = false"
-              >前往平台管理 <Icon name="arrow" :size="14"
+            <RouterLink to="/agent/models" class="text-link" @click="help = false"
+              >打开模型连接 <Icon name="arrow" :size="14"
             /></RouterLink>
           </div>
         </div>
