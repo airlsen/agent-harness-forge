@@ -80,7 +80,11 @@ function formatTestTime(at?: string) {
 }
 function modelHealth(model: ModelConnection): { tone: ModelHealthTone; label: string; description: string } {
   if (!model.enabled)
-    return { tone: 'disabled', label: '已停用', description: '此配置不会出现在聊天模型选择中' };
+    return {
+      tone: 'disabled',
+      label: '已停用',
+      description: '不会出现在聊天模型选择中；已在使用它的会话仍可继续',
+    };
   if (model.lastTest?.ok)
     return {
       tone: 'normal',
@@ -223,7 +227,7 @@ onBeforeUnmount(() => document.removeEventListener('click', closeActionMenu));
         <div>
           <h1>模型管理</h1>
           <p>
-            维护企业模型配置。已启用的模型可在聊天中为每个新会话选择，未选择时使用平台默认模型；密钥只保存在服务端。
+            维护企业模型配置。已启用的模型可在聊天中选择，并可在会话两轮之间切换；新会话未选择时使用平台默认模型。停用模型不影响正在使用它的会话继续，密钥只保存在服务端。
           </p>
           <p v-if="models.length && !loading" class="model-management-summary" aria-live="polite">
             <span

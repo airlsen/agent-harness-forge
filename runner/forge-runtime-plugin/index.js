@@ -17,7 +17,15 @@ const visibleText = (content) =>
 
 function messages(options) {
   const out = options.system ? [{ role: 'system', content: options.system }] : [];
-  for (const m of options.messages ?? []) {
+  const history = options.messages ?? [];
+  // 思考内容只回放本轮（最后一条用户消息之后，即工具调用循环内）的部分：
+  // 推理模型要求工具循环内带回 reasoning_content，但跨轮回放既浪费上下文，
+  // 也会把上一个模型的思考交给会话内切换后的新模型。
+  let currentTurn = 0;
+  history.forEach((m, index) => {
+    if (m.role === 'user') currentTurn = index;
+  });
+  for (const [index, m] of history.entries()) {
     const text = visibleText(m.content);
     if (m.role === 'tool')
       out.push({ role: 'tool', content: text, tool_call_id: m.toolCallId ?? m.source?.callId });
@@ -25,7 +33,7 @@ function messages(options) {
       const calls = (m.content ?? [])
         .filter((b) => b.type === 'tool-call')
         .map((b) => ({ id: b.id, type: 'function', function: { name: b.name, arguments: b.arguments } }));
-      const reasoning = m.source?.replayState?.response?.reasoningContent;
+      const reasoning = index > currentTurn ? m.source?.replayState?.response?.reasoningContent : undefined;
       out.push({
         role: 'assistant',
         content: text || null,

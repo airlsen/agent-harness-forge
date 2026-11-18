@@ -90,9 +90,15 @@ const selectedTools = computed(() =>
 const welcome = computed(() => !chat.messages.length && !loadError.value);
 const processEvents = computed(() =>
   chat.events.filter((e) =>
-    ['tool_use_start', 'tool_result', 'approval_required', 'approval_resolved', 'error', 'message'].includes(
-      e.kind,
-    ),
+    [
+      'model_switched',
+      'tool_use_start',
+      'tool_result',
+      'approval_required',
+      'approval_resolved',
+      'error',
+      'message',
+    ].includes(e.kind),
   ),
 );
 const rawEvents = computed(() => chat.events.filter((e) => e.kind === 'trajectory'));
@@ -226,6 +232,8 @@ function eventText(event: KernelEvent) {
   if (event.kind === 'approval_required') return `${tool} · 等待确认`;
   if (event.kind === 'approval_resolved')
     return `操作确认 · ${event.payload.action === 'approve' ? '已批准' : '已处理'}`;
+  if (event.kind === 'model_switched')
+    return `模型切换 · ${event.payload.from?.name ?? '未记录'} → ${event.payload.to?.name ?? '未记录'}`;
   if (event.kind === 'error') return '执行出现异常';
   return event.payload.partial ? '保留了部分输出' : '收到一条回复';
 }
@@ -347,6 +355,12 @@ async function copyMessage(text: string) {
         <ConversationStart v-else-if="welcome" @submitted="(id) => router.replace(`/agent/chat/${id}`)" />
         <div v-else class="conversation-messages">
           <article v-for="(turn, turnIndex) in turns" :key="turn.key" class="turn-block">
+            <div v-if="turn.switch" class="model-switch-divider" role="separator">
+              <span
+                ><Icon name="cpu" :size="12" />模型已切换：{{ turn.switch.from }} →
+                <strong>{{ turn.switch.to }}</strong></span
+              >
+            </div>
             <div v-if="turn.user" class="message-row user">
               <div class="user-message-text">{{ turn.user.content }}</div>
             </div>
@@ -570,8 +584,23 @@ async function copyMessage(text: string) {
           </p>
           <p v-if="chat.current" class="small-text muted-text">
             累计 {{ (chat.current.tokensIn + chat.current.tokensOut).toLocaleString() }} tokens ·
-            {{ chat.current.cost === null ? '费用未配置' : `¥${chat.current.cost.toFixed(4)}` }}
+            {{
+              chat.current.cost !== null
+                ? `¥${chat.current.cost.toFixed(4)}`
+                : (chat.current.models ?? []).some((segment) => segment.cost != null)
+                  ? '部分模型未配置单价'
+                  : '费用未配置'
+            }}
           </p>
+          <ul v-if="(chat.current?.models?.length ?? 0) > 1" class="model-usage-list" aria-label="各模型用量">
+            <li v-for="(segment, index) in chat.current?.models" :key="index">
+              <span :title="segment.model">{{ segment.name || segment.model }}</span>
+              <small
+                >{{ ((segment.tokensIn ?? 0) + (segment.tokensOut ?? 0)).toLocaleString() }} tokens ·
+                {{ segment.cost == null ? '未配置单价' : `¥${segment.cost.toFixed(4)}` }}</small
+              >
+            </li>
+          </ul>
         </div>
         <details v-if="chat.current" class="technical-detail">
           <summary>引用快照标识</summary>
@@ -579,7 +608,9 @@ async function copyMessage(text: string) {
         </details>
         <div v-else class="context-tip">
           <Icon name="info" :size="15" />
-          <p>提交后会记录场景、模型与策略快照，后续维护不会静默改变已有会话。</p>
+          <p>
+            提交后会记录场景与策略快照，后续维护不会静默改变已有会话；模型可在两轮之间切换，每条回复记录所用模型。
+          </p>
         </div>
       </div>
       <div v-else-if="chat.panel === 'trajectory'" class="panel-scroll">
@@ -609,7 +640,9 @@ async function copyMessage(text: string) {
                       ? 'shield'
                       : event.kind === 'message'
                         ? 'message'
-                        : 'wrench'
+                        : event.kind === 'model_switched'
+                          ? 'cpu'
+                          : 'wrench'
                 "
                 :size="14"
             /></span>

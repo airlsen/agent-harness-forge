@@ -1,7 +1,7 @@
 /** 业务 Runner 入口。仅控制面凭内部 Token 可访问，浏览器永不直连。 */
 import Fastify from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
-import { DshKernel, type RuntimeModel } from './kernel/dsh-kernel.js';
+import { DshKernel, validModel, type RuntimeModel } from './kernel/dsh-kernel.js';
 import { PluginWorkerClient } from './plugin-worker-client.js';
 import type { Bundle, UserCtx } from './kernel/types.js';
 
@@ -46,7 +46,7 @@ app.get<{ Params: { id: string } }>('/v1/sessions/:id', async (req, reply) =>
     ? { exists: true, busy: kernel.isBusy(req.params.id) }
     : reply.code(404).send({ message: '执行会话不存在，Runner 可能已重启' }),
 );
-app.post<{ Params: { id: string }; Body: { message: string } }>(
+app.post<{ Params: { id: string }; Body: { message: string; modelConfig?: RuntimeModel } }>(
   '/v1/sessions/:id/stream',
   async (req, reply) => {
     const id = req.params.id;
@@ -54,6 +54,9 @@ app.post<{ Params: { id: string }; Body: { message: string } }>(
     if (kernel.isBusy(id)) return reply.code(409).send({ message: '会话正在执行' });
     if (!req.body?.message || req.body.message.length > 64000)
       return reply.code(422).send({ message: 'message is required (<=64000 chars)' });
+    // 必须在接管响应流之前校验，否则错误无法以 422 返回给控制面。
+    if (req.body.modelConfig !== undefined && !validModel(req.body.modelConfig))
+      return reply.code(422).send({ message: 'modelConfig requires baseUrl and model' });
     reply.hijack();
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -65,7 +68,7 @@ app.post<{ Params: { id: string }; Body: { message: string } }>(
     });
     reply.raw.on('close', unsubscribe);
     try {
-      await kernel.sendTurn(id, req.body.message);
+      await kernel.sendTurn(id, req.body.message, undefined, req.body.modelConfig);
     } finally {
       unsubscribe();
       if (!reply.raw.destroyed) reply.raw.end();
