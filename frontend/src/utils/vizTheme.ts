@@ -1,93 +1,111 @@
 /**
- * 富内容渲染的统一视觉主题：Mermaid 图、Vega-Lite 图表共用一套与品牌橙协调的分类色板，
- * 代码块使用基于 tokyo-night 调整的深色主题。
+ * 富内容渲染的统一视觉主题：
+ * - Mermaid 流程图 / 时序图沿用界面主题色（品牌珊瑚橙浅底 + 橙色描边）；
+ * - 饼图、柱状图、折线图等数据图表使用围绕品牌珊瑚橙的清透亮色板；
+ * - 代码块使用基于 tokyo-night 调整的深色主题。
  */
 import type { EmbedOptions } from 'vega-embed';
 
 /**
- * 分类色板（低饱和协调色板）：统一降低饱和度、拉平亮度，与界面的石板蓝灰底色呼应；
- * 冷暖交替排列，相邻扇区/柱子易区分；末位石板灰留给"其他"。
+ * 数据图表分类色板：以品牌珊瑚橙为首，其余为高明度、中高饱和的清透色（马卡龙但不发灰），
+ * 冷暖交替排列，相邻扇区/柱子易区分；末位浅石板灰留给"其他"。
  */
 export const VIZ_PALETTE = [
-  '#c8704f', // 陶土橙（品牌色降饱和）
-  '#5b7c99', // 雾蓝（与界面蓝灰同一色系）
-  '#7fa087', // 鼠尾草绿
-  '#d1a35e', // 赭石
-  '#8a7aa8', // 灰紫
-  '#5e9c9a', // 灰青
-  '#b8797f', // 豆沙粉
-  '#8c96a3', // 石板灰（其他）
+  '#f28c64', // 珊瑚橙（品牌色提亮）
+  '#6cb4f4', // 天空蓝
+  '#5fcfaa', // 薄荷绿
+  '#f9c45c', // 芒果黄
+  '#a993f0', // 薰衣草紫
+  '#f589a8', // 蜜桃粉
+  '#4fc4d6', // 湖水青
+  '#c5ccd6', // 浅石板灰（其他）
 ];
 
-/** 单系列图表默认用雾蓝，品牌橙留作强调色 */
-export const VIZ_SINGLE = VIZ_PALETTE[1];
+/** 单系列图表默认用品牌珊瑚橙，与界面主题一致 */
+export const VIZ_SINGLE = VIZ_PALETTE[0];
 
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif';
 const INK = '#292e38';
-const MUTED = '#8c96a3';
+const MUTED = '#7a8699';
 
 /** Mermaid base 主题变量（base 主题只接受十六进制颜色） */
-export const MERMAID_THEME_VARIABLES: Record<string, string | boolean> = {
+export const MERMAID_THEME_VARIABLES: Record<string, string | boolean | Record<string, string>> = {
   fontFamily: FONT,
   fontSize: '14px',
   background: '#ffffff',
   // Mermaid 12 默认 neo 外观会用 primary→secondary 渐变描边（橙→蓝的双色边框），关掉保持单色
   useGradient: false,
-  // 流程图节点：雾蓝浅底 + 雾蓝描边，整图不再大面积铺品牌橙
-  primaryColor: '#eef3f7',
-  primaryBorderColor: '#8fa6bb',
+  // 流程图节点 / 时序图参与者：界面主题色——浅橙底 + 品牌橙描边
+  primaryColor: '#fdf0e9',
+  primaryBorderColor: '#da724d',
   primaryTextColor: INK,
-  secondaryColor: '#f8eee9',
-  secondaryBorderColor: '#c8704f',
+  secondaryColor: '#eaf1fb',
+  secondaryBorderColor: '#4c84d9',
   secondaryTextColor: INK,
-  tertiaryColor: '#eff4f0',
-  tertiaryBorderColor: '#7fa087',
+  tertiaryColor: '#e9f5f1',
+  tertiaryBorderColor: '#489980',
   tertiaryTextColor: INK,
   lineColor: MUTED,
   textColor: INK,
   edgeLabelBackground: '#ffffff',
   clusterBkg: '#f8f9fb',
   clusterBorder: '#d8dfe7',
-  noteBkgColor: '#faf4ea',
-  noteBorderColor: '#d1a35e',
+  noteBkgColor: '#fff6e0',
+  noteBorderColor: '#e2a93b',
   noteTextColor: INK,
   // 时序图
-  actorBkg: '#eef3f7',
-  actorBorder: '#8fa6bb',
+  actorBkg: '#fdf0e9',
+  actorBorder: '#da724d',
   actorTextColor: INK,
-  actorLineColor: '#c9d2de',
+  actorLineColor: '#c3cad4',
   signalColor: '#58616f',
   signalTextColor: INK,
-  activationBkgColor: '#f8eee9',
-  activationBorderColor: '#c8704f',
-  // 甘特图
-  taskBkgColor: '#5b7c99',
-  taskBorderColor: '#4a6884',
-  taskTextColor: '#ffffff',
-  activeTaskBkgColor: '#c8704f',
-  activeTaskBorderColor: '#a95b3e',
-  doneTaskBkgColor: '#b9cdbe',
-  doneTaskBorderColor: '#7fa087',
-  critBkgColor: '#b8797f',
-  critBorderColor: '#9a5f65',
+  activationBkgColor: '#fbe1d5',
+  activationBorderColor: '#da724d',
+  // 甘特图：数据图表色板的清透色，深色文字保证可读
+  taskBkgColor: '#9fcdf8',
+  taskBorderColor: '#6cb4f4',
+  taskTextColor: INK,
+  taskTextOutsideColor: INK,
+  taskTextLightColor: INK,
+  taskTextDarkColor: INK,
+  activeTaskBkgColor: '#f8b294',
+  activeTaskBorderColor: '#f28c64',
+  doneTaskBkgColor: '#a6e6d0',
+  doneTaskBorderColor: '#5fcfaa',
+  critBkgColor: '#f9b3c7',
+  critBorderColor: '#f589a8',
   gridColor: '#e9ebef',
   sectionBkgColor: '#f8f9fb',
   altSectionBkgColor: '#ffffff',
-  // 饼图
+  // 饼图：清透色板 + 白色分隔，扇区文字用深色（浅色扇区上白字看不清）
   ...Object.fromEntries(
     Array.from({ length: 12 }, (_, i) => [`pie${i + 1}`, VIZ_PALETTE[i % VIZ_PALETTE.length]]),
   ),
   pieStrokeColor: '#ffffff',
   pieStrokeWidth: '2px',
   pieOuterStrokeWidth: '0px',
-  pieSectionTextColor: '#ffffff',
+  pieSectionTextColor: INK,
   pieSectionTextSize: '13px',
   pieTitleTextColor: INK,
   pieTitleTextSize: '17px',
   pieLegendTextColor: INK,
   pieLegendTextSize: '13px',
   pieOpacity: '1',
-  // 象限图 / xychart 等其余图型沿用 base 主题按 primaryColor 推导
+  // Mermaid 内置柱状/折线图（xychart）与数据图表共用色板
+  xyChart: {
+    backgroundColor: '#ffffff',
+    plotColorPalette: VIZ_PALETTE.join(', '),
+    titleColor: INK,
+    xAxisLabelColor: '#58616f',
+    yAxisLabelColor: '#58616f',
+    xAxisTitleColor: '#58616f',
+    yAxisTitleColor: '#58616f',
+    xAxisLineColor: '#d8dfe7',
+    yAxisLineColor: '#d8dfe7',
+    xAxisTickColor: '#d8dfe7',
+    yAxisTickColor: '#d8dfe7',
+  },
 };
 
 export const MERMAID_CONFIG = {
@@ -100,7 +118,7 @@ export const MERMAID_CONFIG = {
   flowchart: { wrappingWidth: 220 },
 };
 
-/** Vega-Lite 全局配置：品牌色板、统一字体与轻量坐标轴（模型给出的 spec.config 会覆盖这里） */
+/** Vega-Lite 全局配置：清透色板、统一字体与轻量坐标轴（模型给出的 spec.config 会覆盖这里） */
 export const VEGA_CONFIG: Exclude<EmbedOptions['config'], string | undefined> = {
   background: 'transparent',
   font: FONT,
@@ -114,14 +132,22 @@ export const VEGA_CONFIG: Exclude<EmbedOptions['config'], string | undefined> = 
     labelFontSize: 11,
     titleFontSize: 12,
     titleFontWeight: 500,
-    domainColor: '#d8dfe7',
-    tickColor: '#d8dfe7',
-    gridColor: '#eef1f5',
+    domainColor: '#e3e7ed',
+    tickColor: '#e3e7ed',
+    gridColor: '#f1f3f6',
   },
-  legend: { labelColor: '#58616f', titleColor: '#58616f', labelFontSize: 12, titleFontSize: 12 },
+  legend: {
+    labelColor: '#58616f',
+    titleColor: '#58616f',
+    labelFontSize: 12,
+    titleFontSize: 12,
+    symbolType: 'circle',
+  },
   arc: { stroke: '#ffffff', strokeWidth: 2 },
-  bar: { cornerRadiusEnd: 3 },
+  bar: { cornerRadiusEnd: 4 },
   line: { strokeWidth: 2.5 },
+  // 面积图半透明填充，叠加多系列时依然清爽
+  area: { fillOpacity: 0.45, line: true },
   point: { filled: true, size: 60 },
 };
 

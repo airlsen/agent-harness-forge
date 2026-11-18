@@ -132,7 +132,9 @@ try {
     assert.deepEqual(VEGA_CONFIG.range.category, VIZ_PALETTE);
     assert.equal(VIZ_PALETTE.length, 8);
     assert.equal(vars.pie9, VIZ_PALETTE[0]); // 超过 8 类时循环取色
-    assert.equal(VEGA_CONFIG.mark.color, '#5b7c99'); // 单系列默认雾蓝，品牌橙留作强调
+    assert.equal(VEGA_CONFIG.mark.color, VIZ_PALETTE[0]); // 单系列默认品牌珊瑚橙
+    assert.equal(vars.primaryBorderColor, '#da724d'); // 流程图沿用界面主题色
+    assert.equal(vars.xyChart.plotColorPalette, VIZ_PALETTE.join(', ')); // Mermaid 柱状/折线图同色板
   });
 
   console.log(`\n${checks.length} checks passed`);
