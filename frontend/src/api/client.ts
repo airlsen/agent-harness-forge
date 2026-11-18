@@ -72,10 +72,15 @@ export async function api<T = any>(url: string, options: RequestInit = {}): Prom
   if (body.code !== 0) throw new ApiError(body.message ?? '请求失败', response.status);
   return body.data as T;
 }
-export async function downloadResponse(url: string, filename: string): Promise<void> {
+/** 读取二进制响应（预览/下载会话文件等），失败时抛出带服务端消息的 ApiError */
+export async function apiBlob(url: string): Promise<Blob> {
   const response = await apiFetch('/api' + url);
   if (!response.ok) throw await responseError(response);
-  const objectUrl = URL.createObjectURL(await response.blob());
+  return response.blob();
+}
+/** 把 Blob 以指定文件名保存到本地 */
+export function saveBlob(blob: Blob, filename: string) {
+  const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = objectUrl;
   anchor.download = filename;
@@ -83,6 +88,9 @@ export async function downloadResponse(url: string, filename: string): Promise<v
   anchor.click();
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+export async function downloadResponse(url: string, filename: string): Promise<void> {
+  saveBlob(await apiBlob(url), filename);
 }
 export const post = <T = any>(url: string, data?: unknown) =>
   api<T>(url, { method: 'POST', ...(data ? { body: JSON.stringify(data) } : {}) });

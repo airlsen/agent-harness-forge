@@ -5,6 +5,14 @@
  * 运行中的思考/工具/正文流式并入同一个 AI 块。
  */
 import type { ChatMessage } from '../types/platform';
+import {
+  PRESENT_TOOL,
+  mergeDeliverables,
+  parseChanges,
+  parseDeliverables,
+  type Deliverable,
+  type WorkspaceChanges,
+} from './files';
 
 export interface ToolCallView {
   id: string;
@@ -29,6 +37,10 @@ export interface Turn {
   model: string;
   /** 本轮起切换了模型（会话内切换），用于渲染切换分隔线 */
   switch: { from: string; to: string } | null;
+  /** 本轮模型通过 workspace_present 声明的交付文件（同一路径以最后一次声明为准） */
+  deliverables: Deliverable[];
+  /** 本轮结束时服务端记录的工作区改动（新增/修改/删除与行数），无改动时为 null */
+  changes: WorkspaceChanges | null;
 }
 function modelLabel(meta: Record<string, any> | undefined) {
   const value = meta?.modelName || meta?.model;
@@ -68,6 +80,8 @@ export function buildTurns(messages: ChatMessage[], live: LiveTurn): Turn[] {
         running: false,
         model: modelLabel(message.meta),
         switch: switchLabel(message.meta),
+        deliverables: [],
+        changes: parseChanges(message.meta?.workspaceChanges),
       });
       continue;
     }
@@ -93,6 +107,8 @@ export function buildTurns(messages: ChatMessage[], live: LiveTurn): Turn[] {
         result: message.content,
         isError: Boolean(message.meta?.isError),
       });
+      if (message.meta?.tool === PRESENT_TOOL && !message.meta?.isError)
+        mergeDeliverables(turn.deliverables, parseDeliverables(message.content));
     }
   }
   const last = turns.at(-1);

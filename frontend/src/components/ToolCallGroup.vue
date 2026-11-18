@@ -4,6 +4,7 @@ import { usePlatform } from '../stores/platform';
 import { useConversation } from '../stores/conversation';
 import type { ToolCallView } from '../utils/turns';
 import Icon from './ForgeIcon.vue';
+import { BUILTIN_TOOL_TITLES } from '../utils/files';
 
 const props = defineProps<{ calls: ToolCallView[] }>();
 const app = usePlatform();
@@ -21,12 +22,15 @@ const summary = computed(() => {
   return `${props.calls.length} 次工具调用 · ${names.slice(0, 3).join('、')}${names.length > 3 ? ' 等' : ''}`;
 });
 function toolTitle(name: string) {
-  return app.tools.find((tool) => tool.name === name)?.title ?? name;
+  return app.tools.find((tool) => tool.name === name)?.title ?? BUILTIN_TOOL_TITLES[name] ?? name;
 }
 function argSummary(value: unknown) {
   if (!value || typeof value !== 'object') return '';
   const path = (value as Record<string, unknown>).path;
   if (typeof path === 'string' && path) return path;
+  const files = (value as Record<string, unknown>).files;
+  if (Array.isArray(files) && files.length)
+    return files.map((file) => (typeof file?.path === 'string' ? file.path : '…')).join('、');
   try {
     const text = JSON.stringify(value);
     return text.length > 48 ? text.slice(0, 48) + '…' : text;

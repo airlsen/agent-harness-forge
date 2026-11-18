@@ -108,6 +108,20 @@ async def init_db() -> None:
                 )
 
         await conn.run_sync(ensure_model_connection_columns)
+
+        # Additive compatibility for server-side workspace file persistence and retention.
+        def ensure_session_file_columns(sync_conn):
+            from sqlalchemy import inspect, text
+
+            inspector = inspect(sync_conn)
+            if "agent_session" not in inspector.get_table_names():
+                return
+            existing = {column["name"] for column in inspector.get_columns("agent_session")}
+            for name in ("files_synced_at", "files_purged_at"):
+                if name not in existing:
+                    sync_conn.execute(text(f"ALTER TABLE agent_session ADD COLUMN {name} TIMESTAMP NULL"))
+
+        await conn.run_sync(ensure_session_file_columns)
     # 重启时关闭所有孤立审批，为未完成的运行保留明确的中断记录。
     from datetime import datetime, timezone
     from sqlalchemy import select, func
