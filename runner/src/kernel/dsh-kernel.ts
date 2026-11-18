@@ -155,15 +155,24 @@ export class DshKernel implements AgentKernel {
       : null;
     if (entry.bundle.plugin_mounts.includes('forge-plugin-bridge') && !this.pluginWorker)
       throw failure('受管插件 Worker 不可用，已拒绝启动插件会话', 503);
+    const bridgeBindings = pluginBindings.map((binding: any) => ({
+      package: binding.package,
+      displayName: binding.displayName,
+      version: binding.version,
+      artifactHash: binding.artifactHash,
+      runtime: binding.runtime,
+      tools: binding.tools,
+    }));
     const pluginBridge = entry.bundle.plugin_mounts.includes('forge-plugin-bridge')
       ? {
           id: 'forge-plugin-bridge',
           name: pathToFileURL(join(ROOT, 'forge-plugin-bridge', 'index.js')).href,
           config: {
-            bindings: pluginBindings,
+            bindings: bridgeBindings,
             allowedTools: pluginTools,
             gatewayUrl: this.pluginWorker!.url,
-            lease: this.pluginWorker!.issueLease(entry.id),
+            // execution metadata stays inside the signed Worker lease, rather than DSH config.
+            lease: this.pluginWorker!.issueLease(entry.id, pluginBindings),
           },
         }
       : null;

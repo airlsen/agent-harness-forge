@@ -1,15 +1,25 @@
 /**
- * Isolated managed-plugin worker. It exposes only the reviewed demo adapters and
- * verifies a short-lived, session-bound Runner lease before every invocation.
- * It intentionally has no DSH dependency, workspace mount, or model credential.
+ * Isolated managed-plugin worker. It exposes reviewed built-ins plus a generic
+ * remote-worker protocol. Uploaded archives are never imported as Node modules.
+ * Every call is restricted by a short-lived, session-bound Runner lease.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import Fastify from 'fastify';
 
-type Lease = { sessionId: string; expiresAt: number };
+type LeaseBinding = {
+  package?: string;
+  version?: string;
+  artifactHash?: string;
+  runtime?: string;
+  tools?: { name?: string }[];
+  execution?: { kind?: string; endpoint?: string; networkDomains?: string[]; timeoutSeconds?: number };
+};
+type Lease = { sessionId: string; expiresAt: number; bindings?: LeaseBinding[] };
 type InvokeBody = {
   lease?: string;
-  binding?: { package?: string; version?: string };
+  binding?: { package?: string; version?: string; artifactHash?: string; runtime?: string };
   tool?: string;
   arguments?: Record<string, unknown>;
 };
@@ -77,22 +87,113 @@ function addCustomerNote(args: Record<string, unknown>) {
   return { customerId, noteId: `demo-note-${noteSequence}`, saved: true };
 }
 
+function globallyRoutable(address: string): boolean {
+  if (address.includes(':')) {
+    const normalized = address.toLowerCase();
+    return normalized !== '::1' && !normalized.startsWith('fc') && !normalized.startsWith('fd') && !normalized.startsWith('fe80');
+  }
+  const [first, second] = address.split('.').map(Number);
+  return !(
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    first === 169 ||
+    first >= 224 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168)
+  );
+}
+
+async function remoteEndpoint(execution: LeaseBinding['execution']): Promise<{ endpoint: string; timeout: number }> {
+  if (!execution || execution.kind !== 'remote-worker' || typeof execution.endpoint !== 'string')
+    throw new Error('远程 Worker 执行契约无效');
+  const endpoint = new URL(execution.endpoint);
+  const host = endpoint.hostname.toLowerCase().replace(/\.$/, '');
+  const domains = (execution.networkDomains ?? []).map((value) => String(value).toLowerCase().replace(/\.$/, ''));
+  if (
+    endpoint.protocol !== 'https:' ||
+    endpoint.username ||
+    endpoint.password ||
+    endpoint.search ||
+    endpoint.hash ||
+    isIP(host) ||
+    !domains.includes(host)
+  )
+    throw new Error('远程 Worker endpoint 不符合网络白名单');
+  let addresses;
+  try {
+    addresses = await lookup(host, { all: true, verbatim: true });
+  } catch {
+    throw new Error('远程 Worker 域名无法解析');
+  }
+  if (!addresses.length || addresses.some(({ address }) => !globallyRoutable(address)))
+    throw new Error('远程 Worker 不能连接本机或内网地址');
+  const timeout = Number.isInteger(execution.timeoutSeconds) ? Number(execution.timeoutSeconds) : 20;
+  if (timeout < 3 || timeout > 60) throw new Error('远程 Worker 超时配置无效');
+  return { endpoint: endpoint.href, timeout };
+}
+
+async function invokeRemote(execution: LeaseBinding['execution'], tool: string, args: Record<string, unknown>) {
+  const { endpoint, timeout } = await remoteEndpoint(execution);
+  const signal = AbortSignal.timeout(timeout * 1000);
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ tool, arguments: args }),
+      signal,
+      redirect: 'error',
+    });
+  } catch {
+    throw new Error('远程 Worker 不可达或请求超时');
+  }
+  const declaredBytes = Number(response.headers.get('content-length') ?? 0);
+  if (Number.isFinite(declaredBytes) && declaredBytes > 256 * 1024)
+    throw new Error('远程 Worker 响应超过 256 KB 限制');
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || !body || typeof body !== 'object' || !('result' in body))
+    throw new Error(typeof body?.message === 'string' ? body.message.slice(0, 500) : '远程 Worker 返回无效响应');
+  if (Buffer.byteLength(JSON.stringify(body.result)) > 256 * 1024)
+    throw new Error('远程 Worker 响应超过 256 KB 限制');
+  return body.result;
+}
+
+function leaseBinding(lease: Lease, body: InvokeBody): LeaseBinding | null {
+  const binding = body.binding;
+  if (!binding?.package || !binding.version || !binding.artifactHash || !body.tool) return null;
+  return (
+    lease.bindings?.find(
+      (candidate) =>
+        candidate.package === binding.package &&
+        candidate.version === binding.version &&
+        candidate.artifactHash === binding.artifactHash &&
+        candidate.runtime === binding.runtime &&
+        candidate.tools?.some((tool) => tool.name === body.tool),
+    ) ?? null
+  );
+}
+
 const app = Fastify({ logger: false, bodyLimit: 64 * 1024 });
 app.get('/healthz', async () => ({ status: 'ok', service: 'forge-plugin-worker' }));
 app.post<{ Body: InvokeBody }>('/v1/invoke', async (request, reply) => {
   const lease = verifyLease(request.body?.lease);
   if (!lease) return reply.code(401).send({ message: 'invalid or expired plugin lease' });
-  const binding = request.body?.binding;
+  const binding = leaseBinding(lease, request.body ?? {});
+  if (!binding) return reply.code(403).send({ message: 'plugin binding or tool is not granted by this lease' });
   const tool = request.body?.tool;
   const args = request.body?.arguments ?? {};
   try {
-    if (binding?.package === 'forge-text-tools' && binding.version === '0.1.0' && tool === 'text_extract_outline')
+    if (binding.package === 'forge-text-tools' && binding.version === '0.1.0' && tool === 'text_extract_outline')
       return { result: outline(args), sessionId: lease.sessionId };
-    if (binding?.package === 'forge-demo-crm' && binding.version === '0.1.0' && tool === 'crm_find_customer')
+    if (binding.package === 'forge-demo-crm' && binding.version === '0.1.0' && tool === 'crm_find_customer')
       return { result: findCustomer(args), sessionId: lease.sessionId };
-    if (binding?.package === 'forge-demo-crm' && binding.version === '0.1.0' && tool === 'crm_add_customer_note')
+    if (binding.package === 'forge-demo-crm' && binding.version === '0.1.0' && tool === 'crm_add_customer_note')
       return { result: addCustomerNote(args), sessionId: lease.sessionId };
-    return reply.code(403).send({ message: 'plugin binding or tool is not approved for this worker' });
+    if (binding.runtime === 'forge-remote-worker-v1')
+      return { result: await invokeRemote(binding.execution, String(tool), args), sessionId: lease.sessionId };
+    return reply.code(403).send({ message: 'plugin runtime is not approved for this worker' });
   } catch (error) {
     return reply.code(422).send({ message: error instanceof Error ? error.message : 'plugin execution failed' });
   }

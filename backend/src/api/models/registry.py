@@ -15,13 +15,22 @@ class PluginRegistry(Base):
     __tablename__ = "plugin_registry"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    package: Mapped[str] = mapped_column(String(128), index=True)  # Forge 稳定插件标识，不接受运行时 URL
+    # package 是内部 release key；plugin_id 才是场景引用的稳定标识。
+    # 保留 package 以兼容 P0 已落库记录，并让同一插件的多个不可变版本可并存。
+    package: Mapped[str] = mapped_column(String(128), index=True)
+    plugin_id: Mapped[str] = mapped_column(String(128), default="", index=True)
     version: Mapped[str] = mapped_column(String(32))
     display_name: Mapped[str] = mapped_column(String(128), default="")
     description: Mapped[str] = mapped_column(String(512), default="")
     runtime: Mapped[str] = mapped_column(String(32), default="forge-bridge")
     source_ref: Mapped[str] = mapped_column(String(256), default="")
     artifact_hash: Mapped[str] = mapped_column(String(128), default="")
+    artifact_name: Mapped[str] = mapped_column(String(256), default="")
+    artifact_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    manifest_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    execution_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    scan_status: Mapped[str] = mapped_column(String(32), default="builtin")
+    review_note: Mapped[str] = mapped_column(String(1024), default="")
     tools_json: Mapped[list] = mapped_column(JSON, default=list)
     extension_points: Mapped[list] = mapped_column(JSON, default=list)  # ctx.llm/tools/*...
     permissions: Mapped[list] = mapped_column(JSON, default=list)  # 权限用途声明

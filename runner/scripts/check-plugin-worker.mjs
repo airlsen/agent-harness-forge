@@ -3,9 +3,21 @@ import { PluginWorkerClient } from '../src/plugin-worker-client.ts';
 
 const worker = await PluginWorkerClient.start();
 try {
+  const binding = {
+    package: 'forge-demo-crm',
+    version: '0.1.0',
+    artifactHash: 'a'.repeat(64),
+    runtime: 'forge-bridge',
+    tools: [{ name: 'crm_find_customer' }],
+  };
   const request = {
-    lease: worker.issueLease('session-test'),
-    binding: { package: 'forge-demo-crm', version: '0.1.0' },
+    lease: worker.issueLease('session-test', [binding]),
+    binding: {
+      package: binding.package,
+      version: binding.version,
+      artifactHash: binding.artifactHash,
+      runtime: binding.runtime,
+    },
     tool: 'crm_find_customer',
     arguments: { query: '光屿' },
   };
@@ -30,6 +42,13 @@ try {
     body: JSON.stringify({ ...request, tool: 'crm_delete_customer' }),
   });
   assert.equal(unknown.status, 403);
+
+  const swappedArtifact = await fetch(`${worker.url}/v1/invoke`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...request, binding: { ...request.binding, artifactHash: 'b'.repeat(64) } }),
+  });
+  assert.equal(swappedArtifact.status, 403);
   process.stdout.write('PASS isolated plugin worker accepts a scoped lease and rejects forged or unapproved calls\n');
 } finally {
   await worker.dispose();

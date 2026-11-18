@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api } from '../../api/client';
+import { api, apiFetch } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
 import { useConversation } from '../../stores/conversation';
 import type { Scenario, Tool } from '../../types/platform';
@@ -31,6 +31,12 @@ const query = ref('');
 const loading = ref(true);
 const loadError = ref('');
 const components = ref<RuntimeComponent[]>([]);
+const pluginSubmissions = ref<PluginPackage[]>([]);
+const pluginUploadOpen = ref(false);
+const pluginArchive = ref<File | null>(null);
+const pluginUploadBusy = ref(false);
+const pluginUploadMessage = ref('');
+const reviewingPlugin = ref<number | null>(null);
 const skills = ref<{ items: SkillSummary[] } | null>(null);
 const mcp = ref<{ items: McpServer[]; available: boolean; reason: string } | null>(null);
 const mcpJson = ref('');
@@ -85,7 +91,7 @@ const tab = computed(() =>
   ['tools', 'skills', 'mcp'].includes(String(route.query.tab)) ? String(route.query.tab) : 'tools',
 );
 const tabs = computed(() => [
-  { id: 'tools', label: '插件与工具', icon: 'wrench', count: app.tools.length },
+  { id: 'tools', label: '插件与工具', icon: 'wrench', count: app.tools.length + components.value.length },
   { id: 'skills', label: 'Skills 技能', icon: 'book', count: skills.value?.items.length },
   { id: 'mcp', label: 'MCP 服务', icon: 'plug', count: mcp.value?.items.length },
 ]);
@@ -129,17 +135,82 @@ async function load() {
   loadError.value = '';
   try {
     const [plugins, skillResult, mcpResult] = await Promise.all([
-      api<{ items: RuntimeComponent[] }>('/registry/plugins'),
+      api<{ items: RuntimeComponent[]; submissions: PluginPackage[] }>('/registry/plugins'),
       api<{ items: SkillSummary[] }>('/skills'),
       api<{ items: McpServer[]; available: boolean; reason: string }>('/registry/mcp-servers'),
     ]);
     components.value = plugins.items;
+    pluginSubmissions.value = plugins.submissions;
     skills.value = skillResult;
     mcp.value = mcpResult;
   } catch (error) {
     loadError.value = (error as Error).message;
   } finally {
     loading.value = false;
+  }
+}
+function choosePluginArchive(event: Event) {
+  pluginArchive.value = (event.target as HTMLInputElement).files?.[0] ?? null;
+  pluginUploadMessage.value = '';
+}
+async function uploadPluginArchive() {
+  const file = pluginArchive.value;
+  if (!file) {
+    pluginUploadMessage.value = '请选择包含 forge.plugin.json 的 .zip 插件包。';
+    return;
+  }
+  if (!file.name.toLowerCase().endsWith('.zip')) {
+    pluginUploadMessage.value = '当前仅支持上传 .zip Forge 插件包。';
+    return;
+  }
+  pluginUploadBusy.value = true;
+  pluginUploadMessage.value = '';
+  try {
+    const response = await apiFetch(
+      `/api/registry/plugins/upload?filename=${encodeURIComponent(file.name)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/zip' },
+        body: file,
+      },
+    );
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body.code !== 0) throw new Error(body.message ?? body.detail ?? '插件包上传失败');
+    pluginUploadMessage.value = `“${body.data.displayName}”已完成契约检查，等待审核发布。`;
+    pluginArchive.value = null;
+    await load();
+  } catch (error) {
+    pluginUploadMessage.value = (error as Error).message;
+  } finally {
+    pluginUploadBusy.value = false;
+  }
+}
+async function reviewPlugin(plugin: PluginPackage, action: 'approved' | 'rejected') {
+  const verb = action === 'approved' ? '批准' : '拒绝';
+  if (!window.confirm(`确定${verb}插件版本“${plugin.displayName}” v${plugin.version} 吗？`)) return;
+  reviewingPlugin.value = plugin.id;
+  try {
+    await api(`/registry/plugins/${plugin.id}/review`, { method: 'POST', body: JSON.stringify({ action }) });
+    app.toast(action === 'approved' ? '插件版本已批准，可在场景中授权使用。' : '插件版本已拒绝。');
+    await load();
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  } finally {
+    reviewingPlugin.value = null;
+  }
+}
+async function togglePlugin(plugin: PluginPackage) {
+  reviewingPlugin.value = plugin.id;
+  try {
+    await api(`/registry/plugins/${plugin.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled: !plugin.enabled }),
+    });
+    await load();
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  } finally {
+    reviewingPlugin.value = null;
   }
 }
 function openMcpEditor() {
@@ -245,7 +316,12 @@ onMounted(load);
           <h1>企业能力中心</h1>
           <p>一处发现平台提供的工具、技能与连接，按需带入工作。</p>
         </div>
-        <span class="enterprise-shared-label"><Icon name="building" :size="14" />公共能力目录</span>
+        <div class="capability-heading-actions">
+          <button class="button secondary small" @click="pluginUploadOpen = true">
+            <Icon name="box" :size="15" />上传插件包
+          </button>
+          <span class="enterprise-shared-label"><Icon name="building" :size="14" />公共能力目录</span>
+        </div>
       </div>
       <section class="capabilities-intro">
         <span class="capabilities-intro-icon"><Icon name="blocks" :size="27" /></span>
@@ -361,6 +437,77 @@ onMounted(load);
               <footer>
                 <span>Forge 受管运行时</span
                 ><RouterLink to="/agent/scenarios">前往场景授权 <Icon name="arrow" :size="15" /></RouterLink>
+              </footer>
+            </article>
+          </div>
+        </section>
+        <section v-if="pluginSubmissions.length" class="plugin-review-section">
+          <div class="capability-section-label">
+            <span><Icon name="box" :size="15" />上传版本与审核队列</span>
+            <p>上传包只完成静态契约检查；不会在 Forge Runner 中安装或执行其中的 Node 代码。</p>
+          </div>
+          <div class="plugin-submission-list">
+            <article v-for="plugin in pluginSubmissions" :key="plugin.id" class="plugin-submission-card">
+              <div>
+                <strong>{{ plugin.displayName }}</strong><small
+                  >{{ plugin.package }} · v{{ plugin.version }} ·
+                  {{ plugin.artifactName || '已登记制品' }}</small
+                >
+              </div>
+              <p>
+                {{
+                  plugin.runtime === 'dsh-native'
+                    ? '原生 DSH 插件候选：只能由平台团队通过专用 Runner 镜像审核。'
+                    : plugin.reviewNote || 'Manifest 已校验，等待管理员审核远程 Worker、工具权限与网络域名。'
+                }}
+              </p>
+              <small v-if="plugin.execution?.networkDomains?.length" class="plugin-network-scope"
+                >网络白名单：{{ plugin.execution.networkDomains.join('、') }} ·
+                {{ plugin.execution.timeoutSeconds ?? 20 }} 秒超时</small
+              >
+              <div class="plugin-submission-meta">
+                <span
+                  :class="[
+                    'tag',
+                    plugin.auditStatus === 'approved'
+                      ? 'success'
+                      : plugin.auditStatus === 'rejected'
+                        ? 'warm'
+                        : 'neutral',
+                  ]"
+                  >{{
+                    plugin.auditStatus === 'approved'
+                      ? plugin.enabled
+                        ? '已批准'
+                        : '已停用'
+                      : plugin.auditStatus === 'rejected'
+                        ? '已拒绝'
+                        : '待审核'
+                  }}</span><code>{{ plugin.artifactHash.slice(0, 12) }}</code>
+              </div>
+              <footer>
+                <template v-if="plugin.auditStatus === 'pending'"
+                  ><button
+                    class="button secondary small"
+                    :disabled="reviewingPlugin === plugin.id"
+                    @click="reviewPlugin(plugin, 'rejected')"
+                  >
+                    拒绝</button
+                  ><button
+                    class="button primary small"
+                    :disabled="reviewingPlugin === plugin.id || plugin.runtime === 'dsh-native'"
+                    @click="reviewPlugin(plugin, 'approved')"
+                  >
+                    批准并发布
+                  </button></template
+                ><button
+                  v-else-if="plugin.auditStatus === 'approved'"
+                  class="button secondary small"
+                  :disabled="reviewingPlugin === plugin.id"
+                  @click="togglePlugin(plugin)"
+                >
+                  {{ plugin.enabled ? '停用版本' : '启用版本' }}
+                </button>
               </footer>
             </article>
           </div>
@@ -523,11 +670,61 @@ onMounted(load);
       </section>
       <div v-if="tab === 'tools'" class="page-note">
         <Icon name="shield" :size="14" /><span
-          >能力可发现不等于无限制执行。实际可调用范围由场景与策略共同决定；当前不开放任意
-          Shell、外部网络工具或第三方插件安装。</span
+          >能力可发现不等于无限制执行。实际可调用范围由场景与策略共同决定；上传包必须经契约检查与审核，绝不会被直接安装到
+          Runner。</span
         >
       </div>
     </div>
+    <DialogShell
+      v-if="pluginUploadOpen"
+      variant="modal"
+      label="上传受管插件包"
+      panel-class="plugin-upload-dialog"
+      @close="!pluginUploadBusy && (pluginUploadOpen = false)"
+    >
+      <header>
+        <div>
+          <h2>上传已有 Forge 插件</h2>
+          <p>上传 ZIP 包进行 Manifest 与制品完整性检查；上传不会安装 npm 依赖或执行包内代码。</p>
+        </div>
+        <button
+          class="icon-button"
+          aria-label="关闭上传插件"
+          :disabled="pluginUploadBusy"
+          @click="pluginUploadOpen = false"
+        >
+          <Icon name="close" :size="20" />
+        </button>
+      </header>
+      <div class="plugin-upload-body">
+        <label class="plugin-file-drop" for="plugin-archive"
+          ><Icon name="box" :size="26" /><strong>{{
+            pluginArchive ? pluginArchive.name : '选择 .zip 插件包'
+          }}</strong
+          ><small>包根目录须包含 forge.plugin.json；最大 5 MB。</small
+          ><input id="plugin-archive" accept=".zip,application/zip" type="file" @change="choosePluginArchive"
+        /></label>
+        <div class="plugin-upload-boundary">
+          <Icon name="shield" :size="17" />
+          <p>
+            可审核发布的上传包需使用 <code>forge-remote-worker-v1</code>。原生 DSH
+            包可登记为候选，但不会被直接装入 Runner。
+          </p>
+        </div>
+        <div v-if="pluginUploadMessage" class="mcp-feedback" role="alert">{{ pluginUploadMessage }}</div>
+      </div>
+      <footer>
+        <button class="button secondary" :disabled="pluginUploadBusy" @click="pluginUploadOpen = false">
+          取消</button
+        ><button
+          class="button primary"
+          :disabled="pluginUploadBusy || !pluginArchive"
+          @click="uploadPluginArchive"
+        >
+          {{ pluginUploadBusy ? '正在校验…' : '上传并校验' }}
+        </button>
+      </footer>
+    </DialogShell>
     <DialogShell
       v-if="mcpEditorOpen"
       variant="modal"

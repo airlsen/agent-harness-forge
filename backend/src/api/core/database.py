@@ -62,10 +62,19 @@ async def init_db() -> None:
                 "artifact_hash": "VARCHAR(128) NOT NULL DEFAULT ''",
                 "tools_json": "JSON NOT NULL DEFAULT '[]'",
                 "enabled": "BOOLEAN NOT NULL DEFAULT " + ("FALSE" if postgres else "0"),
+                "plugin_id": "VARCHAR(128) NOT NULL DEFAULT ''",
+                "artifact_name": "VARCHAR(256) NOT NULL DEFAULT ''",
+                "artifact_bytes": "BIGINT NOT NULL DEFAULT 0",
+                "manifest_json": "JSON NOT NULL DEFAULT '{}'",
+                "execution_json": "JSON NOT NULL DEFAULT '{}'",
+                "scan_status": "VARCHAR(32) NOT NULL DEFAULT 'builtin'",
+                "review_note": "VARCHAR(1024) NOT NULL DEFAULT ''",
             }
             for name, ddl in additions.items():
                 if name not in existing:
                     sync_conn.execute(text(f"ALTER TABLE plugin_registry ADD COLUMN {name} {ddl}"))
+            # P0 rows used package as the stable ID. Keep them addressable after adding release keys.
+            sync_conn.execute(text("UPDATE plugin_registry SET plugin_id = package WHERE plugin_id = ''"))
 
         await conn.run_sync(ensure_plugin_columns)
     # 重启时关闭所有孤立审批，为未完成的运行保留明确的中断记录。
