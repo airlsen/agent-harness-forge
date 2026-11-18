@@ -476,7 +476,9 @@ async function versions(scenario: Scenario) {
           </div>
           <Icon v-if="tool.permission === 'approval'" name="shield" :size="15"
         /></label>
-        <p class="field-hint">当前可装配基础工具。Skills 与 MCP 尚未接入，不提供模拟选项。</p>
+        <p class="field-hint">
+          当前可装配基础工具。MCP 服务支持导入与连接测试，场景授权和聊天调用开发中；Skills 尚未接入。
+        </p>
         <div class="form-section-title"><span>04</span>运行配置</div>
         <div class="static-form-row">
           <span>模型路由</span

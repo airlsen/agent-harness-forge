@@ -17,6 +17,17 @@ type RuntimeComponent = {
   extensionPoints: string[];
   permissions: string[];
 };
+type McpServer = {
+  id: number;
+  name: string;
+  url: string;
+  enabled: boolean;
+  status: string;
+  lastError: string;
+  tools: { name: string; description: string }[];
+  serverInfo: Record<string, unknown>;
+  hasCredentials: boolean;
+};
 type Availability = { items: unknown[]; available: boolean; reason: string };
 const app = usePlatform();
 const chat = useConversation();
@@ -27,7 +38,10 @@ const loading = ref(true);
 const loadError = ref('');
 const components = ref<RuntimeComponent[]>([]);
 const skills = ref<Availability | null>(null);
-const mcp = ref<Availability | null>(null);
+const mcp = ref<{ items: McpServer[]; available: boolean; reason: string } | null>(null);
+const mcpJson = ref('');
+const mcpBusy = ref(false);
+const mcpMessage = ref('');
 const detail = ref<Tool | null>(null);
 const componentDetail = ref<RuntimeComponent | null>(null);
 const tab = computed(() =>
@@ -74,7 +88,7 @@ async function load() {
     const [plugins, skillResult, mcpResult] = await Promise.all([
       api<{ items: RuntimeComponent[] }>('/registry/plugins'),
       api<Availability>('/registry/skills'),
-      api<Availability>('/registry/mcp-servers'),
+      api<{ items: McpServer[]; available: boolean; reason: string }>('/registry/mcp-servers'),
     ]);
     components.value = plugins.items;
     skills.value = skillResult;
@@ -84,6 +98,59 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+async function importMcpJson() {
+  mcpMessage.value = '';
+  let config: unknown;
+  try {
+    config = JSON.parse(mcpJson.value);
+  } catch {
+    mcpMessage.value = 'JSON 格式不正确，请检查括号和引号。';
+    return;
+  }
+  mcpBusy.value = true;
+  try {
+    await api('/registry/mcp-servers/import', { method: 'POST', body: JSON.stringify({ config }) });
+    mcpJson.value = '';
+    mcpMessage.value = '配置已保存。出于安全考虑，服务默认未启用；请测试连接并检查工具清单。';
+    const result = await api<{ items: McpServer[] }>('/registry/mcp-servers');
+    mcp.value = { ...result, available: true, reason: '' };
+  } catch (error) {
+    mcpMessage.value = (error as Error).message;
+  } finally {
+    mcpBusy.value = false;
+  }
+}
+async function testMcp(server: McpServer) {
+  mcpBusy.value = true;
+  mcpMessage.value = '';
+  try {
+    await api(`/registry/mcp-servers/${server.id}/test`, { method: 'POST' });
+    const result = await api<{ items: McpServer[] }>('/registry/mcp-servers');
+    mcp.value = { ...result, available: true, reason: '' };
+    mcpMessage.value = `“${server.name}”连接成功，已读取工具清单。`;
+  } catch (error) {
+    mcpMessage.value = (error as Error).message;
+    await load();
+  } finally {
+    mcpBusy.value = false;
+  }
+}
+async function toggleMcp(server: McpServer) {
+  try {
+    await api(`/registry/mcp-servers/${server.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled: !server.enabled }),
+    });
+    await load();
+  } catch (error) {
+    mcpMessage.value = (error as Error).message;
+  }
+}
+async function deleteMcp(server: McpServer) {
+  if (!window.confirm(`确定移除 MCP 服务“${server.name}”吗？`)) return;
+  await api(`/registry/mcp-servers/${server.id}`, { method: 'DELETE' });
+  await load();
 }
 function selectTab(id: string) {
   query.value = '';
@@ -219,6 +286,81 @@ onMounted(load);
       <div v-else-if="loading" class="loading-inline" role="status">
         <span class="loader"></span>正在读取接入状态…
       </div>
+      <section v-else-if="tab === 'mcp' && mcp" class="mcp-manager">
+        <div class="mcp-manager-heading">
+          <div>
+            <h2>接入远程 MCP 服务</h2>
+            <p>粘贴常见 mcpServers JSON。第一版支持 HTTPS Streamable HTTP，不会运行 JSON 中的本机命令。</p>
+          </div>
+          <span class="tag neutral">远程 HTTP</span>
+        </div>
+        <label class="mcp-json-label" for="mcp-import-json">MCP 服务配置 JSON</label>
+        <textarea
+          id="mcp-import-json"
+          v-model="mcpJson"
+          class="mcp-json-input"
+          rows="9"
+          spellcheck="false"
+          placeholder='{\n  "mcpServers": {\n    "my-service": {\n      "type": "http",\n      "url": "https://mcp.example.com/mcp"\n    }\n  }\n}'
+        ></textarea>
+        <div class="mcp-manager-actions">
+          <span>认证头会加密保存在本机数据库，不会在列表中显示。</span
+          ><button class="button primary" :disabled="mcpBusy || !mcpJson.trim()" @click="importMcpJson">
+            {{ mcpBusy ? '处理中…' : '导入配置' }}
+          </button>
+        </div>
+        <div v-if="mcpMessage" class="mcp-feedback" role="status">{{ mcpMessage }}</div>
+        <div class="mcp-server-list">
+          <article v-for="server in mcp.items" :key="server.id" class="mcp-server-card">
+            <div class="mcp-server-card-head">
+              <div>
+                <strong>{{ server.name }}</strong><span
+                  :class="[
+                    'tag',
+                    server.status === 'connected'
+                      ? 'success'
+                      : server.status === 'error'
+                        ? 'danger'
+                        : 'neutral',
+                  ]"
+                  >{{
+                    server.status === 'connected'
+                      ? '连接正常'
+                      : server.status === 'error'
+                        ? '连接失败'
+                        : '待测试'
+                  }}</span
+                >
+              </div>
+              <code>{{ server.url }}</code>
+            </div>
+            <p v-if="server.lastError" class="mcp-server-error">{{ server.lastError }}</p>
+            <div v-if="server.tools.length" class="mcp-tool-list">
+              <strong>发现 {{ server.tools.length }} 项工具</strong
+              ><span v-for="tool in server.tools" :key="tool.name" :title="tool.description">{{
+                tool.name
+              }}</span>
+            </div>
+            <div class="mcp-server-controls">
+              <span v-if="server.hasCredentials" class="mcp-credential-note">认证信息已保存</span
+              ><button class="button secondary small" :disabled="mcpBusy" @click="testMcp(server)">
+                测试连接</button
+              ><button
+                class="button secondary small"
+                :disabled="server.status !== 'connected'"
+                @click="toggleMcp(server)"
+              >
+                {{ server.enabled ? '停用' : '启用' }}</button
+              ><button class="button text small" @click="deleteMcp(server)">移除</button>
+            </div>
+          </article>
+          <div v-if="!mcp.items.length" class="enterprise-empty">
+            <span class="enterprise-empty-symbol"><Icon name="plug" :size="28" /></span>
+            <h2>还没有 MCP 服务</h2>
+            <p>导入配置后，测试连接并查看服务公开的工具。</p>
+          </div>
+        </div>
+      </section>
       <section v-else-if="unavailable" class="capability-unavailable enterprise-unavailable">
         <div class="capability-unavailable-art" aria-hidden="true">
           <span><Icon name="building" :size="21" /></span><i></i

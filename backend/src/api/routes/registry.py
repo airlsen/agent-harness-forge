@@ -1,6 +1,10 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.database import get_session
+from ..models.registry import McpServer
+from ..services.mcp_service import import_servers, public_view, test_server
 from ..services.settings_service import TOOLS, get_connection
 from ..utils.response import ResponseUtil
 
@@ -49,9 +53,55 @@ async def skills():
     )
 
 
+class McpImport(BaseModel):
+    config: dict
+
+
+class McpEnable(BaseModel):
+    enabled: bool
+
+
 @router.get("/mcp-servers")
-async def mcp_servers():
-    return ResponseUtil.ok({"items": [], "available": False, "reason": "MCP 注册与认证托管将在后续版本接入"})
+async def mcp_servers(db: AsyncSession = Depends(get_session)):
+    rows = (await db.scalars(select(McpServer).order_by(McpServer.name))).all()
+    return ResponseUtil.ok({"items": [public_view(row) for row in rows], "available": True, "reason": ""})
+
+
+@router.post("/mcp-servers/import")
+async def mcp_import(payload: McpImport, db: AsyncSession = Depends(get_session)):
+    rows = await import_servers(db, payload.config)
+    return ResponseUtil.ok({"items": [public_view(row) for row in rows]})
+
+
+@router.post("/mcp-servers/{server_id}/test")
+async def mcp_test(server_id: int, db: AsyncSession = Depends(get_session)):
+    row = await db.get(McpServer, server_id)
+    if not row:
+        raise HTTPException(404, "MCP 服务不存在")
+    return ResponseUtil.ok(await test_server(db, row))
+
+
+@router.patch("/mcp-servers/{server_id}")
+async def mcp_enable(server_id: int, payload: McpEnable, db: AsyncSession = Depends(get_session)):
+    row = await db.get(McpServer, server_id)
+    if not row:
+        raise HTTPException(404, "MCP 服务不存在")
+    if payload.enabled and (row.status != "connected" or not row.tools_json):
+        raise HTTPException(409, "请先成功测试连接并发现至少一个工具")
+    row.enabled = payload.enabled
+    await db.commit()
+    await db.refresh(row)
+    return ResponseUtil.ok(public_view(row))
+
+
+@router.delete("/mcp-servers/{server_id}")
+async def mcp_delete(server_id: int, db: AsyncSession = Depends(get_session)):
+    row = await db.get(McpServer, server_id)
+    if not row:
+        raise HTTPException(404, "MCP 服务不存在")
+    await db.delete(row)
+    await db.commit()
+    return ResponseUtil.ok()
 
 
 @router.get("/models")
