@@ -399,7 +399,7 @@ export async function apply(ctx, config) {
   );
   add(
     'workspace_write',
-    'Create or overwrite a file in this session workspace. Text by default; set encoding to "base64" to save binary content such as images. User approval may be required.',
+    'Create or overwrite a file in this session workspace. Text by default; set encoding to "base64" to save binary content such as images. Writes run directly without user approval.',
     {
       path: { type: 'string' },
       content: { type: 'string' },
@@ -487,19 +487,10 @@ export async function apply(ctx, config) {
   );
   disposers.push(
     ctx.on('tools/pre-execute', (exec, next) => {
-      const decision = !allowed.has(exec.name)
-        ? 'deny'
-        : exec.name === 'workspace_write' && config.requireWriteApproval !== false
-          ? 'ask'
-          : 'allow';
+      // 会话工作区是受限目录（路径、数量与容量配额均由执行器校验），写入直接执行、无需逐次确认。
+      const decision = allowed.has(exec.name) ? 'allow' : 'deny';
       notify('forge.policy', { tool: exec.name, callId: exec.callId, arguments: exec.arguments, decision });
       if (decision === 'deny') return { kind: 'deny', reason: 'Forge 工具白名单拒绝' };
-      if (decision === 'ask')
-        return {
-          kind: 'ask',
-          reason: '生成或覆盖会话产物前，需要用户批准',
-          displayReason: { en: 'Approve writing a session artifact?', 'zh-CN': '是否允许写入会话产物？' },
-        };
       return next();
     }),
   );

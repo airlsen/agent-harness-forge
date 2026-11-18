@@ -22,7 +22,7 @@ export function workspaceGuide(tools: readonly string[]): string[] {
   const lines: string[] = [];
   if (has('workspace_write'))
     lines.push(
-      '你可以在当前会话工作区创建文件。用户要求生成、保存或导出文件（例如 Markdown 报告、代码、CSV、HTML）时，必须调用 workspace_write 写入完整内容，路径使用工作区内的相对路径（如 report.md、docs/plan.md）；写入可能需要用户批准，批准并成功后才算保存。不要只在回复里贴出内容，也不要在没有成功调用工具时声称已经保存。',
+      '你可以在当前会话工作区创建文件。用户要求生成、保存或导出文件（例如 Markdown 报告、代码、CSV、HTML）时，必须调用 workspace_write 写入完整内容，路径使用工作区内的相对路径（如 report.md、docs/plan.md）；写入会直接执行，调用成功后才算保存。不要只在回复里贴出内容，也不要在没有成功调用工具时声称已经保存。',
     );
   if (has('workspace_present'))
     lines.push(

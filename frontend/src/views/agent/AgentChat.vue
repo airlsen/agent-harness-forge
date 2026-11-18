@@ -172,14 +172,6 @@ const otherFiles = computed<FileRef[]>(() => {
   const presented = new Set(sessionDeliverables.value.map((file) => file.path));
   return chat.files.filter((file) => !presented.has(file.path));
 });
-const retentionNote = computed(() => {
-  const retention = chat.fileRetention;
-  if (!retention || !chat.files.length) return '';
-  if (!retention.days) return '文件永久保留。';
-  if (!retention.expiresAt) return `会话最后一次活动 ${retention.days} 天后自动清理文件。`;
-  const date = new Date(retention.expiresAt).toLocaleDateString('zh-CN');
-  return `文件保留至 ${date}（会话最后一次活动 ${retention.days} 天后自动清理）。`;
-});
 function turnFile(file: Deliverable) {
   return withListing(file, chat.files);
 }
@@ -286,6 +278,16 @@ watch(
   () => (chat.messages.some((message) => message.role === 'user') ? chat.current?.id : null),
   (id) => {
     if (id && !route.params.sessionId) void router.replace(`/agent/chat/${id}`);
+  },
+);
+// 发送消息后总是回到底部：即使之前向上翻看了历史，也要看到刚发出的消息与后续回复
+watch(
+  () => [chat.sending, chat.messages.filter((message) => message.role === 'user').length] as const,
+  async ([sending, users], [wasSending, previousUsers]) => {
+    if ((sending && !wasSending) || users > previousUsers) {
+      stickToBottom.value = true;
+      await scrollToBottom();
+    }
   },
 );
 watch(
@@ -637,10 +639,10 @@ async function copyMessage(text: string) {
             <span><Icon :name="tool.icon" :size="16" /></span>
             <div>
               <strong>{{ tool.title }}</strong><small>{{
-                tool.permission === 'approval' ? '写入 · 受策略门控' : '只读操作'
+                tool.permission === 'read' ? '只读操作' : '写入会话目录 · 无需确认'
               }}</small>
             </div>
-            <Icon :name="tool.permission === 'approval' ? 'shield' : 'check'" :size="13" />
+            <Icon :name="tool.permission === 'read' ? 'check' : 'edit'" :size="13" />
           </div>
         </div>
         <div class="context-section">
@@ -745,9 +747,6 @@ async function copyMessage(text: string) {
         </div>
       </div>
       <div v-else class="panel-scroll">
-        <div class="panel-description">
-          本会话生成的文件保存在服务端，切换会话或服务重启后依然可以预览与下载。{{ retentionNote }}
-        </div>
         <div v-if="chat.files.length" class="result-toolbar">
           <span
             >{{ chat.files.length }} 个文件 ·

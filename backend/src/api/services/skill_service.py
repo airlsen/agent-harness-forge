@@ -402,7 +402,6 @@ async def create_authoring_session(db: AsyncSession, skill_id: int, created_by: 
             "builtin_tools": AUTHORING_TOOLS,
             "policy": {
                 "allowedTools": AUTHORING_TOOLS,
-                "requireWriteApproval": False,
                 "maxOutputTokens": 4096,
                 "requestTimeoutSeconds": 120,
                 "approvalTimeoutSeconds": 30,
