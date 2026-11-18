@@ -11,6 +11,43 @@ import type { AgentKernel, Bundle, KernelEvent, SessionHandle, TurnOpts, UserCtx
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const PRESENT_TOOL = 'workspace_present';
+/**
+ * 基础能力：每个会话默认加载，不需要场景逐个授权。仍以平台策略（allowedTools）为上限，
+ * 写入仍按策略逐次审批。场景 Bundle 是发布时的快照，由 Runner 统一补齐，已发布场景与存量会话同样生效。
+ */
+export const BASE_TOOLS = ['current_time', 'workspace_list', 'workspace_read', 'workspace_write'] as const;
+/** 版本固定的 DSH 搜索插件（随 dsh 版本锁定）提供的工具；随读取权限开放，路径由 forge-runtime 限制在工作区内。 */
+export const SEARCH_TOOLS = ['glob', 'grep'] as const;
+export const SEARCH_PLUGIN = '@deepseek-ai/dsh-tool-fs-search';
+export interface SessionToolset {
+  /** forge-runtime 白名单：模型可见、允许执行的全部工具 */
+  allowed: string[];
+  /** 是否加载 DSH 搜索插件 */
+  search: boolean;
+}
+/**
+ * 计算会话工具集：基础能力 ∪ 场景声明，Forge 内置工具以平台策略为上限；
+ * 写入开放时附带交付声明，读取开放时附带 glob/grep 搜索；插件工具原样保留。
+ */
+export function sessionToolset(meta: Record<string, any> | undefined): SessionToolset {
+  const policy = meta?.policy ?? {};
+  const ceiling: string[] | undefined = Array.isArray(policy.allowedTools) ? policy.allowedTools : undefined;
+  const declared = Array.isArray(meta?.builtin_tools) ? (meta.builtin_tools as string[]) : [];
+  const pluginTools = Array.isArray(meta?.plugin_tools) ? (meta.plugin_tools as string[]) : [];
+  const withinCeiling = (name: string) => !ceiling || ceiling.includes(name);
+  // 场景声明的其他内置插件工具（如 Skill 编辑的 skill_*）沿用原有规则：以策略为上限。
+  // Skill 编辑会话的策略上限只含 skill_*，因此不会被附加基础能力。
+  const builtin = [...new Set([...BASE_TOOLS, ...declared])].filter(withinCeiling);
+  const search = builtin.includes('workspace_read');
+  const allowed = [
+    ...builtin,
+    ...(builtin.includes('workspace_write') ? [PRESENT_TOOL] : []),
+    ...(search ? SEARCH_TOOLS : []),
+    // 受管插件工具已由控制面按企业插件策略与场景授权筛选，不再按内置工具策略过滤。
+    ...pluginTools,
+  ];
+  return { allowed: [...new Set(allowed)], search };
+}
 const MAX_RAW_BYTES = 20 * 1024 * 1024;
 /** 清单上限：远高于插件的 100 个文件配额；达到上限时标记 truncated，控制面不会据此删除记录 */
 export const MAX_LISTED_FILES = 1000;
@@ -160,16 +197,8 @@ export class DshKernel implements AgentKernel {
     const dir = join(DATA, entry.id);
     await mkdir(entry.workspace, { recursive: true, mode: 0o700 });
     const policy = (entry.bundle.meta?.policy as any) ?? {};
-    const builtinTools = (entry.bundle.meta?.builtin_tools as string[]) ?? [];
     const pluginTools = (entry.bundle.meta?.plugin_tools as string[]) ?? [];
-    const allowed = [...new Set([...builtinTools, ...pluginTools])];
-    // 交付声明只读取文件元数据、不写盘：凡可写工作区的会话都随之开放，无需改动已有场景与策略。
-    if (allowed.includes('workspace_write')) allowed.push(PRESENT_TOOL);
-    const policyTools: string[] | undefined = Array.isArray(policy.allowedTools)
-      ? policy.allowedTools.includes('workspace_write')
-        ? [...policy.allowedTools, PRESENT_TOOL]
-        : policy.allowedTools
-      : undefined;
+    const toolset = sessionToolset(entry.bundle.meta);
     const pluginBindings = Array.isArray(entry.bundle.meta?.pluginBindings)
       ? entry.bundle.meta.pluginBindings
       : [];
@@ -178,7 +207,7 @@ export class DshKernel implements AgentKernel {
       name: pathToFileURL(join(ROOT, 'forge-runtime-plugin', 'index.js')).href,
       config: {
         workspace: entry.workspace,
-        allowedTools: allowed.filter((name) => (policyTools ?? allowed).includes(name)),
+        allowedTools: toolset.allowed,
         requireWriteApproval: policy.requireWriteApproval ?? true,
         maxOutputTokens: policy.maxOutputTokens ?? 4096,
         requestTimeoutSeconds: policy.requestTimeoutSeconds ?? 120,
@@ -190,7 +219,7 @@ export class DshKernel implements AgentKernel {
           name: pathToFileURL(join(ROOT, 'skill-authoring-plugin', 'index.js')).href,
           config: {
             ...((entry.bundle.meta?.skillAuthoring as Record<string, unknown>) ?? {}),
-            allowedTools: allowed.filter((name) => (policyTools ?? allowed).includes(name)),
+            allowedTools: toolset.allowed,
           },
         }
       : null;
@@ -235,6 +264,21 @@ export class DshKernel implements AgentKernel {
         insert: [
           { id: 'forge-user-approval', name: '@deepseek-ai/dsh-user-approval', config: { policy: 'ask' } },
           plugin,
+          // 基础搜索能力：ripgrep 由依赖包内置，不需要宿主安装；结果上限保持较小，避免撑大上下文。
+          ...(toolset.search
+            ? [
+                {
+                  id: 'forge-fs-search',
+                  name: SEARCH_PLUGIN,
+                  config: {
+                    sampleOverCapGlobResults: false,
+                    globMaxResults: 100,
+                    grepMaxMatches: 100,
+                    timeoutMs: 15000,
+                  },
+                },
+              ]
+            : []),
           ...(pluginBridge ? [pluginBridge] : []),
           ...(skillAuthoringPlugin ? [skillAuthoringPlugin] : []),
         ],
@@ -273,7 +317,7 @@ export class DshKernel implements AgentKernel {
         }),
     );
     proc.hostHandlers.set('user-question/ask', async () => ({ cancelled: true }));
-    const system = buildSystemPrompt(entry.bundle.profile_patch.systemPrompt);
+    const system = buildSystemPrompt(entry.bundle.profile_patch.systemPrompt, toolset.allowed);
     await proc.start({
       binPath: join(ROOT, 'scripts', 'dsh-launch.mjs'),
       profile: 'sdk-minimal',
