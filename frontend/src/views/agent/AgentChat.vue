@@ -136,6 +136,13 @@ function turnIdle(turn: Turn) {
     )
   );
 }
+// 完成信号：最后一轮正常结束（有正式正文、非部分输出、无错误）时给出明确的「已完成」标记
+const lastTurnCompleted = computed(() => {
+  if (chat.running || chat.runError) return false;
+  const last = turns.value.at(-1);
+  if (!last || last.running) return false;
+  return last.steps.some((step) => step.kind === 'text' && !step.partial);
+});
 const status = computed(() =>
   chat.approvals.length
     ? { label: '等待确认', tone: 'warning', icon: 'shield' }
@@ -339,14 +346,19 @@ async function copyMessage(text: string) {
         </div>
         <ConversationStart v-else-if="welcome" @submitted="(id) => router.replace(`/agent/chat/${id}`)" />
         <div v-else class="conversation-messages">
-          <article v-for="turn in turns" :key="turn.key" class="turn-block">
+          <article v-for="(turn, turnIndex) in turns" :key="turn.key" class="turn-block">
             <div v-if="turn.user" class="message-row user">
               <div class="user-message-text">{{ turn.user.content }}</div>
             </div>
             <div class="message-row assistant">
               <span class="message-avatar agent"><Icon name="sparkles" :size="18" /></span>
               <div class="message-main">
-                <div class="message-author">Agent<span v-if="turn.running">正在工作</span></div>
+                <div class="message-author">
+                  Agent<span v-if="turn.running">正在工作</span
+                  ><span v-else-if="turnIndex === turns.length - 1 && lastTurnCompleted" class="done"
+                    ><Icon name="check" :size="11" />已完成</span
+                  >
+                </div>
                 <template v-for="(step, index) in turn.steps" :key="index">
                   <section v-if="step.kind === 'thinking'" class="step-thinking">
                     <template v-if="step.live">
