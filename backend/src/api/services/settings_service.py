@@ -1,14 +1,17 @@
-from datetime import datetime, timezone
 import hashlib
-import json
 import ipaddress
+import json
 import uuid
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
+
 import httpx
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, model_validator
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from ..core.security import encrypt, decrypt
+
+from ..core.security import decrypt, encrypt
 from ..models.platform import ModelConnection, PlatformSetting
 
 TOOLS = [
@@ -54,7 +57,7 @@ DEFAULT_POLICY = {
 
 
 class ModelInput(BaseModel):
-    name: str = Field(default="默认模型连接", max_length=100)
+    name: str = Field(default="未命名模型", max_length=100)
     baseUrl: str = Field(min_length=8, max_length=512)
     model: str = Field(min_length=1, max_length=128)
     apiKey: str | None = Field(default=None, max_length=2048)
@@ -113,21 +116,9 @@ async def get_policy(db: AsyncSession) -> dict:
     return {**DEFAULT_POLICY, **(row.value if row else {})}
 
 
-async def get_connection(db: AsyncSession, *, secret=False) -> dict:
-    row = await db.get(ModelConnection, 1)
-    if not row:
-        return {
-            "configured": False,
-            "name": "",
-            "baseUrl": "",
-            "model": "",
-            "apiKeyConfigured": False,
-            "contextWindow": 64000,
-            "inputPrice": None,
-            "outputPrice": None,
-            "lastTest": {},
-        }
-    data = {
+def _connection_view(row: ModelConnection) -> dict:
+    return {
+        "id": row.id,
         "configured": True,
         "name": row.name,
         "baseUrl": row.base_url,
@@ -138,6 +129,35 @@ async def get_connection(db: AsyncSession, *, secret=False) -> dict:
         "outputPrice": row.output_price,
         "lastTest": row.last_test or {},
     }
+
+
+def _unconfigured_connection() -> dict:
+    return {
+        "configured": False,
+        "name": "",
+        "baseUrl": "",
+        "model": "",
+        "apiKeyConfigured": False,
+        "contextWindow": 64000,
+        "inputPrice": None,
+        "outputPrice": None,
+        "lastTest": {},
+    }
+
+
+async def _connection_row(db: AsyncSession, connection_id: int | None = None) -> ModelConnection | None:
+    if connection_id is not None:
+        return await db.get(ModelConnection, connection_id)
+    # Compatibility bridge until the chat composer exposes an explicit model picker.
+    # Existing single-model workspaces retain their first connection without a new default-model concept.
+    return await db.scalar(select(ModelConnection).order_by(ModelConnection.id).limit(1))
+
+
+async def get_connection(db: AsyncSession, *, secret=False, connection_id: int | None = None) -> dict:
+    row = await _connection_row(db, connection_id)
+    if not row:
+        return _unconfigured_connection()
+    data = _connection_view(row)
     revision = await db.get(PlatformSetting, "model-revision")
     data["revision"] = revision.value.get("id", "") if revision else ""
     if secret:
@@ -145,12 +165,21 @@ async def get_connection(db: AsyncSession, *, secret=False) -> dict:
     return data
 
 
-async def save_connection(db: AsyncSession, payload: ModelInput) -> dict:
-    row = await db.get(ModelConnection, 1)
-    if not row:
-        row = ModelConnection(id=1, base_url=payload.baseUrl, model=payload.model)
-        db.add(row)
-    row.name = payload.name.strip() or "默认模型连接"
+async def list_connections(db: AsyncSession) -> list[dict]:
+    rows = (await db.scalars(select(ModelConnection).order_by(ModelConnection.id))).all()
+    return [_connection_view(row) for row in rows]
+
+
+async def _touch_model_revision(db: AsyncSession) -> None:
+    revision = await db.get(PlatformSetting, "model-revision")
+    if revision:
+        revision.value = {"id": str(uuid.uuid4())}
+    else:
+        db.add(PlatformSetting(key="model-revision", value={"id": str(uuid.uuid4())}))
+
+
+def _apply_connection_payload(row: ModelConnection, payload: ModelInput) -> None:
+    row.name = payload.name.strip() or "未命名模型"
     row.base_url, row.model = payload.baseUrl, payload.model
     row.context_window, row.input_price, row.output_price = (
         payload.contextWindow,
@@ -162,19 +191,46 @@ async def save_connection(db: AsyncSession, payload: ModelInput) -> dict:
     elif payload.apiKey:
         row.credential = encrypt(payload.apiKey.strip())
     row.last_test = {}
-    revision = await db.get(PlatformSetting, "model-revision")
-    if revision:
-        revision.value = {"id": str(uuid.uuid4())}
-    else:
-        db.add(PlatformSetting(key="model-revision", value={"id": str(uuid.uuid4())}))
+
+
+async def create_connection(db: AsyncSession, payload: ModelInput) -> dict:
+    row = ModelConnection(base_url=payload.baseUrl, model=payload.model)
+    _apply_connection_payload(row, payload)
+    db.add(row)
+    await _touch_model_revision(db)
     await db.commit()
-    return await get_connection(db)
+    await db.refresh(row)
+    return _connection_view(row)
 
 
-async def test_connection(db: AsyncSession) -> dict:
+async def save_connection(db: AsyncSession, payload: ModelInput, *, connection_id: int | None = None) -> dict:
+    row = await _connection_row(db, connection_id)
+    if not row:
+        if connection_id is not None:
+            raise HTTPException(404, "模型配置不存在")
+        # Preserve the first-run single-connection endpoint for callers that still use it.
+        row = ModelConnection(base_url=payload.baseUrl, model=payload.model)
+        db.add(row)
+    _apply_connection_payload(row, payload)
+    await _touch_model_revision(db)
+    await db.commit()
+    await db.refresh(row)
+    return _connection_view(row)
+
+
+async def delete_connection(db: AsyncSession, connection_id: int) -> None:
+    row = await db.get(ModelConnection, connection_id)
+    if not row:
+        raise HTTPException(404, "模型配置不存在")
+    await db.delete(row)
+    await _touch_model_revision(db)
+    await db.commit()
+
+
+async def test_connection(db: AsyncSession, *, connection_id: int | None = None) -> dict:
     import time
 
-    config = await get_connection(db, secret=True)
+    config = await get_connection(db, secret=True, connection_id=connection_id)
     if not config["configured"]:
         raise HTTPException(409, "请先保存模型连接")
     started = time.monotonic()
@@ -185,7 +241,7 @@ async def test_connection(db: AsyncSession) -> dict:
     }
     if config.get("apiKey"):
         headers["Authorization"] = "Bearer " + config["apiKey"]
-    result = {"ok": False, "at": datetime.now(timezone.utc).isoformat()}
+    result = {"ok": False, "at": datetime.now(UTC).isoformat()}
     try:
         async with httpx.AsyncClient(timeout=30, trust_env=False, follow_redirects=False) as client:
             response = await client.post(
@@ -210,9 +266,10 @@ async def test_connection(db: AsyncSession) -> dict:
     except (httpx.HTTPError, ValueError) as error:
         result["message"] = f"模型连接失败（{type(error).__name__}），请检查网关配置"
     result["latencyMs"] = round((time.monotonic() - started) * 1000)
-    row = await db.get(ModelConnection, 1)
-    row.last_test = result
-    await db.commit()
+    row = await db.get(ModelConnection, config["id"])
+    if row:
+        row.last_test = result
+        await db.commit()
     return result
 
 

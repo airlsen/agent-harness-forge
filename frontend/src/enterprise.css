@@ -2057,6 +2057,147 @@ textarea:focus-visible {
   padding-left: 17px;
   margin-block: 16px;
 }
+/* Model management is a compact connection library, not a single global settings form. */
+.model-management-heading {
+  margin-bottom: 29px;
+}
+.model-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.model-management-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 224px;
+  padding: 21px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.model-management-card:hover {
+  border-color: var(--accent-line);
+  box-shadow: 0 5px 18px #26334a08;
+}
+.model-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.model-card-icon {
+  display: grid;
+  place-items: center;
+  width: 35px;
+  height: 35px;
+  color: var(--accent-ink);
+  border: 1px solid var(--accent-line);
+  border-radius: 7px;
+  background: var(--accent-wash);
+}
+.model-card-copy {
+  margin-top: 18px;
+}
+.model-card-copy h2 {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-card-copy p {
+  overflow: hidden;
+  margin-top: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-card-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr);
+  gap: 15px;
+  margin: auto 0 0;
+  padding-top: 20px;
+}
+.model-card-details > div {
+  min-width: 0;
+}
+.model-card-details dt {
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+.model-card-details dd {
+  overflow: hidden;
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-management-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 21px;
+}
+.model-management-card footer .danger-text {
+  margin-left: auto;
+}
+.model-management-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 260px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.model-management-alert {
+  margin-bottom: 0;
+}
+.model-management-empty {
+  min-height: 330px;
+}
+.model-editor-drawer {
+  display: flex;
+  flex-direction: column;
+  width: min(480px, 100vw);
+}
+.model-editor-form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 28px;
+}
+.model-editor-form > label {
+  margin-top: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 550;
+}
+.model-editor-form > label:first-child {
+  margin-top: 0;
+}
+.model-editor-form > input {
+  min-height: 40px;
+  color: var(--ink);
+  border-color: var(--line);
+  font-size: 13px;
+}
+.model-editor-form .field-hint {
+  margin: -1px 0 4px;
+}
 /* Runtime status is an actionable destination, not a replacement for the old management menu. */
 .runtime-status-hero {
   display: flex;
@@ -3253,6 +3394,9 @@ textarea:focus-visible {
   .runtime-status-grid {
     grid-template-columns: 1fr;
   }
+  .model-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .runtime-boundaries {
     grid-template-columns: 1fr;
     gap: 16px;
@@ -3544,6 +3688,15 @@ textarea:focus-visible {
     font-size: 11px;
     line-height: 16px;
     text-align: center;
+  }
+  .model-card-grid {
+    grid-template-columns: 1fr;
+  }
+  .model-management-card {
+    min-height: 205px;
+  }
+  .model-editor-form {
+    padding: 20px 22px;
   }
   .runtime-status-hero {
     align-items: flex-start;

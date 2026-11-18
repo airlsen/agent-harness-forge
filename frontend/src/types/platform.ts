@@ -77,6 +77,7 @@ export interface Tool {
   icon: string;
 }
 export interface ModelConnection {
+  id?: number;
   configured: boolean;
   name: string;
   baseUrl: string;
