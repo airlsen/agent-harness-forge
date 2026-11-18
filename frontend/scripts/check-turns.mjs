@@ -27,7 +27,7 @@ const tool = (id, callId, name = 'workspace_read') => ({
   meta: { toolCallId: callId, tool: name, arguments: { path: 'a.txt' }, isError: false },
 });
 try {
-  const { buildTurns } = await vite.ssrLoadModule('/src/utils/turns.ts');
+  const { buildTurns, processStats, processSummary } = await vite.ssrLoadModule('/src/utils/turns.ts');
 
   check('一轮 = 用户消息 + 一个 AI 块；思考与正文是同一块内的步骤', () => {
     const turns = buildTurns([user(1), assistant(2, '回答', { reasoning: '先想想' })], idle);
@@ -70,15 +70,17 @@ try {
     });
     assert.equal(turns.length, 2);
     assert.equal(turns[1].running, true);
-    // 思考步骤会断开工具分组：新一轮思考后的调用是新的连续组
+    // 同一次请求里正文先于工具调用；思考与正文会断开工具分组
     assert.deepEqual(
       turns[1].steps.map((s) => s.kind),
-      ['tools', 'thinking', 'tools', 'text'],
+      ['tools', 'thinking', 'text', 'tools'],
     );
-    assert.equal(turns[1].steps[2].calls[0].pending, true);
-    // 思考一旦开始输出正文/调工具即结束：不再是 live（前端折叠成「已思考」）
+    assert.equal(turns[1].steps[3].calls[0].pending, true);
+    // 思考一旦开始输出正文/调工具即结束；已转入工具调用的正文也不再流式
     assert.equal(turns[1].steps[1].live, false);
-    assert.equal(turns[1].steps[3].live, true);
+    assert.equal(turns[1].steps[2].live, false);
+    // 进行中的调用之前的正文是过程说明，不是最终回答
+    assert.equal(turns[1].answer.length, 0);
   });
 
   check('只在推理流式时思考保持 live；开始调工具或出正文即视为思考结束', () => {
@@ -191,6 +193,79 @@ try {
     assert.deepEqual(turns[1].deliverables, []);
     // 交付声明仍作为一次工具调用保留在过程步骤里
     assert.equal(turns[0].steps[0].calls.length, 3);
+  });
+
+  check('多次模型请求的思考、工具与中间说明合成一个过程块，最终回答单独显示', () => {
+    // 截图场景：思考 → 说明 → 列文件 → 思考 → 写入 → 思考 → 写入 → 思考 → 最终回答
+    const turns = buildTurns(
+      [
+        user(1),
+        assistant(2, '我先查看工作区状态', { reasoning: '想一想' }),
+        tool(3, 'c1', 'workspace_list'),
+        assistant(4, '', { reasoning: '第一批' }),
+        tool(5, 'c2', 'workspace_write'),
+        assistant(6, '', { reasoning: '第二批' }),
+        tool(7, 'c3', 'workspace_write'),
+        assistant(8, '已生成全部文件', { reasoning: '收尾' }),
+      ],
+      idle,
+    );
+    const [turn] = turns;
+    assert.deepEqual(
+      turn.process.map((s) => s.kind),
+      ['thinking', 'text', 'tools', 'thinking', 'tools', 'thinking', 'tools', 'thinking'],
+    );
+    assert.deepEqual(
+      turn.answer.map((s) => s.text),
+      ['已生成全部文件'],
+    );
+    const stats = processStats(turn.process);
+    assert.equal(stats.calls, 3);
+    assert.equal(processSummary(stats), '已思考 · 调用 3 个工具');
+  });
+
+  check('没有工具调用时：思考进过程块，正文全部是最终回答', () => {
+    const [turn] = buildTurns([user(1), assistant(2, '回答', { reasoning: '先想想' })], idle);
+    assert.deepEqual(
+      turn.process.map((s) => s.kind),
+      ['thinking'],
+    );
+    assert.deepEqual(
+      turn.answer.map((s) => s.text),
+      ['回答'],
+    );
+    assert.equal(processSummary(processStats(turn.process)), '已思考');
+    const [plain] = buildTurns([user(1), assistant(2, '直接回答')], idle);
+    assert.equal(plain.process.length, 0);
+  });
+
+  check('运行中：正文之后又开始调工具，这段正文收进过程块；最终回答流式时在过程块之后', () => {
+    const narrating = buildTurns([user(1)], {
+      running: true,
+      reasoning: '想',
+      text: '我先看看',
+      activeTools: [{ id: 'c1', tool: 'workspace_list', pending: true }],
+    })[0];
+    assert.equal(narrating.answer.length, 0);
+    const stats = processStats(narrating.process);
+    assert.equal(stats.pending.length, 1);
+    const answering = buildTurns([user(1), tool(2, 'c1')], {
+      running: true,
+      reasoning: '收尾',
+      text: '结论是',
+      activeTools: [],
+    })[0];
+    assert.deepEqual(
+      answering.process.map((s) => s.kind),
+      ['tools', 'thinking'],
+    );
+    assert.equal(answering.answer[0].live, true);
+  });
+
+  check('过程摘要统计失败的调用', () => {
+    const failed = { ...tool(3, 'c2'), meta: { ...tool(3, 'c2').meta, isError: true } };
+    const [turn] = buildTurns([user(1), tool(2, 'c1'), failed, assistant(4, '完成')], idle);
+    assert.equal(processSummary(processStats(turn.process)), '调用 2 个工具 · 1 个失败');
   });
 } finally {
   await vite.close();

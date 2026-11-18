@@ -6,7 +6,8 @@ import type { ToolCallView } from '../utils/turns';
 import Icon from './ForgeIcon.vue';
 import { BUILTIN_TOOL_TITLES } from '../utils/files';
 
-const props = defineProps<{ calls: ToolCallView[] }>();
+// flat：只渲染调用行（无分组标题），用于过程块内的时间线
+const props = defineProps<{ calls: ToolCallView[]; flat?: boolean }>();
 const app = usePlatform();
 const chat = useConversation();
 const open = ref(false);
@@ -49,8 +50,13 @@ function formatArgs(value: unknown) {
 }
 </script>
 <template>
-  <div :class="['tool-group', { open: open || running, running }]">
-    <button v-if="grouped" class="tool-group-header" :aria-expanded="open || running" @click="open = !open">
+  <div :class="['tool-group', { open: open || running, running, flat }]">
+    <button
+      v-if="grouped && !flat"
+      class="tool-group-header"
+      :aria-expanded="open || running"
+      @click="open = !open"
+    >
       <span class="tool-status" :class="{ pending: running, error: !running && failures > 0 }"
         ><span v-if="running" class="loader small"></span
         ><Icon v-else :name="failures ? 'info' : 'check'" :size="12"
@@ -58,7 +64,7 @@ function formatArgs(value: unknown) {
       <span class="tool-group-title">{{ summary }}</span>
       <Icon name="chevron" :size="12" />
     </button>
-    <div v-if="grouped" v-show="open || running" class="tool-group-calls">
+    <div v-if="grouped || flat" v-show="flat || open || running" class="tool-group-calls">
       <details v-for="call in calls" :key="call.id" class="tool-call-row" :open="call.pending">
         <summary>
           <span class="tool-status" :class="{ pending: call.pending, error: call.isError }"
