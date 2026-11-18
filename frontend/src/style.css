@@ -1530,22 +1530,6 @@ button:disabled:hover {
   max-width: 830px;
   margin: 0 auto;
 }
-.conversation-start {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-size: 10px;
-  color: #526075;
-  border-bottom: 1px solid #f1f3f7;
-  padding: 0 5px 21px;
-  margin-bottom: 29px;
-}
-.conversation-start > span {
-  font-size: 10px;
-  color: #526175;
-  margin-left: 6px;
-}
 .message-row {
   display: flex;
   gap: 13px;
@@ -4557,16 +4541,6 @@ table td > .tag {
   .scenario-popover > button div > span {
     font-size: 10px;
     max-width: 185px;
-  }
-  .conversation-start {
-    flex-wrap: wrap;
-    line-height: 1.9;
-    font-size: 10px;
-    margin-bottom: 22px;
-  }
-  .conversation-start > span {
-    font-size: 10px;
-    margin-left: 0;
   }
   .message-row {
     gap: 9px;
