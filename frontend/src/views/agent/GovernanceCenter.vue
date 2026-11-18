@@ -9,6 +9,7 @@ const app = usePlatform(),
 const policy = reactive({
   requireWriteApproval: true,
   allowedTools: [] as string[],
+  allowedPluginTools: ['*'] as string[],
   maxOutputTokens: 4096,
   requestTimeoutSeconds: 120,
   approvalTimeoutSeconds: 120,
@@ -84,6 +85,22 @@ async function save() {
               </div>
               <span class="tag soft">{{ tool.name === 'workspace_write' ? '写入' : '只读' }}</span></label
             >
+          </div>
+          <div class="switch-setting plugin-policy-setting">
+            <div>
+              <strong>允许已审核的受管插件工具</strong>
+              <p>仍需由场景逐项授权；写入型插件工具始终逐次等待审批。关闭后，新场景不能装配插件工具。</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              :aria-checked="policy.allowedPluginTools.includes('*')"
+              aria-label="允许受管插件工具"
+              :class="['switch-control', { checked: policy.allowedPluginTools.includes('*') }]"
+              @click="policy.allowedPluginTools = policy.allowedPluginTools.includes('*') ? [] : ['*']"
+            >
+              <span></span>
+            </button>
           </div>
           <div class="enforced-policy">
             <Icon name="lock" :size="16" />

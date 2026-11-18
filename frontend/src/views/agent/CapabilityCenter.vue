@@ -6,18 +6,11 @@ import { usePlatform } from '../../stores/platform';
 import { useConversation } from '../../stores/conversation';
 import type { Scenario, Tool } from '../../types/platform';
 import type { SkillSummary } from '../../types/skill';
+import type { PluginPackage } from '../../types/plugin';
 import Icon from '../../components/ForgeIcon.vue';
 import DialogShell from '../../components/DialogShell.vue';
 
-type RuntimeComponent = {
-  name: string;
-  package: string;
-  description: string;
-  version: string;
-  type: string;
-  extensionPoints: string[];
-  permissions: string[];
-};
+type RuntimeComponent = PluginPackage;
 type McpServer = {
   id: number;
   name: string;
@@ -42,7 +35,31 @@ const skills = ref<{ items: SkillSummary[] } | null>(null);
 const mcp = ref<{ items: McpServer[]; available: boolean; reason: string } | null>(null);
 const mcpJson = ref('');
 const mcpTransport = ref<'streamable-http' | 'sse' | 'stdio'>('streamable-http');
-const mcpExample = computed(() => JSON.stringify({ mcpServers: { 'my-service': mcpTransport.value === 'stdio' ? { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/path/to/allowed-folder'], env: {} } : { type: mcpTransport.value, url: mcpTransport.value === 'sse' ? 'https://mcp.example.com/sse' : 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer <token>' } } } }, null, 2));
+const mcpExample = computed(() =>
+  JSON.stringify(
+    {
+      mcpServers: {
+        'my-service':
+          mcpTransport.value === 'stdio'
+            ? {
+                command: 'npx',
+                args: ['-y', '@modelcontextprotocol/server-filesystem', '/path/to/allowed-folder'],
+                env: {},
+              }
+            : {
+                type: mcpTransport.value,
+                url:
+                  mcpTransport.value === 'sse'
+                    ? 'https://mcp.example.com/sse'
+                    : 'https://mcp.example.com/mcp',
+                headers: { Authorization: 'Bearer <token>' },
+              },
+      },
+    },
+    null,
+    2,
+  ),
+);
 const mcpTemplate = ref('');
 function changeMcpTransport() {
   if (mcpJson.value === mcpTemplate.value) mcpJson.value = mcpExample.value;
@@ -53,8 +70,15 @@ const mcpMessage = ref('');
 const mcpEditorOpen = ref(false);
 const selectedMcp = ref<McpServer | null>(null);
 const mcpToolQuery = ref('');
-const visibleMcpTools = computed(() => (selectedMcp.value?.tools ?? []).filter(tool => `${tool.name} ${tool.description}`.toLowerCase().includes(mcpToolQuery.value.trim().toLowerCase())));
-function openMcpTools(server: McpServer) { selectedMcp.value = server; mcpToolQuery.value = ''; }
+const visibleMcpTools = computed(() =>
+  (selectedMcp.value?.tools ?? []).filter((tool) =>
+    `${tool.name} ${tool.description}`.toLowerCase().includes(mcpToolQuery.value.trim().toLowerCase()),
+  ),
+);
+function openMcpTools(server: McpServer) {
+  selectedMcp.value = server;
+  mcpToolQuery.value = '';
+}
 const detail = ref<Tool | null>(null);
 const componentDetail = ref<RuntimeComponent | null>(null);
 const tab = computed(() =>
@@ -68,6 +92,13 @@ const tabs = computed(() => [
 const visibleTools = computed(() =>
   app.tools.filter((tool) =>
     `${tool.name} ${tool.title} ${tool.description}`.toLowerCase().includes(query.value.trim().toLowerCase()),
+  ),
+);
+const visiblePlugins = computed(() =>
+  components.value.filter((plugin) =>
+    `${plugin.displayName} ${plugin.package} ${plugin.description} ${plugin.tools.map((tool) => `${tool.title} ${tool.description}`).join(' ')}`
+      .toLowerCase()
+      .includes(query.value.trim().toLowerCase()),
   ),
 );
 const related = computed(() =>
@@ -127,7 +158,13 @@ async function importMcpJson() {
     mcpMessage.value = 'JSON 格式不正确，请检查括号和引号。';
     return;
   }
-  if (config && typeof config === 'object' && 'mcpServers' in config && config.mcpServers && typeof config.mcpServers === 'object') {
+  if (
+    config &&
+    typeof config === 'object' &&
+    'mcpServers' in config &&
+    config.mcpServers &&
+    typeof config.mcpServers === 'object'
+  ) {
     for (const entry of Object.values(config.mcpServers as Record<string, Record<string, unknown>>)) {
       entry.type = mcpTransport.value;
     }
@@ -248,8 +285,11 @@ onMounted(load);
       </div>
       <template v-if="tab === 'tools'">
         <div class="capability-section-label">
-          <span><span class="availability-dot"></span>{{ app.tools.length }} 项基础工具已接入</span>
-          <p>通过场景调用 · 通用业务插件安装尚未开放</p>
+          <span
+            ><span class="availability-dot"></span>{{ app.tools.length }} 项基础工具 ·
+            {{ visiblePlugins.length }} 个受管插件</span
+          >
+          <p>通过场景调用 · 仅展示审核且由 Forge 托管的版本</p>
         </div>
         <div v-if="visibleTools.length" class="enterprise-tool-grid">
           <article v-for="tool in visibleTools" :key="tool.name" class="enterprise-tool-card">
@@ -283,6 +323,48 @@ onMounted(load);
           <p>试试搜索“文件”“时间”，或清除关键词。</p>
           <button class="button secondary" @click="query = ''">清除搜索</button>
         </div>
+        <section v-if="visiblePlugins.length" class="managed-plugin-section">
+          <div class="capability-section-label">
+            <span><Icon name="shield" :size="15" />受管业务插件</span>
+            <p>版本、工具契约和可用状态均由平台控制</p>
+          </div>
+          <div class="enterprise-tool-grid">
+            <article
+              v-for="plugin in visiblePlugins"
+              :key="plugin.package"
+              class="enterprise-tool-card managed-plugin-card"
+            >
+              <div class="enterprise-tool-top">
+                <span class="scene-icon shield"><Icon name="blocks" :size="24" /></span
+                ><span
+                  :class="[
+                    'tag',
+                    plugin.auditStatus === 'approved' && plugin.enabled ? 'success' : 'neutral',
+                  ]"
+                  >{{ plugin.auditStatus === 'approved' && plugin.enabled ? '已批准' : '不可用' }}</span
+                >
+              </div>
+              <h2>{{ plugin.displayName }}</h2>
+              <p>{{ plugin.description }}</p>
+              <div class="managed-plugin-meta">
+                <span>v{{ plugin.version }}</span
+                ><span>{{ plugin.tools.length }} 项已声明工具</span>
+              </div>
+              <ul class="managed-plugin-tools">
+                <li v-for="tool in plugin.tools" :key="tool.name">
+                  <span
+                    ><b>{{ tool.title }}</b
+                    ><small>{{ tool.description }}</small></span
+                  ><em>{{ tool.permission === 'approval' ? '需审批' : '只读' }}</em>
+                </li>
+              </ul>
+              <footer>
+                <span>Forge 受管运行时</span
+                ><RouterLink to="/agent/scenarios">前往场景授权 <Icon name="arrow" :size="15" /></RouterLink>
+              </footer>
+            </article>
+          </div>
+        </section>
         <details class="runtime-details">
           <summary>
             <Icon name="box" :size="17" /><span>底层运行组件</span
@@ -290,16 +372,13 @@ onMounted(load);
           </summary>
           <div v-if="loading" class="loading-inline"><span class="loader small"></span>读取组件信息…</div>
           <div v-else class="runtime-component-list">
-            <article v-for="item in components" :key="item.name">
-              <span class="component-runtime-icon"
-                ><Icon :name="item.type === 'kernel' ? 'cpu' : 'blocks'" :size="20"
-              /></span>
+            <article v-for="item in components" :key="item.package">
+              <span class="component-runtime-icon"><Icon name="blocks" :size="20" /></span>
               <div>
                 <strong
-                  >{{ item.name === 'dsh-sdk' ? 'DeepSeek Harness' : 'Forge Runtime'
-                  }}<small>v{{ item.version }}</small></strong
+                  >{{ item.displayName }}<small>v{{ item.version }}</small></strong
                 >
-                <p>{{ item.description }}</p>
+                <p>{{ item.package }} · {{ item.runtime }}</p>
               </div>
               <button class="button text small" @click="componentDetail = item">
                 组件详情 <Icon name="arrow" :size="14" />
@@ -335,19 +414,61 @@ onMounted(load);
               <div class="mcp-card-info">
                 <div class="mcp-card-title">
                   <h3>{{ server.name }}</h3>
-                  <span :class="['tag', server.status === 'connected' ? 'success' : server.status === 'error' ? 'danger' : 'neutral']">{{ server.status === 'connected' ? '连接正常' : server.status === 'error' ? '连接失败' : '待测试' }}</span>
-                  <span class="mcp-transport-badge">{{ server.transport === 'stdio' ? 'stdio' : server.transport === 'sse' ? '旧版 SSE' : 'Streamable HTTP' }}</span>
+                  <span
+                    :class="[
+                      'tag',
+                      server.status === 'connected'
+                        ? 'success'
+                        : server.status === 'error'
+                          ? 'danger'
+                          : 'neutral',
+                    ]"
+                    >{{
+                      server.status === 'connected'
+                        ? '连接正常'
+                        : server.status === 'error'
+                          ? '连接失败'
+                          : '待测试'
+                    }}</span
+                  >
+                  <span class="mcp-transport-badge">{{
+                    server.transport === 'stdio'
+                      ? 'stdio'
+                      : server.transport === 'sse'
+                        ? '旧版 SSE'
+                        : 'Streamable HTTP'
+                  }}</span>
                 </div>
-                <p class="mcp-card-description">{{ server.serverInfo?.name || (server.transport === 'stdio' ? '本机 MCP 进程' : server.url) }}<span v-if="server.serverInfo?.version"> · {{ server.serverInfo.version }}</span></p>
+                <p class="mcp-card-description">
+                  {{ server.serverInfo?.name || (server.transport === 'stdio' ? '本机 MCP 进程' : server.url)
+                  }}<span v-if="server.serverInfo?.version"> · {{ server.serverInfo.version }}</span>
+                </p>
               </div>
-              <button class="button secondary small mcp-view-tools" :disabled="!server.tools.length" @click="openMcpTools(server)">查看工具 <span>{{ server.tools.length }}</span><Icon name="arrow" :size="14" /></button>
+              <button
+                class="button secondary small mcp-view-tools"
+                :disabled="!server.tools.length"
+                @click="openMcpTools(server)"
+              >
+                查看工具 <span>{{ server.tools.length }}</span><Icon name="arrow" :size="14" />
+              </button>
             </div>
             <p v-if="server.lastError" class="mcp-server-error">{{ server.lastError }}</p>
             <footer class="mcp-card-footer">
-              <span v-if="server.hasCredentials" class="mcp-credential-note">认证信息已加密保存</span><span v-else class="mcp-credential-note">{{ server.transport === 'stdio' ? '本机进程' : '无需认证' }}</span>
+              <span v-if="server.hasCredentials" class="mcp-credential-note">认证信息已加密保存</span
+              ><span v-else class="mcp-credential-note">{{
+                server.transport === 'stdio' ? '本机进程' : '无需认证'
+              }}</span>
               <div class="mcp-card-actions">
-                <button class="button text small" :disabled="mcpBusy" @click="testMcp(server)">测试连接</button>
-                <button class="button secondary small" :disabled="server.status !== 'connected'" @click="toggleMcp(server)">{{ server.enabled ? '停用' : '启用' }}</button>
+                <button class="button text small" :disabled="mcpBusy" @click="testMcp(server)">
+                  测试连接
+                </button>
+                <button
+                  class="button secondary small"
+                  :disabled="server.status !== 'connected'"
+                  @click="toggleMcp(server)"
+                >
+                  {{ server.enabled ? '停用' : '启用' }}
+                </button>
                 <button class="button text small danger-text" @click="deleteMcp(server)">移除</button>
               </div>
             </footer>
@@ -356,20 +477,47 @@ onMounted(load);
       </section>
       <section v-else-if="tab === 'skills' && skills" class="mcp-directory skill-capability-directory">
         <header class="capability-list-heading">
-          <div><h2>Skills 技能</h2><span>{{ skills.items.length }} 个可复用工作方法</span></div>
-          <div class="skill-capability-actions"><RouterLink v-if="skills.items.length" to="/agent/skills" class="button secondary small">管理全部 <Icon name="arrow" :size="14" /></RouterLink><RouterLink to="/agent/skills/new" class="button primary small"><Icon name="plus" :size="15" />新建 Skill</RouterLink></div>
+          <div>
+            <h2>Skills 技能</h2>
+            <span>{{ skills.items.length }} 个可复用工作方法</span>
+          </div>
+          <div class="skill-capability-actions">
+            <RouterLink v-if="skills.items.length" to="/agent/skills" class="button secondary small"
+              >管理全部 <Icon name="arrow" :size="14" /></RouterLink
+            ><RouterLink to="/agent/skills/new" class="button primary small"
+              ><Icon name="plus" :size="15" />新建 Skill</RouterLink
+            >
+          </div>
         </header>
         <div v-if="!skills.items.length" class="enterprise-empty">
           <span class="enterprise-empty-symbol"><Icon name="book" :size="29" /></span>
           <h2>还没有 Skill</h2>
           <p>从一项常用工作开始，定义目标、步骤与输出要求；创建后可以由助手协助完善草稿。</p>
-          <RouterLink to="/agent/skills/new" class="button primary"><Icon name="plus" :size="16" />创建第一个 Skill</RouterLink>
+          <RouterLink to="/agent/skills/new" class="button primary"
+            ><Icon name="plus" :size="16" />创建第一个 Skill</RouterLink
+          >
         </div>
         <div v-else class="capability-skill-grid">
-          <RouterLink v-for="skill in skills.items" :key="skill.id" :to="`/agent/skills/${skill.id}`" class="capability-skill-card">
-            <div class="capability-skill-card-top"><span class="capability-skill-icon"><Icon name="book" :size="19" /></span><span :class="['tag', skill.status === 'published' ? 'success' : 'neutral']">{{ skill.status === 'published' ? `已发布 · v${skill.publishedVersion}` : '草稿' }}</span></div>
-            <div><h3>{{ skill.name }}</h3><p>{{ skill.description || '尚未添加用途说明。' }}</p></div>
-            <footer><span>修订 r{{ skill.revision ?? 1 }}</span><span>打开工作台 <Icon name="arrow" :size="14" /></span></footer>
+          <RouterLink
+            v-for="skill in skills.items"
+            :key="skill.id"
+            :to="`/agent/skills/${skill.id}`"
+            class="capability-skill-card"
+          >
+            <div class="capability-skill-card-top">
+              <span class="capability-skill-icon"><Icon name="book" :size="19" /></span
+              ><span :class="['tag', skill.status === 'published' ? 'success' : 'neutral']">{{
+                skill.status === 'published' ? `已发布 · v${skill.publishedVersion}` : '草稿'
+              }}</span>
+            </div>
+            <div>
+              <h3>{{ skill.name }}</h3>
+              <p>{{ skill.description || '尚未添加用途说明。' }}</p>
+            </div>
+            <footer>
+              <span>修订 r{{ skill.revision ?? 1 }}</span
+              ><span>打开工作台 <Icon name="arrow" :size="14" /></span>
+            </footer>
           </RouterLink>
         </div>
       </section>
@@ -397,7 +545,14 @@ onMounted(load);
         </button>
       </header>
       <div class="mcp-import-body">
-        <div class="mcp-format-row"><label class="mcp-json-label" for="mcp-import-json">连接协议</label><select v-model="mcpTransport" class="mcp-transport-select" @change="changeMcpTransport"><option value="streamable-http">Streamable HTTP（推荐）</option><option value="sse">SSE（旧版 HTTP）</option><option value="stdio">stdio（本机进程）</option></select></div>
+        <div class="mcp-format-row">
+          <label class="mcp-json-label" for="mcp-import-json">连接协议</label
+          ><select v-model="mcpTransport" class="mcp-transport-select" @change="changeMcpTransport">
+            <option value="streamable-http">Streamable HTTP（推荐）</option>
+            <option value="sse">SSE（旧版 HTTP）</option>
+            <option value="stdio">stdio（本机进程）</option>
+          </select>
+        </div>
         <label class="mcp-json-label" for="mcp-import-json">mcpServers 配置 JSON</label>
         <textarea
           id="mcp-import-json"
@@ -407,7 +562,10 @@ onMounted(load);
           spellcheck="false"
           :placeholder="mcpExample"
         ></textarea>
-        <p class="mcp-import-hint">凭据和 stdio 参数会加密保存在本机，不会在服务列表中显示。stdio 命令会以 Forge 服务进程权限启动，请只配置可信 MCP 程序；导入后需先测试连接。</p>
+        <p class="mcp-import-hint">
+          凭据和 stdio 参数会加密保存在本机，不会在服务列表中显示。stdio 命令会以 Forge
+          服务进程权限启动，请只配置可信 MCP 程序；导入后需先测试连接。
+        </p>
         <div v-if="mcpMessage" class="mcp-feedback" role="alert">{{ mcpMessage }}</div>
       </div>
       <footer>
@@ -417,15 +575,43 @@ onMounted(load);
         </button>
       </footer>
     </DialogShell>
-    <DialogShell v-if="selectedMcp" variant="modal" :label="`${selectedMcp.name} 工具清单`" panel-class="mcp-tools-dialog" @close="selectedMcp = null">
+    <DialogShell
+      v-if="selectedMcp"
+      variant="modal"
+      :label="`${selectedMcp.name} 工具清单`"
+      panel-class="mcp-tools-dialog"
+      @close="selectedMcp = null"
+    >
       <header class="mcp-tools-header">
-        <div><span class="mcp-transport-badge">{{ selectedMcp.transport === 'stdio' ? 'stdio' : selectedMcp.transport === 'sse' ? '旧版 SSE' : 'Streamable HTTP' }}</span><h2>{{ selectedMcp.name }}</h2><p>{{ selectedMcp.tools.length }} 项工具 · 由 MCP 服务提供</p></div>
-        <button class="icon-button" aria-label="关闭工具清单" @click="selectedMcp = null"><Icon name="close" :size="20" /></button>
+        <div>
+          <span class="mcp-transport-badge">{{
+            selectedMcp.transport === 'stdio'
+              ? 'stdio'
+              : selectedMcp.transport === 'sse'
+                ? '旧版 SSE'
+                : 'Streamable HTTP'
+          }}</span>
+          <h2>{{ selectedMcp.name }}</h2>
+          <p>{{ selectedMcp.tools.length }} 项工具 · 由 MCP 服务提供</p>
+        </div>
+        <button class="icon-button" aria-label="关闭工具清单" @click="selectedMcp = null">
+          <Icon name="close" :size="20" />
+        </button>
       </header>
-      <label class="mcp-tools-search"><Icon name="search" :size="16" /><input v-model="mcpToolQuery" placeholder="搜索工具名称或用途" /></label>
+      <label class="mcp-tools-search"
+        ><Icon name="search" :size="16" /><input v-model="mcpToolQuery" placeholder="搜索工具名称或用途"
+      /></label>
       <div class="mcp-tools-list">
-        <article v-for="tool in visibleMcpTools" :key="tool.name" class="mcp-tool-row"><span class="mcp-tool-symbol"><Icon name="wrench" :size="16" /></span><div><strong>{{ tool.name }}</strong><p>{{ tool.description || '此工具未提供用途说明。' }}</p></div></article>
-        <div v-if="!visibleMcpTools.length" class="mcp-tools-empty">{{ selectedMcp.tools.length ? '没有匹配的工具' : '服务尚未返回工具清单，请先测试连接。' }}</div>
+        <article v-for="tool in visibleMcpTools" :key="tool.name" class="mcp-tool-row">
+          <span class="mcp-tool-symbol"><Icon name="wrench" :size="16" /></span>
+          <div>
+            <strong>{{ tool.name }}</strong>
+            <p>{{ tool.description || '此工具未提供用途说明。' }}</p>
+          </div>
+        </article>
+        <div v-if="!visibleMcpTools.length" class="mcp-tools-empty">
+          {{ selectedMcp.tools.length ? '没有匹配的工具' : '服务尚未返回工具清单，请先测试连接。' }}
+        </div>
       </div>
     </DialogShell>
     <DialogShell v-if="detail" label="工具详情" panel-class="capability-detail" @close="closeTool"
@@ -491,7 +677,7 @@ onMounted(load);
     <DialogShell v-if="componentDetail" label="组件详情" @close="componentDetail = null"
       ><header>
         <div>
-          <h2>{{ componentDetail.name }}</h2>
+          <h2>{{ componentDetail.displayName }}</h2>
           <p>{{ componentDetail.package }}</p>
         </div>
         <button class="icon-button" aria-label="关闭组件详情" @click="componentDetail = null">
@@ -524,7 +710,9 @@ onMounted(load);
           </div>
         </div>
         <div class="form-alert">
-          <Icon name="info" :size="17" /><span>随部署安装的运行组件，不是可自由安装的业务插件。</span>
+          <Icon name="info" :size="17" /><span
+            >仅可由平台审核、固定版本并通过场景授权；不支持自由安装 npm、GitHub 或本地插件。</span
+          >
         </div>
       </div></DialogShell
     >

@@ -6,6 +6,7 @@ from ..core.database import get_session
 from ..models.registry import McpServer
 from ..services.mcp_service import import_servers, public_view, test_server
 from ..services.settings_service import TOOLS, get_connection
+from ..services.plugin_service import list_plugins
 from ..utils.response import ResponseUtil
 
 router = APIRouter()
@@ -17,33 +18,8 @@ async def tools():
 
 
 @router.get("/plugins")
-async def plugins():
-    return ResponseUtil.ok(
-        {
-            "items": [
-                {
-                    "name": "forge-runtime",
-                    "package": "@forge/runtime-plugin",
-                    "version": "0.1.0",
-                    "type": "platform",
-                    "status": "active",
-                    "description": "企业模型出口、受限会话工作区工具与审批门控。",
-                    "extensionPoints": ["ctx.llm", "ctx.tools", "tools/pre-execute"],
-                    "permissions": ["model-gateway", "session-workspace"],
-                },
-                {
-                    "name": "dsh-sdk",
-                    "package": "@deepseek-ai/dsh",
-                    "version": "0.2.2-rc.1",
-                    "type": "kernel",
-                    "status": "installed",
-                    "description": "DeepSeek Harness Agent Loop、会话日志与 JSON-RPC SDK 运行时。",
-                    "extensionPoints": ["sdk-minimal", "session.event"],
-                    "permissions": ["agent-runtime"],
-                },
-            ]
-        }
-    )
+async def plugins(db: AsyncSession = Depends(get_session)):
+    return ResponseUtil.ok({"items": await list_plugins(db)})
 
 
 @router.get("/skills")

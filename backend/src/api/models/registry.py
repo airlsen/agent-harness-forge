@@ -15,12 +15,19 @@ class PluginRegistry(Base):
     __tablename__ = "plugin_registry"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    package: Mapped[str] = mapped_column(String(128), index=True)  # npm 包名
+    package: Mapped[str] = mapped_column(String(128), index=True)  # Forge 稳定插件标识，不接受运行时 URL
     version: Mapped[str] = mapped_column(String(32))
+    display_name: Mapped[str] = mapped_column(String(128), default="")
+    description: Mapped[str] = mapped_column(String(512), default="")
+    runtime: Mapped[str] = mapped_column(String(32), default="forge-bridge")
+    source_ref: Mapped[str] = mapped_column(String(256), default="")
+    artifact_hash: Mapped[str] = mapped_column(String(128), default="")
+    tools_json: Mapped[list] = mapped_column(JSON, default=list)
     extension_points: Mapped[list] = mapped_column(JSON, default=list)  # ctx.llm/tools/*...
     permissions: Mapped[list] = mapped_column(JSON, default=list)  # 权限用途声明
     signature: Mapped[str] = mapped_column(String(128), default="")
     audit_status: Mapped[str] = mapped_column(String(16), default="pending")  # pending/approved/rejected
+    enabled: Mapped[bool] = mapped_column(default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 

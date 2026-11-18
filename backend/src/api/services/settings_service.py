@@ -45,6 +45,8 @@ TOOL_NAMES = {x["name"] for x in TOOLS}
 DEFAULT_POLICY = {
     "requireWriteApproval": True,
     "allowedTools": [x["name"] for x in TOOLS],
+    # 明确的企业策略面；* 表示当前企业允许已审核插件声明的工具，场景仍须逐项授权。
+    "allowedPluginTools": ["*"],
     "maxOutputTokens": 4096,
     "requestTimeoutSeconds": 120,
     "approvalTimeoutSeconds": 120,
@@ -94,6 +96,7 @@ class ModelInput(BaseModel):
 class PolicyInput(BaseModel):
     requireWriteApproval: bool = True
     allowedTools: list[str] = Field(default_factory=lambda: list(DEFAULT_POLICY["allowedTools"]))
+    allowedPluginTools: list[str] = Field(default_factory=lambda: list(DEFAULT_POLICY["allowedPluginTools"]))
     maxOutputTokens: int = Field(default=4096, ge=256, le=16384)
     requestTimeoutSeconds: int = Field(default=120, ge=15, le=300)
     approvalTimeoutSeconds: int = Field(default=120, ge=15, le=600)

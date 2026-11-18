@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class CapabilitySelection(BaseModel):
     plugin_names: list[str] = Field(default_factory=list)
+    plugin_tools: dict[str, list[str]] = Field(default_factory=dict)
     skill_ids: list[int] = Field(default_factory=list)
     mcp_server_ids: list[int] = Field(default_factory=list)
     builtin_tool_names: list[str] = Field(default_factory=list)

@@ -2,6 +2,7 @@
 import Fastify from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
 import { DshKernel, type RuntimeModel } from './kernel/dsh-kernel.js';
+import { PluginWorkerClient } from './plugin-worker-client.js';
 import type { Bundle, UserCtx } from './kernel/types.js';
 
 const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
@@ -10,7 +11,8 @@ if (nodeMajor < 24 || (nodeMajor === 24 && nodeMinor < 9))
 const token = process.env.FORGE_RUNNER_TOKEN;
 if (!token || token.length < 24) throw new Error('FORGE_RUNNER_TOKEN (>=24 chars) is required');
 const expected = Buffer.from(`Bearer ${token}`);
-const kernel = new DshKernel();
+const pluginWorker = await PluginWorkerClient.start();
+const kernel = new DshKernel(pluginWorker);
 const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 1024 * 1024 });
 app.addHook('onRequest', async (req, reply) => {
   if (req.url === '/healthz') return;
@@ -91,7 +93,10 @@ app.get<{ Params: { id: string } }>('/v1/sessions/:id/files', async (req) => ({
 app.get<{ Params: { id: string }; Querystring: { path: string } }>('/v1/sessions/:id/file', async (req) => ({
   content: await kernel.readFile(req.params.id, req.query.path),
 }));
-app.addHook('onClose', () => kernel.dispose());
+app.addHook('onClose', async () => {
+  await kernel.dispose();
+  await pluginWorker.dispose();
+});
 for (const signal of ['SIGTERM', 'SIGINT'] as const)
   process.on(signal, () => {
     void app.close().then(() => process.exit(0));

@@ -5,6 +5,7 @@ export interface ScenarioPayload {
   prompt_template: string;
   capabilities: {
     plugin_names: string[];
+    plugin_tools: Record<string, string[]>;
     builtin_tool_names: string[];
     skill_ids: number[];
     mcp_server_ids: number[];
