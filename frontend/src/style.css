@@ -1724,89 +1724,154 @@ button:disabled:hover {
 .thinking-dots i:nth-child(3) {
   animation-delay: 0.4s;
 }
-.message-row.tool {
-  margin: 12px 0 12px 42px;
+/* 过程步骤：思考与工具调用组，同在当前 AI 块内，低视觉权重 */
+.step-thinking {
+  margin: 0 0 16px;
 }
-.tool-card {
-  width: 100%;
-  border: 1px solid #e7ecf3;
-  border-radius: 8px;
-  background: #fcfdfe;
-}
-.tool-card summary {
+.step-label {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 13px;
-  list-style: none;
+  gap: 6px;
+  font-size: 10px;
+  color: #526175;
+  margin-bottom: 7px;
 }
-.tool-result-icon {
-  height: 27px;
-  width: 27px;
-  border-radius: 6px;
-  background: #edf5ef;
-  color: #52755d;
+.step-label .thinking-dots {
+  margin-left: 2px;
+}
+.step-thinking-text {
+  font-size: 12px;
+  line-height: 1.8;
+  color: #526271;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-left: 2px solid #eef1f6;
+  padding-left: 12px;
+  max-height: 360px;
+  overflow: auto;
+}
+.tool-group {
+  margin: 0 0 16px;
+}
+.tool-group-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: #526175;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+.tool-group-header > svg:last-child {
+  margin-left: auto;
+  transition: transform 0.15s ease;
+}
+.tool-group.open > .tool-group-header > svg:last-child {
+  transform: rotate(90deg);
+}
+.tool-group-calls {
+  margin: 8px 0 0 9px;
+  border-left: 2px solid #eef1f6;
+  padding-left: 11px;
   display: grid;
-  place-items: center;
+  gap: 6px;
 }
-.tool-result-icon.error {
-  color: #875845;
-  background: #faf0e8;
+.tool-call-row {
+  font-size: 11px;
 }
-.tool-card summary strong {
-  display: block;
+.tool-call-row summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+  color: #526175;
+  padding: 3px 0;
+}
+.tool-call-row summary::-webkit-details-marker {
+  display: none;
+}
+.tool-call-row summary strong {
+  font-weight: 500;
+  color: #4e5d72;
+}
+.tool-call-row .tool-arg {
   font-family: monospace;
   font-size: 10px;
-  font-weight: 500;
-  color: #526175;
+  color: #7a8797;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
-.tool-card summary div > span {
+.tool-call-row .tool-state {
   font-size: 10px;
-  color: #4d627f;
-  margin-top: 3px;
-  display: block;
 }
-.tool-card summary > svg {
+.tool-call-row summary > svg:last-child {
   margin-left: auto;
-  color: #4d627f;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
 }
-.tool-card-details {
-  padding: 0 14px 14px;
+.tool-call-row[open] summary > svg:last-child {
+  transform: rotate(90deg);
 }
-.tool-card-details label {
+.tool-status {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: #edf5ef;
+  color: #52755d;
+}
+.tool-status.error {
+  background: #faf0e8;
+  color: #875845;
+}
+.tool-status.pending {
+  background: transparent;
+  color: #a08a6d;
+}
+.tool-call-details {
+  padding: 4px 0 8px 22px;
+}
+.tool-call-details label {
+  display: block;
   font-size: 10px;
-  margin-top: 10px;
-  color: #4f627d;
+  margin: 8px 0 4px;
+  color: #7a8797;
 }
-.tool-card-details pre {
+.tool-call-details pre {
   background: #f6f8fb;
   border: 1px solid #eaf0f7;
   font-size: 10px;
   color: #4d627f;
   line-height: 1.8;
-  padding: 11px;
-  border-radius: 4px;
+  padding: 10px 11px;
+  border-radius: 6px;
   overflow: auto;
-  max-height: 300px;
+  max-height: 280px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  margin: 0;
 }
-.active-tool {
+.step-text {
+  margin: 0 0 6px;
+}
+.step-actions {
   display: flex;
   align-items: center;
-  gap: 9px;
-  font-size: 10px;
-  color: #526175;
-  margin: 16px 0 16px 42px;
-  border: 1px solid #ecf0f5;
-  border-radius: 6px;
-  padding: 12px;
+  gap: 10px;
+  margin-top: 6px;
 }
-.active-tool strong {
-  font-family: monospace;
-  color: #4e627e;
-  font-size: 10px;
-  font-weight: 400;
+.turn-empty {
+  font-size: 11px;
+  color: #98a2b3;
 }
 .approval-card {
   max-width: 840px;
