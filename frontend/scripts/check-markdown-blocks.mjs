@@ -130,6 +130,9 @@ try {
       if (/color|bkg|border|^pie\d/i.test(key) && key !== 'useGradient')
         assert.match(value, /^#[0-9a-f]{6}$/i, key);
     assert.deepEqual(VEGA_CONFIG.range.category, VIZ_PALETTE);
+    assert.equal(VIZ_PALETTE.length, 8);
+    assert.equal(vars.pie9, VIZ_PALETTE[0]); // 超过 8 类时循环取色
+    assert.equal(VEGA_CONFIG.mark.color, '#5b7c99'); // 单系列默认雾蓝，品牌橙留作强调
   });
 
   console.log(`\n${checks.length} checks passed`);

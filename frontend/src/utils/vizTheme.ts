@@ -4,25 +4,27 @@
  */
 import type { EmbedOptions } from 'vega-embed';
 
-/** 分类色板：首色为品牌橙，其余按色相拉开，保证相邻扇区/柱子可区分 */
+/**
+ * 分类色板（低饱和协调色板）：统一降低饱和度、拉平亮度，与界面的石板蓝灰底色呼应；
+ * 冷暖交替排列，相邻扇区/柱子易区分；末位石板灰留给"其他"。
+ */
 export const VIZ_PALETTE = [
-  '#da724d', // 品牌橙
-  '#4c84d9', // 蓝
-  '#489980', // 绿（与 --green 一致）
-  '#e2a93b', // 琥珀
-  '#8b6fd1', // 紫
-  '#d9597a', // 玫红
-  '#3fa7b5', // 青
-  '#7a8699', // 石板灰
-  '#b5835a', // 棕
-  '#6aa84f', // 草绿
-  '#c46bb0', // 品红
-  '#5b6ee1', // 靛蓝
+  '#c8704f', // 陶土橙（品牌色降饱和）
+  '#5b7c99', // 雾蓝（与界面蓝灰同一色系）
+  '#7fa087', // 鼠尾草绿
+  '#d1a35e', // 赭石
+  '#8a7aa8', // 灰紫
+  '#5e9c9a', // 灰青
+  '#b8797f', // 豆沙粉
+  '#8c96a3', // 石板灰（其他）
 ];
+
+/** 单系列图表默认用雾蓝，品牌橙留作强调色 */
+export const VIZ_SINGLE = VIZ_PALETTE[1];
 
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif';
 const INK = '#292e38';
-const MUTED = '#7a8699';
+const MUTED = '#8c96a3';
 
 /** Mermaid base 主题变量（base 主题只接受十六进制颜色） */
 export const MERMAID_THEME_VARIABLES: Record<string, string | boolean> = {
@@ -31,48 +33,50 @@ export const MERMAID_THEME_VARIABLES: Record<string, string | boolean> = {
   background: '#ffffff',
   // Mermaid 12 默认 neo 外观会用 primary→secondary 渐变描边（橙→蓝的双色边框），关掉保持单色
   useGradient: false,
-  // 流程图节点 / 时序图参与者：浅橙底 + 品牌橙描边
-  primaryColor: '#fdf0e9',
-  primaryBorderColor: '#da724d',
+  // 流程图节点：雾蓝浅底 + 雾蓝描边，整图不再大面积铺品牌橙
+  primaryColor: '#eef3f7',
+  primaryBorderColor: '#8fa6bb',
   primaryTextColor: INK,
-  secondaryColor: '#eaf1fb',
-  secondaryBorderColor: '#4c84d9',
+  secondaryColor: '#f8eee9',
+  secondaryBorderColor: '#c8704f',
   secondaryTextColor: INK,
-  tertiaryColor: '#e9f5f1',
-  tertiaryBorderColor: '#489980',
+  tertiaryColor: '#eff4f0',
+  tertiaryBorderColor: '#7fa087',
   tertiaryTextColor: INK,
   lineColor: MUTED,
   textColor: INK,
   edgeLabelBackground: '#ffffff',
   clusterBkg: '#f8f9fb',
   clusterBorder: '#d8dfe7',
-  noteBkgColor: '#fff6e0',
-  noteBorderColor: '#e2a93b',
+  noteBkgColor: '#faf4ea',
+  noteBorderColor: '#d1a35e',
   noteTextColor: INK,
   // 时序图
-  actorBkg: '#fdf0e9',
-  actorBorder: '#da724d',
+  actorBkg: '#eef3f7',
+  actorBorder: '#8fa6bb',
   actorTextColor: INK,
-  actorLineColor: '#c3cad4',
+  actorLineColor: '#c9d2de',
   signalColor: '#58616f',
   signalTextColor: INK,
-  activationBkgColor: '#fbe1d5',
-  activationBorderColor: '#da724d',
+  activationBkgColor: '#f8eee9',
+  activationBorderColor: '#c8704f',
   // 甘特图
-  taskBkgColor: '#4c84d9',
-  taskBorderColor: '#3b6fbf',
+  taskBkgColor: '#5b7c99',
+  taskBorderColor: '#4a6884',
   taskTextColor: '#ffffff',
-  activeTaskBkgColor: '#da724d',
-  activeTaskBorderColor: '#bd5836',
-  doneTaskBkgColor: '#9fd0bf',
-  doneTaskBorderColor: '#489980',
-  critBkgColor: '#d9597a',
-  critBorderColor: '#b8405f',
+  activeTaskBkgColor: '#c8704f',
+  activeTaskBorderColor: '#a95b3e',
+  doneTaskBkgColor: '#b9cdbe',
+  doneTaskBorderColor: '#7fa087',
+  critBkgColor: '#b8797f',
+  critBorderColor: '#9a5f65',
   gridColor: '#e9ebef',
   sectionBkgColor: '#f8f9fb',
   altSectionBkgColor: '#ffffff',
   // 饼图
-  ...Object.fromEntries(VIZ_PALETTE.map((color, i) => [`pie${i + 1}`, color])),
+  ...Object.fromEntries(
+    Array.from({ length: 12 }, (_, i) => [`pie${i + 1}`, VIZ_PALETTE[i % VIZ_PALETTE.length]]),
+  ),
   pieStrokeColor: '#ffffff',
   pieStrokeWidth: '2px',
   pieOuterStrokeWidth: '0px',
@@ -101,7 +105,7 @@ export const VEGA_CONFIG: Exclude<EmbedOptions['config'], string | undefined> = 
   background: 'transparent',
   font: FONT,
   range: { category: VIZ_PALETTE },
-  mark: { color: VIZ_PALETTE[0] },
+  mark: { color: VIZ_SINGLE },
   view: { stroke: 'transparent' },
   title: { color: INK, fontSize: 15, fontWeight: 600, anchor: 'start', offset: 12 },
   axis: {
