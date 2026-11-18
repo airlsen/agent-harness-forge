@@ -7,7 +7,7 @@
 - `src/kernel/types.ts`：AgentKernel 端口。
 - `dsh-kernel.ts`：会话独立进程、runtime patch、事件桥、审批、受限文件、容量与清理。
 - `dsh-process.ts`：换行 JSON-RPC、请求关联、host 请求与安全中止。
-- `forge-runtime-plugin/index.js`：OpenAI-compatible 模型适配器、4 个文本工作区工具、agent 级 restrict 与单调拒绝 guard、写入审批门控。
+- `forge-runtime-plugin/index.js`：OpenAI-compatible 模型适配器、4 个文本工作区工具、agent 级 restrict 与单调拒绝 guard；会话工作区写入直接执行，受路径与配额约束。
 
 模型配置只能由控制面传入。没有配置模型时拒绝创建执行会话，不会回落到历史假模型。模型凭据只经环境传入 dsh 子进程，不写入 runtime patch。
 

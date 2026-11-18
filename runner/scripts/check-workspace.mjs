@@ -10,6 +10,7 @@ const temporary = await mkdtemp(join(tmpdir(), 'forge-workspace-check-'));
 const root = join(temporary, 'workspace');
 const tools = new Map();
 const guards = [];
+const hooks = new Map();
 const oldConfig = process.env.FORGE_MODEL_CONFIG;
 process.env.FORGE_MODEL_CONFIG = JSON.stringify({
   baseUrl: 'http://unused.invalid/v1',
@@ -43,15 +44,26 @@ try {
           return () => {};
         },
       },
-      on: () => () => {},
+      on: (name, hook) => {
+        hooks.set(name, hook);
+        return () => {};
+      },
     },
     {
       workspace: root,
-      allowedTools: ['workspace_list', 'workspace_read', 'workspace_write', 'glob', 'grep'],
+      // 旧版本策略字段：已下线，写入不再逐次确认
       requireWriteApproval: true,
+      allowedTools: ['workspace_list', 'workspace_read', 'workspace_write', 'glob', 'grep'],
     },
   );
 
+  await check('workspace writes run directly; only non-whitelisted tools are denied', async () => {
+    const decide = (name) =>
+      hooks.get('tools/pre-execute')({ name, callId: 'c', arguments: {} }, () => 'next');
+    assert.equal(await decide('workspace_write'), 'next');
+    assert.equal(await decide('workspace_read'), 'next');
+    assert.equal((await decide('bash')).kind, 'deny');
+  });
   await check('256000-byte file is accepted and readable', async () => {
     await write('limit.txt', 'x'.repeat(256000));
     assert.equal((await read('limit.txt')).content.length, 256000);

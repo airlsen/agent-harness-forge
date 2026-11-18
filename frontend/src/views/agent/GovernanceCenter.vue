@@ -8,7 +8,6 @@ const app = usePlatform(),
   saving = ref(false),
   loaded = ref(false);
 const policy = reactive({
-  requireWriteApproval: true,
   allowedTools: [] as string[],
   allowedPluginTools: ['*'] as string[],
   maxOutputTokens: 4096,
@@ -106,22 +105,6 @@ async function save() {
             <h2>工具与审批</h2>
           </div>
           <p class="section-description">场景声明与平台策略取交集，未被同时授权的工具一律拒绝。</p>
-          <div class="switch-setting">
-            <div>
-              <strong>写入会话目录前需要审批</strong>
-              <p>生成或覆盖文本产物时，逐次等待用户批准；超时默认拒绝。</p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              :aria-checked="policy.requireWriteApproval"
-              aria-label="写入前需要审批"
-              :class="['switch-control', { checked: policy.requireWriteApproval }]"
-              @click="policy.requireWriteApproval = !policy.requireWriteApproval"
-            >
-              <span></span>
-            </button>
-          </div>
           <div class="policy-tool-list">
             <label v-for="tool in app.tools" :key="tool.name" class="tool-checkbox"
               ><input v-model="policy.allowedTools" type="checkbox" :value="tool.name" /><span

@@ -127,7 +127,7 @@ const guidance: Record<string, { example: string; boundary: string }> = {
   },
   workspace_write: {
     example: '请把分析结果整理成 Markdown 文件，供我预览和下载。',
-    boundary: '写入当前会话目录，是否需要批准由场景与平台策略决定。默认需要确认。',
+    boundary: '直接写入当前会话目录，无需逐次确认；受文件数量与容量配额约束，不能写到会话目录之外。',
   },
 };
 async function load() {
@@ -370,11 +370,11 @@ onMounted(load);
         <div v-if="visibleTools.length" class="enterprise-tool-grid">
           <article v-for="tool in visibleTools" :key="tool.name" class="enterprise-tool-card">
             <div class="enterprise-tool-top">
-              <span :class="['scene-icon', tool.permission === 'approval' ? 'book' : 'shield']"
+              <span :class="['scene-icon', tool.permission === 'read' ? 'shield' : 'book']"
                 ><Icon :name="tool.icon" :size="24" /></span
-              ><span :class="['tag', tool.permission === 'approval' ? 'warm' : 'success']"
-                ><Icon :name="tool.permission === 'approval' ? 'shield' : 'eye'" :size="12" />{{
-                  tool.permission === 'approval' ? '默认需确认' : '只读'
+              ><span :class="['tag', tool.permission === 'read' ? 'success' : 'warm']"
+                ><Icon :name="tool.permission === 'read' ? 'eye' : 'edit'" :size="12" />{{
+                  tool.permission === 'read' ? '只读' : '写入会话目录'
                 }}</span
               >
             </div>
@@ -823,7 +823,7 @@ onMounted(load);
         </button>
       </header>
       <div class="drawer-body">
-        <span :class="['scene-icon', detail.permission === 'approval' ? 'book' : 'shield']"
+        <span :class="['scene-icon', detail.permission === 'read' ? 'shield' : 'book']"
           ><Icon :name="detail.icon" :size="26"
         /></span>
         <div class="detail-block">

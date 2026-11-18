@@ -534,7 +534,7 @@ async function versions(scenario: Scenario) {
           <div>
             <strong>{{ tool.title }}</strong><small>{{ tool.description }}</small>
           </div>
-          <Icon v-if="tool.permission === 'approval'" name="shield" :size="15"
+          <Icon v-if="tool.permission !== 'read'" name="edit" :size="15"
         /></label>
         <section class="scenario-plugin-picker" aria-labelledby="scenario-plugin-title">
           <header>

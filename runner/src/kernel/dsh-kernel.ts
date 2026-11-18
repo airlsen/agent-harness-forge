@@ -208,7 +208,6 @@ export class DshKernel implements AgentKernel {
       config: {
         workspace: entry.workspace,
         allowedTools: toolset.allowed,
-        requireWriteApproval: policy.requireWriteApproval ?? true,
         maxOutputTokens: policy.maxOutputTokens ?? 4096,
         requestTimeoutSeconds: policy.requestTimeoutSeconds ?? 120,
       },

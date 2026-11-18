@@ -39,14 +39,13 @@ TOOLS = [
     {
         "name": "workspace_write",
         "title": "生成文本产物",
-        "description": "写入当前会话工作区，默认需要用户逐次批准。",
-        "permission": "approval",
+        "description": "直接写入当前会话的受限工作区，无需逐次确认；受文件数量与容量配额约束。",
+        "permission": "write",
         "icon": "edit",
     },
 ]
 TOOL_NAMES = {x["name"] for x in TOOLS}
 DEFAULT_POLICY = {
-    "requireWriteApproval": True,
     "allowedTools": [x["name"] for x in TOOLS],
     # 明确的企业策略面；* 表示当前企业允许已审核插件声明的工具，场景仍须逐项授权。
     "allowedPluginTools": ["*"],
@@ -103,7 +102,6 @@ class ModelAvailabilityInput(BaseModel):
 
 
 class PolicyInput(BaseModel):
-    requireWriteApproval: bool = True
     allowedTools: list[str] = Field(default_factory=lambda: list(DEFAULT_POLICY["allowedTools"]))
     allowedPluginTools: list[str] = Field(default_factory=lambda: list(DEFAULT_POLICY["allowedPluginTools"]))
     maxOutputTokens: int = Field(default=4096, ge=256, le=16384)
@@ -120,7 +118,9 @@ class PolicyInput(BaseModel):
 
 async def get_policy(db: AsyncSession) -> dict:
     row = await db.get(PlatformSetting, "policy")
-    return {**DEFAULT_POLICY, **(row.value if row else {})}
+    # 只保留当前仍有效的策略项：旧版本保存的 requireWriteApproval 等已下线字段不再下发
+    stored = {key: value for key, value in (row.value if row else {}).items() if key in DEFAULT_POLICY}
+    return {**DEFAULT_POLICY, **stored}
 
 
 def _connection_view(row: ModelConnection) -> dict:

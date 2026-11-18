@@ -190,6 +190,7 @@ const bundle = {
     builtin_tools: ['current_time'],
     policy: {
       allowedTools: ['current_time', 'workspace_list', 'workspace_read', 'workspace_write'],
+      // 旧版本保存的策略字段：已下线，必须被忽略（写入不再逐次确认）
       requireWriteApproval: true,
       requestTimeoutSeconds: 20,
       approvalTimeoutSeconds: 2,
@@ -199,7 +200,8 @@ const bundle = {
 };
 let id,
   allEvents = [],
-  approvalAction = 'approve';
+  // 任何意外出现的确认请求都会被拒绝，从而让写入失败、断言暴露问题
+  approvalAction = 'deny';
 try {
   const handle = await kernel.createSession(
     bundle,
@@ -299,8 +301,11 @@ try {
     assert.equal(call?.reasoning_content, '需要先查时间。');
   });
   events = await turn('WRITE');
-  check('fragmented tool arguments and approval round trip', () => {
-    assert.ok(events.some((event) => event.kind === 'approval_required'));
+  check('fragmented tool arguments; file writes run directly without approval', () => {
+    assert.equal(
+      events.some((event) => event.kind === 'approval_required'),
+      false,
+    );
     assert.equal(events.find((event) => event.kind === 'tool_result')?.payload.isError, false);
     assert.ok(
       events.some((event) => event.kind === 'message' && event.payload.text === 'fixture tool received'),
@@ -365,16 +370,16 @@ try {
   await assert.rejects(() => kernel.deleteFile(id, '../runtime.patch.json'), /超出/);
   await assert.rejects(() => kernel.deleteFile(id, 'nested'), /普通文件/);
   await kernel.deleteFile(id, 'nested/keep.txt');
-  approvalAction = 'deny';
   events = await turn('WRITE DENY');
-  check('denied approval never writes a file', () =>
-    assert.equal(events.find((event) => event.kind === 'tool_result')?.payload.isError, true),
-  );
-  assert.equal(
-    (await kernel.listFiles(id)).some((file) => file.path === 'denied.md'),
-    false,
-  );
-  approvalAction = 'approve';
+  check('legacy requireWriteApproval policy is ignored: write lands without a confirmation step', () => {
+    assert.equal(
+      events.some((event) => event.kind === 'approval_required'),
+      false,
+    );
+    assert.equal(events.find((event) => event.kind === 'tool_result')?.payload.isError, false);
+  });
+  assert.ok((await kernel.listFiles(id)).some((file) => file.path === 'denied.md'));
+  await kernel.deleteFile(id, 'denied.md');
   events = await turn('ESCAPE');
   check('path traversal rejected by actual tool executor', () =>
     assert.equal(events.find((event) => event.kind === 'tool_result')?.payload.isError, true),
@@ -420,14 +425,6 @@ try {
     const result = toolResult(events);
     assert.equal(result?.isError, false);
     assert.doesNotMatch(result.result, /link\.txt|sentinel/);
-  });
-  approvalAction = 'wait';
-  events = await turn('WRITE DENY');
-  check('approval timeout defaults to rejection', () => {
-    assert.ok(
-      events.some((event) => event.kind === 'approval_resolved' && event.payload.action === 'timeout'),
-    );
-    assert.equal(events.find((event) => event.kind === 'tool_result')?.payload.isError, true);
   });
   events = await turn('HTTP_ERROR');
   check('gateway HTTP failure produces error, not success', () => {
