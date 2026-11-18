@@ -2789,6 +2789,9 @@ textarea:focus-visible {
   font-size: 10px;
   color: var(--text-secondary);
 }
+.enterprise-chat .message-author > span.done {
+  color: #2e7d4f;
+}
 .enterprise-chat .user-message-text {
   color: #fff;
   background: var(--accent);

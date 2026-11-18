@@ -1572,6 +1572,12 @@ button:disabled:hover {
   color: #526174;
   font-weight: 400;
 }
+.message-author > span.done {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #2e7d4f;
+}
 .user-message-text {
   white-space: pre-wrap;
   font-size: 13px;
