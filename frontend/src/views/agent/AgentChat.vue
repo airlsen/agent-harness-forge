@@ -382,7 +382,10 @@ async function copyMessage(text: string) {
                   </section>
                   <ToolCallGroup v-else-if="step.kind === 'tools'" :calls="step.calls" />
                   <section v-else class="step-text">
-                    <Markdown :text="step.text" /><span v-if="step.live" class="stream-cursor"></span>
+                    <Markdown :text="step.text" :live="step.live" /><span
+                      v-if="step.live"
+                      class="stream-cursor"
+                    ></span>
                     <div v-if="!step.live" class="step-actions">
                       <span v-if="step.partial" class="message-partial">执行未完成时保留的部分输出</span
                       ><button

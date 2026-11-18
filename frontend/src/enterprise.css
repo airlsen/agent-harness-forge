@@ -2814,6 +2814,26 @@ textarea:focus-visible {
 .enterprise-chat .markdown-body a {
   color: var(--ink);
 }
+.enterprise-chat .markdown-body .code-block {
+  border-color: var(--line);
+  background: var(--panel);
+}
+.enterprise-chat .code-head {
+  border-bottom-color: var(--line);
+  background: var(--surface-subtle);
+}
+.enterprise-chat .code-lang,
+.enterprise-chat .code-copy,
+.enterprise-chat .diagram-pending {
+  color: var(--text-secondary);
+}
+.enterprise-chat .code-copy:hover {
+  color: var(--ink);
+  background: var(--border-soft);
+}
+.enterprise-chat .diagram-error {
+  color: #b45309;
+}
 .enterprise-chat .message-copy {
   color: var(--text-secondary);
   font-size: 10px;
