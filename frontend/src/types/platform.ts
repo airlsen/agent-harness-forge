@@ -86,7 +86,8 @@ export interface ModelConnection {
   contextWindow: number;
   inputPrice: number | null;
   outputPrice: number | null;
-  lastTest: { ok?: boolean; message?: string; latencyMs?: number; at?: string };
+  enabled: boolean;
+  lastTest: { ok?: boolean; message?: string; latencyMs?: number; httpStatus?: number; at?: string };
 }
 export interface RuntimeStatus {
   controlPlane: string;

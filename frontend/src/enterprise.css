@@ -2059,7 +2059,37 @@ textarea:focus-visible {
 }
 /* Model management is a compact connection library, not a single global settings form. */
 .model-management-heading {
-  margin-bottom: 29px;
+  margin-bottom: 25px;
+}
+.enterprise-view .page-heading p.model-management-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-top: 10px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.model-management-summary span {
+  display: inline-flex;
+  align-items: center;
+}
+.model-management-summary span + span::before {
+  width: 3px;
+  height: 3px;
+  margin: 0 9px;
+  border-radius: 50%;
+  background: var(--text-subtle);
+  content: '';
+}
+.model-management-summary strong {
+  margin-right: 3px;
+  color: var(--ink);
+  font-weight: 650;
+}
+.model-management-summary .needs-attention,
+.model-management-summary .needs-attention strong {
+  color: #9a6420;
 }
 .model-card-grid {
   display: grid;
@@ -2070,7 +2100,7 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 224px;
+  min-height: 277px;
   padding: 21px;
   border: 1px solid var(--line);
   border-radius: 9px;
@@ -2088,6 +2118,49 @@ textarea:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+.model-availability-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 550;
+}
+.model-availability-toggle:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.model-toggle-track {
+  display: inline-flex;
+  align-items: center;
+  width: 27px;
+  height: 16px;
+  padding: 2px;
+  border-radius: 20px;
+  background: #c7ced8;
+  transition: background 0.15s;
+}
+.model-toggle-track i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px #26334a30;
+  transition: transform 0.15s;
+}
+.model-availability-toggle.enabled {
+  color: var(--green);
+}
+.model-availability-toggle.enabled .model-toggle-track {
+  background: var(--green);
+}
+.model-availability-toggle.enabled .model-toggle-track i {
+  transform: translateX(11px);
 }
 .model-card-icon {
   display: grid;
@@ -2141,15 +2214,125 @@ textarea:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.model-card-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 40px;
+  margin-top: 16px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  background: var(--surface-subtle);
+}
+.model-status-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #a8b0bd;
+}
+.model-card-status p {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.model-card-status strong,
+.model-card-status p > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-card-status strong {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+.model-card-status.is-normal {
+  background: #f0f8f1;
+}
+.model-card-status.is-normal .model-status-dot {
+  background: var(--green);
+}
+.model-card-status.is-attention {
+  background: #fcf5e9;
+}
+.model-card-status.is-attention .model-status-dot {
+  background: #bb7a24;
+}
+.model-card-status.is-attention strong {
+  color: #8a5a1c;
+}
+.model-card-status.is-disabled {
+  background: #f4f5f7;
+}
 .model-management-card footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 21px;
+  margin-top: 17px;
 }
-.model-management-card footer .danger-text {
-  margin-left: auto;
+.model-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.model-card-menu {
+  position: relative;
+}
+.model-card-more {
+  width: 29px;
+  height: 29px;
+  color: var(--text-secondary);
+}
+.model-card-menu-list {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 7px);
+  z-index: 4;
+  min-width: 118px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: 0 8px 20px #26334a18;
+}
+.model-card-menu-list button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 7px;
+  min-height: 31px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--red, #a13c3c);
+  background: transparent;
+  font-size: 11px;
+  text-align: left;
+}
+.model-card-menu-list button:hover {
+  background: #fff2f2;
+}
+.model-management-card.is-disabled {
+  border-color: #e1e5eb;
+  background: #fafbfc;
+}
+.model-management-card.is-disabled .model-card-icon {
+  border-color: #dfe4eb;
+  color: #7a8595;
+  background: #f0f2f5;
+}
+.model-management-card.is-disabled .model-card-copy h2,
+.model-management-card.is-disabled .model-card-details dd {
+  color: var(--text-secondary);
+}
+.model-management-card.needs-attention {
+  border-color: #eadbc6;
 }
 .model-management-loading {
   display: flex;
@@ -3693,7 +3876,10 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
   .model-management-card {
-    min-height: 205px;
+    min-height: 263px;
+  }
+  .model-management-summary {
+    row-gap: 3px;
   }
   .model-editor-form {
     padding: 20px 22px;

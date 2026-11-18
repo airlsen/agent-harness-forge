@@ -116,31 +116,39 @@ async function refresh() {
           <header>
             <Icon name="cpu" :size="19" />
             <div>
-              <h2>默认模型连接</h2>
-              <p>新会话使用的统一模型出口。</p>
+              <h2>已启用模型出口</h2>
+              <p>聊天模型选择器上线前，兼容运行时只会读取已启用的模型配置。</p>
             </div>
           </header>
           <div class="runtime-model-connection">
             <span
               :class="[
                 'tag',
-                app.connection?.lastTest.ok ? 'success' : app.connection?.configured ? 'warm' : 'neutral',
+                app.connection?.lastTest.ok
+                  ? 'success'
+                  : app.connection?.lastTest.at
+                    ? 'warning'
+                    : app.connection?.configured
+                      ? 'warm'
+                      : 'neutral',
               ]"
             >
               {{
                 app.connection?.lastTest.ok
                   ? '最近测试通过'
-                  : app.connection?.configured
-                    ? '已配置 · 待测试'
-                    : '尚未配置'
+                  : app.connection?.lastTest.at
+                    ? '最近测试异常'
+                    : app.connection?.configured
+                      ? '已启用 · 待测试'
+                      : '没有已启用模型'
               }}
             </span>
-            <h3>{{ app.connection?.name || '默认模型连接' }}</h3>
+            <h3>{{ app.connection?.name || '未启用模型配置' }}</h3>
             <p>{{ app.connection?.model || '尚未设置模型 ID' }}</p>
             <small v-if="app.connection?.lastTest.at">{{ app.connection.lastTest.message }}</small>
           </div>
           <RouterLink to="/agent/models" class="text-link"
-            >配置模型连接 <Icon name="arrow" :size="14"
+            >管理模型 <Icon name="arrow" :size="14"
           /></RouterLink>
         </section>
       </div>

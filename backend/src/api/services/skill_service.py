@@ -326,7 +326,7 @@ async def create_authoring_session(db: AsyncSession, skill_id: int, created_by: 
         raise HTTPException(409, "Skill 草稿不存在")
     connection = await get_connection(db, secret=True)
     if not connection["configured"]:
-        raise HTTPException(409, "请先在模型连接中配置真实模型，再使用 Skill 助手")
+        raise HTTPException(409, "请先在模型管理中启用一个模型配置，再使用 Skill 助手")
     context = (
         await db.scalars(
             select(SkillAuthoringMessage)

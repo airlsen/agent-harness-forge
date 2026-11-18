@@ -96,6 +96,10 @@ class ModelInput(BaseModel):
         return self
 
 
+class ModelAvailabilityInput(BaseModel):
+    enabled: bool
+
+
 class PolicyInput(BaseModel):
     requireWriteApproval: bool = True
     allowedTools: list[str] = Field(default_factory=lambda: list(DEFAULT_POLICY["allowedTools"]))
@@ -127,6 +131,7 @@ def _connection_view(row: ModelConnection) -> dict:
         "contextWindow": row.context_window,
         "inputPrice": row.input_price,
         "outputPrice": row.output_price,
+        "enabled": row.enabled,
         "lastTest": row.last_test or {},
     }
 
@@ -141,20 +146,26 @@ def _unconfigured_connection() -> dict:
         "contextWindow": 64000,
         "inputPrice": None,
         "outputPrice": None,
+        "enabled": False,
         "lastTest": {},
     }
 
 
-async def _connection_row(db: AsyncSession, connection_id: int | None = None) -> ModelConnection | None:
+async def _connection_row(
+    db: AsyncSession, connection_id: int | None = None, *, available_only: bool = False
+) -> ModelConnection | None:
     if connection_id is not None:
         return await db.get(ModelConnection, connection_id)
     # Compatibility bridge until the chat composer exposes an explicit model picker.
-    # Existing single-model workspaces retain their first connection without a new default-model concept.
-    return await db.scalar(select(ModelConnection).order_by(ModelConnection.id).limit(1))
+    # Only enabled configurations may be used to run work; creation order is not a product-level default.
+    statement = select(ModelConnection).order_by(ModelConnection.id).limit(1)
+    if available_only:
+        statement = statement.where(ModelConnection.enabled.is_(True))
+    return await db.scalar(statement)
 
 
 async def get_connection(db: AsyncSession, *, secret=False, connection_id: int | None = None) -> dict:
-    row = await _connection_row(db, connection_id)
+    row = await _connection_row(db, connection_id, available_only=connection_id is None)
     if not row:
         return _unconfigured_connection()
     data = _connection_view(row)
@@ -218,6 +229,17 @@ async def save_connection(db: AsyncSession, payload: ModelInput, *, connection_i
     return _connection_view(row)
 
 
+async def set_connection_availability(db: AsyncSession, connection_id: int, *, enabled: bool) -> dict:
+    row = await db.get(ModelConnection, connection_id)
+    if not row:
+        raise HTTPException(404, "模型配置不存在")
+    row.enabled = enabled
+    await _touch_model_revision(db)
+    await db.commit()
+    await db.refresh(row)
+    return _connection_view(row)
+
+
 async def delete_connection(db: AsyncSession, connection_id: int) -> None:
     row = await db.get(ModelConnection, connection_id)
     if not row:
@@ -250,7 +272,7 @@ async def test_connection(db: AsyncSession, *, connection_id: int | None = None)
                 json={
                     "model": config["model"],
                     "messages": [{"role": "user", "content": "Reply with OK."}],
-                    "max_tokens": 32,
+                    "max_tokens": 8,
                     "stream": False,
                 },
             )

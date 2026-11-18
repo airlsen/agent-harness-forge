@@ -54,7 +54,7 @@ class SessionService:
             scenario = await scenario_service.row(db, scenario_id)
             config = await get_connection(db, secret=True)
             if not config["configured"]:
-                raise HTTPException(409, "模型未配置，请先到模型中心保存真实模型连接")
+                raise HTTPException(409, "没有已启用的模型配置，请先到模型管理启用至少一个模型")
             version = await scenario_service.version(db, scenario)
             payload = ScenarioPayload.model_validate(version.bundle_json["payload"])
             stored_bundle = version.bundle_json.get("bundle")
