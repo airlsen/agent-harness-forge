@@ -7,8 +7,10 @@ import { api, downloadResponse } from '../../api/client';
 import { formatBytes, sessionState } from '../../utils/presentation';
 import { trapTabKey } from '../../utils/focus';
 import type { KernelEvent } from '../../types/platform';
+import { buildTurns, type ToolCallView, type Turn } from '../../utils/turns';
 import Icon from '../../components/ForgeIcon.vue';
 import Markdown from '../../components/MarkdownContent.vue';
+import ToolCallGroup from '../../components/ToolCallGroup.vue';
 import TaskComposer from '../../components/TaskComposer.vue';
 import ConversationStart from '../../components/ConversationStart.vue';
 import DialogShell from '../../components/DialogShell.vue';
@@ -97,15 +99,43 @@ const rawEvents = computed(() => chat.events.filter((e) => e.kind === 'trajector
 const lastAnswer = computed(() =>
   [...chat.messages].reverse().find((m) => m.role === 'assistant' && m.content.trim()),
 );
-const activeTools = computed(() =>
+const pendingTools = computed<ToolCallView[]>(() =>
   !chat.running
     ? []
-    : chat.events.filter(
-        (e) =>
-          e.kind === 'tool_use_start' &&
-          !chat.events.some((r) => r.kind === 'tool_result' && r.payload.toolCallId === e.payload.toolCallId),
-      ),
+    : chat.events
+        .filter(
+          (e) =>
+            e.kind === 'tool_use_start' &&
+            !chat.events.some(
+              (r) => r.kind === 'tool_result' && r.payload.toolCallId === e.payload.toolCallId,
+            ),
+        )
+        .map((e) => ({
+          id: String(e.payload.toolCallId),
+          tool: e.payload.tool,
+          arguments: e.payload.arguments,
+          pending: true,
+        })),
 );
+const turns = computed(() =>
+  buildTurns(chat.messages, {
+    running: chat.running,
+    reasoning: chat.liveReasoning,
+    text: chat.liveText,
+    activeTools: pendingTools.value,
+  }),
+);
+function turnIdle(turn: Turn) {
+  const last = turn.steps.at(-1);
+  return (
+    !last ||
+    !(
+      (last.kind === 'thinking' && last.live) ||
+      (last.kind === 'text' && last.live) ||
+      (last.kind === 'tools' && last.calls.some((call) => call.pending))
+    )
+  );
+}
 const status = computed(() =>
   chat.approvals.length
     ? { label: '等待确认', tone: 'warning', icon: 'shield' }
@@ -309,81 +339,48 @@ async function copyMessage(text: string) {
         </div>
         <ConversationStart v-else-if="welcome" @submitted="(id) => router.replace(`/agent/chat/${id}`)" />
         <div v-else class="conversation-messages">
-          <article v-for="message in chat.messages" :key="message.id" :class="['message-row', message.role]">
-            <template v-if="message.role === 'user'"
-              ><div class="user-message-text">{{ message.content }}</div></template
-            >
-            <template v-else-if="message.role === 'tool'"
-              ><div class="tool-card">
-                <details>
-                  <summary>
-                    <span :class="['tool-result-icon', { error: message.meta.isError }]"
-                      ><Icon :name="message.meta.isError ? 'info' : 'check'" :size="15"
-                    /></span>
-                    <div>
-                      <strong>{{ toolTitle(message.meta.tool ?? '工具调用') }}</strong><span>{{
-                        message.meta.isError ? '调用未成功' : '执行完成'
-                      }}</span>
-                    </div>
-                    <Icon name="chevron" :size="15" />
-                  </summary>
-                  <div class="tool-card-details">
-                    <label>输入参数</label>
-                    <pre>{{ formatArgs(message.meta.arguments) }}</pre>
-                    <label>执行结果</label>
-                    <pre>{{ message.content }}</pre>
-                  </div>
-                </details>
-              </div></template
-            >
-            <template v-else
-              ><span class="message-avatar agent"><Icon name="sparkles" :size="18" /></span>
+          <article v-for="turn in turns" :key="turn.key" class="turn-block">
+            <div v-if="turn.user" class="message-row user">
+              <div class="user-message-text">{{ turn.user.content }}</div>
+            </div>
+            <div class="message-row assistant">
+              <span class="message-avatar agent"><Icon name="sparkles" :size="18" /></span>
               <div class="message-main">
-                <div class="message-author">Forge <span>助手</span></div>
-                <details v-if="message.meta.reasoning" class="reasoning-disclosure">
-                  <summary>
-                    <Icon name="think" :size="14" /><strong>已思考</strong><Icon name="chevron" :size="13" />
-                  </summary>
-                  <div class="reasoning-text">{{ message.meta.reasoning }}</div>
-                </details>
-                <Markdown v-if="message.content" :text="message.content" /><span
-                  v-if="message.meta.partial"
-                  class="message-partial"
-                  >执行未完成时保留的部分输出</span
-                ><button
-                  v-if="message.content"
-                  class="message-copy"
-                  aria-label="复制回复"
-                  title="复制内容"
-                  @click="copyMessage(message.content)"
-                >
-                  <Icon name="copy" :size="13" />复制
-                </button>
-              </div></template
-            >
-          </article>
-          <div v-for="tool in activeTools" :key="tool.seq" class="active-tool">
-            <span class="loader small"></span><strong>{{ toolTitle(tool.payload.tool) }}</strong
-            ><span>{{ chat.approvals.length ? '等待你的确认' : '正在调用…' }}</span>
-          </div>
-          <details v-if="chat.liveReasoning" class="reasoning-disclosure live" open>
-            <summary>
-              <Icon name="think" :size="14" /><strong>正在思考</strong
-              ><span class="thinking-dots"><i></i><i></i><i></i></span>
-            </summary>
-            <div class="reasoning-text">{{ chat.liveReasoning }}</div>
-          </details>
-          <article v-if="chat.liveText" class="message-row assistant">
-            <span class="message-avatar agent"><Icon name="sparkles" :size="18" /></span>
-            <div class="message-main">
-              <div class="message-author">Forge <span>正在输出</span></div>
-              <Markdown :text="chat.liveText" /><span class="stream-cursor"></span>
+                <div class="message-author">
+                  Forge <span>{{ turn.running ? '正在工作' : '助手' }}</span>
+                </div>
+                <template v-for="(step, index) in turn.steps" :key="index">
+                  <section v-if="step.kind === 'thinking'" class="step-thinking">
+                    <div class="step-label" :class="{ live: step.live }">
+                      <Icon name="think" :size="13" />{{ step.live ? '正在思考' : '已思考'
+                      }}<span v-if="step.live" class="thinking-dots"><i></i><i></i><i></i></span>
+                    </div>
+                    <div class="step-thinking-text">{{ step.text }}</div>
+                  </section>
+                  <ToolCallGroup v-else-if="step.kind === 'tools'" :calls="step.calls" />
+                  <section v-else class="step-text">
+                    <Markdown :text="step.text" /><span v-if="step.live" class="stream-cursor"></span>
+                    <div v-if="!step.live" class="step-actions">
+                      <span v-if="step.partial" class="message-partial">执行未完成时保留的部分输出</span
+                      ><button
+                        class="message-copy"
+                        aria-label="复制回复"
+                        title="复制内容"
+                        @click="copyMessage(step.text)"
+                      >
+                        <Icon name="copy" :size="13" />复制
+                      </button>
+                    </div>
+                  </section>
+                </template>
+                <div v-if="turn.running && turnIdle(turn)" class="agent-working compact" role="status">
+                  <span class="thinking-dots"><i></i><i></i><i></i></span
+                  ><span>{{ turn.steps.length ? '正在继续…' : '正在处理这项工作' }}</span>
+                </div>
+                <div v-if="!turn.running && !turn.steps.length" class="turn-empty">（本轮没有输出）</div>
+              </div>
             </div>
           </article>
-          <div v-else-if="chat.running && !activeTools.length && !chat.liveReasoning" class="agent-working">
-            <span class="message-avatar agent"><Icon name="sparkles" :size="18" /></span
-            ><span class="thinking-dots"><i></i><i></i><i></i></span><span>正在处理这项工作</span>
-          </div>
           <div v-if="chat.runError" class="form-alert error" role="alert">
             <Icon name="info" :size="18" />
             <div>

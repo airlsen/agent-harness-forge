@@ -8,7 +8,7 @@
     "build": "vue-tsc -b && vite build",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "format:check": "prettier --check src scripts vite.config.ts",
-    "test": "node scripts/check-conversation-drafts.mjs",
+    "test": "node scripts/check-conversation-drafts.mjs && node scripts/check-turns.mjs",
     "check:icons": "node ../scripts/check-ui-icons.mjs"
   },
   "dependencies": {
