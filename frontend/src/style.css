@@ -2278,32 +2278,6 @@ button:disabled:hover {
 .page-note > svg {
   margin-top: 3px;
 }
-.empty-state {
-  min-height: 300px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 50px 25px;
-  text-align: center;
-  gap: 15px;
-  color: #4e627e;
-}
-.empty-state h3 {
-  font-size: 16px;
-  color: #526075;
-  font-weight: 500;
-  line-height: 1.8;
-}
-.empty-state p {
-  font-size: 12px;
-  line-height: 1.9;
-  color: #4f627d;
-  max-width: 480px;
-}
-.empty-state .button {
-  margin-top: 8px;
-}
 .empty-emblem {
   height: 66px;
   width: 66px;
@@ -4899,19 +4873,6 @@ table td > .tag {
   .capability-unavailable {
     padding: 35px 18px;
     min-height: 360px;
-  }
-  .empty-state h3 {
-    font-size: 14px;
-  }
-  .empty-state p {
-    font-size: 10px;
-  }
-  .empty-state {
-    padding: 38px 18px;
-    gap: 14px;
-  }
-  .empty-state > .button {
-    font-size: 10px;
   }
   .settings-layout {
     gap: 17px;

@@ -85,11 +85,19 @@ function status(value: string) {
           </select>
         </div>
         <div v-if="loading" class="loading-inline"><span class="loader"></span>读取审计记录…</div>
-        <div v-else-if="!visible.length" class="empty-state">
-          <Icon name="activity" :size="34" />
-          <h3>{{ query ? '没有匹配的记录' : '真实工作，从第一项任务开始' }}</h3>
-          <p>创建会话并执行后，消息、工具调用与运行时轨迹将在这里持久化留存。</p>
-          <RouterLink v-if="!query" to="/agent/workbench" class="button secondary"
+        <div v-else-if="!visible.length" class="enterprise-empty">
+          <span class="enterprise-empty-symbol"
+            ><Icon :name="query ? 'search' : 'activity'" :size="29"
+          /></span>
+          <h2>{{ query ? '没有匹配的记录' : '真实工作，从第一项任务开始' }}</h2>
+          <p>
+            {{
+              query
+                ? '换一个关键词或状态，查找其他记录。'
+                : '执行任务后，消息、工具调用与运行轨迹会显示在这里。'
+            }}
+          </p>
+          <RouterLink v-if="!query" to="/agent/workbench" class="button primary"
             >前往工作台<Icon name="arrow" :size="14"
           /></RouterLink>
         </div>

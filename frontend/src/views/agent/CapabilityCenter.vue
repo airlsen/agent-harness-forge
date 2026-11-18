@@ -42,6 +42,7 @@ const mcp = ref<{ items: McpServer[]; available: boolean; reason: string } | nul
 const mcpJson = ref('');
 const mcpBusy = ref(false);
 const mcpMessage = ref('');
+const mcpEditorOpen = ref(false);
 const detail = ref<Tool | null>(null);
 const componentDetail = ref<RuntimeComponent | null>(null);
 const tab = computed(() =>
@@ -57,7 +58,6 @@ const visibleTools = computed(() =>
     `${tool.name} ${tool.title} ${tool.description}`.toLowerCase().includes(query.value.trim().toLowerCase()),
   ),
 );
-const unavailable = computed(() => (tab.value === 'skills' ? skills.value : mcp.value));
 const related = computed(() =>
   app.availableScenarios.filter(
     (s) => detail.value && s.payload.capabilities.builtin_tool_names.includes(detail.value.name),
@@ -99,6 +99,11 @@ async function load() {
     loading.value = false;
   }
 }
+function openMcpEditor() {
+  mcpMessage.value = '';
+  mcpJson.value = '';
+  mcpEditorOpen.value = true;
+}
 async function importMcpJson() {
   mcpMessage.value = '';
   let config: unknown;
@@ -112,7 +117,8 @@ async function importMcpJson() {
   try {
     await api('/registry/mcp-servers/import', { method: 'POST', body: JSON.stringify({ config }) });
     mcpJson.value = '';
-    mcpMessage.value = '配置已保存。出于安全考虑，服务默认未启用；请测试连接并检查工具清单。';
+    mcpEditorOpen.value = false;
+    mcpMessage.value = '配置已添加，请测试连接并检查工具清单。';
     const result = await api<{ items: McpServer[] }>('/registry/mcp-servers');
     mcp.value = { ...result, available: true, reason: '' };
   } catch (error) {
@@ -185,7 +191,7 @@ onMounted(load);
         </div>
         <span class="enterprise-shared-label"><Icon name="building" :size="14" />公共能力目录</span>
       </div>
-      <section class="capabilities-intro">
+      <section v-if="tab === 'tools'" class="capabilities-intro">
         <span class="capabilities-intro-icon"><Icon name="blocks" :size="27" /></span>
         <div>
           <h2>能力统一维护，场景按需引用。</h2>
@@ -286,31 +292,24 @@ onMounted(load);
       <div v-else-if="loading" class="loading-inline" role="status">
         <span class="loader"></span>正在读取接入状态…
       </div>
-      <section v-else-if="tab === 'mcp' && mcp" class="mcp-manager">
-        <div class="mcp-manager-heading">
+      <section v-else-if="tab === 'mcp' && mcp" class="mcp-directory">
+        <header class="capability-list-heading">
           <div>
-            <h2>接入远程 MCP 服务</h2>
-            <p>粘贴常见 mcpServers JSON。第一版支持 HTTPS Streamable HTTP，不会运行 JSON 中的本机命令。</p>
+            <h2>MCP 服务</h2>
+            <span>{{ mcp.items.length }} 个已添加</span>
           </div>
-          <span class="tag neutral">远程 HTTP</span>
-        </div>
-        <label class="mcp-json-label" for="mcp-import-json">MCP 服务配置 JSON</label>
-        <textarea
-          id="mcp-import-json"
-          v-model="mcpJson"
-          class="mcp-json-input"
-          rows="9"
-          spellcheck="false"
-          placeholder='{\n  "mcpServers": {\n    "my-service": {\n      "type": "http",\n      "url": "https://mcp.example.com/mcp"\n    }\n  }\n}'
-        ></textarea>
-        <div class="mcp-manager-actions">
-          <span>认证头会加密保存在本机数据库，不会在列表中显示。</span
-          ><button class="button primary" :disabled="mcpBusy || !mcpJson.trim()" @click="importMcpJson">
-            {{ mcpBusy ? '处理中…' : '导入配置' }}
+          <button v-if="mcp.items.length" class="button secondary small" @click="openMcpEditor">
+            <Icon name="plus" :size="15" />添加服务
           </button>
-        </div>
+        </header>
         <div v-if="mcpMessage" class="mcp-feedback" role="status">{{ mcpMessage }}</div>
-        <div class="mcp-server-list">
+        <div v-if="!mcp.items.length" class="enterprise-empty">
+          <span class="enterprise-empty-symbol"><Icon name="plug" :size="29" /></span>
+          <h2>还没有 MCP 服务</h2>
+          <p>添加远程服务，测试连接后即可查看它提供的工具。</p>
+          <button class="button primary" @click="openMcpEditor">导入 MCP 配置</button>
+        </div>
+        <div v-else class="mcp-server-list">
           <article v-for="server in mcp.items" :key="server.id" class="mcp-server-card">
             <div class="mcp-server-card-head">
               <div>
@@ -336,7 +335,7 @@ onMounted(load);
             </div>
             <p v-if="server.lastError" class="mcp-server-error">{{ server.lastError }}</p>
             <div v-if="server.tools.length" class="mcp-tool-list">
-              <strong>发现 {{ server.tools.length }} 项工具</strong
+              <strong>{{ server.tools.length }} 项工具</strong
               ><span v-for="tool in server.tools" :key="tool.name" :title="tool.description">{{
                 tool.name
               }}</span>
@@ -354,57 +353,56 @@ onMounted(load);
               ><button class="button text small" @click="deleteMcp(server)">移除</button>
             </div>
           </article>
-          <div v-if="!mcp.items.length" class="enterprise-empty">
-            <span class="enterprise-empty-symbol"><Icon name="plug" :size="28" /></span>
-            <h2>还没有 MCP 服务</h2>
-            <p>导入配置后，测试连接并查看服务公开的工具。</p>
-          </div>
         </div>
       </section>
-      <section v-else-if="unavailable" class="capability-unavailable enterprise-unavailable">
-        <div class="capability-unavailable-art" aria-hidden="true">
-          <span><Icon name="building" :size="21" /></span><i></i
-          ><span class="unavailable-art-core"
-            ><Icon :name="tab === 'skills' ? 'book' : 'plug'" :size="34" /></span
-          ><i></i><span><Icon name="message" :size="21" /></span>
-        </div>
-        <span class="tag neutral">尚未接入</span>
-        <h2>
-          {{ tab === 'skills' ? '把企业的方法，沉淀为共同能力。' : '让企业系统，成为可调用的工作能力。' }}
-        </h2>
-        <p>
-          {{
-            tab === 'skills'
-              ? 'Skills 将统一承载企业的工作规范、步骤与资源，发布后由场景和会话引用，不建立个人副本。'
-              : 'MCP 服务由平台统一接入和维护，员工按授权使用业务工具，无需各自填写服务地址与密钥。'
-          }}
-        </p>
-        <div class="capability-lifecycle">
-          <div>
-            <span>01</span><strong>平台统一维护</strong
-            ><small>{{ tab === 'skills' ? '维护规范与版本' : '托管连接与认证' }}</small>
-          </div>
-          <Icon name="arrow" :size="17" />
-          <div><span>02</span><strong>企业场景引用</strong><small>按任务需要装配能力</small></div>
-          <Icon name="arrow" :size="17" />
-          <div><span>03</span><strong>会话按需执行</strong><small>不混用不同会话上下文</small></div>
-        </div>
-        <div class="unavailable-reason">
-          <Icon name="info" :size="15" /><span
-            >{{ unavailable.reason }}。本页仅说明接入边界，不提供模拟安装或连接。</span
-          >
-        </div>
-        <RouterLink to="/agent/scenarios" class="button secondary"
-          >先使用现有场景 <Icon name="arrow" :size="15"
-        /></RouterLink>
+      <section v-else-if="tab === 'skills' && skills" class="enterprise-empty">
+        <span class="enterprise-empty-symbol"><Icon name="book" :size="29" /></span>
+        <h2>Skill 管理暂未开放</h2>
+        <p>接入后可将工作规范与步骤沉淀为企业可复用的能力。</p>
       </section>
-      <div class="page-note">
+      <div v-if="tab === 'tools'" class="page-note">
         <Icon name="shield" :size="14" /><span
           >能力可发现不等于无限制执行。实际可调用范围由场景与策略共同决定；当前不开放任意
           Shell、外部网络工具或第三方插件安装。</span
         >
       </div>
     </div>
+    <DialogShell
+      v-if="mcpEditorOpen"
+      variant="modal"
+      label="导入 MCP 服务配置"
+      panel-class="mcp-import-dialog"
+      @close="mcpEditorOpen = false"
+    >
+      <header>
+        <div>
+          <h2>导入 MCP 服务</h2>
+          <p>粘贴远程 HTTPS 服务的 mcpServers JSON。</p>
+        </div>
+        <button class="icon-button" aria-label="关闭" @click="mcpEditorOpen = false">
+          <Icon name="close" :size="20" />
+        </button>
+      </header>
+      <div class="mcp-import-body">
+        <label class="mcp-json-label" for="mcp-import-json">配置 JSON</label>
+        <textarea
+          id="mcp-import-json"
+          v-model="mcpJson"
+          class="mcp-json-input"
+          rows="8"
+          spellcheck="false"
+          placeholder='{\n  "mcpServers": {\n    "my-service": {\n      "type": "http",\n      "url": "https://mcp.example.com/mcp"\n    }\n  }\n}'
+        ></textarea>
+        <p class="mcp-import-hint">认证信息会加密保存在本机，不会在服务列表中显示。导入后需先测试连接。</p>
+        <div v-if="mcpMessage" class="mcp-feedback" role="alert">{{ mcpMessage }}</div>
+      </div>
+      <footer>
+        <button class="button secondary" :disabled="mcpBusy" @click="mcpEditorOpen = false">取消</button>
+        <button class="button primary" :disabled="mcpBusy || !mcpJson.trim()" @click="importMcpJson">
+          {{ mcpBusy ? '处理中…' : '导入配置' }}
+        </button>
+      </footer>
+    </DialogShell>
     <DialogShell v-if="detail" label="工具详情" panel-class="capability-detail" @close="closeTool"
       ><header>
         <div>
