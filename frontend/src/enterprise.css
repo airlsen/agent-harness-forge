@@ -2934,7 +2934,7 @@ textarea:focus-visible {
   color: #fff;
   background: var(--accent);
   border-radius: 12px;
-  padding: 13px 17px;
+  padding: 10px 16px;
   line-height: 1.9;
   font-size: 14px;
   max-width: 78%;
