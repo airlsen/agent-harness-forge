@@ -79,7 +79,7 @@ export class DshKernel implements AgentKernel {
       throw failure('Skill 编辑插件缺少当前 Skill 草稿上下文', 422);
     const pluginBindings = Array.isArray(bundle.meta?.pluginBindings) ? bundle.meta.pluginBindings : [];
     const pluginTools = Array.isArray(bundle.meta?.plugin_tools) ? bundle.meta.plugin_tools : [];
-    if (bundle.plugin_mounts.includes('forge-plugin-bridge') !== (pluginBindings.length > 0))
+    if (bundle.plugin_mounts.includes('forge-plugin-bridge') !== pluginBindings.length > 0)
       throw failure('受管插件装配信息不完整', 422);
     const boundToolNames = pluginBindings.flatMap((binding: any) =>
       Array.isArray(binding?.tools) ? binding.tools.map((tool: any) => tool?.name) : [],
@@ -261,6 +261,7 @@ export class DshKernel implements AgentKernel {
   }
   private notification(entry: Entry, method: string, params: any) {
     if (method === 'forge.delta') this.emit(entry, 'message_delta', params, 'llm');
+    else if (method === 'forge.reasoning_delta') this.emit(entry, 'reasoning_delta', params, 'llm');
     else if (method === 'forge.error') {
       entry.error = params.message;
       this.emit(entry, 'error', params);
@@ -325,15 +326,26 @@ export class DshKernel implements AgentKernel {
           'tools',
         );
       } else if (event.type === 'assistant/message') {
-        const text = (data.message?.content ?? [])
+        const blocks = data.message?.content ?? [];
+        const text = blocks
           .filter((block: any) => block.type === 'text')
           .map((block: any) => block.text)
           .join('\n');
-        if (text)
+        const reasoning = blocks
+          .filter((block: any) => block.type === 'reasoning')
+          .map((block: any) => block.text)
+          .join('\n\n');
+        // 只思考未出正文的步骤（工具调用步）同样落一条消息，过程展示完整。
+        if (text || reasoning)
           this.emit(
             entry,
             'message',
-            { text, runtimeMessageId: data.message.id, partial: data.interrupted ?? false },
+            {
+              text,
+              ...(reasoning ? { reasoning } : {}),
+              runtimeMessageId: data.message.id,
+              partial: data.interrupted ?? false,
+            },
             'llm',
           );
         if (data.usage)
@@ -346,6 +358,7 @@ export class DshKernel implements AgentKernel {
                 (data.usage.cacheReadTokens ?? 0) +
                 (data.usage.cacheWriteTokens ?? 0),
               tokensOut: data.usage.outputTokens ?? 0,
+              ...(data.usage.reasoningTokens ? { reasoningTokens: data.usage.reasoningTokens } : {}),
             },
             'llm',
           );

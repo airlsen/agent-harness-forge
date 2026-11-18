@@ -94,7 +94,9 @@ const processEvents = computed(() =>
   ),
 );
 const rawEvents = computed(() => chat.events.filter((e) => e.kind === 'trajectory'));
-const lastAnswer = computed(() => [...chat.messages].reverse().find((m) => m.role === 'assistant'));
+const lastAnswer = computed(() =>
+  [...chat.messages].reverse().find((m) => m.role === 'assistant' && m.content.trim()),
+);
 const activeTools = computed(() =>
   !chat.running
     ? []
@@ -144,7 +146,7 @@ watch(
   },
 );
 watch(
-  () => chat.liveText + chat.messages.length + chat.events.length,
+  () => chat.liveText + chat.liveReasoning + chat.messages.length + chat.events.length,
   async () => {
     if (stickToBottom.value) await scrollToBottom();
   },
@@ -348,9 +350,18 @@ async function copyMessage(text: string) {
               ><span class="message-avatar agent"><Icon name="sparkles" :size="18" /></span>
               <div class="message-main">
                 <div class="message-author">Forge <span>助手</span></div>
-                <Markdown :text="message.content" /><span v-if="message.meta.partial" class="message-partial"
+                <details v-if="message.meta.reasoning" class="reasoning-disclosure">
+                  <summary>
+                    <Icon name="think" :size="14" /><strong>已思考</strong><Icon name="chevron" :size="13" />
+                  </summary>
+                  <div class="reasoning-text">{{ message.meta.reasoning }}</div>
+                </details>
+                <Markdown v-if="message.content" :text="message.content" /><span
+                  v-if="message.meta.partial"
+                  class="message-partial"
                   >执行未完成时保留的部分输出</span
                 ><button
+                  v-if="message.content"
                   class="message-copy"
                   aria-label="复制回复"
                   title="复制内容"
@@ -365,6 +376,13 @@ async function copyMessage(text: string) {
             <span class="loader small"></span><strong>{{ toolTitle(tool.payload.tool) }}</strong
             ><span>{{ chat.approvals.length ? '等待你的确认' : '正在调用…' }}</span>
           </div>
+          <details v-if="chat.liveReasoning" class="reasoning-disclosure live" open>
+            <summary>
+              <Icon name="think" :size="14" /><strong>正在思考</strong
+              ><span class="thinking-dots"><i></i><i></i><i></i></span>
+            </summary>
+            <div class="reasoning-text">{{ chat.liveReasoning }}</div>
+          </details>
           <article v-if="chat.liveText" class="message-row assistant">
             <span class="message-avatar agent"><Icon name="sparkles" :size="18" /></span>
             <div class="message-main">
@@ -372,7 +390,7 @@ async function copyMessage(text: string) {
               <Markdown :text="chat.liveText" /><span class="stream-cursor"></span>
             </div>
           </article>
-          <div v-else-if="chat.running && !activeTools.length" class="agent-working">
+          <div v-else-if="chat.running && !activeTools.length && !chat.liveReasoning" class="agent-working">
             <span class="message-avatar agent"><Icon name="sparkles" :size="18" /></span
             ><span class="thinking-dots"><i></i><i></i><i></i></span><span>正在处理这项工作</span>
           </div>

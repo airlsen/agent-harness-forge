@@ -96,12 +96,23 @@ class GatewayAdapter extends LlmAdapter {
         throw new Error(`模型网关 HTTP ${response.status}，请检查模型中心的地址、模型名和凭据`);
       if (!response.body) throw new Error('模型网关未返回响应流');
       let usage,
-        text = '',
-        reasoning = '',
-        textStarted = false,
         finish = 'stop',
         completed = false;
+      // 块索引按内容首次出现动态分配。reasoning 在正文或工具调用开始时封闭；
+      // 之后再出现（交错思考）则开启新块，保证每个块只收自己的增量。
+      let nextIndex = 0,
+        reasoningIndex = -1,
+        reasoning = '',
+        reasoningAll = '',
+        textIndex = -1,
+        text = '';
       const calls = new Map();
+      const closeReasoning = function* () {
+        if (reasoningIndex < 0) return;
+        yield { type: 'block-end', index: reasoningIndex, block: { type: 'reasoning', text: reasoning } };
+        reasoningIndex = -1;
+        reasoning = '';
+      };
       const handle = function* (value) {
         if (value.error) throw new Error('模型网关返回错误响应，请检查模型配置');
         if (value.usage) usage = value.usage;
@@ -112,30 +123,42 @@ class GatewayAdapter extends LlmAdapter {
           completed = true;
         }
         const delta = choice.delta ?? choice.message ?? {};
-        if (typeof delta.reasoning_content === 'string') reasoning += delta.reasoning_content;
+        if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
+          if (reasoningIndex < 0) {
+            reasoningIndex = nextIndex++;
+            reasoning = '';
+            yield { type: 'block-start', index: reasoningIndex, blockType: 'reasoning' };
+          }
+          reasoning += delta.reasoning_content;
+          reasoningAll += delta.reasoning_content;
+          notify('forge.reasoning_delta', { text: delta.reasoning_content });
+          yield { type: 'reasoning-delta', index: reasoningIndex, text: delta.reasoning_content };
+        }
         if (delta.content && typeof delta.content === 'string') {
-          if (!textStarted) {
-            textStarted = true;
-            yield { type: 'block-start', index: 0, blockType: 'text' };
+          yield* closeReasoning();
+          if (textIndex < 0) {
+            textIndex = nextIndex++;
+            yield { type: 'block-start', index: textIndex, blockType: 'text' };
           }
           text += delta.content;
           notify('forge.delta', { text: delta.content });
-          yield { type: 'text-delta', index: 0, text: delta.content };
+          yield { type: 'text-delta', index: textIndex, text: delta.content };
         }
+        if (delta.tool_calls?.length) yield* closeReasoning();
         for (const raw of delta.tool_calls ?? []) {
-          const index = (raw.index ?? calls.size) + 1;
-          let call = calls.get(index);
+          const key = raw.index ?? calls.size;
+          let call = calls.get(key);
           if (!call) {
-            call = { id: '', name: '', arguments: '' };
-            calls.set(index, call);
-            yield { type: 'block-start', index, blockType: 'tool-call' };
+            call = { id: '', name: '', arguments: '', blockIndex: nextIndex++ };
+            calls.set(key, call);
+            yield { type: 'block-start', index: call.blockIndex, blockType: 'tool-call' };
           }
           if (raw.id) call.id = raw.id;
           call.name += raw.function?.name ?? '';
           call.arguments += raw.function?.arguments ?? '';
           yield {
             type: 'tool-call-delta',
-            index,
+            index: call.blockIndex,
             id: call.id,
             ...(raw.function?.name ? { name: raw.function.name } : {}),
             argumentsDelta: raw.function?.arguments ?? '',
@@ -169,12 +192,17 @@ class GatewayAdapter extends LlmAdapter {
         throw new Error('模型响应被拦截或未能正常完成，请检查模型服务');
       if (calls.size && finish === 'length')
         throw new Error('模型工具调用达到输出上限，未执行不完整的调用，请调整输出上限后重试');
-      if (textStarted) yield { type: 'block-end', index: 0, block: { type: 'text', text } };
-      for (const [index, call] of calls) {
+      yield* closeReasoning();
+      if (textIndex >= 0) yield { type: 'block-end', index: textIndex, block: { type: 'text', text } };
+      for (const call of calls.values()) {
         if (!call.id || !call.name) throw new Error('模型返回了不完整的工具调用');
-        yield { type: 'block-end', index, block: { type: 'tool-call', ...call } };
+        yield {
+          type: 'block-end',
+          index: call.blockIndex,
+          block: { type: 'tool-call', id: call.id, name: call.name, arguments: call.arguments },
+        };
       }
-      if (!textStarted && !calls.size) throw new Error('模型返回了空响应');
+      if (textIndex < 0 && !calls.size) throw new Error('模型返回了空响应');
       if (usage) {
         const cached = usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens ?? 0;
         yield {
@@ -183,13 +211,16 @@ class GatewayAdapter extends LlmAdapter {
             inputTokens: Math.max(0, (usage.prompt_tokens ?? 0) - cached),
             outputTokens: usage.completion_tokens ?? 0,
             cacheReadTokens: cached,
+            ...(usage.completion_tokens_details?.reasoning_tokens
+              ? { reasoningTokens: usage.completion_tokens_details.reasoning_tokens }
+              : {}),
           },
         };
       }
       yield {
         type: 'finish',
         reason: { kind: calls.size ? 'tool-calls' : finish === 'length' ? 'max-tokens' : 'stop' },
-        ...(reasoning ? { replayState: { response: { reasoningContent: reasoning } } } : {}),
+        ...(reasoningAll ? { replayState: { response: { reasoningContent: reasoningAll } } } : {}),
       };
     } catch (error) {
       const message = options.signal?.aborted

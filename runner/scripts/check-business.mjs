@@ -58,6 +58,22 @@ const server = http.createServer(async (req, res) => {
     res.on('close', () => clearTimeout(timer));
     return;
   }
+  if (instruction.includes('THINK')) {
+    send({ choices: [{ delta: { reasoning_content: '先分析' } }] });
+    send({ choices: [{ delta: { reasoning_content: '一下。' } }] });
+    send({ choices: [{ delta: { content: '思考后的' } }] });
+    send({
+      choices: [{ delta: { content: '回答' }, finish_reason: 'stop' }],
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 12,
+        prompt_tokens_details: { cached_tokens: 20 },
+        completion_tokens_details: { reasoning_tokens: 7 },
+      },
+    });
+    res.end('data: [DONE]\n\n');
+    return;
+  }
   if (
     (instruction.includes('WRITE') ||
       instruction.includes('ESCAPE') ||
@@ -184,6 +200,30 @@ try {
       bundle.meta.builtin_tools.toSorted(),
     ),
   );
+  events = await turn('THINK');
+  check('reasoning streams live and settles onto the message', () => {
+    assert.deepEqual(
+      events.filter((event) => event.kind === 'reasoning_delta').map((event) => event.payload.text),
+      ['先分析', '一下。'],
+    );
+    const message = events.find((event) => event.kind === 'message');
+    assert.equal(message?.payload.text, '思考后的回答');
+    assert.equal(message?.payload.reasoning, '先分析一下。');
+  });
+  check('reasoning tokens ride with usage accounting', () =>
+    assert.deepEqual(events.find((event) => event.kind === 'cost_tick')?.payload, {
+      tokensIn: 100,
+      tokensOut: 12,
+      reasoningTokens: 7,
+    }),
+  );
+  events = await turn('PLAIN');
+  check('settled reasoning replays to the gateway as provider history', () => {
+    const assistant = requests
+      .at(-1)
+      .messages.find((message) => message.role === 'assistant' && message.content === '思考后的回答');
+    assert.equal(assistant?.reasoning_content, '先分析一下。');
+  });
   events = await turn('WRITE');
   check('fragmented tool arguments and approval round trip', () => {
     assert.ok(events.some((event) => event.kind === 'approval_required'));
