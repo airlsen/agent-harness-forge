@@ -99,10 +99,18 @@ onMounted(load);
           /></label>
         </div>
         <div v-if="loading" class="loading-inline"><span class="loader"></span>读取原始事件…</div>
-        <div v-else-if="!filtered.length" class="empty-state">
-          <Icon name="activity" :size="31" />
-          <h3>{{ events.length ? '没有匹配的事件' : '这次会话尚未执行任务' }}</h3>
-          <p>未发生的模型与工具调用，不会生成模拟轨迹。</p>
+        <div v-else-if="!filtered.length" class="enterprise-empty">
+          <span class="enterprise-empty-symbol"
+            ><Icon :name="events.length ? 'search' : 'activity'" :size="29"
+          /></span>
+          <h2>{{ events.length ? '没有匹配的事件' : '这次会话尚未执行任务' }}</h2>
+          <p>
+            {{
+              events.length
+                ? '换一个关键词或事件来源，查找其他轨迹。'
+                : '任务开始后，模型与工具调用记录会显示在这里。'
+            }}
+          </p>
         </div>
         <details v-for="event in filtered" :key="event.seq" class="trajectory-event">
           <summary>
