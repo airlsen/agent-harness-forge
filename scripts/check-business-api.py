@@ -76,7 +76,13 @@ class GatewayFixture(BaseHTTPRequestHandler):
             tool_arguments = {"command": "date > pending.txt"}
         elif not tool_answered and "APPROVAL" in text.upper():
             tool_name = "bash"
-            tool_arguments = {"command": "date > approved.txt"}
+            tool_arguments = {
+                "command": (
+                    "echo '# API integration fixture' > result.md"
+                    if "WRITE" in text.upper()
+                    else "date > approved.txt"
+                )
+            }
         elif not tool_answered and "WRITE" in text:
             tool_name = "workspace_write"
             tool_arguments = {
@@ -759,23 +765,43 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
 
                 log_drain = threading.Thread(target=drain_browser_logs, daemon=True)
                 log_drain.start()
+                browser_report = ROOT / (
+                    "data/business-checks/execution-ui-cookie-blocked-report.json"
+                    if cookie_blocked
+                    else "data/business-checks/execution-ui-report.json"
+                )
                 try:
                     asyncio.run(
                         check_execution_ui(
                             f"http://127.0.0.1:{api_port}",
                             "admin",
                             password,
-                            ROOT
-                            / (
-                                "data/business-checks/execution-ui-cookie-blocked-report.json"
-                                if cookie_blocked
-                                else "data/business-checks/execution-ui-report.json"
-                            ),
+                            browser_report,
                             cookie_blocked=cookie_blocked,
                         )
                     )
                 except Exception as error:
                     detail = f"{type(error).__name__}: {error}"
+                    failure_report = browser_report.with_name(
+                        browser_report.stem + "-failure.json"
+                    )
+                    if failure_report.is_file():
+                        try:
+                            state = json.loads(failure_report.read_text())
+                            context = {
+                                key: state.get(key)
+                                for key in (
+                                    "completedChecks",
+                                    "url",
+                                    "apiState",
+                                    "pendingApprovalCards",
+                                )
+                            }
+                            detail += " | browser state: " + json.dumps(
+                                context, ensure_ascii=False, separators=(",", ":")
+                            )
+                        except (OSError, json.JSONDecodeError):
+                            pass
                     annotation = (
                         detail.replace("%", "%25")
                         .replace("\r", "%0D")
