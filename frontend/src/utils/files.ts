@@ -13,6 +13,7 @@ export const BUILTIN_TOOL_TITLES: Record<string, string> = {
   // Runner 基础能力中的 DSH 搜索插件
   glob: '查找文件',
   grep: '搜索文件内容',
+  bash: '执行终端命令',
   // 关联代码、Skill 参考资料的只读读取
   read: '读取文件',
   // 扩展能力

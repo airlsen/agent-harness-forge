@@ -314,9 +314,7 @@ export class DshKernel implements AgentKernel {
         config: compactionConfig(entry.model.contextWindow || 64000, policy.maxOutputTokens ?? 4096),
       },
       ...[
-        'persistent-bash',
         'persistent-pwsh',
-        'terminal-bash',
         'terminal-pwsh',
         'tool-working-directory',
         ...(toolset.read ? [] : ['tool-fs']),

@@ -97,6 +97,115 @@ export function toolPathDenial(workspace, projects, exec) {
     }
   }
 }
+
+/**
+ * 脱敏输出中的 Git 敏感信息（如含凭据的 Remote URL、Token 等）
+ */
+export function sanitizeGitOutput(text) {
+  if (!text || typeof text !== 'string') return text;
+  // 脱敏形如 https://user:token@github.com 或 https://token@github.com 的 URL 凭据
+  let cleaned = text.replace(/(https?:\/\/)([^:\/\s@]+):([^@\s\/]+)@/g, '$1$2:***@');
+  cleaned = cleaned.replace(/(https?:\/\/)gh[pousr]_[A-Za-z0-9_]+@/g, '$1***@');
+  // 脱敏出现的独立 GitHub/通用 Personal Access Token
+  cleaned = cleaned.replace(/\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{30,255}\b/g, '***REDACTED***');
+  return cleaned;
+}
+
+function truncateCmd(cmd) {
+  return cmd.length > 80 ? cmd.slice(0, 77) + '...' : cmd;
+}
+
+/**
+ * 对 bash 命令行进行三级安全门控分类：
+ * - 'deny': 红色通道，硬性拦截高危破坏、提权、探测凭据、恶意网络外联
+ * - 'allow': 绿色通道，只读查看与安全 Git 操作，自动放行无需审批
+ * - 'ask': 黄色通道，修改、写操作、编译运行等，必须经由用户审批
+ */
+export function classifyBashCommand(cmd) {
+  if (typeof cmd !== 'string' || !cmd.trim()) {
+    return { level: 'deny', reason: '命令内容不能为空' };
+  }
+  const clean = cmd.trim();
+
+  // 1. 🔴 红色通道：硬性拦截（Deny）
+  // (1) 破坏性系统命令
+  if (
+    /\brm\s+-[^\s]*[rf][^\s]*\s+(\/|~\/?|\.\.|\*|\$|\/etc|\/bin|\/usr|\/root)(?:\s|$|\/)/i.test(clean) ||
+    /\b(mkfs|fdisk|parted|dd\s+if=|shutdown|reboot|poweroff|init\s+0|halt)\b/i.test(clean) ||
+    /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/i.test(clean)
+  ) {
+    return { level: 'deny', reason: '安全策略拒绝执行破坏性系统命令' };
+  }
+
+  // (2) 提权与切换用户
+  if (/\b(sudo|su|pkexec|doas)\b/i.test(clean)) {
+    return { level: 'deny', reason: '安全策略禁止使用提权命令 (sudo/su)' };
+  }
+
+  // (3) 探测凭据、密钥与平台环境变量
+  if (
+    /\b(cat|more|less|tail|head|grep|awk|sed)\s+.*(\/etc\/(shadow|gshadow|sudoers)|\.git-credentials|\.netrc|id_(rsa|dsa|ecdsa|ed25519))/i.test(
+      clean,
+    ) ||
+    /(^|\s)(printenv|env)(\s|$)/i.test(clean) ||
+    /\b(cat|head|tail|more|less)\s+.*\.env(\.local|\.production|\.development)?\b/i.test(clean)
+  ) {
+    return { level: 'deny', reason: '安全策略禁止探测系统凭据与敏感环境变量' };
+  }
+
+  // (4) 网络管道直接执行 (curl/wget | sh)
+  if (/(curl|wget)[^|;&]+\|\s*(ba|z|k|c)?sh\b/i.test(clean)) {
+    return { level: 'deny', reason: '安全策略禁止通过网络管道直接下载并执行脚本' };
+  }
+
+  // (5) 禁止危险的直接重定向覆写关键系统文件
+  if (/>\s*\/etc\//i.test(clean) || />\s*\/boot\//i.test(clean)) {
+    return { level: 'deny', reason: '安全策略禁止向系统核心路径重定向写入' };
+  }
+
+  // 2. 🟢 绿色通道：只读命令自动放行（Allow）
+  // 检查是否含有写入重定向 (>, >>)；含有重定向的一律不能免审
+  if (/[>]/.test(clean)) {
+    return { level: 'ask', reason: `命令包含文件重定向写入: ${truncateCmd(clean)}` };
+  }
+
+  // 拆分管道并逐段核验
+  const segments = clean
+    .split('|')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const isReadOnlySegment = (seg) => {
+    // Git 只读子命令
+    if (
+      /^git\s+(status|branch|log|diff|show|tag|rev-parse|describe|remote|ls-files|shortlog|help|version|config\s+--get)\b/i.test(
+        seg,
+      )
+    ) {
+      // 排除带有输出重定向或写入参数的 git 命令
+      return !/--output\b/i.test(seg);
+    }
+
+    // 常用只读查看工具
+    if (
+      /^(ls|dir|pwd|cat|head|tail|grep|egrep|fgrep|rg|wc|find|echo|which|whereis|file|tree|stat|uname|date|whoami|id)\b/i.test(
+        seg,
+      )
+    ) {
+      // 排除类似 find -delete, find -exec rm 等破坏性动作
+      return !/\b(-delete|-exec\s+rm)\b/i.test(seg);
+    }
+
+    return false;
+  };
+
+  // 如果不含命令串联符号 (;, &&) 且所有管道段均为只读，则自动放行
+  if (segments.length > 0 && segments.every(isReadOnlySegment) && !/[;&]/.test(clean)) {
+    return { level: 'allow', reason: '只读命令自动放行' };
+  }
+
+  // 3. 🟡 黄色通道：其他操作发起审批（Ask）
+  return { level: 'ask', reason: `模型请求执行终端命令: ${truncateCmd(clean)}` };
+}
 /**
  * 搜索结果中的密钥类文件：DSH 搜索为发现配置会包含隐藏与被忽略的文件（只排除 .git 等版本库目录），
  * 对关联项目搜索时会扫到 .env、*.pem 等。这里从 grep/glob 的结构化结果中剔除这些条目，
@@ -570,20 +679,71 @@ export async function apply(ctx, config) {
         filterSecretResults(root, codeProjects, exec, await next()),
       ),
     );
+  // bash 工具输出脱敏：避免通过 git remote -v、输出回显等泄漏包含 token 的远程地址与密钥
+  disposers.push(
+    ctx.on('tools/execute', async (exec, next) => {
+      const result = await next();
+      if (exec.name === 'bash' && result && typeof result === 'object' && typeof result.value === 'string') {
+        return { ...result, value: sanitizeGitOutput(result.value) };
+      }
+      return result;
+    }),
+  );
   // 管理员标记为「需确认」的外部工具（MCP）：每次调用都要用户批准
   const approvalTools = new Set((config.approvalTools ?? []).filter((name) => allowed.has(name)));
   disposers.push(
     ctx.on('tools/pre-execute', (exec, next) => {
-      // 会话工作区是受限目录（路径、数量与容量配额均由执行器校验），写入直接执行、无需逐次确认。
-      const decision = !allowed.has(exec.name) ? 'deny' : approvalTools.has(exec.name) ? 'ask' : 'allow';
-      notify('forge.policy', { tool: exec.name, callId: exec.callId, arguments: exec.arguments, decision });
-      if (decision === 'deny') return { kind: 'deny', reason: 'Forge 工具白名单拒绝' };
-      if (decision === 'ask')
+      // 1. 白名单拦截
+      if (!allowed.has(exec.name)) {
+        notify('forge.policy', {
+          tool: exec.name,
+          callId: exec.callId,
+          arguments: exec.arguments,
+          decision: 'deny',
+        });
+        return { kind: 'deny', reason: 'Forge 工具白名单拒绝' };
+      }
+
+      // 2. bash 工具三级门控分流：红通道拦截(deny)、绿通道放行(allow)、黄通道审批(ask)
+      if (exec.name === 'bash') {
+        const classification = classifyBashCommand(exec.arguments?.command);
+        notify('forge.policy', {
+          tool: exec.name,
+          callId: exec.callId,
+          arguments: exec.arguments,
+          decision: classification.level,
+        });
+        if (classification.level === 'deny') {
+          return { kind: 'deny', reason: classification.reason };
+        }
+        if (classification.level === 'ask') {
+          return { kind: 'ask', reason: classification.reason };
+        }
+        return next();
+      }
+
+      // 3. 管理员标记为「需确认」的外部工具（MCP）：每次调用都要用户批准
+      if (approvalTools.has(exec.name)) {
+        notify('forge.policy', {
+          tool: exec.name,
+          callId: exec.callId,
+          arguments: exec.arguments,
+          decision: 'ask',
+        });
         return {
           kind: 'ask',
           reason: '该工具由外部 MCP 服务提供，管理员要求每次调用前经用户确认',
           displayReason: { en: 'Allow this external tool call?', 'zh-CN': '是否允许调用这个外部工具？' },
         };
+      }
+
+      // 4. 会话工作区受限工具（如写入/读取/时间等）直接放行
+      notify('forge.policy', {
+        tool: exec.name,
+        callId: exec.callId,
+        arguments: exec.arguments,
+        decision: 'allow',
+      });
       return next();
     }),
   );
