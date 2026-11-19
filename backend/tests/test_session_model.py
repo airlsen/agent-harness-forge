@@ -204,10 +204,13 @@ def test_legacy_session_view_falls_back_to_model_id():
         created_at = None
         bundle_snapshot = {"meta": {"model": "deepseek-chat"}}
         code_projects = None  # 迁移新增的列在旧会话上为 NULL
+        capability_selection = None
 
     view = session_module.SessionService().view(Row())
     assert view["modelId"] is None
     assert view["codeProjects"] == []
+    assert view["capabilities"] == {"skillIds": [], "mcpServerIds": [], "webSearch": False}
+    assert view["scenarioCapabilities"] == {"skills": [], "mcpServers": [], "webSearch": False}
     assert view["modelName"] == "deepseek-chat"
     assert view["modelContextWindow"] is None
     assert session_module.model_ref(None, Row()) == {

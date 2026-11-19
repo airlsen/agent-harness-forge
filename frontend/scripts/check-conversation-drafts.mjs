@@ -153,6 +153,10 @@ try {
     }
     if (suffix.startsWith('/trajectory')) return response({ events: [], nextCursor: 0 });
     if (suffix === '/files') return response({ items: [] });
+    if (suffix === '/capabilities' && method === 'PUT') {
+      row.capabilities = JSON.parse(options.body);
+      return response({ capabilities: row.capabilities });
+    }
     if (suffix === '/code-projects' && method === 'PUT') {
       row.codeProjects = JSON.parse(options.body).codeProjects;
       return response({ codeProjects: row.codeProjects });
@@ -173,7 +177,9 @@ try {
       }
       const to = { id: row.modelId, name: row.modelName, model: row.model };
       if (body.codeProjects !== undefined) row.codeProjects = body.codeProjects;
+      if (body.capabilities !== undefined) row.capabilities = body.capabilities;
       const code = row.codeProjects ?? [];
+      const capabilities = row.capabilities ?? { skillIds: [], mcpServerIds: [], webSearch: false };
       const messageMeta = {
         modelId: to.id,
         modelName: to.name,
@@ -189,6 +195,7 @@ try {
         messageMeta,
         model: { ...to, contextWindow: 64000 },
         codeProjects: code,
+        capabilities,
       });
     }
     if (suffix.startsWith('/events?')) {
@@ -676,6 +683,65 @@ try {
   passed(
     'an existing session saves code changes immediately (even while running) and applies them next turn',
   );
+
+  reset();
+  const noCaps = { skillIds: [], mcpServerIds: [], webSearch: false };
+  assert.deepEqual(chat.capabilityChoice, noCaps);
+  await chat.setCapabilities({ skillIds: [3, 4, 3], mcpServerIds: [9], webSearch: true });
+  assert.deepEqual(chat.capabilityChoice, { skillIds: [3, 4], mcpServerIds: [9], webSearch: true });
+  assert.equal(count(/\/capabilities$/, 'PUT'), 0); // a new draft only changes local state
+  await chat.open(11);
+  assert.deepEqual(chat.capabilityChoice, noCaps); // an existing session shows its own selection
+  chat.prepareStart();
+  assert.deepEqual(chat.capabilityChoice.skillIds, [3, 4]); // the start draft keeps its selection
+  chat.input = 'Search the web with two skills';
+  await chat.submit();
+  const capsTurn = calls.filter((call) => call.url.endsWith('/turns')).at(-1);
+  assert.deepEqual(capsTurn.body, {
+    message: 'Search the web with two skills',
+    capabilities: { skillIds: [3, 4], mcpServerIds: [9], webSearch: true },
+  });
+  assert.deepEqual(chat.current.capabilities, { skillIds: [3, 4], mcpServerIds: [9], webSearch: true });
+  assert.deepEqual(chat.draftCapabilities, noCaps);
+  chat.prepareStart();
+  assert.deepEqual(chat.capabilityChoice, noCaps); // a consumed draft does not leak into the next task
+  chat.input = 'Plain task';
+  await chat.submit();
+  // an empty selection is not sent at all
+  assert.deepEqual(calls.filter((call) => call.url.endsWith('/turns')).at(-1).body, {
+    message: 'Plain task',
+  });
+  passed(
+    'a new task carries its capability selection in the first turn only, and the draft is then consumed',
+  );
+
+  reset();
+  database.get(11).status = 'running';
+  await chat.open(11);
+  // running: the selection can still change; it is saved now and applies from the next turn
+  assert.deepEqual(await chat.setCapabilities({ skillIds: [5], mcpServerIds: [], webSearch: false }), {
+    skillIds: [5],
+    mcpServerIds: [],
+    webSearch: false,
+  });
+  assert.deepEqual(calls.filter((call) => call.method === 'PUT').at(-1), {
+    url: '/api/agent/sessions/11/capabilities',
+    method: 'PUT',
+    body: { skillIds: [5], mcpServerIds: [], webSearch: false },
+  });
+  assert.deepEqual(chat.current.capabilities.skillIds, [5]);
+  assert.equal(chat.capabilitySaving, false);
+  assert.equal(chat.hasUnsentDrafts, false);
+  database.get(11).status = 'idle';
+  await chat.open(11);
+  assert.deepEqual(chat.capabilityChoice.skillIds, [5]);
+  chat.input = 'Use the skill';
+  await chat.submit();
+  // existing sessions never resend the selection: the server resolves its saved set each turn
+  assert.deepEqual(calls.filter((call) => call.url.endsWith('/turns')).at(-1).body, {
+    message: 'Use the skill',
+  });
+  passed('an existing session saves capability changes immediately (even while running) for the next turn');
 
   console.log(
     JSON.stringify({

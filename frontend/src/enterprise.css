@@ -1309,6 +1309,45 @@ textarea:focus-visible {
   padding: 4px 12px;
   font-size: 11px;
 }
+/* 扩展能力（Skill / MCP / 联网）：沿用关联代码弹层，按类型分组 */
+.task-composer .scenario-popover.capability-popover {
+  width: 400px;
+  max-height: min(480px, 60dvh);
+}
+.capability-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-subtle);
+}
+.capability-group-title > small {
+  margin-left: auto;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.code-option > .capability-tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--accent-line);
+  border-radius: 4px;
+  font-size: 10px;
+  font-style: normal;
+  color: var(--accent-ink);
+}
+.code-option.is-disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+.code-option.is-disabled:hover {
+  background: transparent;
+}
+.code-empty > a {
+  color: var(--accent-ink);
+}
 .enterprise-model-prompt.connect-model-prompt {
   display: flex;
   align-items: center;
@@ -3054,6 +3093,10 @@ textarea:focus-visible {
 .model-switch-divider strong {
   color: var(--text-secondary);
   font-weight: 500;
+}
+.model-switch-divider.is-warning,
+.model-switch-divider.is-warning strong {
+  color: #b54708;
 }
 .model-usage-list {
   margin: 8px 0 0;
@@ -4849,6 +4892,11 @@ textarea:focus-visible {
 .mcp-server-error {
   margin: 0;
   color: #b42318;
+  font-size: 12px;
+}
+.mcp-server-note {
+  margin: 0;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 .mcp-credential-note {
@@ -7029,4 +7077,44 @@ textarea:focus-visible {
     flex-direction: column;
     align-items: stretch;
   }
+}
+/* 治理页：联网搜索设置（侧栏卡片） */
+.web-search-card {
+  display: flex;
+  flex-direction: column;
+}
+.web-search-card .switch-setting {
+  padding: 4px 0 14px;
+}
+.web-search-card > label {
+  display: block;
+  margin: 14px 0 6px;
+}
+.web-search-card > input,
+.web-search-card > select {
+  width: 100%;
+}
+.web-search-card > .web-fetch-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.web-search-card > .web-fetch-option > input {
+  width: auto;
+}
+.web-search-card > .button {
+  align-self: flex-start;
+  margin-top: 18px;
+}
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  cursor: pointer;
+}
+.link-button:disabled {
+  cursor: default;
+  opacity: 0.6;
 }

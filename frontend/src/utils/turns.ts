@@ -1,3 +1,53 @@
+/** 一轮实际生效的扩展能力（Skill / MCP / 联网）与未能装配的项 */
+export interface CapabilityNotice {
+  /** 与上一轮相比生效集合有变化时为本轮名称列表（空数组表示已全部关闭），否则为 null */
+  active: string[] | null;
+  /** 本轮因下线、停用或平台关闭而被跳过的项 */
+  unavailable: string[];
+}
+function turnCapabilities(turn: Pick<Turn, 'user'>): { active: string[]; unavailable: string[] } | null {
+  if (!turn.user) return null;
+  const value = turn.user.meta?.capabilities as Partial<ActiveCapabilities> | undefined;
+  if (!value || typeof value !== 'object') return { active: [], unavailable: [] };
+  const names = (items: unknown, key: 'title' | 'name') =>
+    Array.isArray(items)
+      ? items
+          .map((item) => (item && typeof item === 'object' ? (item as Record<string, unknown>)[key] : null))
+          .filter((name): name is string => typeof name === 'string' && Boolean(name))
+      : [];
+  return {
+    active: [
+      ...names(value.skills, 'title'),
+      ...names(value.mcp, 'name'),
+      ...(value.web && typeof value.web === 'object' ? ['联网搜索'] : []),
+    ],
+    // 已删除的项没有名称：回退为「类型 #编号」
+    unavailable: Array.isArray(value.unavailable)
+      ? value.unavailable.map((item) =>
+          item?.title
+            ? item.title
+            : `${item?.kind === 'mcp' ? 'MCP' : item?.kind === 'web' ? '联网' : 'Skill'} #${item?.id ?? '?'}`,
+        )
+      : [],
+  };
+}
+/**
+ * 扩展能力的变化点（与 codeChanges 同理）：生效集合与上一轮不同时给出本轮列表；
+ * 未能装配的项每轮都提示。没有可展示内容的轮次为 null。
+ */
+export function capabilityChanges(turns: Pick<Turn, 'user'>[]): (CapabilityNotice | null)[] {
+  let previous: string[] = [];
+  return turns.map((turn) => {
+    const current = turnCapabilities(turn);
+    if (current === null) return null;
+    const changed =
+      current.active.length !== previous.length ||
+      current.active.some((name, index) => name !== previous[index]);
+    previous = current.active;
+    if (!changed && !current.unavailable.length) return null;
+    return { active: changed ? current.active : null, unavailable: current.unavailable };
+  });
+}
 /**
  * 把扁平的消息列表聚合成「轮次」视图：一轮 = 一条用户消息 + 一个 AI 块。
  * AI 块内按发生顺序排列步骤（steps）：思考、连续工具调用组、正文。live 覆盖项只落在最后一轮：
@@ -8,7 +58,7 @@
  * - process：最终回答之前的全部过程（所有思考、工具调用、中间的过程说明），合成一个过程块；
  * - answer：最后一次工具调用之后的正文，即最终回答。
  */
-import type { ChatMessage } from '../types/platform';
+import type { ActiveCapabilities, ChatMessage } from '../types/platform';
 import {
   PRESENT_TOOL,
   mergeDeliverables,

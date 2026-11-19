@@ -50,7 +50,7 @@ class RunnerClient:
         except HTTPException:
             return {"status": "offline"}
 
-    async def create_session(self, bundle, user_ctx, model_config, code_projects=None):
+    async def create_session(self, bundle, user_ctx, model_config, code_projects=None, capabilities=None):
         return await self.call(
             "POST",
             "/v1/sessions",
@@ -59,6 +59,8 @@ class RunnerClient:
                 "userCtx": user_ctx,
                 "modelConfig": model_config,
                 "codeProjects": list(code_projects or []),
+                # 扩展能力含 MCP 凭据与联网密钥：只随请求下发，不进入 Bundle
+                "capabilities": capabilities or {"skills": [], "mcp": [], "web": None},
             },
         )
 
@@ -72,12 +74,14 @@ class RunnerClient:
         message: str,
         model_config: dict | None = None,
         code_projects: list[str] | None = None,
+        capabilities: dict | None = None,
     ):
-        # 每轮都下发当前模型配置与关联代码：Runner 比对后，任一变化都以新配置重启并接续会话。
+        # 每轮都下发当前模型配置、关联代码与扩展能力：Runner 比对后，任一变化都以新配置重启并接续会话。
         body = {
             "message": message,
             **({"modelConfig": model_config} if model_config else {}),
             **({"codeProjects": list(code_projects)} if code_projects is not None else {}),
+            **({"capabilities": capabilities} if capabilities is not None else {}),
         }
         async with self.client(stream=True) as client:
             async with client.stream(

@@ -391,7 +391,8 @@ async function workspaceFiles(root, dir = root, depth = 0) {
   return files;
 }
 export async function apply(ctx, config) {
-  const connection = JSON.parse(process.env.FORGE_MODEL_CONFIG ?? '{}');
+  // 变量名含 SECRET：DSH 为 stdio MCP 子进程清洗环境变量时会剔除它，模型密钥不会泄露给外部程序
+  const connection = JSON.parse(process.env.FORGE_MODEL_SECRET_CONFIG ?? '{}');
   if (!connection.baseUrl || !connection.model) throw new Error('Forge model gateway is not configured');
   const allowed = new Set(config.allowedTools ?? []);
   const root = resolve(config.workspace);
@@ -556,9 +557,12 @@ export async function apply(ctx, config) {
   );
   // 搜索与只读 read 来自 DSH 官方插件，其路径参数不受工作区约束；
   // 在执行前统一收窄到会话工作区与已关联的代码项目（只读）。
-  const codeProjects = Array.isArray(config.codeProjects)
-    ? config.codeProjects.filter((item) => item && typeof item.path === 'string')
-    : [];
+  // 只读根目录 = 已关联的代码项目 ∪ Skill 参考资料目录（Runner 物化，模型用 read 按需读取）
+  const readRoots = [
+    ...(Array.isArray(config.codeProjects) ? config.codeProjects : []),
+    ...(Array.isArray(config.readRoots) ? config.readRoots : []),
+  ].filter((item) => item && typeof item.path === 'string');
+  const codeProjects = readRoots;
   disposers.push(ctx.tools.guard((exec) => toolPathDenial(root, codeProjects, exec)));
   if (codeProjects.length)
     disposers.push(
@@ -566,12 +570,20 @@ export async function apply(ctx, config) {
         filterSecretResults(root, codeProjects, exec, await next()),
       ),
     );
+  // 管理员标记为「需确认」的外部工具（MCP）：每次调用都要用户批准
+  const approvalTools = new Set((config.approvalTools ?? []).filter((name) => allowed.has(name)));
   disposers.push(
     ctx.on('tools/pre-execute', (exec, next) => {
       // 会话工作区是受限目录（路径、数量与容量配额均由执行器校验），写入直接执行、无需逐次确认。
-      const decision = allowed.has(exec.name) ? 'allow' : 'deny';
+      const decision = !allowed.has(exec.name) ? 'deny' : approvalTools.has(exec.name) ? 'ask' : 'allow';
       notify('forge.policy', { tool: exec.name, callId: exec.callId, arguments: exec.arguments, decision });
       if (decision === 'deny') return { kind: 'deny', reason: 'Forge 工具白名单拒绝' };
+      if (decision === 'ask')
+        return {
+          kind: 'ask',
+          reason: '该工具由外部 MCP 服务提供，管理员要求每次调用前经用户确认',
+          displayReason: { en: 'Allow this external tool call?', 'zh-CN': '是否允许调用这个外部工具？' },
+        };
       return next();
     }),
   );

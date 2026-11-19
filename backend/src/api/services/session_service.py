@@ -18,6 +18,8 @@ from .runner_client import runner_client
 from .scenario_service import scenario_service, iso
 from .scenario_assembler import Bundle
 from .plugin_service import ensure_bindings_available
+from . import capability_service
+from .capability_service import CapabilityChoice, selection_of
 from .settings_service import environment_ref, get_policy, resolve_session_connection
 
 log = logging.getLogger(__name__)
@@ -168,6 +170,16 @@ class SessionService:
             "modelContextWindow": segment.context_window if segment else None,
             "isTest": meta.get("isTest", False),
             "codeProjects": list(row.code_projects or []),
+            # 聊天临时选择的扩展能力（与场景绑定取并集）
+            "capabilities": selection_of(row.capability_selection),
+            "scenarioCapabilities": {
+                "skills": [
+                    {key: ref.get(key) for key in ("id", "title", "name", "version")}
+                    for ref in meta.get("skills") or []
+                ],
+                "mcpServers": list(meta.get("mcpServers") or []),
+                "webSearch": bool(meta.get("webSearch")),
+            },
         }
 
     async def create(self, scenario_id, *, model_id=None, is_test=False):
@@ -340,7 +352,28 @@ class SessionService:
             await db.commit()
             return {"codeProjects": selected}
 
-    async def start(self, session_id, message, *, model_id=None, code_projects=None):
+    async def set_capabilities(self, session_id, choice: CapabilityChoice):
+        """保存聊天临时选择的扩展能力。执行中也可以修改：当前轮不受影响，从下一轮起生效。"""
+        async with SessionFactory() as db:
+            row = await self.row(db, session_id)
+            if row.status == "archived":
+                raise HTTPException(409, "此会话已归档")
+            selected = await capability_service.validate_choice(
+                db, choice, selection_of(row.capability_selection)
+            )
+            row.capability_selection = selected
+            await db.commit()
+            return {"capabilities": selected}
+
+    async def start(
+        self,
+        session_id,
+        message,
+        *,
+        model_id=None,
+        code_projects=None,
+        capabilities: CapabilityChoice | None = None,
+    ):
         if not message.strip():
             raise HTTPException(422, "任务内容不能为空")
         lock = self.locks.setdefault(session_id, asyncio.Lock())
@@ -361,6 +394,15 @@ class SessionService:
                     await ensure_code_projects_exist(selected, list(row.code_projects or []))
                     row.code_projects = selected
                 code = list(row.code_projects or [])
+                # 本轮随消息提交的临时能力（不传沿用已保存的选择）
+                if capabilities is not None:
+                    row.capability_selection = await capability_service.validate_choice(
+                        db, capabilities, selection_of(row.capability_selection)
+                    )
+                selection = selection_of(row.capability_selection)
+                runtime_caps, active_caps = await capability_service.resolve(
+                    db, row.bundle_snapshot.get("meta", {}), selection
+                )
                 segment = previous
                 if model_id is not None and model_id != previous.connection_id:
                     # 切换目标必须存在且已启用（404 / 409）；沿用当前模型则不受其后启停影响。
@@ -386,6 +428,7 @@ class SessionService:
                         },
                         runtime,
                         code,
+                        runtime_caps,
                     )
                     row.runner_session_id, row.runner_id = handle["sessionId"], "local-runner"
                     row.workspace_uri = "session://" + handle["sessionId"]
@@ -420,6 +463,12 @@ class SessionService:
                     **({"modelSwitch": switch} if switch else {}),
                     # 本轮可读取的代码项目，供历史消息回溯
                     **({"codeProjects": code} if code else {}),
+                    # 本轮生效的扩展能力摘要（不含正文与凭据），供历史消息回溯
+                    **(
+                        {"capabilities": active_caps}
+                        if not capability_service.summary_is_empty(active_caps)
+                        else {}
+                    ),
                 }
                 pump_cursor = cursor
                 if switch:
@@ -442,7 +491,7 @@ class SessionService:
                 turn = {"segmentId": segment.id, "ref": model_ref(segment), "messageId": user.id}
                 current = segment_view(segment)
             task = asyncio.create_task(
-                self.pump(session_id, runner_id, message, pump_cursor, runtime, turn, code)
+                self.pump(session_id, runner_id, message, pump_cursor, runtime, turn, code, runtime_caps)
             )
             self.tasks[session_id] = task
             task.add_done_callback(
@@ -456,9 +505,13 @@ class SessionService:
                 "messageMeta": user.meta,
                 "model": current,
                 "codeProjects": code,
+                "capabilities": selection,
+                "activeCapabilities": active_caps,
             }
 
-    async def pump(self, session_id, runner_id, message, cursor, runtime, turn, code_projects=None):
+    async def pump(
+        self, session_id, runner_id, message, cursor, runtime, turn, code_projects=None, capabilities=None
+    ):
         """转发一轮执行事件并落库。turn 为本轮模型分段：回复署名与计费都以它为准。"""
         failed, got_done, partial, partial_reasoning = False, False, "", ""
 
@@ -569,7 +622,13 @@ class SessionService:
         try:
             await persist("session", {"sessionId": session_id, "workspaceUri": "session://" + runner_id})
             # 每轮下发完整的关联代码列表（空列表表示不关联），Runner 与数据库始终一致
-            async for event in runner_client.events(runner_id, message, runtime, list(code_projects or [])):
+            async for event in runner_client.events(
+                runner_id,
+                message,
+                runtime,
+                list(code_projects or []),
+                capabilities or {"skills": [], "mcp": [], "web": None},
+            ):
                 kind, payload = event["kind"], event.get("payload") or {}
                 if kind == "files":
                     # 先同步再发布事件：客户端收到事件后刷新清单时即可看到新文件

@@ -8,7 +8,10 @@ class CapabilitySelection(BaseModel):
     skill_ids: list[int] = Field(default_factory=list)
     mcp_server_ids: list[int] = Field(default_factory=list)
     builtin_tool_names: list[str] = Field(default_factory=list)
+    # 已废弃：关联代码改为聊天中按会话选择；保留字段以兼容旧场景数据，装配时忽略
     project_ids: list[str] = Field(default_factory=list)
+    # 联网搜索（web_search / web_fetch）：需平台在治理中心开启并配置
+    web_search: bool = False
 
 
 class ScenarioPayload(BaseModel):

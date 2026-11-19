@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { useConversation } from '../stores/conversation';
+import { hasCapabilities, useConversation } from '../stores/conversation';
 import { usePlatform } from '../stores/platform';
 import { isAvailableScenario } from '../utils/presentation';
 import Icon from './ForgeIcon.vue';
 import ModelPicker from './ModelPicker.vue';
 import CodePicker from './CodePicker.vue';
+import CapabilityPicker from './CapabilityPicker.vue';
 
 const props = withDefaults(defineProps<{ hero?: boolean }>(), { hero: false });
 const emit = defineEmits<{ submitted: [id: number]; capabilities: [] }>();
@@ -19,6 +20,7 @@ const textarea = ref<HTMLTextAreaElement | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const modelPicker = ref<InstanceType<typeof ModelPicker> | null>(null);
 const codePicker = ref<InstanceType<typeof CodePicker> | null>(null);
+const capabilityPicker = ref<InstanceType<typeof CapabilityPicker> | null>(null);
 const attaching = ref(false);
 const submitting = ref(false);
 const selected = computed(
@@ -26,6 +28,45 @@ const selected = computed(
 );
 const choices = computed(() =>
   app.scenarios.filter((s) => isAvailableScenario(s) || s.id === chat.selectedScenarioId),
+);
+/** 输入框上方的临时扩展能力标签（名称来自能力选项；尚未读取时显示编号） */
+const capabilityChips = computed(() => {
+  const choice = chat.capabilityChoice;
+  const options = chat.capabilityOptions;
+  return [
+    ...choice.skillIds.map((id) => {
+      const skill = options?.skills.find((item) => item.id === id);
+      return {
+        key: `skill-${id}`,
+        kind: 'skill' as const,
+        id,
+        icon: 'book',
+        label: skill?.title ?? `Skill #${id}`,
+        title: skill ? `Skill · 可用 /${skill.name} 直接调用` : 'Skill',
+      };
+    }),
+    ...choice.mcpServerIds.map((id) => {
+      const server = options?.mcpServers.find((item) => item.id === id);
+      return {
+        key: `mcp-${id}`,
+        kind: 'mcp' as const,
+        id,
+        icon: 'plug',
+        label: server?.name ?? `MCP #${id}`,
+        title: 'MCP 服务',
+      };
+    }),
+    ...(choice.webSearch
+      ? [{ key: 'web', kind: 'web' as const, id: 0, icon: 'globe', label: '联网搜索', title: '联网搜索' }]
+      : []),
+  ];
+});
+watch(
+  () => hasCapabilities(chat.capabilityChoice) && !chat.capabilityOptions,
+  (missing) => {
+    if (missing) chat.loadCapabilityOptions().catch(() => undefined);
+  },
+  { immediate: true },
 );
 const canSend = computed(
   () =>
@@ -134,6 +175,22 @@ defineExpose({ focus: () => textarea.value?.focus() });
         </button>
       </span>
     </div>
+    <div v-if="capabilityChips.length" class="code-chips" aria-label="临时选用的扩展能力">
+      <span
+        v-for="chip in capabilityChips"
+        :key="chip.key"
+        :title="`${chip.title}${chat.current ? ' · 修改从下一轮起生效' : ''}`"
+      >
+        <Icon :name="chip.icon" :size="13" />{{ chip.label }}
+        <button
+          :aria-label="`移除 ${chip.label}`"
+          :disabled="chat.capabilitySaving || chat.loading"
+          @click="capabilityPicker?.remove(chip.kind, chip.id)"
+        >
+          <Icon name="close" :size="12" />
+        </button>
+      </span>
+    </div>
     <div v-if="chat.draftAttachments.length" class="attachment-chips">
       <span v-for="(file, index) in chat.draftAttachments" :key="index">
         <Icon name="file" :size="14" />{{ file.name }}
@@ -170,6 +227,7 @@ defineExpose({ focus: () => textarea.value?.focus() });
               picker = !picker;
               modelPicker?.close();
               codePicker?.close();
+              capabilityPicker?.close();
             "
             @keydown.esc.stop="picker = false"
           >
@@ -217,6 +275,7 @@ defineExpose({ focus: () => textarea.value?.focus() });
           @opened="
             picker = false;
             codePicker?.close();
+            capabilityPicker?.close();
           "
           @selected="textarea?.focus()"
         />
@@ -225,6 +284,16 @@ defineExpose({ focus: () => textarea.value?.focus() });
           @opened="
             picker = false;
             modelPicker?.close();
+            capabilityPicker?.close();
+          "
+          @changed="textarea?.focus()"
+        />
+        <CapabilityPicker
+          ref="capabilityPicker"
+          @opened="
+            picker = false;
+            modelPicker?.close();
+            codePicker?.close();
           "
           @changed="textarea?.focus()"
         />

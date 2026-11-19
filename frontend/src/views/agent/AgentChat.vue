@@ -7,7 +7,7 @@ import { downloadResponse } from '../../api/client';
 import { formatBytes, sessionState } from '../../utils/presentation';
 import { trapTabKey } from '../../utils/focus';
 import type { KernelEvent } from '../../types/platform';
-import { buildTurns, codeChanges, type ToolCallView, type Turn } from '../../utils/turns';
+import { buildTurns, capabilityChanges, codeChanges, type ToolCallView, type Turn } from '../../utils/turns';
 import Icon from '../../components/ForgeIcon.vue';
 import Markdown from '../../components/MarkdownContent.vue';
 import ProcessBlock from '../../components/ProcessBlock.vue';
@@ -19,7 +19,7 @@ import FileTree from '../../components/FileTree.vue';
 import FileDiff from '../../components/FileDiff.vue';
 import TurnChanges from '../../components/TurnChanges.vue';
 import {
-  BUILTIN_TOOL_TITLES,
+  builtinToolTitle,
   archiveUrl,
   fileName,
   previewable,
@@ -150,6 +150,7 @@ const turns = computed(() =>
 );
 /** 每轮相对上一轮的关联代码变化（渲染分隔线） */
 const turnCodeChanges = computed(() => codeChanges(turns.value));
+const turnCapabilityChanges = computed(() => capabilityChanges(turns.value));
 /** 右侧面板展示的关联代码：附带代码根目录中读到的分支与提交 */
 const linkedCode = computed(() =>
   chat.codeProjects.map((name) => {
@@ -165,6 +166,68 @@ const linkedCode = computed(() =>
       missing: Boolean(chat.codeProjectList?.available) && !project,
     };
   }),
+);
+/**
+ * 扩展能力 = 场景绑定 ∪ 聊天临时选择。已有会话的场景部分取会话快照（创建时冻结），
+ * 新会话取所选场景当前版本；名称来自能力选项，读取前回退到快照里的名称或编号。
+ */
+const scenarioExtensions = computed(() => {
+  const bound = chat.current?.scenarioCapabilities;
+  if (chat.current)
+    return {
+      skills: bound?.skills ?? [],
+      mcpServers: bound?.mcpServers ?? [],
+      webSearch: Boolean(bound?.webSearch),
+    };
+  const caps = selected.value?.payload.capabilities;
+  return {
+    skills: (caps?.skill_ids ?? []).map((id) => ({ id, title: '', name: '' })),
+    mcpServers: (caps?.mcp_server_ids ?? []).map((id) => ({ id, name: '' })),
+    webSearch: Boolean(caps?.web_search),
+  };
+});
+const extensionSkills = computed(() => {
+  const options = chat.capabilityOptions?.skills ?? [];
+  const scenario = scenarioExtensions.value.skills;
+  const chatOnly = chat.capabilityChoice.skillIds.filter((id) => !scenario.some((skill) => skill.id === id));
+  return [
+    ...scenario.map((skill) => ({ ...skill, source: 'scenario' as const })),
+    ...chatOnly.map((id) => ({ id, title: '', name: '', source: 'chat' as const })),
+  ].map((skill) => {
+    const option = options.find((item) => item.id === skill.id);
+    return {
+      id: skill.id,
+      source: skill.source,
+      title: skill.title || option?.title || `Skill #${skill.id}`,
+      name: skill.name || option?.name || '',
+      // 临时选择的 Skill 已取消发布：下一轮将被跳过
+      missing: skill.source === 'chat' && Boolean(chat.capabilityOptions) && !option,
+    };
+  });
+});
+const extensionServers = computed(() => {
+  const options = chat.capabilityOptions?.mcpServers ?? [];
+  const scenario = scenarioExtensions.value.mcpServers;
+  const chatOnly = chat.capabilityChoice.mcpServerIds.filter((id) => !scenario.some((s) => s.id === id));
+  return [
+    ...scenario.map((server) => ({ ...server, source: 'scenario' as const })),
+    ...chatOnly.map((id) => ({ id, name: '', source: 'chat' as const })),
+  ].map((server) => {
+    const option = options.find((item) => item.id === server.id);
+    return {
+      id: server.id,
+      source: server.source,
+      name: server.name || option?.name || `MCP #${server.id}`,
+      tools: option?.tools.length ?? 0,
+      approval: option?.tools.filter((tool) => tool.permission === 'approval').length ?? 0,
+      transport: option?.transport,
+      // 停用或连接异常的服务下一轮不会装配
+      missing: Boolean(chat.capabilityOptions) && !option,
+    };
+  });
+});
+const extensionWeb = computed(() =>
+  scenarioExtensions.value.webSearch ? 'scenario' : chat.capabilityChoice.webSearch ? 'chat' : null,
 );
 /** 整个会话的交付物：最近一轮声明的排在最前，同一路径只保留最新一次声明 */
 const sessionDeliverables = computed<FileRef[]>(() => {
@@ -305,6 +368,14 @@ watch(
     }
   },
 );
+// 打开「能力」面板时刷新扩展能力的名称与可用状态；读取失败只影响展示
+watch(
+  () => chat.panelOpen && chat.panel === 'context',
+  (visible) => {
+    if (visible) void chat.loadCapabilityOptions().catch(() => {});
+  },
+  { immediate: true },
+);
 // 打开「能力」面板时刷新关联代码的分支与提交；读取失败只影响版本展示
 watch(
   () => chat.panelOpen && chat.panel === 'context' && chat.codeProjects.join('\n'),
@@ -339,7 +410,7 @@ function showPanel(panel: 'files' | 'trajectory' | 'context') {
   chat.panel = panel;
 }
 function toolTitle(name: string) {
-  return app.tools.find((t) => t.name === name)?.title ?? BUILTIN_TOOL_TITLES[name] ?? name;
+  return app.tools.find((t) => t.name === name)?.title ?? builtinToolTitle(name);
 }
 function formatArgs(value: unknown) {
   try {
@@ -470,6 +541,30 @@ async function copyMessage(text: string) {
                 }}</strong></span
               >
               <span v-else><Icon name="code" :size="12" />已取消关联代码</span>
+            </div>
+            <div
+              v-if="turnCapabilityChanges[turnIndex]?.active"
+              class="model-switch-divider"
+              role="separator"
+              :title="turnCapabilityChanges[turnIndex]?.active?.join('、')"
+            >
+              <span v-if="turnCapabilityChanges[turnIndex]?.active?.length"
+                ><Icon name="puzzle" :size="12" />扩展能力：<strong>{{
+                  turnCapabilityChanges[turnIndex]?.active?.join('、')
+                }}</strong></span
+              >
+              <span v-else><Icon name="puzzle" :size="12" />已关闭扩展能力</span>
+            </div>
+            <div
+              v-if="turnCapabilityChanges[turnIndex]?.unavailable.length"
+              class="model-switch-divider is-warning"
+              role="note"
+            >
+              <span
+                ><Icon name="info" :size="12" />未生效（已下线或未开启）：<strong>{{
+                  turnCapabilityChanges[turnIndex]?.unavailable.join('、')
+                }}</strong></span
+              >
             </div>
             <div v-if="turn.user" class="message-row user">
               <div class="user-message-text">{{ turn.user.content }}</div>
@@ -650,9 +745,9 @@ async function copyMessage(text: string) {
         </div>
         <div class="context-section">
           <h3>
-            授权工具 <span>{{ selectedTools.length }}</span>
+            基础工具 <span>{{ selectedTools.length }}</span>
           </h3>
-          <p v-if="!selectedTools.length" class="small-text muted-text">本场景为纯对话，不调用工具。</p>
+          <p class="small-text muted-text">平台基础能力，始终开启；以平台策略为上限。</p>
           <div v-for="tool in selectedTools" :key="tool.name" class="context-tool">
             <span><Icon :name="tool.icon" :size="16" /></span>
             <div>
@@ -689,6 +784,69 @@ async function copyMessage(text: string) {
           </p>
         </div>
         <div class="context-section">
+          <h3>
+            Skill <span>{{ extensionSkills.length }}</span>
+          </h3>
+          <p v-if="!extensionSkills.length" class="small-text muted-text">
+            未启用。可在输入框「扩展能力」中临时选用已发布的 Skill。
+          </p>
+          <div v-for="skill in extensionSkills" :key="`skill-${skill.id}`" class="context-tool">
+            <span><Icon name="book" :size="16" /></span>
+            <div>
+              <strong>{{ skill.title }}</strong><small>{{
+                skill.missing
+                  ? '已取消发布，下一轮将跳过'
+                  : [
+                      skill.source === 'scenario' ? '场景绑定' : '临时选用',
+                      skill.name ? `/${skill.name}` : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+              }}</small>
+            </div>
+            <Icon :name="skill.source === 'scenario' ? 'lock' : 'check'" :size="13" />
+          </div>
+        </div>
+        <div class="context-section">
+          <h3>
+            MCP 服务 <span>{{ extensionServers.length }}</span>
+          </h3>
+          <p v-if="!extensionServers.length" class="small-text muted-text">
+            未连接。可在输入框「扩展能力」中临时选用管理员已启用的 MCP 服务。
+          </p>
+          <div v-for="server in extensionServers" :key="`mcp-${server.id}`" class="context-tool">
+            <span><Icon name="plug" :size="16" /></span>
+            <div>
+              <strong>{{ server.name }}</strong><small>{{
+                server.missing
+                  ? '已停用或连接异常，下一轮将跳过'
+                  : [
+                      server.source === 'scenario' ? '场景绑定' : '临时选用',
+                      server.tools ? `${server.tools} 个工具` : '',
+                      server.approval ? `${server.approval} 个需确认` : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+              }}</small>
+            </div>
+            <Icon :name="server.source === 'scenario' ? 'lock' : 'check'" :size="13" />
+          </div>
+        </div>
+        <div class="context-section">
+          <h3>联网</h3>
+          <p class="small-text muted-text">
+            {{
+              extensionWeb
+                ? `${extensionWeb === 'scenario' ? '场景已开启' : '已临时开启'}：${
+                    chat.capabilityOptions && !chat.capabilityOptions.web.available
+                      ? chat.capabilityOptions.web.reason || '平台已关闭联网，下一轮将跳过'
+                      : '可搜索网络并读取网页，回答会注明来源'
+                  }`
+                : '未开启。可在输入框「扩展能力」中开启联网搜索。'
+            }}
+          </p>
+        </div>
+        <div class="context-section">
           <h3>本次执行边界</h3>
           <ul class="boundary-list">
             <li>
@@ -699,7 +857,11 @@ async function copyMessage(text: string) {
             <li v-if="linkedCode.length">
               <Icon name="check" :size="12" />关联代码只读，不读取 .git 与密钥文件
             </li>
-            <li><Icon name="check" :size="12" />工具范围由场景与策略共同限制</li>
+            <li><Icon name="check" :size="12" />工具范围由场景、临时选择与平台策略共同限制</li>
+            <li v-if="extensionServers.some((server) => server.approval)">
+              <Icon name="check" :size="12" />未标注只读的 MCP 工具每次调用前需你确认
+            </li>
+            <li v-if="extensionWeb"><Icon name="check" :size="12" />网页抓取仅访问公网地址，搜索按次计费</li>
             <li><Icon name="check" :size="12" />消息与执行事件持久化记录</li>
             <li><Icon name="lock" :size="12" />不开放任意 Shell 命令</li>
           </ul>
@@ -742,7 +904,7 @@ async function copyMessage(text: string) {
         <div v-else class="context-tip">
           <Icon name="info" :size="15" />
           <p>
-            提交后会记录场景与策略快照，后续维护不会静默改变已有会话；模型可在两轮之间切换，每条回复记录所用模型。
+            提交后会记录场景与策略快照，后续维护不会静默改变已有会话；模型、关联代码与扩展能力可在两轮之间调整，从下一轮起生效。
           </p>
         </div>
       </div>

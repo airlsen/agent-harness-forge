@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.database import get_session
 from ..services.session_service import session_service
+from ..services.capability_service import CapabilityChoice
 from ..services.file_service import file_service
 from ..services.runner_client import runner_client
 from ..utils.response import ResponseUtil
@@ -25,6 +26,8 @@ class Turn(BaseModel):
     modelId: int | None = Field(default=None, gt=0)
     # 关联代码（代码根目录下的项目名，只读）；不传沿用会话已保存的选择，传入则从本轮起生效。
     codeProjects: list[str] | None = Field(default=None, max_length=20)
+    # 聊天临时选择的扩展能力（Skill / MCP / 联网）；不传沿用会话已保存的选择，传入则从本轮起生效。
+    capabilities: CapabilityChoice | None = None
 
 
 class CodeProjects(BaseModel):
@@ -50,7 +53,11 @@ async def detail(session_id: int):
 async def turn(session_id: int, payload: Turn):
     return ResponseUtil.ok(
         await session_service.start(
-            session_id, payload.message, model_id=payload.modelId, code_projects=payload.codeProjects
+            session_id,
+            payload.message,
+            model_id=payload.modelId,
+            code_projects=payload.codeProjects,
+            capabilities=payload.capabilities,
         )
     )
 
@@ -59,6 +66,12 @@ async def turn(session_id: int, payload: Turn):
 async def code_projects(session_id: int, payload: CodeProjects):
     """修改会话的关联代码：执行中也可修改，从下一轮起生效。"""
     return ResponseUtil.ok(await session_service.set_code_projects(session_id, payload.codeProjects))
+
+
+@router.put("/{session_id}/capabilities")
+async def capabilities(session_id: int, payload: CapabilityChoice):
+    """修改会话临时选择的扩展能力：执行中也可修改，从下一轮起生效。"""
+    return ResponseUtil.ok(await session_service.set_capabilities(session_id, payload))
 
 
 @router.get("/{session_id}/events")
