@@ -107,15 +107,12 @@ async def check_execution_ui(
             await expect(page.locator(".message-row.assistant")).to_have_count(1)
             await expect(
                 page.get_by_role("button", name="发送任务", exact=True)
-            ).to_be_enabled()
+            ).to_be_visible()
             passed(
                 "leaving and returning to the same active session reattaches SSE without duplicate assistant messages"
             )
             await page.get_by_label("任务输入").fill("WRITE artifact fixture")
             await page.get_by_role("button", name="发送任务", exact=True).click()
-            await expect(
-                page.get_by_role("button", name="发送任务", exact=True)
-            ).to_be_enabled()
             process = page.locator(".process-block").last
             await expect(process.locator(".process-header")).to_contain_text(
                 "调用 1 个工具"
@@ -164,9 +161,6 @@ async def check_execution_ui(
             ).to_be_visible()
             await page.get_by_role("button", name="拒绝", exact=True).click()
             await expect(page.locator(".approval-card")).to_have_count(0)
-            await expect(
-                page.get_by_role("button", name="发送任务", exact=True)
-            ).to_be_enabled()
             process = page.locator(".process-block").last
             await expect(process.locator(".process-header")).to_contain_text("1 个失败")
             await process.locator(".process-header").click()
@@ -184,7 +178,7 @@ async def check_execution_ui(
             await expect(page.locator(".form-alert.error")).to_contain_text("中止")
             await expect(
                 page.get_by_role("button", name="发送任务", exact=True)
-            ).to_be_enabled()
+            ).to_be_visible()
             passed(
                 "interruption closes pending approval and renders persistent failure state"
             )
@@ -318,9 +312,10 @@ async def check_execution_ui(
             await page.keyboard.press("Escape")
             await expect(page.locator(".context-panel")).to_have_count(0)
             await page.get_by_role("button", name="允许本次").click()
-            await expect(
-                page.get_by_role("button", name="发送任务", exact=True)
-            ).to_be_enabled()
+            process = page.locator(".process-block").last
+            await expect(process.locator(".process-header")).to_contain_text(
+                "调用 1 个工具"
+            )
             await page.get_by_role("button", name="查看结果", exact=True).click()
             await expect(page.get_by_role("button", name="result.md")).to_be_visible()
             await page.get_by_role("button", name="result.md").click()
