@@ -23,6 +23,7 @@ const withTools = buildSystemPrompt({ identity: 'I' }, full);
 assert.ok(withTools.includes('必须调用 workspace_write'));
 assert.ok(withTools.includes('workspace_present'));
 assert.ok(withTools.includes('glob 按文件名模式查找'));
+assert.ok(withTools.includes('你可以调用 bash 执行受限的终端与 Git 命令'));
 assert.ok(withTools.endsWith('不可声称执行了未实际调用的工具。'));
 assert.ok(!buildSystemPrompt({ identity: 'I' }).includes('workspace_write'));
 const readOnly = workspaceGuide(['current_time', 'workspace_list', 'workspace_read', 'glob', 'grep']);
@@ -65,10 +66,10 @@ assert.deepEqual(sessionToolset({ builtin_tools: authoring, policy: { allowedToo
   skills: false,
   approval: [],
 });
-// 关联代码：与场景、策略无关，关联了项目就开放 glob/grep/read（只读）
+// 关联代码：与场景、策略无关，关联了项目就开放 glob/grep/read 与受控终端命令（只读）
 const codeOnly = sessionToolset({ policy: { allowedTools: ['current_time'] } }, true);
 assert.deepEqual(codeOnly, {
-  allowed: ['current_time', 'glob', 'grep', 'read'],
+  allowed: ['current_time', 'glob', 'grep', 'read', 'bash'],
   search: true,
   code: true,
   read: true,

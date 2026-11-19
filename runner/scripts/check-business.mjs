@@ -245,7 +245,7 @@ const bundle = {
     // 与「通用助手」一样只声明 current_time：文件读写与搜索由 Runner 基础能力补齐
     builtin_tools: ['current_time'],
     policy: {
-      allowedTools: ['current_time', 'workspace_list', 'workspace_read', 'workspace_write'],
+      allowedTools: ['current_time', 'workspace_list', 'workspace_read', 'workspace_write', 'bash'],
       // 旧版本保存的策略字段：已下线，必须被忽略（写入不再逐次确认）
       requireWriteApproval: true,
       requestTimeoutSeconds: 20,
@@ -506,7 +506,8 @@ try {
     assert.ok(system.includes('顶层：src/') && system.includes('# Alpha service'));
     const names = firstRequest.tools.map((tool) => tool.function.name);
     assert.ok(names.includes('read'));
-    for (const name of ['write', 'edit', 'apply_patch', 'read_image', 'bash'])
+    assert.ok(names.includes('bash'));
+    for (const name of ['write', 'edit', 'apply_patch', 'read_image'])
       assert.equal(names.includes(name), false, name);
   });
   check('grep searches an associated project by absolute path', () => {

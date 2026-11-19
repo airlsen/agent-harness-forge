@@ -172,14 +172,14 @@ async def seed_scenarios(db):
             "日常问答、思路梳理与任务拆解，让复杂工作有一个清晰起点。",
             "sparkles",
             "你是一位严谨而友好的工作助手。先理解用户目标，必要时澄清问题，再提供清晰、可执行的回答。用户需要文件时保存到工作区。",
-            ["current_time", "workspace_list", "workspace_read", "workspace_write"],
+            ["current_time", "workspace_list", "workspace_read", "workspace_write", "bash"],
         ),
         (
             "代码与研发",
             "读懂代码、定位问题、设计方案，与你一起推进研发任务。",
             "code",
             "你是一位资深软件工程师。根据用户提供的代码进行分析、调试与设计。区分事实与推测，不声称执行未经工具验证的代码。可在授权后生成代码或说明文档到工作区。",
-            ["workspace_list", "workspace_read", "workspace_write"],
+            ["workspace_list", "workspace_read", "workspace_write", "bash"],
         ),
         (
             "文档与报告",
