@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { Rule } from 'ant-design-vue/es/form';
+import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
 import { usePlatform } from '../../../stores/platform';
 import { MAX_SESSION_MCP, MAX_SESSION_SKILLS, useConversation } from '../../../stores/conversation';
 import { api, post, put, remove } from '../../../api/client';
@@ -245,6 +246,11 @@ function askDelete(scenario: Scenario) {
   toDelete.value = scenario;
   deleteOpen.value = true;
 }
+/** 卡片「更多」下拉：版本记录 / 删除 */
+function moreAction(key: string, scenario: Scenario) {
+  if (key === 'versions') void versions(scenario);
+  else if (key === 'delete') askDelete(scenario);
+}
 function cancelDelete() {
   if (!deleting.value) deleteOpen.value = false;
 }
@@ -353,12 +359,17 @@ async function versions(scenario: Scenario) {
           <p v-else>编辑场景，试运行通过后发布。</p>
         </div>
         <div class="page-heading-actions">
-          <a-button :aria-pressed="maintenance" @click="toggleMaintenance">
+          <!-- 使用目录：「维护场景」为主按钮；维护模式下让位给「新建场景」，避免两个主按钮并排 -->
+          <a-button
+            :type="maintenance ? 'default' : 'primary'"
+            :aria-pressed="maintenance"
+            @click="toggleMaintenance"
+          >
             <template #icon><Icon :name="maintenance ? 'grid' : 'settings'" :size="16" /></template
             >{{ maintenance ? '返回使用目录' : '维护场景' }}
           </a-button>
           <a-button v-if="maintenance" type="primary" @click="edit()">
-            <template #icon><Icon name="plus" :size="17" /></template>新建场景
+            <template #icon><Icon name="plus" :size="16" /></template>新建场景
           </a-button>
         </div>
       </div>
@@ -383,7 +394,7 @@ async function versions(scenario: Scenario) {
           aria-label="搜索场景"
           allow-clear
         >
-          <template #prefix><Icon name="search" :size="17" /></template>
+          <template #prefix><Icon name="search" :size="15" /></template>
         </a-input>
       </div>
       <div v-if="app.loading" class="loading-inline" role="status"><a-spin size="small" />正在读取场景…</div>
@@ -414,85 +425,103 @@ async function versions(scenario: Scenario) {
         </a-button>
       </a-empty>
       <div v-else class="scenario-grid enterprise-scenario-grid">
-        <article
-          v-for="scenario in filtered"
-          :key="scenario.id"
-          class="scenario-card enterprise-scenario-card"
-        >
-          <div class="scenario-card-top">
+        <article v-for="scenario in filtered" :key="scenario.id" class="scenario-card">
+          <header class="scenario-card-head">
             <span :class="['scene-icon', scenario.payload.icon]"
-              ><Icon :name="scenario.payload.icon" :size="24" /></span
-            ><a-tag
+              ><Icon :name="scenario.payload.icon" :size="20"
+            /></span>
+            <div class="scenario-card-heading">
+              <h2 :title="scenario.payload.name">{{ scenario.payload.name }}</h2>
+              <p v-if="maintenance" class="scenario-card-sub">
+                <span>{{ scenarioSource(scenario) }}</span><span>v{{ scenario.current_version }}</span
+                ><span :class="['scenario-card-test', { 'is-passed': scenario.tested }]"
+                  ><Icon :name="scenario.tested ? 'check' : 'circle'" :size="12" />{{
+                    scenario.tested ? '试运行通过' : '未试运行'
+                  }}</span
+                >
+              </p>
+            </div>
+            <a-tag
+              class="scenario-card-status"
               :color="scenario.status === 'published' ? 'success' : undefined"
-              class="scenario-status-tag"
+              :bordered="false"
               >{{ scenarioState(scenario) }}</a-tag
-            ><a-button
-              v-if="maintenance && scenario.space !== 'official'"
-              type="text"
-              class="icon-button delete-scenario"
-              :aria-label="`删除场景 ${scenario.payload.name}`"
-              title="删除场景"
-              @click="askDelete(scenario)"
             >
-              <template #icon><Icon name="trash" :size="15" /></template>
-            </a-button>
-          </div>
-          <h2>{{ scenario.payload.name }}</h2>
-          <p>{{ scenario.payload.description || '还没有添加场景描述。' }}</p>
-          <div v-if="cardLabels(scenario.payload).length" class="scenario-capabilities">
-            <a-tag v-for="item in cardLabels(scenario.payload).slice(0, 2)" :key="item.key"
-              ><Icon :name="item.icon" :size="12" />{{ item.label }}</a-tag
-            ><a-tag v-if="cardLabels(scenario.payload).length > 2"
+          </header>
+          <p class="scenario-card-desc">{{ scenario.payload.description || '还没有添加场景描述。' }}</p>
+          <div v-if="cardLabels(scenario.payload).length" class="scenario-card-tags">
+            <a-tag v-for="item in cardLabels(scenario.payload).slice(0, 2)" :key="item.key" :bordered="false"
+              ><Icon :name="item.icon" :size="12" /><span>{{ item.label }}</span></a-tag
+            ><a-tag v-if="cardLabels(scenario.payload).length > 2" :bordered="false"
               >+{{ cardLabels(scenario.payload).length - 2 }}</a-tag
             >
           </div>
-          <div v-if="maintenance" class="scenario-card-meta">
-            <span>{{ scenarioSource(scenario) }}<i>·</i>v{{ scenario.current_version }}</span
-            ><span :class="{ 'verified-text': scenario.tested }"
-              ><Icon :name="scenario.tested ? 'check' : 'circle'" :size="12" />{{
-                scenario.tested ? '试运行通过' : '未试运行'
-              }}</span
-            >
-          </div>
-          <div class="scenario-card-actions">
-            <a-button type="text" size="small" @click="openDetail(scenario)">详情</a-button
-            ><a-button type="link" class="scenario-use" @click="useScenario(scenario)">
-              {{ isAvailableScenario(scenario) ? '开始' : '预览草稿' }}<Icon name="arrow" :size="15" />
-            </a-button>
-          </div>
-          <div v-if="maintenance" class="scenario-maintenance-actions">
-            <a-button
-              size="small"
-              :disabled="busy"
-              @click="scenario.space === 'official' ? copy(scenario) : edit(scenario)"
-            >
-              <template #icon
-                ><Icon :name="scenario.space === 'official' ? 'copy' : 'edit'" :size="13" /></template
-              >{{ scenario.space === 'official' ? '复制为草稿' : '编辑' }}
-            </a-button>
-            <a-button type="text" size="small" @click="versions(scenario)">
-              版本 v{{ scenario.current_version }}
-            </a-button>
-            <a-button
-              v-if="scenario.space !== 'official'"
-              type="text"
-              size="small"
-              :disabled="testing !== null"
-              :loading="testing === scenario.id"
-              @click="test(scenario)"
-            >
-              <template #icon><Icon name="play" :size="13" /></template>试运行
-            </a-button>
-            <a-button
-              v-if="scenario.space !== 'official' && scenario.status !== 'published' && scenario.tested"
-              type="text"
-              size="small"
-              :disabled="busy"
-              @click="publish(scenario)"
-            >
-              发布
-            </a-button>
-          </div>
+          <footer class="scenario-card-footer">
+            <!-- 使用目录：详情（文字按钮）+ 开始（主题色主按钮，图标在左） -->
+            <template v-if="!maintenance">
+              <a-button type="text" size="small" @click="openDetail(scenario)">详情</a-button>
+              <a-button type="primary" size="small" @click="useScenario(scenario)">
+                <template #icon
+                  ><Icon :name="isAvailableScenario(scenario) ? 'play' : 'eye'" :size="14"
+                /></template>
+                {{ isAvailableScenario(scenario) ? '开始' : '预览草稿' }}
+              </a-button>
+            </template>
+            <!-- 维护模式：编辑 / 试运行 / 发布 在左；详情与「更多」在右，版本记录、删除收进下拉 -->
+            <template v-else>
+              <div class="scenario-card-ops">
+                <a-button
+                  size="small"
+                  :disabled="busy"
+                  @click="scenario.space === 'official' ? copy(scenario) : edit(scenario)"
+                >
+                  <template #icon
+                    ><Icon :name="scenario.space === 'official' ? 'copy' : 'edit'" :size="14"
+                  /></template>
+                  {{ scenario.space === 'official' ? '复制为草稿' : '编辑' }}
+                </a-button>
+                <a-button
+                  v-if="scenario.space !== 'official'"
+                  type="text"
+                  size="small"
+                  :disabled="testing !== null"
+                  :loading="testing === scenario.id"
+                  @click="test(scenario)"
+                >
+                  <template #icon><Icon name="play" :size="14" /></template>试运行
+                </a-button>
+                <a-button
+                  v-if="scenario.space !== 'official' && scenario.status !== 'published' && scenario.tested"
+                  type="text"
+                  size="small"
+                  :disabled="busy"
+                  @click="publish(scenario)"
+                >
+                  <template #icon><Icon name="check" :size="14" /></template>发布
+                </a-button>
+              </div>
+              <a-button type="text" size="small" @click="openDetail(scenario)">详情</a-button>
+              <a-dropdown :trigger="['click']" placement="bottomRight">
+                <a-button
+                  type="text"
+                  size="small"
+                  class="scenario-card-more"
+                  :aria-label="`更多操作 ${scenario.payload.name}`"
+                  title="更多操作"
+                >
+                  <template #icon><Icon name="more" :size="16" /></template>
+                </a-button>
+                <template #overlay>
+                  <a-menu @click="(info: MenuInfo) => moreAction(String(info.key), scenario)">
+                    <a-menu-item key="versions">版本记录 v{{ scenario.current_version }}</a-menu-item>
+                    <a-menu-item v-if="scenario.space !== 'official'" key="delete" danger
+                      >删除场景</a-menu-item
+                    >
+                  </a-menu>
+                </template>
+              </a-dropdown>
+            </template>
+          </footer>
         </article>
       </div>
     </div>
@@ -914,44 +943,25 @@ async function versions(scenario: Scenario) {
   gap: 8px;
 }
 .scenarios-page .enterprise-collection-toolbar.scenario-collection-toolbar {
-  min-height: 40px;
+  min-height: 32px;
   margin-bottom: 24px;
 }
 
 /* ============ 页头动作按钮 ============ */
+/* 尺寸、圆角、配色全部沿用 antd 默认；只补图标间距：
+   icon 插槽里是 ForgeIcon 裸 <svg>，不是 .anticon，antd 不会给它和文字之间留空 */
 .page-heading-actions :deep(.ant-btn) {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 6px;
-  min-height: 40px;
-  height: 40px;
-  padding-inline: 14px;
-  border-radius: 11px;
-  font-size: 12px;
-  font-weight: 550;
 }
-/* 这里塞的是 ForgeIcon 裸 <svg>，没有 antd .anticon 的 vertical-align 基线修正，补一层 */
 .page-heading-actions :deep(.ant-btn > svg) {
-  display: inline-block;
   flex-shrink: 0;
-}
-.page-heading-actions :deep(.ant-btn-default) {
-  color: var(--text-secondary);
-  background: var(--surface-card);
-  border-color: var(--border-default);
-}
-.page-heading-actions :deep(.ant-btn-default[aria-pressed='true']) {
-  color: var(--color-brand-active);
-  background: var(--surface-selected);
-  border-color: var(--color-brand-border);
-}
-.page-heading-actions :deep(.ant-btn-primary) {
-  font-weight: 600;
 }
 
 /* ============ 场景筛选：antd Segmented ============ */
-/* 浅灰底槽 + 白色浮起的选中项；只有选中文字用主题色，数量保持中性灰 */
+/* 浅灰底槽 + 白色浮起的选中项；只有选中文字用主题色，数量保持中性灰。
+   选中 / 未选中的字重与数量盒子尺寸完全一致，切换时选项宽度不变，只有白色滑块平移。 */
 .scenario-filter {
   flex: 0 1 auto;
   max-width: 100%;
@@ -991,133 +1001,198 @@ async function versions(scenario: Scenario) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
-  padding: 0 14px;
+  /* 26px 选项 + 上下 3px 底槽 = 32px，与 antd 默认按钮 / 输入框齐平 */
+  min-height: 26px;
+  padding: 0 12px;
   font-size: 13px;
   font-weight: 500;
-  line-height: 34px;
+  line-height: 26px;
   white-space: nowrap;
 }
-.scenario-filter :deep(.ant-segmented-item-selected .ant-segmented-item-label) {
-  font-weight: 600;
-}
-.scenario-filter :deep(.ant-segmented-item:focus-within) {
+/* 鼠标点击不出现描边；只在键盘 Tab 聚焦时给出聚焦提示（无障碍需要） */
+.scenario-filter :deep(.ant-segmented-item:has(.ant-segmented-item-input:focus-visible)) {
   outline: 2px solid var(--border-focus);
   outline-offset: 1px;
 }
+/* 数量：两种状态共用同一个胶囊盒子，未选中时底色透明，选中时铺浅灰 */
 .scenario-filter-count {
+  display: inline-grid;
+  min-width: 20px;
+  height: 18px;
+  place-items: center;
+  padding: 0 6px;
+  border-radius: 999px;
   color: var(--color-text-secondary);
+  background: transparent;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
   line-height: 1;
+  transition: background-color 150ms ease;
 }
-/* 选中项的数量收进浅灰小胶囊 */
 .scenario-filter :deep(.ant-segmented-item-selected) .scenario-filter-count {
-  display: inline-grid;
-  min-width: 22px;
-  height: 20px;
-  place-items: center;
-  padding: 0 6px;
-  border-radius: 999px;
   background: var(--surface-muted);
-  font-weight: 600;
 }
 
-/* ============ 搜索框 ============ */
+/* ============ 搜索框：antd 默认外观（圆角 / 边框 / 聚焦光圈），只定宽度 ============ */
 .scenario-search {
   width: 240px;
   flex-shrink: 0;
-  height: 40px;
-  border-radius: 999px;
-  background: var(--surface-card);
-  border-color: var(--border-default);
-  box-shadow: 0 1px 3px #20273308;
 }
 .scenario-search :deep(.ant-input) {
-  min-height: 0; /* 中和 style.css 全局 :where(input){min-height:41px} */
-  font-size: 13px;
+  min-height: 0; /* 中和 style.css 全局 :where(input){min-height:41px}，否则输入框被撑高 */
 }
-.scenario-search:focus-within {
-  border-color: var(--accent-focus);
-  box-shadow: 0 0 0 3px var(--accent-focus-ring);
+.scenario-search :deep(.ant-input-prefix) {
+  color: var(--color-text-tertiary);
 }
 
-/* ============ 卡片：状态 / 能力 / 动作 ============ */
-/* 状态标签：发布=success，预置/草稿=中性 */
-.scenario-card-top :deep(.ant-tag) {
-  margin-left: auto;
-  margin-inline-end: 0;
-  border-radius: 999px;
-  padding: 0 9px;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 20px;
-  color: var(--color-neutral-status-text);
-  background: var(--color-neutral-status-bg);
-  border-color: var(--color-neutral-status-border);
-}
-.scenario-card-top :deep(.ant-tag-success) {
-  color: var(--color-success-text);
-  background: var(--color-success-bg);
-  border-color: var(--color-success-border);
-}
-/* 能力标签 */
-.scenario-capabilities :deep(.ant-tag) {
-  margin-inline-end: 0;
-  padding: 4px 8px;
+/* ============ 场景卡片：扁平，无投影；hover 边框变主题色并上浮 2px ============ */
+.scenario-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 16px 16px 0;
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
-  color: var(--color-text-secondary);
-  background: var(--surface-subtle-bg);
-  border-color: var(--border-light);
-  font-size: 10px;
-  line-height: 1.4;
+  box-shadow: none;
+  transition:
+    transform 170ms ease,
+    border-color 170ms ease;
 }
-/* 删除按钮（卡片右上，默认隐藏） */
-.delete-scenario {
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  margin-left: 0;
-  color: var(--text-secondary);
-  opacity: 0;
+.scenario-card:hover,
+.scenario-card:has(:focus-visible) {
+  transform: translateY(-2px);
+  border-color: var(--color-brand);
+  box-shadow: none;
 }
-.scenario-card:hover .delete-scenario,
-.scenario-card:focus-within .delete-scenario {
-  opacity: 1;
+.scenario-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
 }
-/* 动作按钮（详情 / 开始） */
-.scenario-card-actions :deep(.ant-btn) {
-  height: auto;
-  padding: 4px 6px;
-  font-size: 11px;
+.scenario-card .scene-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
 }
-.scenario-card-actions .scenario-use {
+.scenario-card-heading {
+  flex: 1;
+  min-width: 0;
+}
+.scenario-card-heading h2 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 36px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 维护模式下标题收成两行：标题 + 元信息，整体与 36px 图标同高 */
+.scenario-card-heading:has(.scenario-card-sub) h2 {
+  line-height: 20px;
+}
+.scenario-card-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  margin: 2px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+}
+.scenario-card-sub > span + span::before {
+  content: '·';
+  margin-right: 8px;
+}
+.scenario-card-test {
   display: inline-flex;
   align-items: center;
+  gap: 3px;
+}
+.scenario-card-test.is-passed {
+  color: var(--color-success-text);
+}
+.scenario-card-status {
+  flex-shrink: 0;
+  margin: 7px 0 0;
+}
+.scenario-card-desc {
+  /* 固定两行：描述长短不一时同一行卡片仍等高 */
+  display: -webkit-box;
+  flex: 0 0 auto;
+  min-height: calc(13px * 1.7 * 2);
+  margin: 12px 0 0;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.scenario-card-tags {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  height: auto;
-  margin-left: auto;
-  padding: 7px 12px;
-  border-radius: 10px;
-  color: var(--color-brand-active);
-  background: var(--color-brand-muted);
-  border: 1px solid var(--color-brand-border);
-  font-size: 11px;
-  font-weight: 650;
+  margin-top: 12px;
 }
-.scenario-card-actions .scenario-use:hover {
-  color: var(--color-brand-active);
-  background: var(--color-brand-subtle);
-  border-color: var(--brand-300);
+.scenario-card-tags :deep(.ant-tag) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  margin: 0;
 }
-/* 维护动作条 */
-.scenario-maintenance-actions :deep(.ant-btn) {
-  height: auto;
-  min-height: 29px;
-  padding: 5px 9px;
-  border-radius: 8px;
-  font-size: 10px;
+.scenario-card-tags :deep(.ant-tag > span) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scenario-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 48px;
+  margin-top: auto;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-light);
+}
+/* 底栏 margin-top:auto 把它压到卡片底部；紧挨底栏的内容块再留 16px，保证最小间距 */
+.scenario-card > :has(+ .scenario-card-footer) {
+  margin-bottom: 16px;
+}
+.scenario-card-ops {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-right: auto;
+}
+/* icon 插槽里是 ForgeIcon 裸 <svg>，不是 .anticon，antd 不会补图标与文字的间距 */
+.scenario-card-footer :deep(.ant-btn) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.scenario-card-footer :deep(.ant-btn-text:not(:disabled)) {
+  color: var(--color-text-secondary);
+}
+.scenario-card-footer :deep(.ant-btn-text:not(:disabled):hover) {
+  color: var(--color-text-primary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .scenario-card {
+    transition: none;
+  }
+  .scenario-card:hover,
+  .scenario-card:has(:focus-visible) {
+    transform: none;
+  }
 }
 
 /* ============ 空态：独立布局，避免公共 empty 的 margin / :last-child 规则叠加 ============ */
@@ -1179,10 +1254,6 @@ async function versions(scenario: Scenario) {
   overflow-wrap: anywhere;
 }
 .scenario-empty :deep(.ant-btn) {
-  height: 40px;
-  padding-inline: 16px;
-  border-radius: var(--radius-md);
-  font-size: 13px;
   box-shadow: none;
 }
 @media (max-width: 700px) {
