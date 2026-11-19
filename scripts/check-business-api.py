@@ -132,19 +132,34 @@ class GatewayFixture(BaseHTTPRequestHandler):
                     "usage": {"prompt_tokens": 100, "completion_tokens": 10},
                 },
             ]
-        raw = (
-            "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks)
-            + "data: [DONE]\n\n"
-        ).encode()
+        frames = [f"data: {json.dumps(chunk)}\n\n".encode() for chunk in chunks]
+        raw = b"".join(frames) + b"data: [DONE]\n\n"
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         if "HOLD" in text:
-            boundary = raw.find(b"\n\n") + 2
+            # Pause after visible assistant text starts so the browser can reliably
+            # observe the in-progress state before the fixture completes the turn.
+            content_index = next(
+                (
+                    index
+                    for index, chunk in enumerate(chunks)
+                    if any(
+                        choice.get("delta", {}).get("content")
+                        for choice in chunk.get("choices", [])
+                    )
+                ),
+                None,
+            )
+            boundary = (
+                sum(len(frame) for frame in frames[: content_index + 1])
+                if content_index is not None
+                else len(frames[0])
+            )
             self.wfile.write(raw[:boundary])
             self.wfile.flush()
-            time.sleep(3)
+            time.sleep(8 if content_index is not None else 3)
             self.wfile.write(raw[boundary:])
         else:
             self.wfile.write(raw)

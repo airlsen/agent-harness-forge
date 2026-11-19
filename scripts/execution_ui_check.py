@@ -102,7 +102,7 @@ async def check_execution_ui(
                 .click()
             )
             await expect(page.locator(".message-main .markdown-body")).to_contain_text(
-                "Not a real model.", timeout=10000
+                "Not a real model.", timeout=20000
             )
             await expect(page.locator(".message-row.assistant")).to_have_count(1)
             await expect(
