@@ -2145,34 +2145,6 @@ button:disabled:hover {
 .search-field input::placeholder {
   color: var(--color-text-secondary);
 }
-.scenario-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px;
-}
-.scenario-card {
-  background: #fff;
-  border: 1px solid var(--surface-shell);
-  border-radius: 10px;
-  padding: 22px 21px 0;
-  box-shadow: 0 2px 3px #26384e02;
-  transition:
-    border-color 0.2s,
-    box-shadow 0.2s;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.scenario-card:hover {
-  border-color: var(--color-brand-subtle);
-  box-shadow: 0 5px 20px #9a7d6208;
-}
-.scenario-card-top {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  margin-bottom: 20px;
-}
 .scene-icon {
   height: 44px;
   width: 44px;
@@ -2210,88 +2182,6 @@ button:disabled:hover {
   border-color: var(--surface-muted);
   color: var(--color-success-text);
 }
-.scenario-card-top > .tag {
-  margin-left: auto;
-  font-size: 10px;
-  margin-top: 2px;
-}
-.delete-scenario {
-  height: 24px;
-  width: 24px;
-  opacity: 0;
-  margin-left: 0;
-}
-.scenario-card:hover .delete-scenario {
-  opacity: 1;
-}
-.scenario-card > h2 {
-  font-size: 17px;
-  font-weight: 550;
-  color: var(--color-text-secondary);
-  margin-bottom: 10px;
-  letter-spacing: -0.2px;
-}
-.scenario-card > p {
-  font-size: 11px;
-  line-height: 1.9;
-  color: var(--color-text-secondary);
-  min-height: 62px;
-  flex: 1;
-}
-.scenario-capabilities {
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-  margin: 19px 0;
-}
-.scenario-capabilities > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--surface-subtle-bg);
-  border: 1px solid var(--surface-shell);
-  border-radius: 4px;
-  color: var(--color-text-secondary);
-  font-size: 10px;
-  padding: 3px 5px;
-}
-.scenario-card-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 10px;
-  color: var(--color-text-secondary);
-  margin-bottom: 16px;
-}
-.scenario-card-meta > button {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  color: var(--color-text-secondary);
-  font-size: 10px;
-  padding: 0;
-}
-.scenario-card-meta > span {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.scenario-card-meta .verified-text {
-  color: var(--color-success-text);
-}
-.scenario-card-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border-top: 1px solid var(--surface-shell);
-  padding: 12px 0;
-  margin-top: auto;
-}
-.scenario-card-actions > .button.small {
-  font-size: 10px;
-  min-height: 28px;
-  padding: 4px 8px;
-}
 .scenario-use {
   display: flex;
   align-items: center;
@@ -2325,109 +2215,11 @@ button:disabled:hover {
   place-items: center;
   margin-bottom: 9px;
 }
-.capability-summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  border: 1px solid var(--surface-shell);
-  background: white;
-  border-radius: 9px;
-  margin-bottom: 32px;
-  padding: 24px 0;
-}
-.capability-summary > div {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 0 23px;
-  border-left: 1px solid var(--surface-shell);
-  position: relative;
-}
-.capability-summary > div:first-child {
-  border: 0;
-}
 .metric-icon {
   position: absolute;
   top: 0;
   right: 20px;
   color: var(--color-text-secondary);
-}
-.capability-summary strong {
-  font-size: 22px;
-  color: var(--color-text-secondary);
-  font-weight: 500;
-  line-height: 1.7;
-}
-.capability-summary div > span:last-child {
-  font-size: 10px;
-  color: var(--color-text-secondary);
-}
-.plugin-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 22px;
-}
-.plugin-card {
-  border: 1px solid var(--surface-shell);
-  border-radius: 9px;
-  background: white;
-  padding: 24px 24px 0;
-  min-width: 0;
-}
-.plugin-card-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 21px;
-}
-.plugin-card > h2 {
-  font-size: 18px;
-  font-weight: 550;
-  color: var(--color-text-secondary);
-  margin-bottom: 6px;
-}
-.plugin-card > code {
-  font-size: 10px;
-  color: var(--color-text-secondary);
-  overflow-wrap: anywhere;
-}
-.plugin-card > p {
-  font-size: 11px;
-  line-height: 2;
-  color: var(--color-text-secondary);
-  margin: 17px 0;
-}
-.plugin-extension-points {
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-  margin: 18px 0 25px;
-}
-.plugin-extension-points > span {
-  font-size: 10px;
-  border: 1px solid var(--surface-shell);
-  background: var(--surface-subtle-bg);
-  color: var(--color-text-secondary);
-  border-radius: 4px;
-  padding: 3px 6px;
-  font-family: monospace;
-}
-.plugin-card > footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 0;
-  border-top: 1px solid var(--surface-shell);
-  font-size: 10px;
-  color: var(--color-text-secondary);
-}
-.plugin-card footer > button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  padding: 0;
 }
 .tools-list {
   display: flex;
@@ -2487,11 +2279,6 @@ button:disabled:hover {
 .detail-block > code {
   color: var(--color-text-secondary);
   font-size: 12px;
-}
-.chip-list {
-  display: flex;
-  gap: 7px;
-  flex-wrap: wrap;
 }
 /* Settings and forms */
 .settings-layout {
@@ -3811,15 +3598,6 @@ table td > .tag {
   .page-content {
     padding: 40px 45px;
   }
-  .scenario-grid {
-    gap: 24px;
-  }
-  .scenario-card {
-    padding: 26px 25px 0;
-  }
-  .scenario-card > p {
-    font-size: 12px;
-  }
   .settings-layout {
     grid-template-columns: minmax(0, 1fr) 330px;
   }
@@ -3904,9 +3682,6 @@ table td > .tag {
   }
   .page-content {
     padding: 30px 28px;
-  }
-  .scenario-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .settings-layout {
     grid-template-columns: minmax(0, 1fr) 262px;
@@ -4016,12 +3791,6 @@ table td > .tag {
   .scenario-feature > div:first-child {
     max-width: 100%;
   }
-  .capability-summary > div {
-    padding-inline: 18px;
-  }
-  .capability-summary strong {
-    font-size: 19px;
-  }
   .metric-icon {
     display: none;
   }
@@ -4031,15 +3800,6 @@ table td > .tag {
   .tools-list h2 code {
     display: block;
     margin-top: 5px;
-  }
-  .plugin-card {
-    padding: 21px 19px 0;
-  }
-  .plugin-card > h2 {
-    font-size: 16px;
-  }
-  .plugin-card > p {
-    font-size: 10px;
   }
   .topbar-actions {
     gap: 13px;
@@ -4155,15 +3915,6 @@ table td > .tag {
   }
   .page-content {
     padding: 30px;
-  }
-  .scenario-grid {
-    gap: 17px;
-  }
-  .capability-summary {
-    padding-block: 20px;
-  }
-  .capability-summary div > span:last-child {
-    font-size: 10px;
   }
   .chat-scroll.is-welcome {
     padding-top: 26px;
@@ -4726,42 +4477,9 @@ table td > .tag {
     font-size: 10px;
     min-height: 31px;
   }
-  .scenario-grid {
-    grid-template-columns: 1fr;
-    gap: 15px;
-  }
-  .scenario-card {
-    padding: 21px 19px 0;
-  }
-  .scenario-card > h2 {
-    font-size: 17px;
-  }
-  .scenario-card > p {
-    font-size: 11px;
-    min-height: 40px;
-  }
-  .scenario-card-top {
-    margin-bottom: 17px;
-  }
-  .scenario-capabilities {
-    margin-top: 17px;
-    margin-bottom: 17px;
-  }
   .scene-icon {
     width: 41px;
     height: 41px;
-  }
-  .delete-scenario {
-    opacity: 1;
-  }
-  .scenario-card-meta {
-    font-size: 10px;
-  }
-  .scenario-card-meta > button {
-    font-size: 10px;
-  }
-  .scenario-card-actions > .button.small {
-    font-size: 10px;
   }
   .scenario-use {
     font-size: 10px;
@@ -4774,43 +4492,6 @@ table td > .tag {
   .page-note svg {
     height: 12px;
     width: 12px;
-  }
-  .capability-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 21px 0;
-    padding: 19px 0;
-    margin-bottom: 24px;
-  }
-  .capability-summary > div {
-    padding: 0 17px;
-  }
-  .capability-summary > div:nth-child(3) {
-    border: 0;
-  }
-  .capability-summary strong {
-    font-size: 18px;
-  }
-  .capability-summary div > span:last-child {
-    font-size: 10px;
-  }
-  .plugin-grid {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-  .plugin-card {
-    padding: 21px 20px 0;
-  }
-  .plugin-card > h2 {
-    font-size: 17px;
-  }
-  .plugin-card > p {
-    font-size: 10px;
-  }
-  .plugin-extension-points > span {
-    font-size: 10px;
-  }
-  .plugin-card > code {
-    font-size: 10px;
   }
   .tools-list > article {
     padding: 17px 14px;
@@ -5289,16 +4970,6 @@ table td > .tag {
 .page-heading p {
   font-size: 13px;
 }
-.scenario-card > p,
-.plugin-card > p {
-  font-size: 13px;
-}
-.scenario-card-meta,
-.scenario-card-meta > button,
-.scenario-capabilities > span {
-  font-size: 11px;
-}
-.scenario-card-actions > .button.small,
 .scenario-use {
   font-size: 12px;
 }
@@ -5457,18 +5128,11 @@ textarea::placeholder {
   .page-heading p {
     font-size: 12px;
   }
-  .scenario-card > p {
-    font-size: 12px;
-  }
   .scenario-feature p {
     font-size: 12px;
   }
-  .scenario-card-actions > .button.small,
   .scenario-use {
     font-size: 11px;
-  }
-  .scenario-card-meta {
-    font-size: 10px;
   }
   .page-heading .eyebrow {
     font-size: 9px;

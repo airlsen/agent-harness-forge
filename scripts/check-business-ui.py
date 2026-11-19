@@ -514,7 +514,7 @@ async def main():
             ).click()
             await page.get_by_role("menuitem", name="删除场景").click()
             await expect(
-                page.get_by_role("dialog", name="删除场景确认")
+                page.get_by_role("dialog", name=re.compile(r"^删除「"))
             ).to_be_visible()
             await page.get_by_role("button", name="确认删除", exact=True).click()
             await expect(
@@ -571,15 +571,17 @@ async def main():
             )
             await page.set_viewport_size({"width": 390, "height": 844})
             await page.get_by_role("button", name="上传插件包", exact=True).click()
-            upload_dialog = page.get_by_role("dialog", name="上传受管插件包")
+            upload_dialog = page.get_by_role("dialog", name="上传插件包")
             await expect(upload_dialog).to_be_visible()
-            await expect(page.locator(".plugin-upload-dropzone")).to_be_visible()
+            await expect(
+                page.locator(".plugin-upload-content .ant-upload-drag")
+            ).to_be_visible()
             upload_footer = page.locator(".plugin-upload-footer")
             await expect(upload_footer).to_be_visible()
             await expect(upload_footer).to_have_css("flex-direction", "column")
             await expect(upload_footer).to_have_css("align-items", "stretch")
             await screenshot("plugin-upload-mobile.png")
-            file_input = page.locator(".plugin-file-picker input")
+            file_input = page.locator(".plugin-upload-content input[type=file]")
             submit_upload = page.get_by_role("button", name="上传并校验", exact=True)
             await file_input.set_input_files(
                 {
@@ -622,13 +624,18 @@ async def main():
             check(
                 "file validation and API rejection remain visible without closing the upload dialog"
             )
-            mobile_box = await upload_dialog.bounding_box()
+            # antd Modal 的 role=dialog 落在铺满视口的 .ant-modal-wrap 上，量面板本身
+            mobile_box = await upload_dialog.locator(
+                ".ant-modal-content"
+            ).bounding_box()
             assert mobile_box and mobile_box["x"] >= 0 and mobile_box["y"] >= 0
             assert mobile_box["x"] + mobile_box["width"] <= 391
             assert mobile_box["y"] + mobile_box["height"] <= 845
             await screenshot("plugin-upload-mobile-error.png")
             await page.set_viewport_size({"width": 320, "height": 600})
-            compact_box = await upload_dialog.bounding_box()
+            compact_box = await upload_dialog.locator(
+                ".ant-modal-content"
+            ).bounding_box()
             assert compact_box and compact_box["x"] >= 0 and compact_box["y"] >= 0
             assert compact_box["x"] + compact_box["width"] <= 321
             assert compact_box["y"] + compact_box["height"] <= 601
@@ -662,31 +669,29 @@ async def main():
                 .filter(has_text="技能")
                 .click()
             )
-            await expect(page.locator(".enterprise-empty")).to_contain_text(
-                "还没有技能"
-            )
+            await expect(page.locator(".catalog-empty")).to_contain_text("还没有技能")
             await expect(
-                page.locator(".enterprise-empty").get_by_role("link", name="新建技能")
+                page.locator(".catalog-empty").get_by_role("link", name="新建技能")
             ).to_be_visible()
             await (
                 page.locator(".catalog-filter .ant-segmented-item")
                 .filter(has_text="MCP 服务")
                 .click()
             )
-            await expect(page.locator(".enterprise-empty")).to_contain_text(
+            await expect(page.locator(".catalog-empty")).to_contain_text(
                 "还没有 MCP 服务"
             )
             await expect(
-                page.locator(".enterprise-empty").get_by_role(
+                page.locator(".catalog-empty").get_by_role(
                     "button", name="添加 MCP 服务"
                 )
             ).to_be_visible()
             await page.reload()
-            await expect(page.locator(".enterprise-empty")).to_contain_text(
+            await expect(page.locator(".catalog-empty")).to_contain_text(
                 "还没有 MCP 服务"
             )
             await page.get_by_role("button", name="添加 MCP 服务").click()
-            mcp_dialog = page.get_by_role("dialog", name="导入 MCP 服务配置")
+            mcp_dialog = page.get_by_role("dialog", name="导入 MCP 服务")
             await expect(mcp_dialog).to_be_visible()
             await page.locator("#mcp-import-json").fill("{")
             await mcp_dialog.get_by_role("button", name="导入配置").click()

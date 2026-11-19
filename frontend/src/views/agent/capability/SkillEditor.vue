@@ -2,8 +2,9 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { onBeforeRouteLeave, useRoute } from 'vue-router';
 import { api, apiFetch, post, put } from '../../../api/client';
-import DialogShell from '../../../components/DialogShell.vue';
 import Icon from '../../../components/ForgeIcon.vue';
+import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
+import CatalogFilter from '../../../components/catalog/CatalogFilter.vue';
 import { usePlatform } from '../../../stores/platform';
 import { confirm } from '../../../utils/feedback';
 import type {
@@ -31,10 +32,8 @@ const error = ref('');
 const prompt = ref('');
 const streamingText = ref('');
 const assistantChange = ref('');
-const pendingPublish = ref(false);
-const pendingRestore = ref<SkillRevision | null>(null);
 const previewRevision = ref<SkillRevision | null>(null);
-const promptInput = ref<HTMLTextAreaElement | null>(null);
+const promptInput = ref<{ focus: () => void } | null>(null);
 
 const skillId = computed(() => Number(route.params.id));
 const canPublish = computed(() =>
@@ -45,6 +44,19 @@ const saveState = computed(() => {
   if (dirty.value) return '有未保存修改';
   return skill.value?.updatedAt ? `已保存 · ${formatDate(skill.value.updatedAt)}` : '草稿已保存';
 });
+const panelOptions = computed(() => [
+  { value: 'content' as const, label: '内容' },
+  { value: 'references' as const, label: '参考资料', count: skill.value?.referenceFiles?.length ?? 0 },
+  { value: 'history' as const, label: '版本历史', count: revisions.value.length },
+]);
+const referenceKey = (file: { path: string }) => file.path;
+const revisionKey = (revision: SkillRevision) => revision.id;
+function revisionSource(source: string) {
+  if (source === 'assistant') return '助手更新';
+  if (source === 'publish') return '正式发布';
+  if (source === 'restore') return '恢复修订';
+  return '手动编辑';
+}
 const starterPrompts = computed(() => {
   const label = skill.value?.name || '这个 Skill';
   const description = skill.value?.description ? `，用途是：${skill.value.description}` : '';
@@ -127,16 +139,20 @@ async function save() {
     saving.value = false;
   }
 }
-function requestPublish() {
+async function requestPublish() {
   if (!canPublish.value) return;
-  pendingPublish.value = true;
+  const ok = await confirm({
+    title: '发布新的正式版本？',
+    content: '将以当前草稿创建不可变版本。之后继续编辑会产生新的草稿，不会修改已发布版本。',
+    okText: '确认发布',
+  });
+  if (ok) await publish();
 }
 async function publish() {
   if (!skill.value || publishing.value) return;
   publishing.value = true;
   try {
     skill.value = await post<SkillDetail>(`/skills/${skill.value.id}/publish`);
-    pendingPublish.value = false;
     app.toast(
       skill.value.publishedVersion ? `已发布 v${skill.value.publishedVersion}，新会话将使用此版本` : '已发布',
     );
@@ -147,31 +163,38 @@ async function publish() {
     publishing.value = false;
   }
 }
-function requestRestore(revision: SkillRevision) {
-  pendingRestore.value = revision;
+async function requestRestore(revision: SkillRevision) {
+  const ok = await confirm({
+    title: `恢复 r${revision.revision} 为草稿？`,
+    content: '系统会基于这份修订创建新的草稿记录，不会覆盖当前版本或已经发布的版本。',
+    okText: '恢复为草稿',
+  });
+  if (ok) await restore(revision);
 }
-async function restore() {
-  if (!skill.value || !pendingRestore.value) return;
-  const restored = pendingRestore.value.revision;
+async function restore(revision: SkillRevision) {
+  if (!skill.value) return;
   try {
-    skill.value = await post<SkillDetail>(
-      `/skills/${skill.value.id}/revisions/${pendingRestore.value.id}/restore`,
-    );
+    skill.value = await post<SkillDetail>(`/skills/${skill.value.id}/revisions/${revision.id}/restore`);
     dirty.value = false;
     activePanel.value = 'content';
     previewRevision.value = null;
-    pendingRestore.value = null;
-    app.toast(`已将 r${restored} 恢复为草稿`);
+    app.toast(`已将 r${revision.revision} 恢复为草稿`);
     await refreshRevisions();
   } catch (err) {
     app.toast((err as Error).message, 'error');
   }
 }
-async function uploadReference(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file || !skill.value) return;
+const uploadingReference = ref(false);
+// a-upload 只负责选择文件；返回 false 阻止组件自行上传，内容读出后走技能接口
+function beforeReferenceUpload(file: File) {
+  void uploadReference(file);
+  return false;
+}
+async function uploadReference(file: File) {
+  if (!skill.value || uploadingReference.value) return;
+  uploadingReference.value = true;
   try {
+    if (!/\.(md|txt)$/i.test(file.name)) throw new Error('参考资料仅支持 .md 或 .txt 文件');
     if (file.size > 120 * 1024) throw new Error('参考资料不能超过 120 KB');
     const content = await file.text();
     skill.value = await post<SkillDetail>(`/skills/${skill.value.id}/references`, {
@@ -183,8 +206,17 @@ async function uploadReference(event: Event) {
   } catch (err) {
     app.toast((err as Error).message, 'error');
   } finally {
-    input.value = '';
+    uploadingReference.value = false;
   }
+}
+// 拖放的文件不符合 accept 时组件会直接丢弃，这里补上同样的提示
+function rejectReferenceFiles() {
+  app.toast('参考资料仅支持 .md 或 .txt 文件', 'error');
+}
+function updateContent(value: string) {
+  if (!skill.value) return;
+  skill.value.content = value;
+  dirty.value = true;
 }
 async function startSession() {
   if (!skill.value) return;
@@ -271,67 +303,64 @@ onBeforeRouteLeave(() => {
 <template>
   <main class="page-content enterprise-page skill-editor-page">
     <div class="enterprise-page-inner skill-editor-inner">
-      <section v-if="loading" class="skill-loading" aria-live="polite">
-        <span class="loader"></span>正在打开 Skill 工作台…
-      </section>
-      <section v-else-if="error && !skill" class="skill-editor-missing enterprise-empty">
-        <span class="enterprise-empty-symbol"><Icon name="book" :size="28" /></span>
-        <h2>无法打开这个 Skill</h2>
-        <p>{{ error }}</p>
-        <RouterLink to="/agent/skills" class="button secondary">返回 Skill 库</RouterLink>
-      </section>
+      <div v-if="loading" class="loading-inline" role="status">
+        <a-spin size="small" />正在打开 Skill 工作台…
+      </div>
+      <CatalogEmpty v-else-if="error && !skill" icon="book" title="无法打开这个 Skill" :description="error">
+        <RouterLink v-slot="{ href, navigate }" to="/agent/skills" custom>
+          <a-button :href="href" @click="navigate">返回技能库</a-button>
+        </RouterLink>
+      </CatalogEmpty>
       <template v-else-if="skill">
-        <nav class="skill-breadcrumb" aria-label="面包屑">
-          <RouterLink to="/agent/capabilities?tab=skills">技能管理</RouterLink
-          ><Icon name="chevron" :size="14" /><RouterLink to="/agent/skills">Skill 库</RouterLink
-          ><Icon name="chevron" :size="14" /><span aria-current="page">{{ skill.name }}</span>
-        </nav>
+        <a-breadcrumb class="skill-breadcrumb">
+          <a-breadcrumb-item
+            ><RouterLink to="/agent/capabilities?tab=skills">技能管理</RouterLink></a-breadcrumb-item
+          >
+          <a-breadcrumb-item><RouterLink to="/agent/skills">技能</RouterLink></a-breadcrumb-item>
+          <a-breadcrumb-item>{{ skill.name }}</a-breadcrumb-item>
+        </a-breadcrumb>
         <header class="skill-editor-heading">
           <div class="skill-editor-title">
-            <div class="skill-editor-title-top">
-              <span class="skill-editor-symbol"><Icon name="book" :size="21" /></span
-              ><span :class="['tag', skill.status === 'published' ? 'success' : 'neutral']">{{
-                skill.status === 'published' ? `已发布 · v${skill.publishedVersion}` : '草稿'
-              }}</span>
+            <span class="scene-icon book skill-editor-symbol"><Icon name="book" :size="20" /></span>
+            <div class="skill-editor-copy">
+              <div class="skill-editor-name">
+                <h1>{{ skill.name }}</h1>
+                <a-tag :bordered="false" :color="skill.status === 'published' ? 'success' : undefined">{{
+                  skill.status === 'published' ? `已发布 · v${skill.publishedVersion}` : '草稿'
+                }}</a-tag>
+              </div>
+              <p>{{ skill.description || '尚未添加用途说明。' }}</p>
             </div>
-            <h1>{{ skill.name }}</h1>
-            <p>{{ skill.description || '尚未添加用途说明。' }}</p>
           </div>
           <div class="skill-editor-actions">
-            <span :class="['skill-save-state', { dirty }]">{{ saveState }}</span><button
-              class="button secondary"
-              :disabled="!dirty || saving"
-              @click="save"
-            >
-              <Icon name="save" :size="15" />{{ saving ? '正在保存…' : '保存草稿' }}</button
-            ><button
-              class="button primary"
+            <span :class="['skill-save-state', { dirty }]">{{ saveState }}</span>
+            <a-button :disabled="!dirty" :loading="saving" @click="save">
+              <template #icon><Icon name="save" :size="16" /></template>保存草稿
+            </a-button>
+            <a-button
+              type="primary"
               :disabled="!canPublish"
+              :loading="publishing"
               :title="dirty ? '请先保存草稿' : ''"
               @click="requestPublish"
             >
-              <Icon name="check" :size="15" />发布版本
-            </button>
+              <template #icon><Icon name="check" :size="16" /></template>发布版本
+            </a-button>
           </div>
         </header>
-        <p v-if="dirty" class="skill-unsaved-note">
-          <Icon name="info" :size="16" />草稿有未保存修改；保存后才能让助手继续处理或发布新版本。
-        </p>
+        <a-alert
+          v-if="dirty"
+          class="skill-unsaved-note"
+          type="warning"
+          show-icon
+          message="草稿有未保存修改；保存后才能让助手继续处理或发布新版本。"
+        />
 
         <div class="skill-editor-layout">
           <section class="skill-workbench" aria-label="Skill 内容工作区">
-            <nav class="skill-workbench-tabs" aria-label="Skill 编辑区">
-              <button :class="{ selected: activePanel === 'content' }" @click="activePanel = 'content'">
-                <Icon name="edit" :size="15" />内容
-              </button>
-              <button :class="{ selected: activePanel === 'references' }" @click="activePanel = 'references'">
-                <Icon name="paperclip" :size="15" />参考资料
-                <span v-if="skill.referenceFiles?.length">{{ skill.referenceFiles.length }}</span>
-              </button>
-              <button :class="{ selected: activePanel === 'history' }" @click="activePanel = 'history'">
-                <Icon name="clock" :size="15" />版本历史 <span>{{ revisions.length }}</span>
-              </button>
-            </nav>
+            <div class="skill-workbench-tabs">
+              <CatalogFilter v-model:value="activePanel" :options="panelOptions" aria-label="Skill 编辑区" />
+            </div>
 
             <section v-if="activePanel === 'content'" class="skill-panel skill-content-panel">
               <header class="skill-panel-heading">
@@ -339,21 +368,22 @@ onBeforeRouteLeave(() => {
                   <h2>草稿内容</h2>
                   <p>使用 YAML front matter 定义名称和说明，再补充可执行的工作步骤与输出要求。</p>
                 </div>
-                <span>Markdown</span>
+                <a-tag :bordered="false" class="skill-format-tag">Markdown</a-tag>
               </header>
-              <textarea
-                v-model="skill.content"
+              <a-textarea
+                :value="skill.content"
                 class="skill-content-editor"
                 spellcheck="false"
                 aria-label="Skill 草稿内容"
-                @input="dirty = true"
-              ></textarea>
+                @update:value="updateContent"
+              />
               <footer class="skill-content-footer">
                 <span
                   ><Icon name="shield" :size="14" />发布后的版本保持不可变；后续编辑会形成新的草稿修订。</span
-                ><button v-if="dirty" class="button text small" :disabled="saving" @click="save">
-                  保存修改 <Icon name="arrow" :size="14" />
-                </button>
+                >
+                <a-button v-if="dirty" type="link" size="small" :loading="saving" @click="save"
+                  >保存修改</a-button
+                >
               </footer>
             </section>
 
@@ -366,25 +396,49 @@ onBeforeRouteLeave(() => {
                   </p>
                 </div>
               </header>
-              <label class="skill-reference-upload"
-                ><span class="skill-reference-upload-icon"><Icon name="paperclip" :size="22" /></span
-                ><span><strong>添加参考资料</strong><small>选择 .md 或 .txt 文件</small></span
-                ><input type="file" accept=".md,.txt,text/plain,text/markdown" @change="uploadReference"
-              /></label>
-              <div v-if="skill.referenceFiles?.length" class="skill-reference-list">
-                <article v-for="ref in skill.referenceFiles" :key="ref.path">
-                  <span class="skill-reference-file"><Icon name="file" :size="18" /></span>
-                  <div>
-                    <strong>{{ ref.filename }}</strong><small
-                      >{{ Math.ceil(ref.bytes / 1024) }} KB · 已附加到当前草稿</small
+              <a-upload-dragger
+                class="skill-reference-upload"
+                name="reference"
+                accept=".md,.txt,text/plain,text/markdown"
+                :file-list="[]"
+                :multiple="false"
+                :show-upload-list="false"
+                :disabled="uploadingReference"
+                :before-upload="beforeReferenceUpload"
+                @reject="rejectReferenceFiles"
+              >
+                <span class="skill-reference-upload-icon"><Icon name="paperclip" :size="20" /></span>
+                <p class="skill-reference-upload-title">
+                  {{ uploadingReference ? '正在添加…' : '点击或拖放文件添加参考资料' }}
+                </p>
+                <p class="skill-reference-upload-hint">支持 .md 或 .txt，单个文件不超过 120 KB</p>
+              </a-upload-dragger>
+              <a-list
+                v-if="skill.referenceFiles?.length"
+                class="skill-reference-list"
+                :data-source="skill.referenceFiles"
+                :row-key="referenceKey"
+              >
+                <template #renderItem="{ item: file }">
+                  <a-list-item>
+                    <a-list-item-meta
+                      :title="file.filename"
+                      :description="`${Math.ceil(file.bytes / 1024)} KB · 已附加到当前草稿`"
                     >
-                  </div>
-                </article>
-              </div>
-              <div v-else class="skill-panel-empty">
-                <Icon name="folder" :size="24" /><strong>还没有参考资料</strong>
-                <p>需要时添加工作规范、写作要求或已有素材，帮助助手理解上下文。</p>
-              </div>
+                      <template #avatar>
+                        <span class="skill-reference-file"><Icon name="file" :size="16" /></span>
+                      </template>
+                    </a-list-item-meta>
+                  </a-list-item>
+                </template>
+              </a-list>
+              <CatalogEmpty
+                v-else
+                class="skill-panel-empty"
+                icon="folder"
+                title="还没有参考资料"
+                description="需要时添加工作规范、写作要求或已有素材，帮助助手理解上下文。"
+              />
             </section>
 
             <section v-else class="skill-panel skill-history-panel">
@@ -397,71 +451,65 @@ onBeforeRouteLeave(() => {
               <div v-if="previewRevision" class="skill-revision-preview">
                 <header>
                   <div>
-                    <span class="tag neutral">r{{ previewRevision.revision }}</span
+                    <a-tag :bordered="false">r{{ previewRevision.revision }}</a-tag
                     ><strong>{{ previewRevision.changeSummary }}</strong>
                   </div>
-                  <button class="button text small" @click="previewRevision = null">
-                    <Icon name="close" :size="14" />关闭预览
-                  </button>
+                  <a-button type="text" size="small" @click="previewRevision = null">
+                    <template #icon><Icon name="close" :size="14" /></template>关闭预览
+                  </a-button>
                 </header>
                 <pre>{{ previewRevision.content }}</pre>
               </div>
-              <div class="skill-revision-list">
-                <article
-                  v-for="revision in revisions"
-                  :key="revision.id"
-                  :class="['skill-revision-row', { current: revision.id === skill.currentRevisionId }]"
-                >
-                  <div class="skill-revision-meta">
-                    <span :class="['tag', revision.publishedVersion ? 'success' : 'neutral']"
-                      >r{{ revision.revision
-                      }}{{ revision.publishedVersion ? ` · v${revision.publishedVersion}` : '' }}</span
-                    >
-                    <div>
-                      <strong>{{ revision.changeSummary }}</strong><small
-                        >{{
-                          revision.source === 'assistant'
-                            ? '助手更新'
-                            : revision.source === 'publish'
-                              ? '正式发布'
-                              : revision.source === 'restore'
-                                ? '恢复修订'
-                                : '手动编辑'
-                        }}
-                        · {{ formatDate(revision.createdAt) }}</small
+              <a-list class="skill-revision-list" :data-source="revisions" :row-key="revisionKey">
+                <template #renderItem="{ item: revision }">
+                  <a-list-item :class="{ current: revision.id === skill.currentRevisionId }">
+                    <a-list-item-meta>
+                      <template #title>
+                        <span class="skill-revision-title"
+                          ><a-tag :bordered="false" :color="revision.publishedVersion ? 'success' : undefined"
+                            >r{{ revision.revision
+                            }}{{ revision.publishedVersion ? ` · v${revision.publishedVersion}` : '' }}</a-tag
+                          ><strong>{{ revision.changeSummary }}</strong></span
+                        >
+                      </template>
+                      <template #description>
+                        {{ revisionSource(revision.source) }} · {{ formatDate(revision.createdAt) }}
+                      </template>
+                    </a-list-item-meta>
+                    <template #actions>
+                      <span v-if="revision.id === skill.currentRevisionId" class="skill-current-revision"
+                        >当前版本</span
                       >
-                    </div>
-                  </div>
-                  <div class="skill-revision-actions">
-                    <span v-if="revision.id === skill.currentRevisionId" class="skill-current-revision"
-                      >当前版本</span
-                    ><button class="button text small" @click="previewRevision = revision">查看</button
-                    ><button class="button secondary small" @click="requestRestore(revision)">
-                      恢复为草稿
-                    </button>
-                  </div>
-                </article>
-              </div>
+                      <a-button type="text" size="small" @click="previewRevision = revision">查看</a-button>
+                      <a-button size="small" @click="requestRestore(revision)">恢复为草稿</a-button>
+                    </template>
+                  </a-list-item>
+                </template>
+              </a-list>
             </section>
           </section>
 
           <aside class="skill-assistant-panel" aria-label="Skill 助手">
             <header class="skill-assistant-heading">
               <div>
-                <span class="skill-assistant-symbol"><Icon name="sparkles" :size="17" /></span>
+                <span class="scene-icon book skill-assistant-symbol"
+                  ><Icon name="sparkles" :size="16"
+                /></span>
                 <div>
                   <h2>Skill 助手</h2>
                   <p>只修改当前草稿，不会自动发布</p>
                 </div>
               </div>
-              <button v-if="session" class="button text small" :disabled="busy" @click="startSession">
-                <Icon name="plus" :size="14" />新会话
-              </button>
+              <a-button v-if="session" type="text" size="small" :disabled="busy" @click="startSession">
+                <template #icon><Icon name="plus" :size="14" /></template>新会话
+              </a-button>
             </header>
             <div class="skill-assistant-log" aria-live="polite">
               <div v-if="!messages.length && !busy" class="skill-assistant-empty">
-                <span class="skill-assistant-empty-icon"><Icon name="sparkles" :size="22" /></span
-                ><strong>从需求开始完善草稿</strong>
+                <span class="scene-icon book skill-assistant-empty-icon"
+                  ><Icon name="sparkles" :size="20"
+                /></span>
+                <strong>从需求开始完善草稿</strong>
                 <p>描述需要的步骤、边界或输出格式。助手会先处理当前草稿，发布仍由你确认。</p>
                 <div class="skill-prompt-suggestions">
                   <button
@@ -487,58 +535,482 @@ onBeforeRouteLeave(() => {
                 <p>{{ streamingText || '正在处理当前草稿…' }}</p>
               </article>
             </div>
-            <p v-if="assistantChange" class="skill-assistant-change">
-              <Icon name="check" :size="16" />{{ assistantChange }}
-            </p>
+            <a-alert
+              v-if="assistantChange"
+              class="skill-assistant-change"
+              type="success"
+              show-icon
+              :message="assistantChange"
+            />
             <form class="skill-assistant-composer" @submit.prevent="send">
-              <textarea
+              <a-textarea
                 ref="promptInput"
-                v-model="prompt"
+                v-model:value="prompt"
                 :disabled="busy"
+                :auto-size="{ minRows: 3, maxRows: 6 }"
                 placeholder="例如：增加输入检查步骤，并让输出更适合发给客户"
                 aria-label="向 Skill 助手描述修改需求"
-              ></textarea>
-              <div>
-                <small v-if="dirty"><Icon name="info" :size="13" />请先保存草稿</small
-                ><button type="submit" class="button primary" :disabled="busy || dirty || !prompt.trim()">
-                  <Icon name="arrow" :size="15" />{{ busy ? '处理中…' : '发送' }}
-                </button>
+              />
+              <div class="skill-assistant-composer-footer">
+                <span v-if="dirty" class="skill-composer-hint"
+                  ><Icon name="info" :size="13" />请先保存草稿</span
+                >
+                <a-button
+                  type="primary"
+                  html-type="submit"
+                  :loading="busy"
+                  :disabled="dirty || !prompt.trim()"
+                >
+                  <template #icon><Icon name="arrow" :size="16" /></template>发送
+                </a-button>
               </div>
             </form>
           </aside>
         </div>
       </template>
     </div>
-
-    <DialogShell
-      v-if="pendingPublish"
-      variant="modal"
-      label="发布 Skill 版本"
-      panel-class="skill-confirm-dialog"
-      @close="pendingPublish = false"
-      ><span class="skill-confirm-icon"><Icon name="check" :size="21" /></span>
-      <h2>发布新的正式版本？</h2>
-      <p>将以当前草稿创建不可变版本。之后继续编辑会产生新的草稿，不会修改已发布版本。</p>
-      <footer>
-        <button class="button secondary" :disabled="publishing" @click="pendingPublish = false">取消</button
-        ><button class="button primary" :disabled="publishing" @click="publish">
-          {{ publishing ? '正在发布…' : '确认发布' }}
-        </button>
-      </footer></DialogShell
-    >
-    <DialogShell
-      v-if="pendingRestore"
-      variant="modal"
-      label="恢复 Skill 修订"
-      panel-class="skill-confirm-dialog"
-      @close="pendingRestore = null"
-      ><span class="skill-confirm-icon"><Icon name="refresh" :size="21" /></span>
-      <h2>恢复 r{{ pendingRestore.revision }} 为草稿？</h2>
-      <p>系统会基于这份修订创建新的草稿记录，不会覆盖当前版本或已经发布的版本。</p>
-      <footer>
-        <button class="button secondary" @click="pendingRestore = null">取消</button
-        ><button class="button primary" @click="restore">恢复为草稿</button>
-      </footer></DialogShell
-    >
   </main>
 </template>
+
+<style scoped>
+.skill-editor-inner {
+  max-width: 1340px;
+}
+.skill-breadcrumb {
+  margin-bottom: 16px;
+}
+/* icon 插槽里是 ForgeIcon 裸 <svg>，不是 .anticon，需要手动补图标与文字的间距 */
+.skill-editor-page :deep(.ant-btn) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* 页头：图标 + 名称/状态 + 说明；右侧保存状态与主要操作 */
+.skill-editor-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+.skill-editor-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.skill-editor-symbol {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+}
+.skill-editor-copy {
+  min-width: 0;
+}
+.skill-editor-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.skill-editor-name h1 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--page-title-size);
+  font-weight: 600;
+  letter-spacing: -0.6px;
+  overflow-wrap: anywhere;
+}
+.skill-editor-name :deep(.ant-tag) {
+  margin: 0;
+}
+.skill-editor-copy p {
+  margin: 6px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.75;
+}
+.skill-editor-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+.skill-save-state {
+  margin-right: 4px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.skill-save-state.dirty {
+  color: var(--color-warning-text);
+}
+.skill-unsaved-note {
+  margin-bottom: 16px;
+}
+
+/* 左侧工作区 + 右侧助手，两块都是扁平白卡 */
+.skill-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  align-items: stretch;
+  gap: 20px;
+}
+.skill-workbench,
+.skill-assistant-panel {
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-card);
+}
+.skill-workbench-tabs {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-default);
+  overflow-x: auto;
+}
+.skill-panel {
+  min-height: 625px;
+  padding: 20px;
+}
+.skill-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.skill-panel-heading h2,
+.skill-assistant-heading h2 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+.skill-panel-heading p,
+.skill-assistant-heading p {
+  margin: 4px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.skill-format-tag {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+/* 内容编辑器：等宽字体的大文本框，占满面板剩余高度 */
+.skill-content-panel {
+  display: flex;
+  flex-direction: column;
+}
+.skill-content-editor {
+  flex: 1;
+  min-height: 500px;
+  resize: vertical;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.skill-content-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  margin-top: 12px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+.skill-content-footer > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 参考资料 */
+.skill-reference-upload {
+  display: block;
+  margin-bottom: 16px;
+}
+.skill-reference-upload :deep(.ant-upload-drag) {
+  background: var(--surface-subtle-bg);
+}
+.skill-reference-upload :deep(.ant-upload-btn) {
+  padding: 20px 16px;
+}
+.skill-reference-upload-icon,
+.skill-reference-file {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--color-brand-muted);
+  color: var(--color-brand-active);
+}
+.skill-reference-upload-icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 8px;
+}
+.skill-reference-upload-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 500;
+}
+.skill-reference-upload-hint {
+  margin: 4px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+.skill-reference-file {
+  width: 32px;
+  height: 32px;
+}
+.skill-panel-empty {
+  min-height: 200px;
+}
+
+/* 版本历史 */
+.skill-revision-preview {
+  margin-bottom: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+}
+.skill-revision-preview > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-subtle-bg);
+}
+.skill-revision-preview > header > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.skill-revision-preview strong {
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-revision-preview pre {
+  max-height: 320px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.skill-revision-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.skill-revision-title :deep(.ant-tag) {
+  margin: 0;
+}
+.skill-revision-title strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.skill-current-revision {
+  color: var(--color-brand-active);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 助手面板 */
+.skill-assistant-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 678px;
+  overflow: hidden;
+}
+.skill-assistant-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-default);
+}
+.skill-assistant-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.skill-assistant-heading p {
+  margin-top: 0;
+}
+.skill-assistant-symbol {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+.skill-assistant-log {
+  flex: 1;
+  min-height: 0;
+  padding: 14px;
+  overflow: auto;
+  background: var(--surface-subtle-bg);
+}
+.skill-assistant-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 4px 16px;
+  text-align: center;
+}
+.skill-assistant-empty-icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+}
+.skill-assistant-empty strong {
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.skill-assistant-empty p {
+  margin: 8px auto 16px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+/* 示例提问：多行文字的可点卡片，antd Button 不适合换行，保留原生按钮 */
+.skill-prompt-suggestions {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+.skill-prompt-suggestions > button {
+  padding: 8px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-card);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    color 150ms ease;
+}
+.skill-prompt-suggestions > button:hover {
+  border-color: var(--color-brand);
+  color: var(--color-text-primary);
+}
+.skill-prompt-suggestions > button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+.skill-chat-message {
+  max-width: 94%;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-card);
+}
+.skill-chat-message.user {
+  margin-left: auto;
+  border-color: var(--color-brand-border);
+  background: var(--color-brand-muted);
+}
+.skill-chat-message > span {
+  display: block;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+}
+.skill-chat-message.user > span {
+  color: var(--color-brand-active);
+}
+.skill-chat-message p {
+  margin: 4px 0 0;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+.skill-assistant-change {
+  margin: 12px 14px 0;
+}
+.skill-assistant-composer {
+  padding: 12px;
+  border-top: 1px solid var(--border-default);
+}
+.skill-assistant-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.skill-composer-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: auto;
+  color: var(--color-warning-text);
+  font-size: 12px;
+}
+
+@media (max-width: 1260px) {
+  .skill-editor-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .skill-assistant-panel {
+    min-height: 510px;
+  }
+}
+@media (max-width: 820px) {
+  .skill-editor-heading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .skill-editor-actions {
+    flex-wrap: wrap;
+  }
+  .skill-panel {
+    min-height: 570px;
+    padding: 16px;
+  }
+  .skill-content-editor {
+    min-height: 440px;
+  }
+}
+@media (max-width: 660px) {
+  .skill-content-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .skill-revision-list :deep(.ant-list-item) {
+    flex-wrap: wrap;
+  }
+}
+</style>

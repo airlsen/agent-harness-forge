@@ -10,7 +10,9 @@ import { formatDate, isAvailableScenario, scenarioSource, scenarioState } from '
 import type { Scenario, ScenarioPayload } from '../../../types/platform';
 import type { PluginPackage } from '../../../types/plugin';
 import Icon from '../../../components/ForgeIcon.vue';
+import { drawerA11y } from '../../../utils/overlay';
 import CatalogCard from '../../../components/catalog/CatalogCard.vue';
+import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
 import CatalogFilter from '../../../components/catalog/CatalogFilter.vue';
 import CatalogGrid from '../../../components/catalog/CatalogGrid.vue';
 import CatalogSearch from '../../../components/catalog/CatalogSearch.vue';
@@ -381,22 +383,18 @@ async function versions(scenario: Scenario) {
         <CatalogSearch v-model:value="query" placeholder="搜索场景名称或描述" aria-label="搜索场景" />
       </div>
       <div v-if="app.loading" class="loading-inline" role="status"><a-spin size="small" />正在读取场景…</div>
-      <a-empty v-else-if="!filtered.length" class="scenario-empty" :description="false">
-        <template #image>
-          <span class="scenario-empty-symbol"><Icon :name="query ? 'search' : 'grid'" :size="24" /></span>
-        </template>
-        <div class="scenario-empty-copy">
-          <h2 class="scenario-empty-title">{{ query ? '没有找到匹配的场景' : '这个分类还没有场景' }}</h2>
-          <p class="scenario-empty-description">
-            {{
-              query
-                ? '试试其他关键词，或清除搜索。'
-                : maintenance
-                  ? '从预置模板创建草稿，或新建一个工作场景。'
-                  : '新场景经过维护和发布后，会出现在这里。'
-            }}
-          </p>
-        </div>
+      <CatalogEmpty
+        v-else-if="!filtered.length"
+        :icon="query ? 'search' : 'grid'"
+        :title="query ? '没有找到匹配的场景' : '这个分类还没有场景'"
+        :description="
+          query
+            ? '试试其他关键词，或清除搜索。'
+            : maintenance
+              ? '从预置模板创建草稿，或新建一个工作场景。'
+              : '新场景经过维护和发布后，会出现在这里。'
+        "
+      >
         <a-button
           v-if="query || filter !== 'all'"
           @click="
@@ -406,7 +404,7 @@ async function versions(scenario: Scenario) {
         >
           查看全部场景
         </a-button>
-      </a-empty>
+      </CatalogEmpty>
       <CatalogGrid v-else>
         <CatalogCard
           v-for="scenario in filtered"
@@ -504,7 +502,7 @@ async function versions(scenario: Scenario) {
       :open="detailOpen"
       :width="580"
       class="drawer scenario-detail"
-      aria-label="场景详情"
+      v-bind="drawerA11y('场景详情', detailOpen)"
       @close="detailOpen = false"
     >
       <template v-if="detail" #title>
@@ -588,7 +586,7 @@ async function versions(scenario: Scenario) {
       :open="drawer"
       :width="640"
       class="drawer scenario-editor"
-      aria-label="场景编辑器"
+      v-bind="drawerA11y('场景编辑器', drawer)"
       :closable="!busy"
       :mask-closable="!busy"
       :keyboard="!busy"
@@ -877,7 +875,7 @@ async function versions(scenario: Scenario) {
       :open="historyOpen"
       :width="580"
       class="drawer scenario-history"
-      aria-label="场景版本历史"
+      v-bind="drawerA11y('场景版本历史', historyOpen)"
       @close="historyOpen = false"
     >
       <template #title>
@@ -943,76 +941,12 @@ async function versions(scenario: Scenario) {
   color: var(--color-success-text);
 }
 
-/* ============ 空态：独立布局，避免公共 empty 的 margin / :last-child 规则叠加 ============ */
-.scenario-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  min-height: 240px;
-  margin: 0;
-  padding: 40px 24px;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  text-align: center;
-}
-.scenario-empty :deep(.ant-empty-image) {
-  height: auto;
-  margin: 0;
-}
-.scenario-empty-symbol {
-  display: grid;
-  width: 48px;
-  height: 48px;
-  place-items: center;
-  border-radius: 12px;
-  color: var(--color-brand-active);
-  background: var(--color-brand-muted);
-}
-/* 标题和说明使用默认插槽，不放进 Empty 自带的 <p>，避免标题 / 段落嵌套。 */
-.scenario-empty :deep(.ant-empty-footer) {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-  width: 100%;
-  margin: 16px 0 0;
-}
-.scenario-empty-copy {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  max-width: 400px;
-}
-.scenario-empty-title {
-  margin: 0;
-  color: var(--color-text-primary);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 24px;
-}
-.scenario-empty-description {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  line-height: 22px;
-  text-wrap: balance;
-  overflow-wrap: anywhere;
-}
-.scenario-empty :deep(.ant-btn) {
-  box-shadow: none;
-}
 @media (max-width: 700px) {
   .scenarios-page .scenario-page-heading .page-heading-actions {
     flex-wrap: wrap;
   }
   .page-heading-actions :deep(.ant-btn) {
     flex: 1 1 0;
-  }
-  .scenario-empty {
-    padding: 32px 16px;
   }
 }
 
