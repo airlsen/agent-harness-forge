@@ -353,12 +353,17 @@ async function versions(scenario: Scenario) {
           <p v-else>编辑场景，试运行通过后发布。</p>
         </div>
         <div class="page-heading-actions">
-          <a-button :aria-pressed="maintenance" @click="toggleMaintenance">
+          <!-- 使用目录：「维护场景」为主按钮；维护模式下让位给「新建场景」，避免两个主按钮并排 -->
+          <a-button
+            :type="maintenance ? 'default' : 'primary'"
+            :aria-pressed="maintenance"
+            @click="toggleMaintenance"
+          >
             <template #icon><Icon :name="maintenance ? 'grid' : 'settings'" :size="16" /></template
             >{{ maintenance ? '返回使用目录' : '维护场景' }}
           </a-button>
           <a-button v-if="maintenance" type="primary" @click="edit()">
-            <template #icon><Icon name="plus" :size="17" /></template>新建场景
+            <template #icon><Icon name="plus" :size="16" /></template>新建场景
           </a-button>
         </div>
       </div>
@@ -383,7 +388,7 @@ async function versions(scenario: Scenario) {
           aria-label="搜索场景"
           allow-clear
         >
-          <template #prefix><Icon name="search" :size="17" /></template>
+          <template #prefix><Icon name="search" :size="15" /></template>
         </a-input>
       </div>
       <div v-if="app.loading" class="loading-inline" role="status"><a-spin size="small" />正在读取场景…</div>
@@ -906,35 +911,15 @@ async function versions(scenario: Scenario) {
 
 <style scoped>
 /* ============ 页头动作按钮 ============ */
+/* 尺寸、圆角、配色全部沿用 antd 默认；只补图标间距：
+   icon 插槽里是 ForgeIcon 裸 <svg>，不是 .anticon，antd 不会给它和文字之间留空 */
 .page-heading-actions :deep(.ant-btn) {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 6px;
-  min-height: 40px;
-  height: 40px;
-  padding-inline: 14px;
-  border-radius: 11px;
-  font-size: 12px;
-  font-weight: 550;
 }
-/* 这里塞的是 ForgeIcon 裸 <svg>，没有 antd .anticon 的 vertical-align 基线修正，补一层 */
 .page-heading-actions :deep(.ant-btn > svg) {
-  display: inline-block;
   flex-shrink: 0;
-}
-.page-heading-actions :deep(.ant-btn-default) {
-  color: var(--text-secondary);
-  background: var(--surface-card);
-  border-color: var(--border-default);
-}
-.page-heading-actions :deep(.ant-btn-default[aria-pressed='true']) {
-  color: var(--color-brand-active);
-  background: var(--surface-selected);
-  border-color: var(--color-brand-border);
-}
-.page-heading-actions :deep(.ant-btn-primary) {
-  font-weight: 600;
 }
 
 /* ============ 场景筛选：antd Segmented ============ */
@@ -978,11 +963,12 @@ async function versions(scenario: Scenario) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 32px;
-  padding: 0 14px;
+  /* 26px 选项 + 上下 3px 底槽 = 32px，与 antd 默认按钮 / 输入框齐平 */
+  min-height: 26px;
+  padding: 0 12px;
   font-size: 13px;
   font-weight: 500;
-  line-height: 32px;
+  line-height: 26px;
   white-space: nowrap;
 }
 .scenario-filter :deep(.ant-segmented-item-selected .ant-segmented-item-label) {
@@ -1002,8 +988,8 @@ async function versions(scenario: Scenario) {
 /* 选中项的数量收进浅灰小胶囊 */
 .scenario-filter :deep(.ant-segmented-item-selected) .scenario-filter-count {
   display: inline-grid;
-  min-width: 22px;
-  height: 20px;
+  min-width: 20px;
+  height: 18px;
   place-items: center;
   padding: 0 6px;
   border-radius: 999px;
@@ -1011,23 +997,16 @@ async function versions(scenario: Scenario) {
   font-weight: 600;
 }
 
-/* ============ 搜索框 ============ */
+/* ============ 搜索框：antd 默认外观（圆角 / 边框 / 聚焦光圈），只定宽度 ============ */
 .scenario-search {
   width: 240px;
   flex-shrink: 0;
-  height: 38px;
-  border-radius: 999px;
-  background: var(--surface-card);
-  border-color: var(--border-default);
-  box-shadow: 0 1px 3px #20273308;
 }
 .scenario-search :deep(.ant-input) {
-  min-height: 0; /* 中和 style.css 全局 :where(input){min-height:41px} */
-  font-size: 13px;
+  min-height: 0; /* 中和 style.css 全局 :where(input){min-height:41px}，否则输入框被撑高 */
 }
-.scenario-search:focus-within {
-  border-color: var(--accent-focus);
-  box-shadow: 0 0 0 3px var(--accent-focus-ring);
+.scenario-search :deep(.ant-input-prefix) {
+  color: var(--color-text-tertiary);
 }
 
 /* ============ 卡片：状态 / 能力 / 动作 ============ */
