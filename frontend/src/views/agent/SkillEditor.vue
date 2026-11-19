@@ -4,6 +4,7 @@ import { onBeforeRouteLeave, useRoute } from 'vue-router';
 import { api, apiFetch, post, put } from '../../api/client';
 import DialogShell from '../../components/DialogShell.vue';
 import Icon from '../../components/ForgeIcon.vue';
+import { usePlatform } from '../../stores/platform';
 import type {
   SkillAuthoringMessage,
   SkillAuthoringSession,
@@ -13,6 +14,7 @@ import type {
 
 type Panel = 'content' | 'references' | 'history';
 const route = useRoute();
+const app = usePlatform();
 const skill = ref<SkillDetail | null>(null);
 const revisions = ref<SkillRevision[]>([]);
 const session = ref<SkillAuthoringSession | null>(null);
@@ -23,6 +25,7 @@ const saving = ref(false);
 const publishing = ref(false);
 const busy = ref(false);
 const dirty = ref(false);
+// 仅表示 Skill 无法打开（整页状态）；保存、发布等操作结果统一走全局 toast。
 const error = ref('');
 const prompt = ref('');
 const streamingText = ref('');
@@ -70,6 +73,7 @@ function roleLabel(role: string) {
 async function loadSkill(options: { focusAssistant?: boolean } = {}) {
   const id = skillId.value;
   if (!Number.isInteger(id) || id < 1) {
+    skill.value = null;
     error.value = 'Skill 地址无效。';
     loading.value = false;
     return;
@@ -92,7 +96,12 @@ async function loadSkill(options: { focusAssistant?: boolean } = {}) {
       promptInput.value?.focus();
     }
   } catch (err) {
-    error.value = (err as Error).message;
+    // 已打开的 Skill 刷新失败只提示一次，保留当前内容；首次打开失败才进入整页错误态。
+    if (skill.value?.id === id) app.toast((err as Error).message, 'error');
+    else {
+      skill.value = null;
+      error.value = (err as Error).message;
+    }
   } finally {
     loading.value = false;
   }
@@ -104,7 +113,6 @@ async function refreshRevisions() {
 async function save() {
   if (!skill.value || !dirty.value || saving.value) return;
   saving.value = true;
-  error.value = '';
   try {
     skill.value = await put<SkillDetail>(`/skills/${skill.value.id}/draft`, {
       content: skill.value.content,
@@ -113,7 +121,7 @@ async function save() {
     dirty.value = false;
     await refreshRevisions();
   } catch (err) {
-    error.value = (err as Error).message;
+    app.toast((err as Error).message, 'error');
   } finally {
     saving.value = false;
   }
@@ -125,13 +133,15 @@ function requestPublish() {
 async function publish() {
   if (!skill.value || publishing.value) return;
   publishing.value = true;
-  error.value = '';
   try {
     skill.value = await post<SkillDetail>(`/skills/${skill.value.id}/publish`);
     pendingPublish.value = false;
+    app.toast(
+      skill.value.publishedVersion ? `已发布 v${skill.value.publishedVersion}，新会话将使用此版本` : '已发布',
+    );
     await refreshRevisions();
   } catch (err) {
-    error.value = (err as Error).message;
+    app.toast((err as Error).message, 'error');
   } finally {
     publishing.value = false;
   }
@@ -141,7 +151,7 @@ function requestRestore(revision: SkillRevision) {
 }
 async function restore() {
   if (!skill.value || !pendingRestore.value) return;
-  error.value = '';
+  const restored = pendingRestore.value.revision;
   try {
     skill.value = await post<SkillDetail>(
       `/skills/${skill.value.id}/revisions/${pendingRestore.value.id}/restore`,
@@ -150,16 +160,16 @@ async function restore() {
     activePanel.value = 'content';
     previewRevision.value = null;
     pendingRestore.value = null;
+    app.toast(`已将 r${restored} 恢复为草稿`);
     await refreshRevisions();
   } catch (err) {
-    error.value = (err as Error).message;
+    app.toast((err as Error).message, 'error');
   }
 }
 async function uploadReference(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file || !skill.value) return;
-  error.value = '';
   try {
     if (file.size > 120 * 1024) throw new Error('参考资料不能超过 120 KB');
     const content = await file.text();
@@ -167,9 +177,10 @@ async function uploadReference(event: Event) {
       filename: file.name,
       content,
     });
+    app.toast(`已添加参考资料 ${file.name}`);
     await refreshRevisions();
   } catch (err) {
-    error.value = (err as Error).message;
+    app.toast((err as Error).message, 'error');
   } finally {
     input.value = '';
   }
@@ -179,9 +190,8 @@ async function startSession() {
   try {
     session.value = await post<SkillAuthoringSession>(`/skills/${skill.value.id}/authoring-sessions`);
     messages.value = session.value.messages ?? [];
-    error.value = '';
   } catch (err) {
-    error.value = (err as Error).message;
+    app.toast((err as Error).message, 'error');
   }
 }
 function useStarterPrompt(text: string) {
@@ -191,11 +201,10 @@ function useStarterPrompt(text: string) {
 async function send() {
   if (!prompt.value.trim() || busy.value || !skill.value) return;
   if (dirty.value) {
-    error.value = '请先保存当前草稿，再让助手基于最新内容继续修改。';
+    app.toast('请先保存当前草稿，再让助手基于最新内容继续修改。', 'info');
     return;
   }
   busy.value = true;
-  error.value = '';
   assistantChange.value = '';
   streamingText.value = '';
   const text = prompt.value;
@@ -237,7 +246,7 @@ async function send() {
   } catch (err) {
     const message = (err as Error).message;
     if (skill.value) await loadSkill();
-    error.value = message;
+    app.toast(message, 'error');
   } finally {
     busy.value = false;
   }
@@ -303,9 +312,6 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('当前草稿有未保�
         </header>
         <p v-if="dirty" class="skill-unsaved-note">
           <Icon name="info" :size="16" />草稿有未保存修改；保存后才能让助手继续处理或发布新版本。
-        </p>
-        <p v-if="error" class="form-alert error skill-editor-alert" role="alert">
-          <Icon name="info" :size="17" /><span>{{ error }}</span>
         </p>
 
         <div class="skill-editor-layout">

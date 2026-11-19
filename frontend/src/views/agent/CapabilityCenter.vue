@@ -76,7 +76,8 @@ function changeMcpTransport() {
   mcpTemplate.value = mcpExample.value;
 }
 const mcpBusy = ref(false);
-const mcpMessage = ref('');
+// 仅用于导入弹窗内、需要用户修改输入的错误；操作结果统一走全局 toast。
+const mcpImportError = ref('');
 const mcpEditorOpen = ref(false);
 const selectedMcp = ref<McpServer | null>(null);
 const mcpToolQuery = ref('');
@@ -271,19 +272,19 @@ async function togglePlugin(plugin: PluginPackage) {
   }
 }
 function openMcpEditor() {
-  mcpMessage.value = '';
+  mcpImportError.value = '';
   mcpTransport.value = 'streamable-http';
   mcpJson.value = mcpExample.value;
   mcpTemplate.value = mcpExample.value;
   mcpEditorOpen.value = true;
 }
 async function importMcpJson() {
-  mcpMessage.value = '';
+  mcpImportError.value = '';
   let config: unknown;
   try {
     config = JSON.parse(mcpJson.value);
   } catch {
-    mcpMessage.value = 'JSON 格式不正确，请检查括号和引号。';
+    mcpImportError.value = 'JSON 格式不正确，请检查括号和引号。';
     return;
   }
   if (
@@ -302,25 +303,28 @@ async function importMcpJson() {
     await api('/registry/mcp-servers/import', { method: 'POST', body: JSON.stringify({ config }) });
     mcpJson.value = '';
     mcpEditorOpen.value = false;
-    mcpMessage.value = '配置已添加，请测试连接并检查工具清单。';
-    const result = await api<{ items: McpServer[] }>('/registry/mcp-servers');
-    mcp.value = { ...result, available: true, reason: '' };
+    app.toast('MCP 服务已添加，请测试连接以读取工具清单。');
+    await refreshMcp();
   } catch (error) {
-    mcpMessage.value = (error as Error).message;
+    // 弹窗保持打开，错误留在输入框下方，方便对照修改。
+    mcpImportError.value = (error as Error).message;
   } finally {
     mcpBusy.value = false;
   }
 }
+async function refreshMcp() {
+  const result = await api<{ items: McpServer[] }>('/registry/mcp-servers');
+  mcp.value = { ...result, available: true, reason: '' };
+}
 async function testMcp(server: McpServer) {
   mcpBusy.value = true;
-  mcpMessage.value = '';
   try {
     await api(`/registry/mcp-servers/${server.id}/test`, { method: 'POST' });
-    const result = await api<{ items: McpServer[] }>('/registry/mcp-servers');
-    mcp.value = { ...result, available: true, reason: '' };
-    mcpMessage.value = `“${server.name}”连接成功，已读取工具清单。`;
+    await refreshMcp();
+    app.toast(`“${server.name}”连接成功，已读取工具清单。`);
   } catch (error) {
-    mcpMessage.value = (error as Error).message;
+    app.toast((error as Error).message, 'error');
+    // 刷新卡片上的“连接失败”状态；刷新本身失败时已由 loadError 展示。
     await load();
   } finally {
     mcpBusy.value = false;
@@ -332,15 +336,21 @@ async function toggleMcp(server: McpServer) {
       method: 'PATCH',
       body: JSON.stringify({ enabled: !server.enabled }),
     });
+    app.toast(server.enabled ? `“${server.name}”已停用` : `“${server.name}”已启用`);
     await load();
   } catch (error) {
-    mcpMessage.value = (error as Error).message;
+    app.toast((error as Error).message, 'error');
   }
 }
 async function deleteMcp(server: McpServer) {
   if (!window.confirm(`确定移除 MCP 服务“${server.name}”吗？`)) return;
-  await api(`/registry/mcp-servers/${server.id}`, { method: 'DELETE' });
-  await load();
+  try {
+    await api(`/registry/mcp-servers/${server.id}`, { method: 'DELETE' });
+    app.toast(`MCP 服务“${server.name}”已移除`);
+    await load();
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  }
 }
 function selectTab(id: string) {
   query.value = '';
@@ -627,7 +637,6 @@ onMounted(load);
             <Icon name="plus" :size="15" />添加服务
           </button>
         </header>
-        <div v-if="mcpMessage" class="mcp-feedback" role="status">{{ mcpMessage }}</div>
         <div v-if="!mcp.items.length" class="enterprise-empty">
           <span class="enterprise-empty-symbol"><Icon name="plug" :size="29" /></span>
           <h2>还没有 MCP 服务</h2>
@@ -881,6 +890,7 @@ onMounted(load);
           id="mcp-import-json"
           v-model="mcpJson"
           class="mcp-json-input"
+          @input="mcpImportError = ''"
           rows="8"
           spellcheck="false"
           :placeholder="mcpExample"
@@ -889,7 +899,9 @@ onMounted(load);
           凭据和 stdio 参数会加密保存在本机，不会在服务列表中显示。stdio 命令会以 Forge
           服务进程权限启动，请只配置可信 MCP 程序；导入后需先测试连接。
         </p>
-        <div v-if="mcpMessage" class="mcp-feedback" role="alert">{{ mcpMessage }}</div>
+        <div v-if="mcpImportError" class="mcp-import-error" role="alert">
+          <Icon name="info" :size="16" /><span>{{ mcpImportError }}</span>
+        </div>
       </div>
       <footer>
         <button class="button secondary" :disabled="mcpBusy" @click="mcpEditorOpen = false">取消</button>
