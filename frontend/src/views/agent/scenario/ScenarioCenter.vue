@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { Rule } from 'ant-design-vue/es/form';
 import { usePlatform } from '../../../stores/platform';
@@ -93,18 +93,6 @@ const filters = computed(() => [
       ]
     : []),
 ]);
-// antd Segmented 的选项：图标 + 文字 + 数量，复用 Forge 的标签样式。
-const filterOptions = computed(() =>
-  filters.value.map((item) => ({
-    value: item.id,
-    label: () =>
-      h('span', { class: 'scenario-filter-option' }, [
-        h(Icon, { name: item.icon, size: 15 }),
-        h('span', { class: 'scenario-filter-label' }, item.label),
-        h('span', { class: 'scenario-filter-count' }, String(item.count)),
-      ]),
-  })),
-);
 const filtered = computed(() =>
   base.value.filter(
     (s) =>
@@ -148,6 +136,7 @@ function normalizePayload(scenario?: Scenario): ScenarioPayload {
 function demoPlugin(plugin: PluginPackage) {
   return plugin.source.includes('demo');
 }
+
 // Skill / MCP / 联网选项与聊天中的「扩展能力」同源：已发布 Skill、可运行的 MCP 服务、平台联网状态
 const optionsLoading = ref(false);
 async function loadCapabilityOptions() {
@@ -359,7 +348,7 @@ async function versions(scenario: Scenario) {
           <p v-else>编辑场景，试运行通过后发布。</p>
         </div>
         <div class="page-heading-actions">
-          <a-button @click="toggleMaintenance">
+          <a-button :aria-pressed="maintenance" @click="toggleMaintenance">
             <template #icon><Icon :name="maintenance ? 'grid' : 'settings'" :size="16" /></template
             >{{ maintenance ? '返回使用目录' : '维护场景' }}
           </a-button>
@@ -369,19 +358,24 @@ async function versions(scenario: Scenario) {
         </div>
       </div>
       <div class="collection-toolbar enterprise-collection-toolbar scenario-collection-toolbar">
-        <a-segmented
-          v-model:value="filter"
-          class="scenario-filter-switcher"
-          :options="filterOptions"
-          size="large"
-          aria-label="场景筛选"
-        />
+        <div class="scenario-filter-switcher" role="group" aria-label="场景筛选">
+          <button
+            v-for="item in filters"
+            :key="item.id"
+            :class="{ selected: filter === item.id }"
+            :aria-pressed="filter === item.id"
+            @click="filter = item.id"
+          >
+            <Icon :name="item.icon" :size="16" />
+            <span class="scenario-filter-label">{{ item.label }}</span>
+            <span class="scenario-filter-count">{{ item.count }}</span>
+          </button>
+        </div>
         <a-input
           v-model:value="query"
           class="scenario-search"
           placeholder="搜索场景名称或描述"
           aria-label="搜索场景"
-          size="large"
           allow-clear
         >
           <template #prefix><Icon name="search" :size="17" /></template>
@@ -891,94 +885,256 @@ async function versions(scenario: Scenario) {
 </template>
 
 <style scoped>
-/* 场景筛选 Segmented：对齐 Forge 胶囊样式 */
+/* ============ 页头动作按钮 ============ */
+.page-heading-actions :deep(.ant-btn) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  height: 40px;
+  padding-inline: 14px;
+  border-radius: 11px;
+  font-size: 12px;
+  font-weight: 550;
+}
+/* 这里塞的是 ForgeIcon 裸 <svg>，没有 antd .anticon 的 vertical-align 基线修正，补一层 */
+.page-heading-actions :deep(.ant-btn > svg) {
+  display: inline-block;
+  flex-shrink: 0;
+}
+.page-heading-actions :deep(.ant-btn-default) {
+  color: var(--text-secondary);
+  background: var(--surface-card);
+  border-color: var(--border-default);
+}
+.page-heading-actions :deep(.ant-btn-default[aria-pressed='true']) {
+  color: var(--color-brand-active);
+  background: var(--surface-selected);
+  border-color: var(--color-brand-border);
+}
+.page-heading-actions :deep(.ant-btn-primary) {
+  font-weight: 600;
+}
+
+/* ============ 场景筛选（Forge pill，对齐能力中心）============ */
 .scenario-filter-switcher {
+  display: flex;
+  align-items: center;
   flex: 0 1 auto;
+  gap: 3px;
+  width: max-content;
   max-width: 100%;
+  min-height: 52px;
   padding: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
   background: var(--surface-muted);
   border: 1px solid var(--border-default);
   border-radius: 999px;
+  scrollbar-width: none;
 }
-.scenario-filter-switcher :deep(.ant-segmented-group) {
-  gap: 3px;
+.scenario-filter-switcher::-webkit-scrollbar {
+  display: none;
 }
-.scenario-filter-switcher :deep(.ant-segmented-item) {
+.scenario-filter-switcher > button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid transparent;
   border-radius: 999px;
   color: var(--color-text-secondary);
+  background: transparent;
+  font-size: 12px;
   font-weight: 550;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    color 150ms ease,
+    background 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
-.scenario-filter-switcher :deep(.ant-segmented-item:hover) {
+.scenario-filter-switcher > button:hover {
   color: var(--color-text-primary);
   background: var(--surface-content);
 }
-.scenario-filter-switcher :deep(.ant-segmented-item-selected) {
+.scenario-filter-switcher > button.selected {
   color: var(--color-brand-active);
   background: var(--surface-selected);
+  border-color: var(--color-brand-border);
+  box-shadow: 0 1px 2px #2027330a;
   font-weight: 650;
 }
-.scenario-filter-switcher :deep(.scenario-filter-option) {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+.scenario-filter-switcher > button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  z-index: 1;
 }
-.scenario-filter-switcher :deep(.scenario-filter-option > svg) {
+.scenario-filter-switcher > button > svg {
+  flex: 0 0 auto;
   color: var(--color-text-secondary);
 }
-.scenario-filter-switcher :deep(.ant-segmented-item-selected .scenario-filter-option > svg) {
+.scenario-filter-switcher > button.selected > svg {
   color: var(--accent-ink);
 }
-.scenario-filter-switcher :deep(.ant-segmented-item-selected .scenario-filter-count) {
+.scenario-filter-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scenario-filter-count {
+  display: inline-grid;
+  min-width: 22px;
+  height: 20px;
+  place-items: center;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--color-neutral-status-text);
+  background: var(--color-neutral-status-bg);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1;
+}
+.scenario-filter-switcher > button.selected .scenario-filter-count {
   color: var(--color-brand-active);
   background: var(--brand-200);
 }
 
-/* 工具栏搜索框 */
+/* ============ 搜索框 ============ */
 .scenario-search {
-  min-width: 220px;
+  width: 220px;
   flex-shrink: 0;
+  min-height: 40px;
   border-radius: 12px;
   background: var(--surface-card);
   border-color: var(--border-default);
+  box-shadow: 0 1px 3px #20273308;
+}
+.scenario-search :deep(.ant-input) {
+  min-height: 0; /* 中和 style.css 全局 :where(input){min-height:41px} */
+  font-size: 13px;
+}
+.scenario-search:focus-within {
+  border-color: var(--accent-focus);
+  box-shadow: 0 0 0 3px var(--accent-focus-ring);
 }
 
-/* 图标选择按钮去掉 antd 默认内边距，保留 Forge 方块布局 */
+/* ============ 卡片：状态 / 能力 / 动作 ============ */
+.scenarios-page .enterprise-scenario-card {
+  min-height: 240px;
+}
+/* 状态标签：发布=success，预置/草稿=中性 */
+.scenario-card-top :deep(.ant-tag) {
+  margin-left: auto;
+  margin-inline-end: 0;
+  border-radius: 999px;
+  padding: 0 9px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--color-neutral-status-text);
+  background: var(--color-neutral-status-bg);
+  border-color: var(--color-neutral-status-border);
+}
+.scenario-card-top :deep(.ant-tag-success) {
+  color: var(--color-success-text);
+  background: var(--color-success-bg);
+  border-color: var(--color-success-border);
+}
+/* 能力标签 */
+.scenario-capabilities :deep(.ant-tag) {
+  margin-inline-end: 0;
+  padding: 4px 8px;
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  background: var(--surface-subtle-bg);
+  border-color: var(--border-light);
+  font-size: 10px;
+  line-height: 1.4;
+}
+/* 删除按钮（卡片右上，默认隐藏） */
+.delete-scenario {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  margin-left: 0;
+  color: var(--text-secondary);
+  opacity: 0;
+}
+.scenario-card:hover .delete-scenario,
+.scenario-card:focus-within .delete-scenario {
+  opacity: 1;
+}
+/* 动作按钮（详情 / 开始） */
+.scenario-card-actions :deep(.ant-btn) {
+  height: auto;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+.scenario-card-actions .scenario-use {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: auto;
+  margin-left: auto;
+  padding: 7px 12px;
+  border-radius: 10px;
+  color: var(--color-brand-active);
+  background: var(--color-brand-muted);
+  border: 1px solid var(--color-brand-border);
+  font-size: 11px;
+  font-weight: 650;
+}
+.scenario-card-actions .scenario-use:hover {
+  color: var(--color-brand-active);
+  background: var(--color-brand-subtle);
+  border-color: var(--brand-300);
+}
+/* 维护动作条 */
+.scenario-maintenance-actions :deep(.ant-btn) {
+  height: auto;
+  min-height: 29px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  font-size: 10px;
+}
+
+/* ============ 空态收敛 ============ */
+.scenarios-page .enterprise-empty {
+  min-height: 220px;
+  padding: 40px 24px;
+}
+.enterprise-empty :deep(.ant-empty-image) {
+  height: auto;
+  margin-bottom: 14px;
+}
+.enterprise-empty-symbol {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 18px;
+}
+
+/* ============ 编辑器内 antd 细节（保持不变的功能性修正）============ */
 .icon-options :deep(.ant-btn) {
   padding: 0;
 }
-
-/* Checkbox 选项行：antd 默认 inline-flex/baseline 会破坏纵向居中，重新对齐 */
 .tool-checkbox,
 .scenario-plugin-option,
 .scenario-plugin-tool {
   display: flex;
   align-items: center;
 }
-
-/* 标签在选项行右对齐 */
 .scenario-plugin-option :deep(.ant-tag),
 .scenario-plugin-tool :deep(.ant-tag) {
   margin-left: auto;
   white-space: nowrap;
 }
-
-/* 卡片状态标签与能力标签 */
-.scenario-card-top :deep(.ant-tag) {
-  margin-left: auto;
-  font-size: 10px;
-  margin-top: 2px;
-}
-.scenario-capabilities :deep(.ant-tag) {
-  font-size: 10px;
-}
-
-/* 卡片动作按钮保持紧凑 */
-.scenario-card-actions :deep(.ant-btn),
-.scenario-maintenance-actions :deep(.ant-btn) {
-  font-size: 11px;
-}
-
-/* 版本历史折叠面板间距 */
 .version-entry :deep(.ant-collapse) {
   margin-top: 17px;
 }

@@ -12,7 +12,7 @@ npm ci 会先删掉 frontend/node_modules 再按 package-lock.json 完整重装�
 
 npm --prefix frontend run build
 
-每次改完代码，在回复末尾用一两句话说明改了什么（改了哪些文件、做了什么），方便直接拿去 commit。
+每次改完代码，在回复末尾用一两句话说明改动内容，中文描述，方便直接拿去 commit。
 
 ## What this is
 
