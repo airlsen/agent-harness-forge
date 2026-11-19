@@ -447,9 +447,15 @@ async def main():
             await page.get_by_role("button", name="保存草稿", exact=True).click()
             await expect(page.get_by_role("dialog", name="场景编辑器")).to_have_count(0)
             await expect(card.get_by_role("heading")).to_have_text(fixture_name)
-            await card.get_by_role("button", name="版本 v2").click()
+            # 版本记录收进卡片「更多」下拉
+            await card.get_by_role("button", name=f"更多操作 {fixture_name}").click()
+            await page.get_by_role("menuitem", name="版本记录 v2").click()
             await expect(page.locator(".version-entry")).to_have_count(2)
-            await page.locator(".version-entry").first.locator("summary").click()
+            await (
+                page.locator(".version-entry")
+                .first.locator(".ant-collapse-header")
+                .click()
+            )
             await expect(
                 page.locator(".version-entry").first.locator("pre")
             ).to_contain_text("企业前端回归提示词")
@@ -467,6 +473,12 @@ async def main():
             )
             await page.get_by_role("button", name="维护场景", exact=True).click()
             await page.get_by_label("搜索场景").fill(fixture_name)
+            # 维护卡片不再直接放「预览草稿」，从详情抽屉进入
+            await (
+                page.locator(".scenario-card")
+                .first.get_by_role("button", name="详情")
+                .click()
+            )
             await page.get_by_role("button", name="预览草稿", exact=True).click()
             await expect(
                 page.get_by_role("dialog", name="新建会话确认", exact=True)
@@ -495,9 +507,11 @@ async def main():
             await page.get_by_role("link", name="企业场景", exact=True).click()
             await page.get_by_role("button", name="维护场景", exact=True).click()
             await page.get_by_label("搜索场景").fill(fixture_name)
+            # 删除收进卡片「更多」下拉
             await page.get_by_role(
-                "button", name=f"删除场景 {fixture_name}", exact=True
+                "button", name=f"更多操作 {fixture_name}", exact=True
             ).click()
+            await page.get_by_role("menuitem", name="删除场景").click()
             await expect(
                 page.get_by_role("dialog", name="删除场景确认")
             ).to_be_visible()
