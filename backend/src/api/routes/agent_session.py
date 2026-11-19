@@ -24,14 +24,10 @@ class Turn(BaseModel):
     message: str = Field(min_length=1, max_length=64000)
     # 从本轮起使用的模型；不传或与当前相同则沿用会话当前模型。
     modelId: int | None = Field(default=None, gt=0)
-    # 关联代码（代码根目录下的项目名，只读）；不传沿用会话已保存的选择，传入则从本轮起生效。
+    # 关联代码（代码根目录下的项目名，只读）随消息提交：不传沿用会话已保存的选择，传入则从本轮起生效。
     codeProjects: list[str] | None = Field(default=None, max_length=20)
-    # 聊天临时选择的扩展能力（Skill / MCP / 联网）；不传沿用会话已保存的选择，传入则从本轮起生效。
+    # 聊天临时选择的扩展能力（Skill / MCP / 联网）同样随消息提交，规则同上。
     capabilities: CapabilityChoice | None = None
-
-
-class CodeProjects(BaseModel):
-    codeProjects: list[str] = Field(max_length=20)
 
 
 @router.get("")
@@ -60,18 +56,6 @@ async def turn(session_id: int, payload: Turn):
             capabilities=payload.capabilities,
         )
     )
-
-
-@router.put("/{session_id}/code-projects")
-async def code_projects(session_id: int, payload: CodeProjects):
-    """修改会话的关联代码：执行中也可修改，从下一轮起生效。"""
-    return ResponseUtil.ok(await session_service.set_code_projects(session_id, payload.codeProjects))
-
-
-@router.put("/{session_id}/capabilities")
-async def capabilities(session_id: int, payload: CapabilityChoice):
-    """修改会话临时选择的扩展能力：执行中也可修改，从下一轮起生效。"""
-    return ResponseUtil.ok(await session_service.set_capabilities(session_id, payload))
 
 
 @router.get("/{session_id}/events")
