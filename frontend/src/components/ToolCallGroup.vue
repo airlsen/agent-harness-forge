@@ -4,7 +4,7 @@ import { usePlatform } from '../stores/platform';
 import { useConversation } from '../stores/conversation';
 import type { ToolCallView } from '../utils/turns';
 import Icon from './ForgeIcon.vue';
-import { BUILTIN_TOOL_TITLES } from '../utils/files';
+import { builtinToolTitle } from '../utils/files';
 
 // flat：只渲染调用行（无分组标题），用于过程块内的时间线
 const props = defineProps<{ calls: ToolCallView[]; flat?: boolean }>();
@@ -23,7 +23,7 @@ const summary = computed(() => {
   return `${props.calls.length} 次工具调用 · ${names.slice(0, 3).join('、')}${names.length > 3 ? ' 等' : ''}`;
 });
 function toolTitle(name: string) {
-  return app.tools.find((tool) => tool.name === name)?.title ?? BUILTIN_TOOL_TITLES[name] ?? name;
+  return app.tools.find((tool) => tool.name === name)?.title ?? builtinToolTitle(name);
 }
 function argSummary(value: unknown) {
   if (!value || typeof value !== 'object') return '';

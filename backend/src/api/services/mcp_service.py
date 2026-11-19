@@ -1,8 +1,13 @@
-"""Remote Streamable HTTP MCP registry and connection probe (no arbitrary process launch)."""
+"""MCP registry and connection probe: Streamable HTTP, legacy SSE (connection test only) and stdio.
+
+stdio commands come only from administrator-imported config; they run without a shell, with a scrubbed
+environment (no control-plane secrets) and bounded time/output.
+"""
 
 import ipaddress
 import json
 import os
+import re
 import socket
 import asyncio
 from urllib.parse import urljoin, urlsplit
@@ -301,6 +306,20 @@ async def probe(
         return result.get("result", {}).get("serverInfo", {}), safe_tools
 
 
+# 与 DSH（dsh-subprocess scrubbedParentEnv）一致：名称像凭据的变量不传给 MCP 进程
+SENSITIVE_ENV = re.compile(r"KEY|PASSWORD|SECRET|TOKEN", re.IGNORECASE)
+
+
+def scrubbed_env(configured: dict[str, str]) -> dict[str, str]:
+    """stdio MCP 进程环境：父进程中名称不像凭据的变量（FORGE_* 一律剔除）+ 管理员配置的变量。"""
+    inherited = {
+        key: value
+        for key, value in os.environ.items()
+        if not SENSITIVE_ENV.search(key) and not key.upper().startswith(("FORGE_", "DSH_"))
+    }
+    return {**inherited, **configured}
+
+
 async def _probe_stdio(command: str, args: list[str], env: dict[str, str]) -> tuple[dict, list[dict]]:
     """Launch an explicitly configured stdio MCP command without a shell; bound time and protocol output."""
     try:
@@ -310,7 +329,7 @@ async def _probe_stdio(command: str, args: list[str], env: dict[str, str]) -> tu
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
-            env={**os.environ, **env},
+            env=scrubbed_env(env),
             limit=65536,
         )
     except (OSError, ValueError) as exc:

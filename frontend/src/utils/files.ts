@@ -13,7 +13,19 @@ export const BUILTIN_TOOL_TITLES: Record<string, string> = {
   // Runner 基础能力中的 DSH 搜索插件
   glob: '查找文件',
   grep: '搜索文件内容',
+  // 关联代码、Skill 参考资料的只读读取
+  read: '读取文件',
+  // 扩展能力
+  skill: '加载 Skill',
+  web_search: '联网搜索',
+  web_fetch: '读取网页',
 };
+/** 内置工具的中文名；MCP 工具（mcp__服务__工具）显示为「服务 · 工具」，其余原样返回 */
+export function builtinToolTitle(name: string): string {
+  if (BUILTIN_TOOL_TITLES[name]) return BUILTIN_TOOL_TITLES[name];
+  const mcp = /^mcp__(.+?)__(.+)$/.exec(name);
+  return mcp ? `${mcp[1]} · ${mcp[2]}` : name;
+}
 
 export interface WorkspaceFile {
   path: string;

@@ -59,13 +59,6 @@ async def plugin_enable(release_id: int, payload: PluginEnabled, db: AsyncSessio
     return ResponseUtil.ok(await set_release_enabled(db, release_id, payload.enabled))
 
 
-@router.get("/skills")
-async def skills():
-    return ResponseUtil.ok(
-        {"items": [], "available": False, "reason": "当前尚未接入 Skill 管理与物化执行，不提供模拟安装"}
-    )
-
-
 class McpImport(BaseModel):
     config: dict
 
@@ -99,6 +92,8 @@ async def mcp_enable(server_id: int, payload: McpEnable, db: AsyncSession = Depe
     row = await db.get(McpServer, server_id)
     if not row:
         raise HTTPException(404, "MCP 服务不存在")
+    if payload.enabled and row.transport == "sse":
+        raise HTTPException(409, "旧版 SSE 服务仅支持连接测试，暂不能在会话中运行；请改用 Streamable HTTP")
     if payload.enabled and (row.status != "connected" or not row.tools_json):
         raise HTTPException(409, "请先成功测试连接并发现至少一个工具")
     row.enabled = payload.enabled

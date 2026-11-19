@@ -27,7 +27,7 @@ const tool = (id, callId, name = 'workspace_read') => ({
   meta: { toolCallId: callId, tool: name, arguments: { path: 'a.txt' }, isError: false },
 });
 try {
-  const { buildTurns, codeChanges, processStats, processSummary } =
+  const { buildTurns, capabilityChanges, codeChanges, processStats, processSummary } =
     await vite.ssrLoadModule('/src/utils/turns.ts');
 
   check('一轮 = 用户消息 + 一个 AI 块；思考与正文是同一块内的步骤', () => {
@@ -289,6 +289,45 @@ try {
     assert.deepEqual(codeChanges(turns), [null, ['alpha'], null, ['alpha', 'beta'], []]);
     // 没有用户消息的轮次（如历史中只剩回复）不参与比较
     assert.deepEqual(codeChanges([{ user: null }, { user: withCode(1, ['x']) }]), [null, ['x']]);
+  });
+  check('capabilityChanges：生效集合变化时给出列表，未装配的项每轮提示', () => {
+    const withCaps = (id, capabilities) => ({ id, role: 'user', content: '任务', meta: { capabilities } });
+    const caps = (extra = {}) => ({ skills: [], mcp: [], web: null, unavailable: [], ...extra });
+    const skill = { id: 1, name: 'report', title: '周报', source: 'chat' };
+    const turns = [
+      { user: user(1) },
+      {
+        user: withCaps(2, caps({ skills: [skill], web: { search: true, fetch: true, source: 'scenario' } })),
+      },
+      {
+        user: withCaps(3, caps({ skills: [skill], web: { search: true, fetch: true, source: 'scenario' } })),
+      },
+      {
+        user: withCaps(
+          4,
+          caps({
+            skills: [skill],
+            web: { search: true, fetch: true, source: 'scenario' },
+            unavailable: [
+              { kind: 'mcp', id: 3, title: 'Jira' },
+              { kind: 'skill', id: 9, title: '' },
+            ],
+          }),
+        ),
+      },
+      { user: withCaps(5, caps({ mcp: [{ id: 3, name: 'Jira', tools: 2, approvalTools: 1 }] })) },
+      { user: user(6) },
+      { user: null },
+    ];
+    assert.deepEqual(capabilityChanges(turns), [
+      null,
+      { active: ['周报', '联网搜索'], unavailable: [] },
+      null,
+      { active: null, unavailable: ['Jira', 'Skill #9'] },
+      { active: ['Jira'], unavailable: [] },
+      { active: [], unavailable: [] },
+      null,
+    ]);
   });
 } finally {
   await vite.close();

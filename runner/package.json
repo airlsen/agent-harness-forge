@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "test": "node scripts/check-workspace.mjs && node --import tsx scripts/check-system-prompt.mjs && node --import tsx scripts/check-code-projects.mjs && node --import tsx scripts/check-business.mjs && node scripts/check-skill-authoring.mjs && node scripts/check-plugin-bridge.mjs && node --import tsx scripts/check-plugin-worker.mjs",
+    "test": "node scripts/check-workspace.mjs && node --import tsx scripts/check-system-prompt.mjs && node --import tsx scripts/check-code-projects.mjs && node --import tsx scripts/check-business.mjs && node --import tsx scripts/check-capabilities.mjs && node scripts/check-skill-authoring.mjs && node scripts/check-plugin-bridge.mjs && node --import tsx scripts/check-plugin-worker.mjs",
     "test:workspace": "node scripts/check-workspace.mjs",
     "poc": "tsx scripts/poc.mjs",
     "poc:boot-only": "tsx scripts/poc.mjs --boot-only",
@@ -20,7 +20,15 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-mcp-client": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-skill": "0.2.2-rc.1",
     "@deepseek-ai/dsh-tool-fs-search": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-tool-skill": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-tool-web": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-web": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-web-deepseek-api": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-web-fetch-http": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-web-search-deepseek": "0.2.2-rc.1",
     "fastify": "^5.2.0"
   },
   "devDependencies": {

@@ -365,7 +365,7 @@ onMounted(load);
             ><span class="availability-dot"></span>{{ app.tools.length }} 项基础工具 ·
             {{ visiblePlugins.length }} 个受管插件</span
           >
-          <p>通过场景调用 · 仅展示审核且由 Forge 托管的版本</p>
+          <p>基础工具在每个会话中默认开启 · 插件仅展示审核且由 Forge 托管的版本</p>
         </div>
         <div v-if="visibleTools.length" class="enterprise-tool-grid">
           <article v-for="tool in visibleTools" :key="tool.name" class="enterprise-tool-card">
@@ -386,7 +386,7 @@ onMounted(load);
               }}</span>
             </div>
             <footer>
-              <span>平台基础工具</span
+              <span>平台基础能力（默认开启）</span
               ><button :aria-label="`查看${tool.title}详情`" @click="detail = tool">
                 查看详情 <Icon name="arrow" :size="15" />
               </button>
@@ -424,7 +424,13 @@ onMounted(load);
               <p>{{ plugin.description }}</p>
               <div class="managed-plugin-meta">
                 <span>v{{ plugin.version }}</span
-                ><span>{{ plugin.tools.length }} 项已声明工具</span>
+                ><span>{{ plugin.tools.length }} 项已声明工具</span
+                ><span
+                  v-if="plugin.source.includes('demo')"
+                  class="tag warm"
+                  title="仅返回模拟数据，不连接真实系统"
+                  >演示数据</span
+                >
               </div>
               <ul class="managed-plugin-tools">
                 <li v-for="tool in plugin.tools" :key="tool.name">
@@ -600,6 +606,12 @@ onMounted(load);
               </button>
             </div>
             <p v-if="server.lastError" class="mcp-server-error">{{ server.lastError }}</p>
+            <p v-if="server.transport === 'sse'" class="mcp-server-note">
+              仅测试连接，暂不可在会话中运行。会话执行内核不支持旧版 SSE，请改用 Streamable HTTP 或 stdio。
+            </p>
+            <p v-else-if="server.enabled && server.status === 'connected'" class="mcp-server-note">
+              可在场景中绑定，或在聊天「扩展能力」中临时选用。
+            </p>
             <footer class="mcp-card-footer">
               <span v-if="server.hasCredentials" class="mcp-credential-note">认证信息已加密保存</span
               ><span v-else class="mcp-credential-note">{{
@@ -611,7 +623,10 @@ onMounted(load);
                 </button>
                 <button
                   class="button secondary small"
-                  :disabled="server.status !== 'connected'"
+                  :disabled="server.status !== 'connected' || (server.transport === 'sse' && !server.enabled)"
+                  :title="
+                    server.transport === 'sse' && !server.enabled ? '旧版 SSE 暂不可在会话中运行' : undefined
+                  "
                   @click="toggleMcp(server)"
                 >
                   {{ server.enabled ? '停用' : '启用' }}
@@ -735,7 +750,7 @@ onMounted(load);
       <header>
         <div>
           <h2>导入 MCP 服务</h2>
-          <p>选择 Streamable HTTP 或旧版 SSE，粘贴远程 HTTPS 服务的 mcpServers JSON。</p>
+          <p>选择连接协议并粘贴 mcpServers JSON。远程服务须使用 HTTPS；旧版 SSE 仅可测试连接。</p>
         </div>
         <button class="icon-button" aria-label="关闭" @click="mcpEditorOpen = false">
           <Icon name="close" :size="20" />
@@ -746,7 +761,7 @@ onMounted(load);
           <label class="mcp-json-label" for="mcp-import-json">连接协议</label
           ><select v-model="mcpTransport" class="mcp-transport-select" @change="changeMcpTransport">
             <option value="streamable-http">Streamable HTTP（推荐）</option>
-            <option value="sse">SSE（旧版 HTTP）</option>
+            <option value="sse">SSE（旧版 HTTP，仅测试连接）</option>
             <option value="stdio">stdio（本机进程）</option>
           </select>
         </div>

@@ -123,6 +123,8 @@ async def init_db() -> None:
             # 会话关联代码（只读）：旧会话保持 NULL，即未关联
             if "code_projects" not in existing:
                 sync_conn.execute(text("ALTER TABLE agent_session ADD COLUMN code_projects JSON NULL"))
+            if "capability_selection" not in existing:
+                sync_conn.execute(text("ALTER TABLE agent_session ADD COLUMN capability_selection JSON NULL"))
 
         await conn.run_sync(ensure_session_file_columns)
     # 重启时关闭所有孤立审批，为未完成的运行保留明确的中断记录。

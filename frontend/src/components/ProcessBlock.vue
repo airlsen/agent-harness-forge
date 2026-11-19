@@ -7,7 +7,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { usePlatform } from '../stores/platform';
 import { useConversation } from '../stores/conversation';
 import { processStats, processSummary, type TurnStep } from '../utils/turns';
-import { BUILTIN_TOOL_TITLES } from '../utils/files';
+import { builtinToolTitle } from '../utils/files';
 import Icon from './ForgeIcon.vue';
 import Markdown from './MarkdownContent.vue';
 import ToolCallGroup from './ToolCallGroup.vue';
@@ -29,7 +29,7 @@ const label = computed(() => {
   return `${chat.approvals.length ? '等待你的确认' : '正在调用'}：${toolTitle(call.tool)}`;
 });
 function toolTitle(name: string) {
-  return app.tools.find((tool) => tool.name === name)?.title ?? BUILTIN_TOOL_TITLES[name] ?? name;
+  return app.tools.find((tool) => tool.name === name)?.title ?? builtinToolTitle(name);
 }
 // 流式思考保持显示最新内容
 watch(liveThinking, async () => {

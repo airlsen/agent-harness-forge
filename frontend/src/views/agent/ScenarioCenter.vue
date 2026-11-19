@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { usePlatform } from '../../stores/platform';
-import { useConversation } from '../../stores/conversation';
+import { MAX_SESSION_MCP, MAX_SESSION_SKILLS, useConversation } from '../../stores/conversation';
 import { api, post, put, remove } from '../../api/client';
 import { formatDate, isAvailableScenario, scenarioSource, scenarioState } from '../../utils/presentation';
 import type { Scenario, ScenarioPayload } from '../../types/platform';
@@ -50,6 +50,7 @@ const blank = (): ScenarioPayload => ({
     skill_ids: [],
     mcp_server_ids: [],
     project_ids: [],
+    web_search: false,
   },
   model: 'default',
   execution_mode: 'standard',
@@ -103,6 +104,88 @@ function normalizePayload(scenario?: Scenario): ScenarioPayload {
     },
   };
 }
+/** 演示插件（如演示 CRM）只返回模拟数据，需在选择时明确标出 */
+function demoPlugin(plugin: PluginPackage) {
+  return plugin.source.includes('demo');
+}
+// Skill / MCP / 联网选项与聊天中的「扩展能力」同源：已发布 Skill、可运行的 MCP 服务、平台联网状态
+const optionsLoading = ref(false);
+async function loadCapabilityOptions() {
+  if (optionsLoading.value) return;
+  optionsLoading.value = true;
+  try {
+    await chat.loadCapabilityOptions();
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  } finally {
+    optionsLoading.value = false;
+  }
+}
+onMounted(() => void chat.loadCapabilityOptions().catch(() => {}));
+function skillTitle(id: number) {
+  return chat.capabilityOptions?.skills.find((skill) => skill.id === id)?.title ?? `Skill #${id}`;
+}
+function serverTitle(id: number) {
+  return chat.capabilityOptions?.mcpServers.find((server) => server.id === id)?.name ?? `MCP #${id}`;
+}
+/** 场景卡片与详情中的扩展能力标签 */
+function extensionLabels(payload: ScenarioPayload) {
+  const caps = payload.capabilities;
+  return [
+    ...(caps.skill_ids ?? []).map((id) => ({ key: `skill-${id}`, icon: 'book', label: skillTitle(id) })),
+    ...(caps.mcp_server_ids ?? []).map((id) => ({ key: `mcp-${id}`, icon: 'plug', label: serverTitle(id) })),
+    ...(caps.web_search ? [{ key: 'web', icon: 'globe', label: '联网搜索' }] : []),
+  ];
+}
+function cardLabels(payload: ScenarioPayload) {
+  const plugins = payload.capabilities.plugin_names.filter((name) => name !== 'forge-runtime');
+  return [
+    ...extensionLabels(payload),
+    ...plugins.map((name) => ({ key: `plugin-${name}`, icon: 'blocks', label: name })),
+  ];
+}
+/** 草稿中已绑定、但已取消发布或停用的项：保存会被拒绝，需先移除 */
+const missingSkills = computed(() =>
+  chat.capabilityOptions
+    ? draft.capabilities.skill_ids.filter((id) => !chat.capabilityOptions?.skills.some((s) => s.id === id))
+    : [],
+);
+const missingServers = computed(() =>
+  chat.capabilityOptions
+    ? draft.capabilities.mcp_server_ids.filter(
+        (id) => !chat.capabilityOptions?.mcpServers.some((s) => s.id === id),
+      )
+    : [],
+);
+function toggleId(list: number[], id: number, enabled: boolean, limit: number, label: string) {
+  const next = list.filter((item) => item !== id);
+  if (enabled) {
+    if (next.length >= limit) {
+      app.toast(`一个场景最多绑定 ${limit} 个${label}`, 'error');
+      return list;
+    }
+    next.push(id);
+  }
+  return next;
+}
+function setSkill(id: number, enabled: boolean) {
+  draft.capabilities.skill_ids = toggleId(
+    draft.capabilities.skill_ids,
+    id,
+    enabled,
+    MAX_SESSION_SKILLS,
+    ' Skill',
+  );
+}
+function setServer(id: number, enabled: boolean) {
+  draft.capabilities.mcp_server_ids = toggleId(
+    draft.capabilities.mcp_server_ids,
+    id,
+    enabled,
+    MAX_SESSION_MCP,
+    ' MCP 服务',
+  );
+}
 function pluginSelected(plugin: PluginPackage) {
   return draft.capabilities.plugin_names.includes(plugin.package);
 }
@@ -130,6 +213,7 @@ function edit(scenario?: Scenario) {
   Object.assign(draft, normalizePayload(scenario));
   drawer.value = true;
   void loadPlugins();
+  void loadCapabilityOptions();
 }
 function useScenario(scenario: Scenario) {
   detail.value = null;
@@ -337,14 +421,12 @@ async function versions(scenario: Scenario) {
           <h2>{{ scenario.payload.name }}</h2>
           <p>{{ scenario.payload.description || '还没有添加场景描述。' }}</p>
           <div class="scenario-capabilities">
-            <span v-if="!scenario.payload.capabilities.builtin_tool_names.length"
-              ><Icon name="message" :size="12" />专注对话</span
-            ><span v-for="name in scenario.payload.capabilities.builtin_tool_names.slice(0, 2)" :key="name"
-              ><Icon :name="app.tools.find((t) => t.name === name)?.icon ?? 'box'" :size="12" />{{
-                app.tools.find((t) => t.name === name)?.title ?? name
-              }}</span
-            ><span v-if="scenario.payload.capabilities.builtin_tool_names.length > 2"
-              >+{{ scenario.payload.capabilities.builtin_tool_names.length - 2 }}</span
+            <span v-if="!cardLabels(scenario.payload).length"
+              ><Icon name="message" :size="12" />对话与文件</span
+            ><span v-for="item in cardLabels(scenario.payload).slice(0, 2)" :key="item.key"
+              ><Icon :name="item.icon" :size="12" />{{ item.label }}</span
+            ><span v-if="cardLabels(scenario.payload).length > 2"
+              >+{{ cardLabels(scenario.payload).length - 2 }}</span
             >
           </div>
           <div class="scenario-card-meta">
@@ -415,17 +497,19 @@ async function versions(scenario: Scenario) {
         </div>
         <div class="detail-block">
           <h3>可用能力</h3>
-          <p v-if="!detail.payload.capabilities.builtin_tool_names.length">
-            本场景为纯对话，不调用业务工具。
-          </p>
+          <p>平台基础能力（时间、会话文件读写）始终开启。</p>
+          <p v-if="!extensionLabels(detail.payload).length">本场景未绑定 Skill、MCP 服务或联网搜索。</p>
           <RouterLink
-            v-for="name in detail.payload.capabilities.builtin_tool_names"
-            :key="name"
-            :to="{ path: '/agent/capabilities', query: { tab: 'tools', tool: name } }"
+            v-for="item in extensionLabels(detail.payload)"
+            :key="item.key"
+            :to="{
+              path: '/agent/capabilities',
+              query: {
+                tab: item.key.startsWith('skill') ? 'skills' : item.key.startsWith('mcp') ? 'mcp' : 'tools',
+              },
+            }"
             class="scenario-detail-tool"
-            ><Icon :name="app.tools.find((t) => t.name === name)?.icon ?? 'wrench'" :size="18" /><span>{{
-              app.tools.find((t) => t.name === name)?.title ?? name
-            }}</span
+            ><Icon :name="item.icon" :size="18" /><span>{{ item.label }}</span
             ><Icon name="arrow" :size="14"
           /></RouterLink>
         </div>
@@ -526,9 +610,9 @@ async function versions(scenario: Scenario) {
         ></textarea>
         <p class="field-hint">作为场景级指令使用。不会自动开始任务，也不会扩大工具权限。</p>
         <div class="form-section-title"><span>03</span>授权能力</div>
+        <p class="field-hint">平台基础能力（默认开启）：每个会话都可使用，范围以平台策略为上限。</p>
         <label v-for="tool in app.tools" :key="tool.name" class="tool-checkbox"
-          ><input v-model="draft.capabilities.builtin_tool_names" type="checkbox" :value="tool.name" /><span
-            class="tool-checkbox-icon"
+          ><input type="checkbox" checked disabled /><span class="tool-checkbox-icon"
             ><Icon :name="tool.icon" :size="18"
           /></span>
           <div>
@@ -536,6 +620,123 @@ async function versions(scenario: Scenario) {
           </div>
           <Icon v-if="tool.permission !== 'read'" name="edit" :size="15"
         /></label>
+        <section class="scenario-plugin-picker" aria-labelledby="scenario-skill-title">
+          <header>
+            <div>
+              <h3 id="scenario-skill-title">Skill</h3>
+              <p>
+                绑定已发布的 Skill，发布场景时固定到当前修订。模型按需加载，用户也可在聊天中输入 /名称
+                直接调用。最多 {{ MAX_SESSION_SKILLS }} 个。
+              </p>
+            </div>
+            <span v-if="optionsLoading" class="loader small"></span>
+          </header>
+          <p v-if="!optionsLoading && !chat.capabilityOptions?.skills.length" class="field-hint">
+            还没有已发布的 Skill。<RouterLink to="/agent/skills">前往 Skill 中心</RouterLink>
+          </p>
+          <label
+            v-for="skill in chat.capabilityOptions?.skills ?? []"
+            :key="skill.id"
+            class="scenario-plugin-option"
+            ><input
+              type="checkbox"
+              :checked="draft.capabilities.skill_ids.includes(skill.id)"
+              @change="setSkill(skill.id, ($event.target as HTMLInputElement).checked)"
+            /><span class="tool-checkbox-icon"><Icon name="book" :size="18" /></span>
+            <div>
+              <strong>{{ skill.title }}</strong><small
+                >/{{ skill.name }}<template v-if="skill.version"> · v{{ skill.version }}</template
+                ><template v-if="skill.description"> · {{ skill.description }}</template></small
+              >
+            </div></label
+          >
+          <label v-for="id in missingSkills" :key="`missing-skill-${id}`" class="scenario-plugin-option"
+            ><input type="checkbox" checked @change="setSkill(id, false)" /><span class="tool-checkbox-icon"
+              ><Icon name="book" :size="18"
+            /></span>
+            <div>
+              <strong>Skill #{{ id }}</strong
+              ><small>已取消发布或已删除，取消勾选后才能保存</small>
+            </div>
+            <span class="tag neutral">不可用</span></label
+          >
+        </section>
+        <section class="scenario-plugin-picker" aria-labelledby="scenario-mcp-title">
+          <header>
+            <div>
+              <h3 id="scenario-mcp-title">MCP 服务</h3>
+              <p>
+                仅列出管理员已启用且连接测试通过的服务。未标注只读的工具每次调用前需用户确认；凭据与工具清单按最新配置每轮装配。最多
+                {{ MAX_SESSION_MCP }} 个。
+              </p>
+            </div>
+          </header>
+          <p v-if="!optionsLoading && !chat.capabilityOptions?.mcpServers.length" class="field-hint">
+            还没有可用的 MCP 服务。<RouterLink :to="{ path: '/agent/capabilities', query: { tab: 'mcp' } }"
+              >前往能力中心接入</RouterLink
+            >
+          </p>
+          <label
+            v-for="server in chat.capabilityOptions?.mcpServers ?? []"
+            :key="server.id"
+            class="scenario-plugin-option"
+            ><input
+              type="checkbox"
+              :checked="draft.capabilities.mcp_server_ids.includes(server.id)"
+              @change="setServer(server.id, ($event.target as HTMLInputElement).checked)"
+            /><span class="tool-checkbox-icon"><Icon name="plug" :size="18" /></span>
+            <div>
+              <strong>{{ server.name }}</strong><small
+                >{{ server.transport === 'stdio' ? '本地进程' : 'HTTP' }} ·
+                {{ server.tools.length }} 个工具<template
+                  v-if="server.tools.some((tool) => tool.permission === 'approval')"
+                >
+                  ·
+                  {{ server.tools.filter((tool) => tool.permission === 'approval').length }}
+                  个需确认</template
+                ><template v-if="server.description"> · {{ server.description }}</template></small
+              >
+            </div></label
+          >
+          <label v-for="id in missingServers" :key="`missing-mcp-${id}`" class="scenario-plugin-option"
+            ><input type="checkbox" checked @change="setServer(id, false)" /><span class="tool-checkbox-icon"
+              ><Icon name="plug" :size="18"
+            /></span>
+            <div>
+              <strong>MCP #{{ id }}</strong
+              ><small>已停用或连接异常，取消勾选后才能保存</small>
+            </div>
+            <span class="tag neutral">不可用</span></label
+          >
+        </section>
+        <section class="scenario-plugin-picker" aria-labelledby="scenario-web-title">
+          <header>
+            <div>
+              <h3 id="scenario-web-title">联网</h3>
+              <p>开启后模型可搜索网络并读取公网网页，回答需注明来源。每次搜索按一次模型调用计费。</p>
+            </div>
+          </header>
+          <label class="scenario-plugin-option"
+            ><input
+              v-model="draft.capabilities.web_search"
+              type="checkbox"
+              :disabled="!draft.capabilities.web_search && !chat.capabilityOptions?.web.available"
+            /><span class="tool-checkbox-icon"><Icon name="globe" :size="18" /></span>
+            <div>
+              <strong>联网搜索</strong
+              ><small>{{
+                chat.capabilityOptions?.web.available
+                  ? chat.capabilityOptions.web.fetchEnabled
+                    ? '搜索 + 读取网页'
+                    : '仅搜索'
+                  : chat.capabilityOptions?.web.reason || '平台尚未开启联网搜索，请在治理中心配置'
+              }}</small>
+            </div>
+            <span v-if="chat.capabilityOptions && !chat.capabilityOptions.web.available" class="tag neutral"
+              >未开启</span
+            ></label
+          >
+        </section>
         <section class="scenario-plugin-picker" aria-labelledby="scenario-plugin-title">
           <header>
             <div>
@@ -557,7 +758,9 @@ async function versions(scenario: Scenario) {
                 >{{ plugin.description }} · v{{ plugin.version }}</small
               >
             </div>
-            <span
+            <span v-if="demoPlugin(plugin)" class="tag warm" title="仅返回模拟数据，不连接真实系统"
+              >演示数据</span
+            ><span
               :class="['tag', plugin.auditStatus === 'approved' && plugin.enabled ? 'success' : 'neutral']"
               >{{ plugin.auditStatus === 'approved' && plugin.enabled ? '已批准' : '不可用' }}</span
             ></label
@@ -582,8 +785,7 @@ async function versions(scenario: Scenario) {
             >
           </div>
           <p class="field-hint">
-            当前只装配审核通过的受管插件。MCP、Skill 与项目能力将在后续场景装配阶段接入；不会安装或执行任意
-            npm、GitHub 插件。
+            只装配审核通过的受管插件，不会安装或执行任意 npm、GitHub 插件。关联代码改为在聊天中按会话选择。
           </p>
         </section>
         <div class="form-section-title"><span>04</span>运行配置</div>
@@ -598,7 +800,10 @@ async function versions(scenario: Scenario) {
         <div class="static-form-row"><span>执行方式</span><strong>标准会话</strong></div>
         <div class="editor-safety">
           <Icon name="shield" :size="17" />
-          <p>实际工具范围取场景与平台策略交集。草稿须在当前模型与策略下试运行通过后才能发布。</p>
+          <p>
+            实际工具范围取场景与平台策略交集；用户可在聊天中临时追加 Skill、MCP
+            与联网，但不能取消场景绑定项。草稿须试运行通过后才能发布。
+          </p>
         </div>
       </form>
       <footer>

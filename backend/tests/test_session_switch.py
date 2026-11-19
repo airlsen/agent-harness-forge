@@ -26,12 +26,15 @@ class FakeRunner:
         self.turns: list[tuple[str, str, dict | None]] = []
         self.code: list[list[str] | None] = []
         self.created_code: list[list[str] | None] = []
+        self.created_caps: list[dict | None] = []
+        self.caps: list[dict | None] = []
         self.projects = ["alpha", "beta"]
         self.usage = (1000, 100)
 
-    async def create_session(self, _bundle, _user, config, code_projects=None):
+    async def create_session(self, _bundle, _user, config, code_projects=None, capabilities=None):
         self.created.append(config)
         self.created_code.append(code_projects)
+        self.created_caps.append(capabilities)
         return {"sessionId": f"runner-{len(self.created)}"}
 
     async def code_projects(self):
@@ -44,9 +47,10 @@ class FakeRunner:
     async def call(self, _method, _path, _body=None):
         return {"exists": True, "busy": False}
 
-    async def events(self, runner_id, message, model_config=None, code_projects=None):
+    async def events(self, runner_id, message, model_config=None, code_projects=None, capabilities=None):
         self.turns.append((runner_id, message, model_config))
         self.code.append(code_projects)
+        self.caps.append(capabilities)
         yield {
             "kind": "message",
             "source": "llm",
@@ -302,7 +306,7 @@ class FileRunner(FakeRunner):
 
         return self.files[unquote(path.split("path=", 1)[1])], "text/plain"
 
-    async def events(self, runner_id, message, model_config=None, code_projects=None):
+    async def events(self, runner_id, message, model_config=None, code_projects=None, capabilities=None):
         if message == "第一轮":
             self.files = {"report.md": b"# v1\n", "notes.txt": b"a\n"}
         else:
