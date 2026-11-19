@@ -128,12 +128,13 @@ async def init_db() -> None:
 
         await conn.run_sync(ensure_session_file_columns)
     # 重启时关闭所有孤立审批，为未完成的运行保留明确的中断记录。
+    import json
     from datetime import datetime, timezone
     from sqlalchemy import select, func
     from ..models.agent_session import AgentSession, SessionEventIndex
     from ..models.approval_ticket import ApprovalTicket
     from ..models.platform import PlatformSetting
-    from ..models.agent_scenario import AgentScenario
+    from ..models.agent_scenario import AgentScenario, AgentScenarioVersion
 
     async with SessionFactory() as db:
         active = (await db.scalars(select(AgentSession).where(AgentSession.status == "running"))).all()
@@ -175,12 +176,36 @@ async def init_db() -> None:
             if isinstance(allowed, list) and "bash" not in allowed:
                 policy_row.value = {**policy_row.value, "allowedTools": [*allowed, "bash"]}
 
-        scenarios = (await db.scalars(select(AgentScenario).where(AgentScenario.official == True))).all()
+        scenarios = (await db.scalars(select(AgentScenario).where(AgentScenario.space == "official"))).all()
         for sc in scenarios:
-            if sc.name in ("通用助手", "代码与研发") and isinstance(sc.capabilities, dict):
-                tools = sc.capabilities.get("builtin_tool_names", [])
-                if isinstance(tools, list) and "bash" not in tools:
-                    sc.capabilities = {**sc.capabilities, "builtin_tool_names": [*tools, "bash"]}
+            if sc.name in ("通用助手", "代码与研发"):
+                versions = (
+                    await db.scalars(
+                        select(AgentScenarioVersion).where(AgentScenarioVersion.scenario_id == sc.id)
+                    )
+                ).all()
+                for ver in versions:
+                    if isinstance(ver.bundle_json, dict):
+                        bundle_data = json.loads(json.dumps(ver.bundle_json))
+                        modified = False
+                        payload = bundle_data.get("payload")
+                        if isinstance(payload, dict):
+                            caps = payload.get("capabilities")
+                            if isinstance(caps, dict):
+                                tools = caps.get("builtin_tool_names")
+                                if isinstance(tools, list) and "bash" not in tools:
+                                    tools.append("bash")
+                                    modified = True
+                        bundle_inner = bundle_data.get("bundle")
+                        if isinstance(bundle_inner, dict):
+                            meta = bundle_inner.get("meta")
+                            if isinstance(meta, dict):
+                                b_tools = meta.get("builtin_tools")
+                                if isinstance(b_tools, list) and "bash" not in b_tools:
+                                    b_tools.append("bash")
+                                    modified = True
+                        if modified:
+                            ver.bundle_json = bundle_data
         await db.commit()
 
 
