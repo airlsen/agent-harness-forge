@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>微信公众号排版工具 — HTML 源码转换</title>
+<style>
+  :root {
+    --bg: #f3f4f6;
+    --panel: #ffffff;
+    --border: #e5e7eb;
+    --text: #111827;
+    --muted: #6b7280;
+    --brand: #07c160;
+    --brand-dark: #06ad56;
+    --danger: #d0021b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+  }
+  header {
+    background: #1f2937;
+    color: #fff;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header .sub { color: #9ca3af; font-size: 12px; margin-top: 2px; }
+
+  main {
+    display: grid;
+    grid-template-columns: minmax(320px, 1fr) minmax(340px, 1fr);
+    gap: 16px;
+    padding: 16px;
+    max-width: 1400px;
+    margin: 0 auto;
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .card .card-head {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .card .card-head .title { font-weight: 600; }
+  .card .card-body { padding: 16px; }
+
+  textarea {
+    width: 100%;
+    min-height: 380px;
+    height: calc(100vh - 220px);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    resize: vertical;
+    color: var(--text);
+    background: #fafafa;
+  }
+  textarea:focus { outline: 2px solid var(--brand); border-color: transparent; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    font-size: 14px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .btn:hover { background: #f3f4f6; }
+  .btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
+  .btn-primary:hover { background: var(--brand-dark); border-color: var(--brand-dark); }
+  .btn:disabled { opacity: .55; cursor: not-allowed; }
+
+  .options { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+  .options label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--muted); }
+  .options input[type=checkbox] { width: 16px; height: 16px; }
+
+  .status { font-size: 13px; color: var(--muted); min-height: 20px; margin-top: 10px; }
+  .status.err { color: var(--danger); }
+
+  /* 预览 */
+  .preview-wrap { position: relative; }
+  .preview-phone {
+    max-width: 677px;
+    margin: 0 auto;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 16px;
+    min-height: 300px;
+  }
+  .preview-phone iframe {
+    width: 100%;
+    border: 0;
+    min-height: 320px;
+    height: calc(100vh - 300px);
+    background: #fff;
+  }
+  .empty-hint { color: var(--muted); text-align: center; padding: 60px 20px; font-size: 13px; }
+
+  .src-out { margin-top: 12px; }
+  .src-out textarea {
+    min-height: 180px;
+    height: auto;
+    display: none;
+    background: #f9fafb;
+    font-size: 12px;
+  }
+  .src-out.open textarea { display: block; }
+
+  footer { padding: 0 24px 24px; color: var(--muted); font-size: 12px; max-width: 1400px; margin: 0 auto; }
+  footer ul { margin: 8px 0 0; padding-left: 18px; }
+  footer li { margin: 3px 0; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>微信公众号排版工具</h1>
+    <div class="sub">粘贴 HTML 源码 → 内联化样式并清洗 → 一键复制进公众号（样式不丢失）</div>
+  </div>
+</header>
+
+<main>
+  <!-- 左侧：输入 -->
+  <section class="card">
+    <div class="card-head">
+      <span class="title">① HTML 源码</span>
+      <div>
+        <button class="btn" id="btnSample">加载示例</button>
+        <button class="btn" id="btnClear">清空</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <textarea id="input" spellcheck="false" placeholder="把完整的 HTML 或文章片段粘贴到这里…"></textarea>
+      <div class="options" style="margin-top:12px">
+        <label><input type="checkbox" id="keepClass"> 保留 class（公众号会忽略，仅便于调试）</label>
+      </div>
+      <div>
+        <button class="btn btn-primary" id="btnConvert">转换并预览</button>
+        <span style="color:var(--muted);font-size:12px;margin-left:10px">快捷键 Ctrl/Cmd + Enter</span>
+      </div>
+      <div class="status" id="status"></div>
+    </div>
+  </section>
+
+  <!-- 右侧：预览 -->
+  <section class="card">
+    <div class="card-head">
+      <span class="title">② 预览</span>
+      <div>
+        <button class="btn" id="btnToggleSrc">查看源码</button>
+        <button class="btn btn-primary" id="btnCopy" disabled>复制正文</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="preview-wrap">
+        <div class="preview-phone">
+          <div class="empty-hint" id="emptyHint">转换后在此预览（按手机宽度 677px 展示）</div>
+          <iframe id="preview" style="display:none" title="预览"></iframe>
+        </div>
+      </div>
+      <div class="src-out" id="srcOut">
+        <textarea id="srcOutText" readonly spellcheck="false"></textarea>
+      </div>
+      <div class="status" id="copyStatus"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  说明：
+  <ul>
+    <li>样式来源支持 <code>&lt;style&gt;</code> 内联样式与 <code>class</code>/<code>id</code>/标签选择器；外部 <code>&lt;link&gt;</code> 样式表仅同源可读，粘贴源码时通常不受影响。</li>
+    <li>会被清洗：<code>script / iframe / form / input / video / canvas</code> 等标签，<code>on*</code> 事件属性，以及 <code>position / float / transform / animation / box-shadow / var()</code> 等公众号不支持的 CSS。</li>
+    <li>公众号对外链图片有防盗链，粘贴后若图片裂了需在后台重新上传或先传到素材库。</li>
+  </ul>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  var inputEl = document.getElementById('input');
+  var previewEl = document.getElementById('preview');
+  var emptyHint = document.getElementById('emptyHint');
+  var statusEl = document.getElementById('status');
+  var copyStatusEl = document.getElementById('copyStatus');
+  var keepClassEl = document.getElementById('keepClass');
+  var srcOut = document.getElementById('srcOut');
+  var srcOutText = document.getElementById('srcOutText');
+  var btnConvert = document.getElementById('btnConvert');
+  var btnCopy = document.getElementById('btnCopy');
+  var btnToggleSrc = document.getElementById('btnToggleSrc');
+  var btnSample = document.getElementById('btnSample');
+  var btnClear = document.getElementById('btnClear');
+
+  var currentHtml = '';
+
+  // 公众号会过滤的标签
+  var DROP_TAGS = [
+    'script', 'iframe', 'object', 'embed', 'link', 'meta', 'base',
+    'form', 'input', 'button', 'textarea', 'select', 'option',
+    'noscript', 'template', 'audio', 'video', 'source', 'canvas'
+  ];
+
+  // 公众号不支持/会导致整段样式被吞的 CSS 属性
+  var DROP_CSS_PROPS = new Set([
+    'position', 'top', 'right', 'bottom', 'left', 'z-index',
+    'float', 'clear', 'cursor', 'transition', 'animation',
+    'transform', 'filter', 'box-shadow'
+  ]);
+
+  function setStatus(el, text, isErr) {
+    el.textContent = text || '';
+    el.classList.toggle('err', !!isErr);
+  }
+
+  // ---------- 工具函数 ----------
+
+  // 顶层按 ; 分割声明，跳过括号/引号内部的 ;
+  function splitDeclarations(cssText) {
+    var parts = [];
+    var depth = 0, quote = null, cur = '';
+    for (var i = 0; i < cssText.length; i++) {
+      var ch = cssText[i];
+      if (quote) {
+        cur += ch;
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue; }
+      if (ch === '(') depth++;
+      else if (ch === ')') depth--;
+      if (ch === ';' && depth === 0) { parts.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    if (cur.trim()) parts.push(cur);
+    return parts;
+  }
+
+  function parseDeclarations(cssText) {
+    var decls = [];
+    splitDeclarations(cssText || '').forEach(function (d) {
+      d = d.trim();
+      if (!d) return;
+      var idx = d.indexOf(':');
+      if (idx < 0) return;
+      var prop = d.slice(0, idx).trim();
+      var value = d.slice(idx + 1).trim();
+      var important = false;
+      if (/!important\s*$/i.test(value)) {
+        important = true;
+        value = value.replace(/\s*!important\s*$/i, '').trim();
+      }
+      decls.push({ prop: prop, value: value, important: important });
+    });
+    return decls;
+  }
+
+  // 粗略计算选择器特异性（id / class+attr+pseudo / type）
+  function specificity(selector) {
+    var s = (selector || '').replace(/:not\([^)]*\)/g, '');
+    var a = (s.match(/#[\w-]+/g) || []).length;
+    var b = (s.match(/\.\w+|:[\w-]+|\[[^\]]*\]/g) || []).length;
+    var c = (s.match(/(^|[\s>+~])([a-zA-Z][\w-]*)/g) || []).length;
+    return a * 10000 + b * 100 + c;
+  }
+
+  function sanitizeStyle(style) {
+    return (style || '').split(';').map(function (d) { return d.trim(); })
+      .filter(Boolean)
+      .filter(function (d) {
+        var prop = d.split(':')[0].trim().toLowerCase();
+        if (DROP_CSS_PROPS.has(prop)) return false;
+        if (prop.indexOf('--') === 0 || prop.indexOf('*') === 0 || prop.indexOf('_') === 0) return false;
+        if (/var\s*\(/.test(d)) return false;
+        if (/expression\s*\(/i.test(d)) return false;
+        if (/url\s*\(\s*['"]?\s*javascript:/i.test(d)) return false;
+        return true;
+      })
+      .join('; ');
+  }
+
+  function stripScripts(html) {
+    return html
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<script\b[^>]*\/>/gi, '');
+  }
+
+  // ---------- CSS 规则收集（只取普通规则，媒体查询/字体/动画一律丢弃，与原工具一致） ----------
+
+  function collectRules(doc) {
+    var rules = [];
+    var order = 0;
+    try {
+      var sheets = doc.styleSheets;
+      for (var i = 0; i < sheets.length; i++) {
+        var list;
+        try { list = sheets[i].cssRules; } catch (e) { continue; } // 跨域样式表跳过
+        if (!list) continue;
+        for (var j = 0; j < list.length; j++) {
+          var rule = list[j];
+          if (rule.type === 1) { // CSSStyleRule
+            var decls = parseDeclarations(rule.style.cssText);
+            if (decls.length) {
+              rules.push({
+                selector: rule.selectorText,
+                decls: decls,
+                spec: specificity(rule.selectorText),
+                order: order++
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {}
+    return rules;
+  }
+
+  // ---------- 计算每个元素的内联样式（复现级联：important > 内联 > 普通规则） ----------
+
+  function better(a, b) {
+    if (a.tier !== b.tier) return a.tier > b.tier;
+    if (a.spec !== b.spec) return a.spec > b.spec;
+    return a.order >= b.order;
+  }
+
+  function computeInlineStyle(el, rules) {
+    var props = new Map();
+
+    // 元素自带的内联样式（读原值，保留作者写法）
+    parseDeclarations(el.getAttribute('style')).forEach(function (d) {
+      props.set(d.prop, { value: d.value, tier: d.important ? 3 : 2, spec: 0, order: 0 });
+    });
+
+    // 样式表规则
+    for (var i = 0; i < rules.length; i++) {
+      var r = rules[i];
+      var matches = false;
+      try { matches = el.matches(r.selector); } catch (e) { matches = false; }
+      if (!matches) continue;
+      for (var j = 0; j < r.decls.length; j++) {
+        var d = r.decls[j];
+        var cand = { value: d.value, tier: d.important ? 3 : 1, spec: r.spec, order: r.order };
+        var cur = props.get(d.prop);
+        if (!cur || better(cand, cur)) props.set(d.prop, cand);
+      }
+    }
+
+    var out = [];
+    props.forEach(function (v, p) { out.push(p + ': ' + v.value); });
+    return out.join('; ');
+  }
+
+  // ---------- 加载 HTML 到隐藏 iframe（拿到 CSSOM） ----------
+
+  function loadDoc(html) {
+    return new Promise(function (resolve, reject) {
+      var iframe = document.createElement('iframe');
+      iframe.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden;';
+      document.body.appendChild(iframe);
+      var done = false;
+      iframe.onload = function () {
+        // 给同源外链样式表留一点加载时间
+        setTimeout(function () {
+          if (!done) { done = true; resolve(iframe); }
+        }, 80);
+      };
+      iframe.onerror = function () {
+        if (!done) { done = true; reject(new Error('iframe 加载失败')); }
+      };
+      iframe.srcdoc = stripScripts(html);
+    });
+  }
+
+  function htmlToText(html) {
+    try {
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      return (doc.body && doc.body.textContent) || '';
+    } catch (e) {
+      return html;
+    }
+  }
+
+  // ---------- 主流程 ----------
+
+  async function convert() {
+    var src = inputEl.value.trim();
+    if (!src) {
+      setStatus(statusEl, '请先粘贴 HTML 源码', true);
+      return;
+    }
+
+    setStatus(statusEl, '转换中…');
+    btnConvert.disabled = true;
+
+    try {
+      var iframe = await loadDoc(src);
+      var doc = iframe.contentDocument;
+      var rules = collectRules(doc);
+
+      var els = Array.from(doc.querySelectorAll('*'));
+      els.forEach(function (el) {
+        // 先清掉 class/id 等（用 matches 前还保留着 class，因此要在匹配之后再做属性清理，
+        // 这里 computeInlineStyle 用 el.matches 依赖 class/id，所以属性清理放在计算之后）。
+        var inline = computeInlineStyle(el, rules);
+
+        // 属性清理
+        var names = Array.from(el.attributes);
+        for (var i = 0; i < names.length; i++) {
+          var n = names[i].name;
+          var lower = n.toLowerCase();
+          if (lower.indexOf('on') === 0) el.removeAttribute(n);
+          else if (lower === 'class') { if (!keepClassEl.checked) el.removeAttribute(n); }
+          else if (lower === 'id') el.removeAttribute(n);
+          else if (lower === 'srcset' || lower === 'sizes') el.removeAttribute(n);
+        }
+
+        var cleaned = sanitizeStyle(inline);
+        if (cleaned) el.setAttribute('style', cleaned);
+        else el.removeAttribute('style');
+      });
+
+      // 删除公众号过滤的标签 + 残留的 style 标签
+      var dropSel = DROP_TAGS.concat(['style']).join(',');
+      var body = doc.body || doc.documentElement;
+      Array.from(body.querySelectorAll(dropSel)).forEach(function (n) { n.remove(); });
+
+      currentHtml = (body ? body.innerHTML : doc.documentElement.innerHTML).trim();
+      iframe.remove();
+
+      var imgCount = (currentHtml.match(/<img\b/gi) || []).length;
+      renderPreview(currentHtml);
+      srcOutText.value = currentHtml;
+      setStatus(statusEl, '转换完成，正文图片 ' + imgCount + ' 张。点击「复制正文」后去公众号 Ctrl+V。');
+      btnCopy.disabled = false;
+    } catch (e) {
+      setStatus(statusEl, '转换失败：' + (e && e.message ? e.message : e), true);
+    } finally {
+      btnConvert.disabled = false;
+    }
+  }
+
+  function renderPreview(contentHtml) {
+    var page = '<!DOCTYPE html><html><head><meta charset="utf-8">'
+      + '<style>'
+      + 'html,body{margin:0;padding:0;background:#fff}'
+      + '#phone{max-width:677px;margin:0 auto;background:#fff;padding:20px 16px;'
+      + 'font-size:16px;line-height:1.75;color:#333;word-break:break-word}'
+      + '#phone img{max-width:100%;height:auto}'
+      + '#phone p{margin:0 0 1em}'
+      + '</style></head><body><div id="phone">' + contentHtml + '</div></body></html>';
+    emptyHint.style.display = 'none';
+    previewEl.style.display = 'block';
+    previewEl.srcdoc = page;
+  }
+
+  async function copyHtml() {
+    if (!currentHtml) return;
+    var html = currentHtml;
+    var text = htmlToText(html);
+    var ok = false;
+    try {
+      var item = new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' })
+      });
+      await navigator.clipboard.write([item]);
+      ok = true;
+    } catch (e) {
+      ok = fallbackCopy(html);
+    }
+    if (ok) setStatus(copyStatusEl, '已复制！到公众号后台 Ctrl+V 粘贴');
+    else setStatus(copyStatusEl, '自动复制失败：请点「查看源码」手动全选复制', true);
+  }
+
+  function fallbackCopy(html) {
+    try {
+      var host = document.createElement('div');
+      host.innerHTML = html;
+      host.style.cssText = 'position:fixed;left:-9999px;top:0;';
+      document.body.appendChild(host);
+      var range = document.createRange();
+      range.selectNodeContents(host);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      var ok = document.execCommand('copy');
+      sel.removeAllRanges();
+      document.body.removeChild(host);
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ---------- 事件绑定 ----------
+
+  btnConvert.addEventListener('click', convert);
+  btnCopy.addEventListener('click', copyHtml);
+
+  btnToggleSrc.addEventListener('click', function () {
+    srcOut.classList.toggle('open');
+    btnToggleSrc.textContent = srcOut.classList.contains('open') ? '收起源码' : '查看源码';
+  });
+
+  btnClear.addEventListener('click', function () {
+    inputEl.value = '';
+    setStatus(statusEl, '');
+    setStatus(copyStatusEl, '');
+  });
+
+  btnSample.addEventListener('click', function () {
+    inputEl.value = [
+      '<article style="max-width:600px;margin:0 auto">',
+      '  <style>',
+      '    h1 { color: #d0021b; font-size: 24px; text-align: center; }',
+      '    .lead { color: #666; font-size: 15px; line-height: 1.8; }',
+      '    .box { background: #f6f8fa; border-left: 4px solid #07c160; padding: 12px; border-radius: 6px; margin: 16px 0; }',
+      '    img { max-width: 100%; border-radius: 8px; }',
+      '  </style>',
+      '  <h1>示例文章标题</h1>',
+      '  <p class="lead">这是一段用于演示的正文，粘贴进公众号后样式应当被完整保留。</p>',
+      '  <div class="box">这是一个带内边距和左边框的提示框，用来验证 CSS 内联化效果。</div>',
+      '  <img src="https://picsum.photos/seed/wechat/600/300" alt="示例图片">',
+      '</article>'
+    ].join('\n');
+    setStatus(statusEl, '');
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      convert();
+    }
+  });
+})();
+</script>
+</body>
+</html>

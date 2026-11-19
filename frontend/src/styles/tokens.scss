@@ -110,4 +110,125 @@
   --surface: var(--surface-content);
   --canvas: var(--surface-subtle-bg);
   --surface-subtle: var(--surface-subtle-bg);
+
+  /* Radius scale */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  /* Elevation: warm-neutral, low opacity. Cards and overlays prefer shadow over hairlines. */
+  --shadow-xs: 0 1px 2px rgba(22, 27, 34, 0.04);
+  --shadow-sm: 0 1px 3px rgba(22, 27, 34, 0.06), 0 1px 2px rgba(22, 27, 34, 0.04);
+  --shadow-md: 0 4px 12px rgba(22, 27, 34, 0.08), 0 2px 4px rgba(22, 27, 34, 0.04);
+  --shadow-lg: 0 12px 32px rgba(22, 27, 34, 0.12), 0 4px 8px rgba(22, 27, 34, 0.06);
+  --shadow-popover: 0 8px 24px rgba(22, 27, 34, 0.14);
+
+  /* Focus ring (compound) */
+  --focus-ring: 0 0 0 3px var(--focus-ring-brand);
+
+  /* Typography scale */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+
+  /* Button roles (doc §2.3, §6.1) */
+  --btn-primary-bg: var(--brand-600);
+  --btn-primary-bg-hover: var(--brand-700);
+  --btn-primary-bg-active: var(--brand-800);
+  --btn-primary-fg: var(--neutral-0);
+  --btn-secondary-bg: var(--surface-content);
+  --btn-secondary-bg-hover: var(--neutral-50);
+  --btn-secondary-bg-active: var(--neutral-100);
+  --btn-secondary-fg: var(--neutral-700);
+  --btn-secondary-border: var(--border-default);
+  --btn-ghost-bg-hover: var(--surface-hover);
+  --btn-danger-bg: var(--danger-500);
+  --btn-danger-bg-hover: var(--danger-600);
+  --btn-danger-bg-active: var(--danger-700);
+  --btn-danger-fg: var(--neutral-0);
+
+  /* Input roles (doc §6.1) */
+  --input-bg: var(--surface-content);
+  --input-border: var(--neutral-300);
+  --input-border-hover: var(--neutral-400);
+  --input-border-focus: var(--border-focus);
+  --input-bg-disabled: var(--neutral-100);
+
+  /* Table roles */
+  --table-header-bg: var(--neutral-50);
+  --table-header-fg: var(--neutral-600);
+  --table-row-hover: var(--neutral-25);
+  --table-border: var(--border-light);
+}
+
+/* Dark theme. Raw scales stay absolute; only the semantic/role variables flip,
+   so every consumer (including the compatibility aliases) follows automatically. */
+@mixin dark-theme {
+  --surface-content: #161b22;
+  --surface-card: #1c2230;
+  --surface-shell: #0f141b;
+  --surface-subtle-bg: #1a2029;
+  --surface-muted: #202733;
+  --surface-hover: #232a36;
+  --surface-selected: rgba(218, 114, 77, 0.16);
+
+  --color-text-primary: #eef1f5;
+  --color-text-secondary: #a8b0bd;
+  --color-text-tertiary: #7a8595;
+  --color-text-disabled: #475467;
+  --color-text-inverse: #161b22;
+
+  --border-default: #2a313c;
+  --border-light: #232933;
+  --border-strong: #344054;
+  --border-disabled: #232933;
+  --border-focus: #e58b6b;
+  --focus-ring-brand: rgba(218, 114, 77, 0.28);
+
+  --color-success-bg: rgba(34, 160, 107, 0.14);
+  --color-success-border: rgba(34, 160, 107, 0.35);
+  --color-success-text: #4cc38a;
+  --color-info-bg: rgba(74, 144, 226, 0.14);
+  --color-info-border: rgba(74, 144, 226, 0.35);
+  --color-info-text: #7ab0f0;
+  --color-warning-bg: rgba(217, 154, 43, 0.14);
+  --color-warning-border: rgba(217, 154, 43, 0.4);
+  --color-warning-text: #e2b45c;
+  --color-danger-bg: rgba(240, 91, 91, 0.14);
+  --color-danger-border: rgba(240, 91, 91, 0.4);
+  --color-danger-text: #f08686;
+  --color-neutral-status-bg: rgba(102, 112, 133, 0.16);
+  --color-neutral-status-border: #2a313c;
+  --color-neutral-status-text: #a8b0bd;
+
+  --color-agent-type-bg: rgba(139, 92, 246, 0.16);
+  --color-agent-type-border: rgba(139, 92, 246, 0.4);
+  --color-agent-type-text: #b79bff;
+  --color-mcp-type-bg: rgba(6, 182, 212, 0.16);
+  --color-mcp-type-border: rgba(6, 182, 212, 0.4);
+  --color-mcp-type-text: #5fd0e2;
+  --color-skill-type-bg: rgba(74, 144, 226, 0.16);
+  --color-skill-type-border: rgba(74, 144, 226, 0.4);
+  --color-skill-type-text: #7ab0f0;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4);
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme='dark'] {
+  @include dark-theme;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    @include dark-theme;
+  }
 }
