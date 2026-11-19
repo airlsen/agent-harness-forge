@@ -1160,7 +1160,6 @@ async function versions(scenario: Scenario) {
   min-height: 48px;
   margin-top: auto;
   padding: 8px 0;
-  border-top: 1px solid var(--border-light);
 }
 /* 底栏 margin-top:auto 把它压到卡片底部；紧挨底栏的内容块再留 16px，保证最小间距 */
 .scenario-card > :has(+ .scenario-card-footer) {
