@@ -10,11 +10,13 @@
     "format:check": "prettier --check src scripts vite.config.ts",
     "test": "node scripts/check-conversation-drafts.mjs && node scripts/check-turns.mjs && node scripts/check-markdown-blocks.mjs && node scripts/check-files.mjs",
     "check:icons": "node ../scripts/check-ui-icons.mjs",
-    "check:colors": "node ../scripts/check-ui-colors.mjs"
+    "check:colors": "node ../scripts/check-ui-colors.mjs",
+    "check:antd-tokens": "node ../scripts/check-antd-tokens.mjs"
   },
   "dependencies": {
     "@shikijs/langs": "^4.6.0",
     "@shikijs/themes": "^4.6.0",
+    "ant-design-vue": "^4.2.6",
     "dompurify": "^3.4.18",
     "marked": "^15.0.12",
     "mermaid": "^12.3.0",

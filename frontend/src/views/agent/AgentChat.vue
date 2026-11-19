@@ -6,6 +6,7 @@ import { useConversation } from '../../stores/conversation';
 import { downloadResponse } from '../../api/client';
 import { formatBytes, sessionState } from '../../utils/presentation';
 import { trapTabKey } from '../../utils/focus';
+import { confirm } from '../../utils/feedback';
 import type { KernelEvent } from '../../types/platform';
 import { buildTurns, capabilityChanges, codeChanges, type ToolCallView, type Turn } from '../../utils/turns';
 import Icon from '../../components/ForgeIcon.vue';
@@ -283,7 +284,14 @@ function openChangedFile(path: string) {
 }
 async function deleteFile(file: FileRef) {
   if (!chat.current || deleting.value || chat.running) return;
-  if (!window.confirm(`确定删除“${file.path}”吗？文件会同时从执行工作区和服务端存储中删除，无法恢复。`))
+  if (
+    !(await confirm({
+      title: `确定删除“${file.path}”吗？`,
+      content: '文件会同时从执行工作区和服务端存储中删除，无法恢复。',
+      okText: '删除',
+      danger: true,
+    }))
+  )
     return;
   deleting.value = file.path;
   try {

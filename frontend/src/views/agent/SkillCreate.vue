@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { Form, Input } from 'ant-design-vue';
+import type { Rule } from 'ant-design-vue/es/form';
 import { post } from '../../api/client';
 import Icon from '../../components/ForgeIcon.vue';
 import type { SkillDetail } from '../../types/skill';
@@ -9,10 +11,18 @@ const router = useRouter();
 const form = reactive({ name: '', description: '', startMode: 'assistant' as 'assistant' | 'blank' });
 const creating = ref(false);
 const error = ref('');
-const canCreate = computed(() => Boolean(form.name.trim()) && !creating.value);
+
+// antd 表单校验规则：名称必填且不超过 120 字符，用途说明选填且不超过 512 字符。
+const rules: Record<string, Rule[]> = {
+  name: [
+    { required: true, whitespace: true, message: '请填写 Skill 名称' },
+    { max: 120, message: 'Skill 名称不能超过 120 个字符' },
+  ],
+  description: [{ max: 512, message: '用途说明不能超过 512 个字符' }],
+};
 
 async function createSkill() {
-  if (!canCreate.value) return;
+  if (creating.value) return;
   creating.value = true;
   error.value = '';
   try {
@@ -36,7 +46,7 @@ async function createSkill() {
   <main class="page-content enterprise-page skill-create-page">
     <div class="enterprise-page-inner skill-create-inner">
       <nav class="skill-breadcrumb" aria-label="面包屑">
-        <RouterLink to="/agent/capabilities?tab=skills">能力管理</RouterLink
+        <RouterLink to="/agent/capabilities?tab=skills">技能管理</RouterLink
         ><Icon name="chevron" :size="14" /><RouterLink to="/agent/skills">技能</RouterLink
         ><Icon name="chevron" :size="14" /><span aria-current="page">新建技能</span>
       </nav>
@@ -48,7 +58,13 @@ async function createSkill() {
         </div>
       </header>
 
-      <form class="skill-create-workflow" @submit.prevent="createSkill">
+      <Form
+        class="skill-create-workflow"
+        :model="form"
+        :rules="rules"
+        layout="vertical"
+        @finish="createSkill"
+      >
         <section class="skill-create-section">
           <div class="skill-section-heading">
             <span>01</span>
@@ -57,28 +73,17 @@ async function createSkill() {
               <p>清晰的名称和用途能帮助团队理解何时应该使用这个 Skill。</p>
             </div>
           </div>
-          <div class="skill-form-fields">
-            <label for="skill-name"
-              >Skill 名称 <em>必填</em
-              ><input
-                id="skill-name"
-                v-model="form.name"
-                maxlength="120"
-                required
-                autofocus
-                placeholder="例如：客户工单总结"
-            /></label>
-            <label for="skill-description"
-              >用途说明 <em>选填</em
-              ><textarea
-                id="skill-description"
-                v-model="form.description"
-                maxlength="512"
-                rows="4"
-                placeholder="例如：将客户工单整理为结构化摘要，标出待跟进事项并形成可直接发送给客户的回复建议。"
-              />
-            </label>
-          </div>
+          <Form.Item label="Skill 名称" name="name">
+            <Input v-model:value="form.name" :maxlength="120" placeholder="例如：客户工单总结" />
+          </Form.Item>
+          <Form.Item label="用途说明" name="description">
+            <Input.TextArea
+              v-model:value="form.description"
+              :maxlength="512"
+              :rows="4"
+              placeholder="例如：将客户工单整理为结构化摘要，标出待跟进事项并形成可直接发送给客户的回复建议。"
+            />
+          </Form.Item>
         </section>
         <section class="skill-create-section skill-start-section">
           <div class="skill-section-heading">
@@ -119,13 +124,13 @@ async function createSkill() {
         </p>
         <footer class="skill-create-actions">
           <RouterLink to="/agent/skills" class="button secondary">取消</RouterLink
-          ><button type="submit" class="button primary" :disabled="!canCreate">
+          ><button type="submit" class="button primary" :disabled="creating">
             <Icon name="sparkles" :size="16" />{{
               creating ? '正在创建…' : form.startMode === 'assistant' ? '创建并开始生成' : '创建草稿'
             }}
           </button>
         </footer>
-      </form>
+      </Form>
     </div>
   </main>
 </template>

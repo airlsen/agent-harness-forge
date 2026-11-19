@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, apiFetch } from '../../api/client';
 import { formatBytes } from '../../utils/presentation';
+import { confirm } from '../../utils/feedback';
 import { usePlatform } from '../../stores/platform';
 import { useConversation } from '../../stores/conversation';
 import type { Scenario, Tool } from '../../types/platform';
@@ -245,7 +246,13 @@ async function uploadPluginArchive() {
 }
 async function reviewPlugin(plugin: PluginPackage, action: 'approved' | 'rejected') {
   const verb = action === 'approved' ? '批准' : '拒绝';
-  if (!window.confirm(`确定${verb}插件版本“${plugin.displayName}” v${plugin.version} 吗？`)) return;
+  if (
+    !(await confirm({
+      title: `确定${verb}插件版本“${plugin.displayName}” v${plugin.version} 吗？`,
+      okText: verb,
+    }))
+  )
+    return;
   reviewingPlugin.value = plugin.id;
   try {
     await api(`/registry/plugins/${plugin.id}/review`, { method: 'POST', body: JSON.stringify({ action }) });
@@ -343,7 +350,8 @@ async function toggleMcp(server: McpServer) {
   }
 }
 async function deleteMcp(server: McpServer) {
-  if (!window.confirm(`确定移除 MCP 服务“${server.name}”吗？`)) return;
+  if (!(await confirm({ title: `确定移除 MCP 服务“${server.name}”吗？`, okText: '移除', danger: true })))
+    return;
   try {
     await api(`/registry/mcp-servers/${server.id}`, { method: 'DELETE' });
     app.toast(`MCP 服务“${server.name}”已移除`);
@@ -385,7 +393,7 @@ onMounted(load);
             ><span class="catalog-kicker-mark"><Icon name="sparkles" :size="12" /></span>CAPABILITY
             STUDIO</span
           >
-          <h1>能力管理</h1>
+          <h1>技能管理</h1>
           <p>查看工具、技能和 MCP 服务，按需配置到场景或会话。</p>
         </div>
       </div>

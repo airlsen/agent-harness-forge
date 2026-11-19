@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { Form, Input } from 'ant-design-vue';
+import type { Rule } from 'ant-design-vue/es/form';
 import { usePlatform } from '../../stores/platform';
 import { MAX_SESSION_MCP, MAX_SESSION_SKILLS, useConversation } from '../../stores/conversation';
 import { api, post, put, remove } from '../../api/client';
@@ -56,6 +58,16 @@ const blank = (): ScenarioPayload => ({
   execution_mode: 'standard',
 });
 const draft = reactive<ScenarioPayload>(blank());
+
+// antd 表单校验规则：场景名称与提示词必填，描述选填。
+const rules: Record<string, Rule[]> = {
+  name: [
+    { required: true, whitespace: true, message: '请填写场景名称' },
+    { max: 128, message: '场景名称不能超过 128 个字符' },
+  ],
+  description: [{ max: 512, message: '一句话介绍不能超过 512 个字符' }],
+  prompt_template: [{ required: true, whitespace: true, message: '请填写场景提示词' }],
+};
 const base = computed(() => (maintenance.value ? app.scenarios : app.availableScenarios));
 const filters = computed(() => [
   { id: 'all', label: '全部', icon: 'grid', count: base.value.length },
@@ -237,14 +249,7 @@ function useScenario(scenario: Scenario) {
   if (chat.requestNewConversation(scenario.id)) void router.push('/agent/chat');
 }
 async function save() {
-  if (!draft.name.trim()) {
-    app.toast('请填写场景名称', 'error');
-    return;
-  }
-  if (!draft.prompt_template.trim()) {
-    app.toast('请填写场景提示词', 'error');
-    return;
-  }
+  if (busy.value) return;
   busy.value = true;
   try {
     const payload = { ...draft, name: draft.name.trim() };
@@ -568,46 +573,49 @@ async function versions(scenario: Scenario) {
           <Icon name="close" :size="21" />
         </button>
       </header>
-      <form id="scenario-form" class="drawer-body" @submit.prevent="save">
+      <Form
+        id="scenario-form"
+        class="drawer-body"
+        :model="draft"
+        :rules="rules"
+        layout="vertical"
+        @finish="save"
+      >
         <div class="form-section-title"><span>01</span>基本信息</div>
-        <label for="scenario-name">场景名称 <span class="required">*</span></label
-        ><input
-          id="scenario-name"
-          v-model="draft.name"
-          maxlength="128"
-          placeholder="例如：研发需求评审助手"
-          required
-        /><label for="scenario-description">一句话介绍</label
-        ><textarea
-          id="scenario-description"
-          v-model="draft.description"
-          rows="2"
-          maxlength="512"
-          placeholder="告诉使用者，这个场景适合什么工作。"
-        ></textarea
-        ><label>场景图标</label>
-        <div class="icon-options">
-          <button
-            v-for="icon in ['sparkles', 'code', 'file', 'chart', 'book', 'shield']"
-            :key="icon"
-            type="button"
-            :aria-label="`选择图标 ${icon}`"
-            :class="{ selected: draft.icon === icon }"
-            @click="draft.icon = icon"
-          >
-            <Icon :name="icon" :size="22" />
-          </button>
-        </div>
+        <Form.Item label="场景名称" name="name">
+          <Input v-model:value="draft.name" :maxlength="128" placeholder="例如：研发需求评审助手" />
+        </Form.Item>
+        <Form.Item label="一句话介绍" name="description">
+          <Input.TextArea
+            v-model:value="draft.description"
+            :rows="2"
+            :maxlength="512"
+            placeholder="告诉使用者，这个场景适合什么工作。"
+          />
+        </Form.Item>
+        <Form.Item label="场景图标">
+          <div class="icon-options">
+            <button
+              v-for="icon in ['sparkles', 'code', 'file', 'chart', 'book', 'shield']"
+              :key="icon"
+              type="button"
+              :aria-label="`选择图标 ${icon}`"
+              :class="{ selected: draft.icon === icon }"
+              @click="draft.icon = icon"
+            >
+              <Icon :name="icon" :size="22" />
+            </button>
+          </div>
+        </Form.Item>
         <div class="form-section-title"><span>02</span>场景提示词</div>
-        <label for="scenario-prompt">角色、目标与工作方式 <span class="required">*</span></label
-        ><textarea
-          id="scenario-prompt"
-          v-model="draft.prompt_template"
-          class="prompt-editor"
-          rows="8"
-          required
-          placeholder="定义角色、目标、步骤与输出标准。"
-        ></textarea>
+        <Form.Item label="角色、目标与工作方式" name="prompt_template">
+          <Input.TextArea
+            v-model:value="draft.prompt_template"
+            class="prompt-editor"
+            :rows="8"
+            placeholder="定义角色、目标、步骤与输出标准。"
+          />
+        </Form.Item>
         <p class="field-hint">作为场景级指令使用。不会自动开始任务，也不会扩大工具权限。</p>
         <div class="form-section-title"><span>03</span>授权能力</div>
         <p class="field-hint">平台基础能力（默认开启）：每个会话都可使用，范围以平台策略为上限。</p>
@@ -805,7 +813,7 @@ async function versions(scenario: Scenario) {
             与联网，但不能取消场景绑定项。草稿须试运行通过后才能发布。
           </p>
         </div>
-      </form>
+      </Form>
       <footer>
         <button class="button secondary" :disabled="busy" @click="drawer = false">取消</button
         ><button type="submit" form="scenario-form" class="button primary" :disabled="busy">

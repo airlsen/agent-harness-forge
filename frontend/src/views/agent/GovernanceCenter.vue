@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { Form, Input, InputNumber, Select } from 'ant-design-vue';
+import type { Rule } from 'ant-design-vue/es/form';
 import { api, post, put } from '../../api/client';
 import { formatBytes } from '../../utils/presentation';
 import { usePlatform } from '../../stores/platform';
@@ -12,10 +14,47 @@ const policy = reactive({
   allowedTools: [] as string[],
   allowedPluginTools: ['*'] as string[],
   maxOutputTokens: 4096,
-  requestTimeoutSeconds: 120,
-  approvalTimeoutSeconds: 120,
-  fileRetentionDays: 30,
+  requestTimeoutSeconds: 120 as number | null,
+  approvalTimeoutSeconds: 120 as number | null,
+  fileRetentionDays: 30 as number | null,
 });
+
+// antd 表单校验规则：执行限额与文件保留天数必填且在范围内。
+const policyRules: Record<string, Rule[]> = {
+  requestTimeoutSeconds: [
+    { required: true, message: '请填写模型请求超时' },
+    { type: 'number', min: 15, max: 300, message: '模型请求超时需在 15 到 300 秒之间' },
+  ],
+  approvalTimeoutSeconds: [
+    { required: true, message: '请填写审批等待超时' },
+    { type: 'number', min: 15, max: 600, message: '审批等待超时需在 15 到 600 秒之间' },
+  ],
+  fileRetentionDays: [
+    { required: true, message: '请填写文件保留天数' },
+    { type: 'number', min: 0, max: 3650, message: '文件保留天数需在 0 到 3650 之间' },
+  ],
+};
+
+// antd InputNumber 的 ValueType 是 string | number，且清空时可能发 undefined；用 computed 桥接，
+// 让 policy 里存 number 或 null（null 会触发必填校验）。
+type PolicyNumberKey = 'requestTimeoutSeconds' | 'approvalTimeoutSeconds' | 'fileRetentionDays';
+function numberField(key: PolicyNumberKey) {
+  return computed<number | undefined>({
+    get: () => policy[key] ?? undefined,
+    set: (value: number | string | undefined) => {
+      policy[key] = typeof value === 'number' ? value : null;
+    },
+  });
+}
+const requestTimeoutValue = numberField('requestTimeoutSeconds');
+const approvalTimeoutValue = numberField('approvalTimeoutSeconds');
+const fileRetentionValue = numberField('fileRetentionDays');
+
+// 单次模型输出上限的固定档位。
+const outputTokenOptions = [1024, 2048, 4096, 8192, 16384].map((value) => ({
+  value,
+  label: `${value.toLocaleString()} tokens`,
+}));
 interface StorageStats {
   files: number;
   bytes: number;
@@ -67,6 +106,29 @@ const webForm = reactive({
   fetchEnabled: true,
   apiKey: '',
 });
+
+// 联网表单校验规则：服务地址可选，填写时需为 http/https 地址。
+const webRules: Record<string, Rule[]> = {
+  baseUrl: [
+    {
+      validator: async (_rule, value) => {
+        if (!value) return;
+        let ok = false;
+        try {
+          const url = new URL(value);
+          ok = url.protocol === 'http:' || url.protocol === 'https:';
+        } catch {
+          ok = false;
+        }
+        if (!ok) throw new Error('请输入以 http/https 开头的有效地址');
+      },
+      trigger: 'blur',
+    },
+  ],
+};
+const providerOptions = computed(() =>
+  (web.value?.providers ?? []).map((provider) => ({ value: provider.id, label: provider.label })),
+);
 function applyWeb(value: WebSearchSettings) {
   web.value = value;
   Object.assign(webForm, {
@@ -157,7 +219,14 @@ async function save() {
         >
       </div>
       <div class="settings-layout">
-        <form v-if="loaded" class="settings-card governance-form" @submit.prevent="save">
+        <Form
+          v-if="loaded"
+          class="settings-card governance-form"
+          :model="policy"
+          :rules="policyRules"
+          layout="vertical"
+          @finish="save"
+        >
           <div class="settings-section-heading">
             <Icon name="shield" :size="20" />
             <h2>工具与审批</h2>
@@ -206,36 +275,27 @@ async function save() {
             <h2>执行限额</h2>
           </div>
           <div class="form-grid">
-            <div>
-              <label for="output-tokens">单次模型输出上限</label
-              ><select id="output-tokens" v-model.number="policy.maxOutputTokens">
-                <option :value="1024">1,024 tokens</option>
-                <option :value="2048">2,048 tokens</option>
-                <option :value="4096">4,096 tokens</option>
-                <option :value="8192">8,192 tokens</option>
-                <option :value="16384">16,384 tokens</option>
-              </select>
-            </div>
-            <div>
-              <label for="request-timeout">模型请求超时（秒）</label
-              ><input
-                id="request-timeout"
-                v-model.number="policy.requestTimeoutSeconds"
-                type="number"
-                min="15"
-                max="300"
+            <Form.Item label="单次模型输出上限" name="maxOutputTokens">
+              <Select v-model:value="policy.maxOutputTokens" :options="outputTokenOptions" />
+            </Form.Item>
+            <Form.Item label="模型请求超时（秒）" name="requestTimeoutSeconds">
+              <InputNumber
+                v-model:value="requestTimeoutValue"
+                :min="15"
+                :max="300"
+                :controls="false"
+                style="width: 100%"
               />
-            </div>
-            <div>
-              <label for="approval-timeout">审批等待超时（秒）</label
-              ><input
-                id="approval-timeout"
-                v-model.number="policy.approvalTimeoutSeconds"
-                type="number"
-                min="15"
-                max="600"
+            </Form.Item>
+            <Form.Item label="审批等待超时（秒）" name="approvalTimeoutSeconds">
+              <InputNumber
+                v-model:value="approvalTimeoutValue"
+                :min="15"
+                :max="600"
+                :controls="false"
+                style="width: 100%"
               />
-            </div>
+            </Form.Item>
           </div>
           <div class="form-divider"></div>
           <div class="settings-section-heading">
@@ -246,19 +306,17 @@ async function save() {
             每轮结束后，会话工作区的文件会保存到服务端磁盘，切换会话或服务重启后仍可查看。会话最后一次活动超过保留期限后，其文件会被自动清理。
           </p>
           <div class="form-grid">
-            <div>
-              <label for="file-retention">文件保留天数</label
-              ><input
-                id="file-retention"
-                v-model.number="policy.fileRetentionDays"
-                type="number"
-                min="0"
-                max="3650"
-                step="1"
-                required
+            <Form.Item label="文件保留天数" name="fileRetentionDays">
+              <InputNumber
+                v-model:value="fileRetentionValue"
+                :min="0"
+                :max="3650"
+                :step="1"
+                :controls="false"
+                style="width: 100%"
               />
               <small class="field-hint">0 表示永久保留；修改后对所有会话即时生效。</small>
-            </div>
+            </Form.Item>
           </div>
           <div v-if="storage" class="storage-summary">
             <dl>
@@ -295,9 +353,16 @@ async function save() {
               <span v-if="saving" class="loader small"></span><Icon v-else name="save" :size="16" />保存策略
             </button>
           </footer>
-        </form>
+        </Form>
         <aside class="settings-aside">
-          <form v-if="web" class="settings-card governance-form web-search-card" @submit.prevent="saveWeb()">
+          <Form
+            v-if="web"
+            class="settings-card governance-form web-search-card"
+            :model="webForm"
+            :rules="webRules"
+            layout="vertical"
+            @finish="saveWeb()"
+          >
             <div class="settings-section-heading">
               <Icon name="globe" :size="18" />
               <h2>联网搜索</h2>
@@ -321,36 +386,28 @@ async function save() {
                 <span></span>
               </button>
             </div>
-            <label for="web-provider">搜索服务</label
-            ><select id="web-provider" v-model="webForm.provider">
-              <option v-for="provider in web.providers" :key="provider.id" :value="provider.id">
-                {{ provider.label }}
-              </option>
-            </select>
-            <label for="web-key">DeepSeek API Key</label
-            ><input
-              id="web-key"
-              v-model="webForm.apiKey"
-              type="password"
-              autocomplete="off"
-              :placeholder="web.apiKeyConfigured ? '已保存，留空则不修改' : '留空则复用 DeepSeek 模型密钥'"
-            />
-            <small class="field-hint"
-              >{{ KEY_SOURCE[web.keySource]
-              }}<template v-if="web.apiKeyConfigured">
-                ·
-                <button type="button" class="link-button" :disabled="webSaving" @click="saveWeb(true)">
-                  清除已保存密钥
-                </button></template
-              ></small
-            >
-            <label for="web-base">服务地址（可选）</label
-            ><input
-              id="web-base"
-              v-model="webForm.baseUrl"
-              type="url"
-              placeholder="留空使用 DeepSeek 默认地址"
-            />
+            <Form.Item label="搜索服务" name="provider">
+              <Select v-model:value="webForm.provider" :options="providerOptions" />
+            </Form.Item>
+            <Form.Item label="DeepSeek API Key" name="apiKey">
+              <Input.Password
+                v-model:value="webForm.apiKey"
+                autocomplete="off"
+                :placeholder="web.apiKeyConfigured ? '已保存，留空则不修改' : '留空则复用 DeepSeek 模型密钥'"
+              />
+              <small class="field-hint"
+                >{{ KEY_SOURCE[web.keySource]
+                }}<template v-if="web.apiKeyConfigured">
+                  ·
+                  <button type="button" class="link-button" :disabled="webSaving" @click="saveWeb(true)">
+                    清除已保存密钥
+                  </button></template
+                ></small
+              >
+            </Form.Item>
+            <Form.Item label="服务地址（可选）" name="baseUrl">
+              <Input v-model:value="webForm.baseUrl" placeholder="留空使用 DeepSeek 默认地址" />
+            </Form.Item>
             <label class="web-fetch-option"
               ><input v-model="webForm.fetchEnabled" type="checkbox" /><span
                 >允许读取网页内容（web_fetch）</span
@@ -360,7 +417,7 @@ async function save() {
               <span v-if="webSaving" class="loader small"></span
               ><Icon v-else name="save" :size="16" />保存联网设置
             </button>
-          </form>
+          </Form>
           <section class="settings-card deployment-card">
             <div class="settings-section-heading">
               <Icon name="server" :size="18" />

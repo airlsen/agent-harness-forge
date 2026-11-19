@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { Form, Input, InputNumber } from 'ant-design-vue';
+import type { Rule } from 'ant-design-vue/es/form';
 import { api, post, put, remove } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
+import { confirm } from '../../utils/feedback';
 import type { ModelConnection } from '../../types/platform';
 import Icon from '../../components/ForgeIcon.vue';
 import DialogShell from '../../components/DialogShell.vue';
@@ -26,9 +29,51 @@ const form = reactive({
   baseUrl: '',
   model: '',
   apiKey: '',
-  contextWindow: 64000,
+  contextWindow: 64000 as number | null,
   inputPrice: null as number | null,
   outputPrice: null as number | null,
+});
+
+// antd 表单校验规则：等价于原原生 HTML5 校验（必填、URL、数值范围），并提供字段级错误提示。
+const rules: Record<string, Rule[]> = {
+  name: [
+    { required: true, whitespace: true, message: '请填写模型名称' },
+    { max: 100, message: '模型名称不能超过 100 个字符' },
+  ],
+  model: [
+    { required: true, whitespace: true, message: '请填写模型 ID' },
+    { max: 128, message: '模型 ID 不能超过 128 个字符' },
+  ],
+  baseUrl: [
+    { required: true, whitespace: true, message: '请填写 Base URL' },
+    {
+      validator: async (_rule, value) => {
+        if (!value) return;
+        let ok = false;
+        try {
+          const url = new URL(value);
+          ok = url.protocol === 'http:' || url.protocol === 'https:';
+        } catch {
+          ok = false;
+        }
+        if (!ok) throw new Error('请输入以 http/https 开头的有效地址');
+      },
+      trigger: 'blur',
+    },
+    { max: 512, message: 'Base URL 不能超过 512 个字符' },
+  ],
+  contextWindow: [
+    { required: true, message: '请填写上下文窗口' },
+    { type: 'number', min: 4096, max: 2000000, message: '上下文窗口需在 4096 到 2000000 之间' },
+  ],
+};
+
+// antd InputNumber 的 ValueType 不含 null，但清空时会发 null；用 computed 桥接，让 form 里可存 null 以触发“必填”校验。
+const contextWindowValue = computed({
+  get: () => form.contextWindow ?? undefined,
+  set: (value: number | string | undefined) => {
+    form.contextWindow = typeof value === 'number' ? value : null;
+  },
 });
 
 const enabledCount = computed(() => models.value.filter((model) => model.enabled).length);
@@ -118,10 +163,7 @@ async function load() {
   }
 }
 async function save() {
-  if (!form.name.trim() || !form.baseUrl.trim() || !form.model.trim()) {
-    app.toast('请填写模型名称、Base URL 和模型 ID', 'error');
-    return;
-  }
+  if (saving.value) return;
   saving.value = true;
   try {
     const payload = {
@@ -200,7 +242,15 @@ async function setDefault(model: ModelConnection) {
 async function deleteModel(model: ModelConnection) {
   if (!model.id || deletingId.value !== null) return;
   actionMenuId.value = null;
-  if (!window.confirm(`确定删除模型“${model.name}”吗？历史会话仍保留已有模型快照。`)) return;
+  if (
+    !(await confirm({
+      title: `确定删除模型“${model.name}”吗？`,
+      content: '历史会话仍保留已有模型快照。',
+      okText: '删除',
+      danger: true,
+    }))
+  )
+    return;
   deletingId.value = model.id;
   try {
     await remove(`/models/${model.id}`);
@@ -405,53 +455,51 @@ onBeforeUnmount(() => document.removeEventListener('click', closeActionMenu));
         <Icon name="close" :size="20" />
       </button>
     </header>
-    <form class="model-editor-form" @submit.prevent="save">
-      <label for="model-name">模型名称 <span class="required">*</span></label>
-      <input
-        id="model-name"
-        v-model="form.name"
-        maxlength="100"
-        placeholder="例如：企业 DeepSeek Chat"
-        required
-      />
+    <Form
+      id="model-editor-form"
+      :model="form"
+      :rules="rules"
+      layout="vertical"
+      class="model-editor-form"
+      @finish="save"
+    >
+      <Form.Item label="模型名称" name="name">
+        <Input v-model:value="form.name" :maxlength="100" placeholder="例如：企业 DeepSeek Chat" />
+      </Form.Item>
 
-      <label for="model-id">模型 ID <span class="required">*</span></label>
-      <input id="model-id" v-model="form.model" maxlength="128" placeholder="例如：deepseek-chat" required />
+      <Form.Item label="模型 ID" name="model">
+        <Input v-model:value="form.model" :maxlength="128" placeholder="例如：deepseek-chat" />
+      </Form.Item>
 
-      <label for="model-base-url">Base URL <span class="required">*</span></label>
-      <input
-        id="model-base-url"
-        v-model="form.baseUrl"
-        type="url"
-        maxlength="512"
-        placeholder="https://your-gateway.example.com/v1"
-        required
-      />
-      <p class="field-hint">填写 API 根路径，不包含 <code>/chat/completions</code>。</p>
+      <Form.Item label="Base URL" name="baseUrl" extra="填写 API 根路径，不包含 /chat/completions。">
+        <Input
+          v-model:value="form.baseUrl"
+          :maxlength="512"
+          placeholder="https://your-gateway.example.com/v1"
+        />
+      </Form.Item>
 
-      <label for="model-api-key">API Key</label>
-      <input
-        id="model-api-key"
-        v-model="form.apiKey"
-        type="password"
-        autocomplete="new-password"
-        :placeholder="editing?.apiKeyConfigured ? '留空保留已保存密钥；填写新值可替换' : '无鉴权服务可留空'"
-      />
-      <p class="field-hint">密钥仅通过同源 API 提交，并以加密形式存储在服务端。</p>
+      <Form.Item label="API Key" name="apiKey" extra="密钥仅通过同源 API 提交，并以加密形式存储在服务端。">
+        <Input.Password
+          v-model:value="form.apiKey"
+          autocomplete="new-password"
+          :placeholder="editing?.apiKeyConfigured ? '留空保留已保存密钥；填写新值可替换' : '无鉴权服务可留空'"
+        />
+      </Form.Item>
 
-      <label for="model-context-window">上下文窗口（tokens）</label>
-      <input
-        id="model-context-window"
-        v-model.number="form.contextWindow"
-        type="number"
-        min="4096"
-        max="2000000"
-        required
-      />
-    </form>
+      <Form.Item label="上下文窗口（tokens）" name="contextWindow">
+        <InputNumber
+          v-model:value="contextWindowValue"
+          :min="4096"
+          :max="2000000"
+          :controls="false"
+          style="width: 100%"
+        />
+      </Form.Item>
+    </Form>
     <footer>
-      <button class="button secondary" :disabled="saving" @click="closeEditor">取消</button>
-      <button class="button primary" :disabled="saving" @click="save">
+      <button type="button" class="button secondary" :disabled="saving" @click="closeEditor">取消</button>
+      <button type="submit" form="model-editor-form" class="button primary" :disabled="saving">
         <span v-if="saving" class="loader small"></span><Icon v-else name="save" :size="16" />{{
           saving ? '正在保存…' : '保存模型'
         }}

@@ -9,8 +9,7 @@ import type {
   Tool,
 } from '../types/platform';
 import { isAvailableScenario } from '../utils/presentation';
-
-let noticeSeq = 0;
+import { notify } from '../utils/feedback';
 
 export const usePlatform = defineStore('platform', {
   state: () => ({
@@ -27,7 +26,6 @@ export const usePlatform = defineStore('platform', {
     defaultModelId: null as number | null,
     runtime: null as RuntimeStatus | null,
     loading: false,
-    notice: null as null | { message: string; type: 'success' | 'error' | 'info'; id: number },
   }),
   getters: {
     availableScenarios: (state) => state.scenarios.filter(isAvailableScenario),
@@ -35,12 +33,8 @@ export const usePlatform = defineStore('platform', {
   },
   actions: {
     toast(message: string, type: 'success' | 'error' | 'info' = 'success') {
-      // 用递增 id 判断，避免连续两次相同文案时被上一次的计时器提前关闭。
-      const id = ++noticeSeq;
-      this.notice = { message, type, id };
-      setTimeout(() => {
-        if (this.notice?.id === id) this.notice = null;
-      }, 6000);
+      // 交由 antd message 呈现；同一文案连发时由 antd 自行去重/堆叠，无需手动计时。
+      notify(type, message);
     },
     async checkAuth() {
       try {

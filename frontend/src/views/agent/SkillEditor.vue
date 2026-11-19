@@ -5,6 +5,7 @@ import { api, apiFetch, post, put } from '../../api/client';
 import DialogShell from '../../components/DialogShell.vue';
 import Icon from '../../components/ForgeIcon.vue';
 import { usePlatform } from '../../stores/platform';
+import { confirm } from '../../utils/feedback';
 import type {
   SkillAuthoringMessage,
   SkillAuthoringSession,
@@ -261,7 +262,10 @@ watch(
 onMounted(() => {
   void loadSkill({ focusAssistant: route.query.start === 'generate' });
 });
-onBeforeRouteLeave(() => !dirty.value || window.confirm('当前草稿有未保存的修改，确定离开吗？'));
+onBeforeRouteLeave(() => {
+  if (!dirty.value) return true;
+  return confirm({ title: '当前草稿有未保存的修改，确定离开吗？', okText: '离开', cancelText: '留下' });
+});
 </script>
 
 <template>
@@ -278,7 +282,7 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('当前草稿有未保�
       </section>
       <template v-else-if="skill">
         <nav class="skill-breadcrumb" aria-label="面包屑">
-          <RouterLink to="/agent/capabilities?tab=skills">能力管理</RouterLink
+          <RouterLink to="/agent/capabilities?tab=skills">技能管理</RouterLink
           ><Icon name="chevron" :size="14" /><RouterLink to="/agent/skills">Skill 库</RouterLink
           ><Icon name="chevron" :size="14" /><span aria-current="page">{{ skill.name }}</span>
         </nav>

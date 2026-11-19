@@ -507,9 +507,9 @@ async def main():
             ).to_be_visible()
             fixture_id = None
             check("confirmed soft delete works and leaves a real search empty state")
-            await page.get_by_role("link", name="能力管理", exact=True).click()
+            await page.get_by_role("link", name="技能管理", exact=True).click()
             await expect(
-                page.get_by_role("heading", name="能力管理", exact=True)
+                page.get_by_role("heading", name="技能管理", exact=True)
             ).to_be_visible()
             await expect(page.locator(".enterprise-tool-card")).to_have_count(4)
             await expect(page.locator(".plugin-card")).to_have_count(0)

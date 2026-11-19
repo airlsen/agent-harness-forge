@@ -98,9 +98,11 @@ select,
 textarea {
   max-width: 100%;
 }
-input:not([type='checkbox']):not([type='file']),
-select,
-textarea {
+/* 用 :where() 把全局表单元素样式的优先级降到 0，让 antd 组件的类样式（.ant-input 等）
+   按设计令牌生效；原生表单控件（无竞争类样式）仍沿用此处的 Forge 外观。 */
+:where(input:not([type='checkbox']):not([type='file'])),
+:where(select),
+:where(textarea) {
   width: 100%;
   border: 1px solid var(--input-border);
   border-radius: var(--radius-md);
@@ -116,14 +118,14 @@ input::placeholder,
 textarea::placeholder {
   color: var(--color-text-tertiary);
 }
-input:not([type='checkbox']):hover:not(:disabled),
-textarea:hover:not(:disabled),
-select:hover:not(:disabled) {
+:where(input:not([type='checkbox']):hover:not(:disabled)),
+:where(textarea:hover:not(:disabled)),
+:where(select:hover:not(:disabled)) {
   border-color: var(--input-border-hover);
 }
-input:not([type='checkbox']):focus,
-textarea:focus,
-select:focus {
+:where(input:not([type='checkbox']):focus),
+:where(textarea:focus),
+:where(select:focus) {
   border-color: var(--input-border-focus);
   outline: none;
   box-shadow: var(--focus-ring);
@@ -132,7 +134,7 @@ textarea {
   resize: vertical;
   line-height: 1.75;
 }
-label {
+:where(label) {
   display: block;
   font-size: 13px;
   font-weight: 500;
@@ -517,50 +519,6 @@ button:disabled:hover {
   gap: 13px;
   color: var(--color-text-secondary);
   font-size: 13px;
-}
-.toast-message {
-  position: fixed;
-  top: 23px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 300;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 13px 16px;
-  border-radius: 8px;
-  background: var(--surface-card);
-  border: 1px solid var(--color-success-border);
-  box-shadow: 0 9px 35px #20273317;
-  color: var(--color-success-text);
-  max-width: calc(100vw - 30px);
-  font-size: 12px;
-}
-.toast-message.error {
-  color: var(--color-danger-text);
-  border-color: var(--color-danger-border);
-  background: var(--color-danger-bg);
-}
-.toast-message.info {
-  color: var(--color-info-text);
-  border-color: var(--color-info-border);
-  background: var(--color-info-bg);
-}
-.toast-message > button {
-  display: flex;
-  padding: 2px;
-  color: var(--color-text-secondary);
-}
-.toast-enter-active,
-.toast-leave-active {
-  transition:
-    opacity 0.2s,
-    top 0.2s;
-}
-.toast-enter-from,
-.toast-leave-to {
-  opacity: 0;
-  top: 12px;
 }
 /* Agent workspace */
 .chat-layout {
@@ -2597,21 +2555,17 @@ button:disabled:hover {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 19px;
 }
-.model-form-card label,
-.governance-form label {
+/* 用 :where() 把治理页表单元素样式的优先级降到 0，避免覆盖 antd 的类样式（仅对原生控件兜底）。 */
+:where(.governance-form label) {
   font-size: 11px;
   color: var(--color-text-secondary);
   margin-top: 21px;
 }
-.model-form-card input,
-.governance-form input,
-.governance-form select {
+:where(.governance-form input),
+:where(.governance-form select) {
   font-size: 13px;
   color: var(--color-text-primary);
   border-color: var(--input-border);
-}
-.model-form-card input::placeholder {
-  color: var(--color-text-secondary);
 }
 .field-hint {
   font-size: 10px;
@@ -2626,23 +2580,6 @@ button:disabled:hover {
   font-size: 10px;
   color: var(--color-success-text);
   margin-left: 9px;
-}
-.password-input {
-  position: relative;
-}
-.password-input > input {
-  padding-right: 40px !important;
-}
-.password-input > button {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-secondary);
-  padding: 3px;
 }
 .inline-checkbox {
   display: flex;
@@ -3384,18 +3321,18 @@ table td > .tag {
   overflow: auto;
   padding: 25px 29px;
 }
-.drawer-body label {
+:where(.drawer-body label) {
   font-size: 12px;
   color: var(--color-text-secondary);
 }
-.drawer-body input,
-.drawer-body textarea {
+:where(.drawer-body input),
+:where(.drawer-body textarea) {
   font-size: 13px;
   border-color: var(--input-border);
   color: var(--color-text-primary);
 }
-.drawer-body input::placeholder,
-.drawer-body textarea::placeholder {
+:where(.drawer-body input::placeholder),
+:where(.drawer-body textarea::placeholder) {
   color: var(--color-text-secondary);
 }
 .drawer > footer {
@@ -3782,20 +3719,6 @@ table td > .tag {
   color: var(--color-text-secondary);
   font-size: 12px;
   margin: 12px 0 35px;
-}
-.login-form label {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  margin-top: 22px;
-}
-.login-form input {
-  font-size: 13px;
-  color: var(--color-text-primary);
-  border-color: var(--input-border);
-  min-height: 44px !important;
-}
-.login-form input::placeholder {
-  color: var(--color-text-secondary);
 }
 .login-form > .button {
   margin-top: 30px;
@@ -4966,13 +4889,11 @@ table td > .tag {
     grid-template-columns: 1fr;
     gap: 0;
   }
-  .model-form-card label,
-  .governance-form label {
+  :where(.governance-form label) {
     font-size: 10px;
   }
-  .model-form-card input,
-  .governance-form input,
-  .governance-form select {
+  :where(.governance-form input),
+  :where(.governance-form select) {
     font-size: 11px;
   }
   .field-hint {
@@ -5301,13 +5222,6 @@ table td > .tag {
     font-size: 11px;
     margin-bottom: 29px;
   }
-  .login-form label {
-    font-size: 11px;
-  }
-  .login-form input {
-    font-size: 12px;
-    min-height: 44px !important;
-  }
   .login-footnote {
     font-size: 10px;
     margin-top: 29px;
@@ -5391,16 +5305,14 @@ table td > .tag {
 .scenario-feature a {
   font-size: 12px;
 }
-.model-form-card label,
-.governance-form label,
-.drawer-body label {
+:where(.governance-form label),
+:where(.drawer-body label) {
   font-size: 12px;
 }
-.model-form-card input,
-.governance-form input,
-.governance-form select,
-.drawer-body input,
-.drawer-body textarea {
+:where(.governance-form input),
+:where(.governance-form select),
+:where(.drawer-body input),
+:where(.drawer-body textarea) {
   font-size: 13px;
   color: var(--color-text-primary);
 }
@@ -5448,9 +5360,6 @@ textarea::placeholder {
 }
 .login-form > p,
 .login-intro > p {
-  font-size: 13px;
-}
-.login-form label {
   font-size: 13px;
 }
 .login-security,
@@ -5579,8 +5488,7 @@ textarea::placeholder {
   .model-form-actions > span {
     font-size: 10px;
   }
-  .model-form-card label,
-  .governance-form label {
+  :where(.governance-form label) {
     font-size: 12px;
   }
   .field-hint {
@@ -5598,9 +5506,6 @@ textarea::placeholder {
   }
   .login-form > p {
     font-size: 12px;
-  }
-  .login-form label {
-    font-size: 13px;
   }
   .login-footnote,
   .login-security {

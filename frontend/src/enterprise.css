@@ -3444,23 +3444,23 @@ textarea:focus-visible {
 .drawer .detail-block > code {
   color: var(--text-secondary);
 }
-.drawer-body label {
+:where(.drawer-body label) {
   color: var(--text-subtle);
   font-size: 12px;
 }
-.drawer-body input:not([type='checkbox']),
-.drawer-body textarea {
+:where(.drawer-body input:not([type='checkbox'])),
+:where(.drawer-body textarea) {
   color: var(--text-secondary);
   border-color: var(--line);
   font-size: 13px;
 }
-.drawer-body input::placeholder,
-.drawer-body textarea::placeholder {
+:where(.drawer-body input::placeholder),
+:where(.drawer-body textarea::placeholder) {
   color: var(--text-secondary);
 }
-.drawer input:not([type='checkbox']):focus,
-.drawer textarea:focus,
-.drawer select:focus {
+:where(.drawer input:not([type='checkbox']):focus),
+:where(.drawer textarea:focus),
+:where(.drawer select:focus) {
   border-color: var(--accent-focus);
   box-shadow: 0 0 0 3px var(--accent-focus-ring);
 }
@@ -5077,46 +5077,6 @@ textarea:focus-visible {
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.7;
-}
-.skill-form-fields {
-  display: grid;
-  gap: 18px;
-}
-.skill-form-fields > label {
-  display: grid;
-  gap: 8px;
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 550;
-}
-.skill-form-fields em {
-  margin-left: 6px;
-  color: var(--text-subtle);
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 400;
-}
-.skill-form-fields input,
-.skill-form-fields textarea {
-  width: 100%;
-  padding: 10px 11px;
-  border: 1px solid var(--border-strong);
-  border-radius: 7px;
-  background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.6;
-}
-.skill-form-fields textarea {
-  min-height: 102px;
-  resize: vertical;
-}
-.skill-form-fields input:focus,
-.skill-form-fields textarea:focus {
-  border-color: var(--accent-focus);
-  outline: 3px solid var(--accent-focus-ring);
 }
 .skill-start-options {
   display: grid;

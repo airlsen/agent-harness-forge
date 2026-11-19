@@ -28,7 +28,7 @@ const router = createRouter({
     { path: '/agent/chat/:sessionId?', component: ChatWorkspace, meta: { title: '会话' } },
     { path: '/agent/conversations', component: ConversationCenter, meta: { title: '我的会话' } },
     { path: '/agent/scenarios', component: ScenarioCenter, meta: { title: '企业场景' } },
-    { path: '/agent/capabilities', component: CapabilityCenter, meta: { title: '能力管理' } },
+    { path: '/agent/capabilities', component: CapabilityCenter, meta: { title: '技能管理' } },
     { path: '/agent/skills', component: SkillCenter, meta: { title: 'Skill 库' } },
     { path: '/agent/skills/new', component: SkillCreate, meta: { title: '新建 Skill' } },
     { path: '/agent/skills/:id', component: SkillEditor, meta: { title: 'Skill 工作台' } },

@@ -1,18 +1,27 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { reactive, ref } from 'vue';
+import { Form, Input } from 'ant-design-vue';
+import type { Rule } from 'ant-design-vue/es/form';
 import { usePlatform } from '../stores/platform';
 import Icon from '../components/ForgeIcon.vue';
-const app = usePlatform(),
-  username = ref('admin'),
-  password = ref(''),
-  busy = ref(false),
-  error = ref(''),
-  reveal = ref(false);
+
+const app = usePlatform();
+const form = reactive({ username: 'admin', password: '' });
+const busy = ref(false);
+const error = ref('');
+
+// antd 表单校验规则：账号与密码均必填，提交时给出字段级错误提示。
+const rules: Record<string, Rule[]> = {
+  username: [{ required: true, whitespace: true, message: '请输入平台账号' }],
+  password: [{ required: true, message: '请输入管理员密码' }],
+};
+
 async function login() {
+  if (busy.value) return;
   busy.value = true;
   error.value = '';
   try {
-    await app.login(username.value, password.value);
+    await app.login(form.username, form.password);
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
@@ -47,33 +56,29 @@ async function login() {
       </div>
     </section>
     <section class="login-form-area">
-      <form class="login-form" @submit.prevent="login">
+      <Form class="login-form" :model="form" :rules="rules" layout="vertical" @finish="login">
         <span class="tag soft">FORGE ENTERPRISE</span>
         <h2>欢迎回来</h2>
         <p>登录企业智能体平台，开始推进工作。</p>
         <div v-if="error" class="form-alert error" role="alert">
           <Icon name="info" :size="17" />{{ error }}
         </div>
-        <label for="username">账号</label
-        ><input
-          id="username"
-          v-model="username"
-          autocomplete="username"
-          required
-          placeholder="输入平台账号"
-        /><label for="password">密码</label>
-        <div class="password-input">
-          <input
-            id="password"
-            v-model="password"
-            :type="reveal ? 'text' : 'password'"
+        <Form.Item label="账号" name="username">
+          <Input
+            v-model:value="form.username"
+            autocomplete="username"
+            size="large"
+            placeholder="输入平台账号"
+          />
+        </Form.Item>
+        <Form.Item label="密码" name="password">
+          <Input.Password
+            v-model:value="form.password"
             autocomplete="current-password"
-            required
+            size="large"
             placeholder="输入管理员密码"
-          /><button type="button" :aria-label="reveal ? '隐藏密码' : '显示密码'" @click="reveal = !reveal">
-            <Icon :name="reveal ? 'eyeOff' : 'eye'" :size="18" />
-          </button>
-        </div>
+          />
+        </Form.Item>
         <button type="submit" class="button primary large" :disabled="busy">
           <span v-if="busy" class="loader small"></span>{{ busy ? '正在登录' : '进入企业平台'
           }}<Icon v-if="!busy" name="arrow" :size="17" />
@@ -87,7 +92,7 @@ async function login() {
           当前为单管理员业务预览，尚未接入员工身份与会话权限。<br />真实模型请在登录后进入「平台管理 →
           模型连接」配置。
         </div>
-      </form>
+      </Form>
       <span class="login-version">AgentHarness Forge · 企业版前端预览</span>
     </section>
   </div>
