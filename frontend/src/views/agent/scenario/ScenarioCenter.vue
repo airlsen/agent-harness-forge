@@ -72,30 +72,17 @@ const rules: Record<string, Rule[]> = {
 };
 const base = computed(() => (maintenance.value ? app.scenarios : app.availableScenarios));
 const filters = computed(() => [
-  { id: 'all', label: '全部', icon: 'grid', count: base.value.length },
-  {
-    id: 'template',
-    label: '平台预置',
-    icon: 'box',
-    count: base.value.filter((s) => s.status === 'template').length,
-  },
-  {
-    id: 'published',
-    label: '已发布',
-    icon: 'check',
-    count: base.value.filter((s) => s.status === 'published').length,
-  },
+  { id: 'all', label: '全部', count: base.value.length },
+  { id: 'template', label: '平台预置', count: base.value.filter((s) => s.status === 'template').length },
+  { id: 'published', label: '已发布', count: base.value.filter((s) => s.status === 'published').length },
   ...(maintenance.value
-    ? [
-        {
-          id: 'draft',
-          label: '维护草稿',
-          icon: 'edit',
-          count: base.value.filter((s) => s.status === 'draft').length,
-        },
-      ]
+    ? [{ id: 'draft', label: '维护草稿', count: base.value.filter((s) => s.status === 'draft').length }]
     : []),
 ]);
+// a-segmented 选项：不传 label，交给 #label 插槽渲染「名称 + 数量」
+const filterOptions = computed(() =>
+  filters.value.map((item) => ({ value: item.id, title: item.label, payload: item })),
+);
 const filtered = computed(() =>
   base.value.filter(
     (s) =>
@@ -376,19 +363,19 @@ async function versions(scenario: Scenario) {
         </div>
       </div>
       <div class="collection-toolbar enterprise-collection-toolbar scenario-collection-toolbar">
-        <div class="scenario-filter-switcher" role="group" aria-label="场景筛选">
-          <button
-            v-for="item in filters"
-            :key="item.id"
-            :class="{ selected: filter === item.id }"
-            :aria-pressed="filter === item.id"
-            @click="filter = item.id"
-          >
-            <Icon :name="item.icon" :size="16" />
-            <span class="scenario-filter-label">{{ item.label }}</span>
-            <span class="scenario-filter-count">{{ item.count }}</span>
-          </button>
-        </div>
+        <a-segmented
+          v-model:value="filter"
+          class="scenario-filter"
+          aria-label="场景筛选"
+          :options="filterOptions"
+        >
+          <template #label="{ payload }">
+            <span class="scenario-filter-label">{{ payload.label }}</span><span
+              class="scenario-filter-count"
+              >{{ payload.count }}</span
+            >
+          </template>
+        </a-segmented>
         <a-input
           v-model:value="query"
           class="scenario-search"
@@ -950,101 +937,86 @@ async function versions(scenario: Scenario) {
   font-weight: 600;
 }
 
-/* ============ 场景筛选（Forge pill，对齐能力中心）============ */
-.scenario-filter-switcher {
-  display: flex;
-  align-items: center;
+/* ============ 场景筛选：antd Segmented ============ */
+/* 浅灰底槽 + 白色浮起的选中项；只有选中文字用主题色，数量保持中性灰 */
+.scenario-filter {
   flex: 0 1 auto;
-  gap: 3px;
-  width: max-content;
   max-width: 100%;
-  min-height: 52px;
-  padding: 4px;
+  padding: 3px;
   overflow-x: auto;
-  overflow-y: hidden;
+  color: var(--btn-secondary-fg);
   background: var(--surface-muted);
-  border: 1px solid var(--border-default);
   border-radius: 999px;
   scrollbar-width: none;
 }
-.scenario-filter-switcher::-webkit-scrollbar {
+.scenario-filter::-webkit-scrollbar {
   display: none;
 }
-.scenario-filter-switcher > button {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 42px;
-  padding: 0 14px;
-  border: 1px solid transparent;
+.scenario-filter :deep(.ant-segmented-item),
+.scenario-filter :deep(.ant-segmented-thumb) {
   border-radius: 999px;
-  color: var(--color-text-secondary);
-  background: transparent;
-  font-size: 12px;
-  font-weight: 550;
-  line-height: 1;
-  white-space: nowrap;
-  transition:
-    color 150ms ease,
-    background 150ms ease,
-    border-color 150ms ease,
-    box-shadow 150ms ease;
 }
-.scenario-filter-switcher > button:hover {
-  color: var(--color-text-primary);
-  background: var(--surface-content);
-}
-.scenario-filter-switcher > button.selected {
-  color: var(--color-brand-active);
-  background: var(--surface-selected);
-  border-color: var(--color-brand-border);
-  box-shadow: 0 1px 2px #2027330a;
-  font-weight: 650;
-}
-.scenario-filter-switcher > button:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: 2px;
-  z-index: 1;
-}
-.scenario-filter-switcher > button > svg {
+.scenario-filter :deep(.ant-segmented-item) {
   flex: 0 0 auto;
-  color: var(--color-text-secondary);
 }
-.scenario-filter-switcher > button.selected > svg {
-  color: var(--accent-ink);
+/* 未选中项悬停：不铺灰底，只加深文字，保持底槽干净 */
+.scenario-filter :deep(.ant-segmented-item::after) {
+  display: none;
 }
-.scenario-filter-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.scenario-filter :deep(.ant-segmented-item:hover:not(.ant-segmented-item-selected)) {
+  color: var(--color-text-primary);
+}
+.scenario-filter :deep(.ant-segmented-item-selected),
+.scenario-filter :deep(.ant-segmented-thumb) {
+  background: var(--surface-card);
+  box-shadow: var(--shadow-sm);
+}
+.scenario-filter :deep(.ant-segmented-item-selected) {
+  color: var(--color-brand);
+}
+.scenario-filter :deep(.ant-segmented-item-label) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 32px;
+  white-space: nowrap;
+}
+.scenario-filter :deep(.ant-segmented-item-selected .ant-segmented-item-label) {
+  font-weight: 600;
+}
+.scenario-filter :deep(.ant-segmented-item:focus-within) {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
 }
 .scenario-filter-count {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  line-height: 1;
+}
+/* 选中项的数量收进浅灰小胶囊 */
+.scenario-filter :deep(.ant-segmented-item-selected) .scenario-filter-count {
   display: inline-grid;
   min-width: 22px;
   height: 20px;
   place-items: center;
   padding: 0 6px;
-  border: 0;
   border-radius: 999px;
-  color: var(--color-neutral-status-text);
-  background: var(--color-neutral-status-bg);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
+  background: var(--surface-muted);
   font-weight: 600;
-  line-height: 1;
-}
-.scenario-filter-switcher > button.selected .scenario-filter-count {
-  color: var(--color-brand-active);
-  background: var(--brand-200);
 }
 
 /* ============ 搜索框 ============ */
 .scenario-search {
-  width: 220px;
+  width: 240px;
   flex-shrink: 0;
-  min-height: 40px;
-  border-radius: 12px;
+  height: 38px;
+  border-radius: 999px;
   background: var(--surface-card);
   border-color: var(--border-default);
   box-shadow: 0 1px 3px #20273308;
@@ -1059,9 +1031,6 @@ async function versions(scenario: Scenario) {
 }
 
 /* ============ 卡片：状态 / 能力 / 动作 ============ */
-.scenarios-page .enterprise-scenario-card {
-  min-height: 240px;
-}
 /* 状态标签：发布=success，预置/草稿=中性 */
 .scenario-card-top :deep(.ant-tag) {
   margin-left: auto;

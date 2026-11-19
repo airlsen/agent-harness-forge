@@ -7462,14 +7462,14 @@ textarea:focus-visible {
   align-items: center;
   gap: 10px;
 }
+/* 每行最多 3 张；单张窄于 280px 时自动降为 2 列 / 1 列，不依赖视口断点 */
 .enterprise-view .scenarios-page .enterprise-scenario-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(max(280px, calc((100% - 36px) / 3)), 1fr));
   gap: 18px;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card {
   position: relative;
-  min-height: 278px;
-  padding: 23px 23px 0;
+  padding: 18px 18px 0;
   overflow: hidden;
   border: 1px solid var(--border-default);
   border-radius: 14px;
@@ -7489,31 +7489,38 @@ textarea:focus-visible {
 .enterprise-view .scenarios-page .enterprise-scenario-card .scenario-card-top {
   align-items: center;
   gap: 9px;
-  margin-bottom: 19px;
+  margin-bottom: 14px;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card .scene-icon {
-  width: 47px;
-  height: 47px;
-  border-radius: 14px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   box-shadow: inset 0 1px #ffffff9c;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card > h2 {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   color: var(--color-text-primary);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 650;
   letter-spacing: -0.35px;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card > p {
-  min-height: 48px;
+  /* 固定两行：描述长短不一时卡片仍等高，且不留大块空白 */
+  display: -webkit-box;
+  min-height: calc(12px * 1.8 * 2);
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  flex: 0 0 auto;
   color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.8;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card .scenario-capabilities {
-  min-height: 26px;
+  min-height: 24px;
   gap: 6px;
-  margin: 15px 0 17px;
+  margin: 12px 0;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card .scenario-card-meta {
   margin-bottom: 12px;
@@ -7521,8 +7528,8 @@ textarea:focus-visible {
   font-size: 10px;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card .scenario-card-actions {
-  min-height: 59px;
-  padding: 10px 0;
+  min-height: 48px;
+  padding: 8px 0;
   border-top: 0;
 }
 .enterprise-view .scenarios-page .scenario-maintenance-actions {
@@ -7563,7 +7570,7 @@ textarea:focus-visible {
     margin-bottom: 23px;
   }
   .enterprise-view .capabilities-page .capability-category-switcher,
-  .enterprise-view .scenarios-page .scenario-filter-switcher {
+  .enterprise-view .scenarios-page .scenario-filter {
     width: 100%;
     max-width: 100%;
     flex: 1 1 100%;
