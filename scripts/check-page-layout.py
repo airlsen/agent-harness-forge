@@ -471,12 +471,19 @@ async def main(args):
 
             for width, height in [(1440, 1000), (820, 1000), (390, 844)]:
                 await page.set_viewport_size({"width": width, "height": height})
-                for tab in ["skills", "mcp"]:
-                    await go("capabilities?tab=" + tab)
-                    await expect(
-                        page.locator(".capability-unavailable")
-                    ).to_contain_text("尚未接入")
-                    await audit(f"{width}/capabilities/{tab}")
+                await go("capabilities?tab=skills")
+                await expect(
+                    page.locator(
+                        ".skill-capability-directory .enterprise-empty,"
+                        ".skill-capability-directory .capability-skill-grid"
+                    )
+                ).to_have_count(1)
+                await audit(f"{width}/capabilities/skills")
+                await go("capabilities?tab=mcp")
+                await expect(
+                    page.locator(".mcp-directory .enterprise-empty, .mcp-server-list")
+                ).to_have_count(1)
+                await audit(f"{width}/capabilities/mcp")
                 await go("chat")
                 toolbar = page.locator(".chat-subbar")
                 bounds = await toolbar.bounding_box()

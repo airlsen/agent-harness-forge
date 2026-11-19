@@ -80,6 +80,68 @@ try {
     assert.match(html, /hi/);
   });
 
+  await check('裸图片地址自动内嵌，普通网址仍为可点击链接', () => {
+    const imageUrl = 'https://mdn.alipayobjects.com/one_clip/afts/img/chart-id/original';
+    const html = splitMarkdown(`图表地址：${imageUrl}`)
+      .map((b) => b.html ?? '')
+      .join('');
+    assert.match(
+      html,
+      /<img[^>]+src="https:\/\/mdn\.alipayobjects\.com\/one_clip\/afts\/img\/chart-id\/original"/,
+    );
+    assert.match(html, /loading="lazy"/);
+    assert.match(html, /decoding="async"/);
+    assert.match(html, /referrerpolicy="no-referrer"/);
+    assert.match(html, /href="https:\/\/mdn\.alipayobjects\.com/);
+    assert.match(html, /target="_blank"/);
+    assert.match(html, /rel="noopener noreferrer"/);
+
+    const link = splitMarkdown('https://example.com/docs')
+      .map((b) => b.html ?? '')
+      .join('');
+    assert.match(link, /<a[^>]+href="https:\/\/example\.com\/docs"/);
+    assert.doesNotMatch(link, /<img/i);
+  });
+
+  await check('流式输出期间不发起图片请求，完成后再自动加载', () => {
+    const imageUrl = 'https://mdn.alipayobjects.com/one_clip/afts/img/chart-id/original';
+    const liveHtml = splitMarkdown(imageUrl, { live: true })
+      .map((b) => b.html ?? '')
+      .join('');
+    assert.doesNotMatch(liveHtml, /<img/i);
+    assert.match(liveHtml, /<a[^>]+href="https:\/\/mdn\.alipayobjects\.com/);
+
+    const finishedHtml = splitMarkdown(imageUrl)
+      .map((b) => b.html ?? '')
+      .join('');
+    assert.match(finishedHtml, /<img/i);
+  });
+
+  await check('Markdown 图片可显示，但只接受 HTTPS 并移除危险/替代资源属性', () => {
+    const secure = splitMarkdown('![区域销售额](https://cdn.example.com/chart.png)')
+      .map((b) => b.html ?? '')
+      .join('');
+    assert.match(secure, /<img[^>]+src="https:\/\/cdn\.example\.com\/chart\.png"/);
+    assert.match(secure, /alt="区域销售额"/);
+    assert.match(secure, /referrerpolicy="no-referrer"/);
+
+    const unsafe = splitMarkdown(
+      '<img src="http://cdn.example.com/chart.png" srcset="https://evil.example/track.png 2x" onerror="alert(1)" alt="图表">',
+    )
+      .map((b) => b.html ?? '')
+      .join('');
+    assert.doesNotMatch(unsafe, /<img|srcset|onerror|http:\/\/cdn\.example\.com/);
+    assert.match(unsafe, /图表/);
+  });
+
+  await check('代码围栏中的图片地址仍作为代码，不触发外部图片请求', () => {
+    const url = 'https://mdn.alipayobjects.com/one_clip/afts/img/chart-id/original';
+    const blocks = splitMarkdown(`${FENCE}text\n${url}\n${FENCE}`);
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0].kind, 'code');
+    assert.equal(blocks[0].code, url);
+  });
+
   const { normalizeLang, highlightCode } = await vite.ssrLoadModule('/src/utils/highlight.ts');
 
   await check('语言别名归一化，白名单外的语言走纯文本', () => {

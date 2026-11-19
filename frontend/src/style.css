@@ -1619,6 +1619,20 @@ button:disabled:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.markdown-body .markdown-image-link {
+  display: inline-block;
+  max-width: 100%;
+  text-decoration: none;
+}
+.markdown-body img {
+  display: block;
+  max-width: 100%;
+  max-height: 560px;
+  height: auto;
+  margin: 8px 0;
+  border-radius: 8px;
+  object-fit: contain;
+}
 .markdown-body table {
   border-collapse: collapse;
   width: 100%;
@@ -2689,12 +2703,6 @@ button:disabled:hover {
 .tools-list .scene-icon {
   height: 39px;
   width: 39px;
-}
-.capability-unavailable {
-  background: white;
-  border: 1px solid #e6edf6;
-  border-radius: 9px;
-  min-height: 410px;
 }
 .detail-block {
   padding-bottom: 24px;
@@ -5103,10 +5111,6 @@ table td > .tag {
   .tools-list .tag {
     margin-left: 43px;
     font-size: 10px;
-  }
-  .capability-unavailable {
-    padding: 35px 18px;
-    min-height: 360px;
   }
   .settings-layout {
     gap: 17px;
