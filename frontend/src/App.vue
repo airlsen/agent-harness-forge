@@ -22,7 +22,7 @@ const isAdministration = computed(() => adminRoutes.includes(route.path));
 const navigation = [
   { path: '/agent/workbench', label: '工作台', icon: 'home' },
   { path: '/agent/scenarios', label: '企业场景', icon: 'grid' },
-  { path: '/agent/capabilities', label: '企业能力中心', icon: 'blocks' },
+  { path: '/agent/capabilities', label: '能力管理', icon: 'blocks' },
   { path: '/agent/conversations', label: '我的会话', icon: 'message' },
 ];
 const management = [

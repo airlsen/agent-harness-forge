@@ -396,10 +396,13 @@ async def main():
             ).to_have_count(0)
             await (
                 page.locator(".scenario-card")
-                .first.get_by_role("button", name="查看详情")
+                .first.get_by_role("button", name="详情")
                 .click()
             )
             await expect(page.get_by_role("dialog", name="场景详情")).to_contain_text(
+                "用途"
+            )
+            await expect(page.get_by_role("dialog", name="场景详情")).not_to_contain_text(
                 "工作规范"
             )
             await page.keyboard.press("Escape")
@@ -408,6 +411,18 @@ async def main():
                 "scenario catalogue separates use from maintenance and exposes real details"
             )
             await page.get_by_role("button", name="维护场景", exact=True).click()
+            await (
+                page.locator(".scenario-card")
+                .first.get_by_role("button", name="详情")
+                .click()
+            )
+            await expect(page.get_by_role("dialog", name="场景详情")).to_contain_text(
+                "工作规范"
+            )
+            await expect(page.get_by_role("dialog", name="场景详情")).to_contain_text(
+                "版本信息"
+            )
+            await page.keyboard.press("Escape")
             async with page.expect_response(
                 lambda response: (
                     response.url.endswith("/copy") and response.request.method == "POST"
@@ -492,7 +507,10 @@ async def main():
             ).to_be_visible()
             fixture_id = None
             check("confirmed soft delete works and leaves a real search empty state")
-            await page.get_by_role("link", name="企业能力中心", exact=True).click()
+            await page.get_by_role("link", name="能力管理", exact=True).click()
+            await expect(
+                page.get_by_role("heading", name="能力管理", exact=True)
+            ).to_be_visible()
             await expect(page.locator(".enterprise-tool-card")).to_have_count(4)
             await expect(page.locator(".plugin-card")).to_have_count(0)
             await page.get_by_label("搜索能力").fill("nonexistent-tool")
@@ -520,23 +538,20 @@ async def main():
             check(
                 "SDK/runtime components are advanced information, not fake installable business plugins"
             )
-            await page.get_by_role("button", name="Skills 技能 0", exact=True).click()
-            await expect(page.locator(".capability-unavailable")).to_contain_text(
-                "尚未接入"
-            )
-            await page.get_by_role("button", name="MCP 服务 0", exact=True).click()
-            await expect(page.locator(".capability-unavailable")).to_contain_text(
-                "尚未接入"
-            )
+            await page.locator(".collection-tabs > button").filter(has_text="技能").click()
+            await expect(page.locator(".enterprise-empty")).to_contain_text("还没有技能")
+            await expect(
+                page.locator(".enterprise-empty").get_by_role("link", name="新建技能")
+            ).to_be_visible()
+            await page.locator(".collection-tabs > button").filter(has_text="MCP 服务").click()
+            await expect(page.locator(".enterprise-empty")).to_contain_text("还没有 MCP 服务")
+            await expect(
+                page.locator(".enterprise-empty").get_by_role("button", name="添加 MCP 服务")
+            ).to_be_visible()
             await page.reload()
-            await expect(page.locator(".capability-unavailable")).to_contain_text("MCP")
-            await expect(page.locator(".capability-unavailable button")).to_have_count(
-                0
-            )
+            await expect(page.locator(".enterprise-empty")).to_contain_text("还没有 MCP 服务")
             await screenshot("mcp-desktop.png")
-            check(
-                "Skill/MCP fetch real availability; deep-linked tab persists and no fake install action exists"
-            )
+            check("Skill/MCP tabs have concise empty states and one clear next action")
             await go("/agent/conversations")
             await expect(
                 page.get_by_role("heading", name="我的会话", exact=True)

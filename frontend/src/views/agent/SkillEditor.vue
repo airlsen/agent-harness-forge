@@ -269,7 +269,7 @@ onBeforeRouteLeave(() => !dirty.value || window.confirm('当前草稿有未保�
       </section>
       <template v-else-if="skill">
         <nav class="skill-breadcrumb" aria-label="面包屑">
-          <RouterLink to="/agent/capabilities?tab=skills">企业能力中心</RouterLink
+          <RouterLink to="/agent/capabilities?tab=skills">能力管理</RouterLink
           ><Icon name="chevron" :size="14" /><RouterLink to="/agent/skills">Skill 库</RouterLink
           ><Icon name="chevron" :size="14" /><span aria-current="page">{{ skill.name }}</span>
         </nav>
