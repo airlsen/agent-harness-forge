@@ -513,7 +513,7 @@ async def main():
             ).to_be_visible()
             await expect(page.locator(".enterprise-tool-card")).to_have_count(4)
             await expect(page.locator(".plugin-card")).to_have_count(0)
-            await page.get_by_label("搜索能力").fill("nonexistent-tool")
+            await page.get_by_label("搜索基础工具").fill("nonexistent-tool")
             await expect(
                 page.get_by_role("heading", name="没有匹配的能力")
             ).to_be_visible()
@@ -528,6 +528,110 @@ async def main():
                 "public tools support discovery, search, readable boundaries and related scenarios"
             )
             await screenshot("capabilities-desktop.png")
+            await expect(
+                page.get_by_role("button", name="上传插件包", exact=True)
+            ).to_have_count(0)
+            await go("/agent/capabilities?tab=tools")
+            await expect(page.get_by_role("heading", name="受管插件")).to_be_visible()
+            await expect(
+                page.locator(".collection-tabs button").nth(1)
+            ).to_have_attribute("aria-pressed", "true")
+            await expect(
+                page.get_by_role("button", name="上传插件包", exact=True)
+            ).to_be_visible()
+            await screenshot("plugins-desktop.png")
+            check(
+                "legacy ?tab=tools deep links to the plugin directory and its scoped upload action"
+            )
+            await page.get_by_label("搜索插件").fill("no-such-plugin-for-empty-state")
+            await expect(
+                page.get_by_role("heading", name="没有匹配的插件")
+            ).to_be_visible()
+            await expect(
+                page.get_by_role("button", name="上传插件包", exact=True)
+            ).to_be_visible()
+            await page.get_by_label("搜索插件").fill("")
+            check(
+                "plugin upload remains available when the directory has no matching plugin cards"
+            )
+            await page.set_viewport_size({"width": 390, "height": 844})
+            await page.get_by_role("button", name="上传插件包", exact=True).click()
+            upload_dialog = page.get_by_role("dialog", name="上传受管插件包")
+            await expect(upload_dialog).to_be_visible()
+            await expect(page.locator(".plugin-upload-dropzone")).to_be_visible()
+            upload_footer = page.locator(".plugin-upload-footer")
+            await expect(upload_footer).to_be_visible()
+            await expect(upload_footer).to_have_css("flex-direction", "column")
+            await expect(upload_footer).to_have_css("align-items", "stretch")
+            await screenshot("plugin-upload-mobile.png")
+            file_input = page.locator(".plugin-file-picker input")
+            submit_upload = page.get_by_role("button", name="上传并校验", exact=True)
+            await file_input.set_input_files(
+                {
+                    "name": "not-a-plugin.txt",
+                    "mimeType": "text/plain",
+                    "buffer": b"not a zip",
+                }
+            )
+            await expect(page.locator(".plugin-upload-alert")).to_contain_text(".zip")
+            await expect(submit_upload).to_be_disabled()
+            await file_input.set_input_files(
+                {"name": "empty.zip", "mimeType": "application/zip", "buffer": b""}
+            )
+            await expect(page.locator(".plugin-upload-alert")).to_contain_text(
+                "文件为空"
+            )
+            await file_input.set_input_files(
+                {
+                    "name": "too-large.zip",
+                    "mimeType": "application/zip",
+                    "buffer": b"x" * (5 * 1024 * 1024 + 1),
+                }
+            )
+            await expect(page.locator(".plugin-upload-alert")).to_contain_text(
+                "不能超过 5 MB"
+            )
+            await expect(submit_upload).to_be_disabled()
+            await file_input.set_input_files(
+                {
+                    "name": "invalid.zip",
+                    "mimeType": "application/zip",
+                    "buffer": b"not a zip",
+                }
+            )
+            await submit_upload.click()
+            await expect(page.locator(".plugin-upload-alert")).to_contain_text(
+                "不是有效 ZIP 文件"
+            )
+            await expect(upload_dialog).to_be_visible()
+            check(
+                "file validation and API rejection remain visible without closing the upload dialog"
+            )
+            mobile_box = await upload_dialog.bounding_box()
+            assert mobile_box and mobile_box["x"] >= 0 and mobile_box["y"] >= 0
+            assert mobile_box["x"] + mobile_box["width"] <= 391
+            assert mobile_box["y"] + mobile_box["height"] <= 845
+            await screenshot("plugin-upload-mobile-error.png")
+            await page.set_viewport_size({"width": 320, "height": 600})
+            compact_box = await upload_dialog.bounding_box()
+            assert compact_box and compact_box["x"] >= 0 and compact_box["y"] >= 0
+            assert compact_box["x"] + compact_box["width"] <= 321
+            assert compact_box["y"] + compact_box["height"] <= 601
+            await expect(page.locator(".plugin-upload-content")).to_have_js_property(
+                "scrollWidth",
+                await page.locator(".plugin-upload-content").evaluate(
+                    "el => el.clientWidth"
+                ),
+            )
+            await page.keyboard.press("Escape")
+            await expect(upload_dialog).to_have_count(0)
+            await expect(
+                page.get_by_role("button", name="上传插件包", exact=True)
+            ).to_be_focused()
+            check(
+                "plugin upload dialog stays inside mobile and compact viewports, restores focus and remains dismissible"
+            )
+            await page.set_viewport_size({"width": 1440, "height": 1000})
             await page.locator(".runtime-details>summary").click()
             await expect(page.locator(".runtime-component-list>article")).to_have_count(
                 2
