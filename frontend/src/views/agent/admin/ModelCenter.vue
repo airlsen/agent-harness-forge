@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { Form, Input, InputNumber } from 'ant-design-vue';
 import type { Rule } from 'ant-design-vue/es/form';
 import { api, post, put, remove } from '../../../api/client';
 import { usePlatform } from '../../../stores/platform';
@@ -455,7 +454,7 @@ onBeforeUnmount(() => document.removeEventListener('click', closeActionMenu));
         <Icon name="close" :size="20" />
       </button>
     </header>
-    <Form
+    <a-form
       id="model-editor-form"
       :model="form"
       :rules="rules"
@@ -463,40 +462,40 @@ onBeforeUnmount(() => document.removeEventListener('click', closeActionMenu));
       class="model-editor-form"
       @finish="save"
     >
-      <Form.Item label="模型名称" name="name">
-        <Input v-model:value="form.name" :maxlength="100" placeholder="例如：企业 DeepSeek Chat" />
-      </Form.Item>
+      <a-form-item label="模型名称" name="name">
+        <a-input v-model:value="form.name" :maxlength="100" placeholder="例如：企业 DeepSeek Chat" />
+      </a-form-item>
 
-      <Form.Item label="模型 ID" name="model">
-        <Input v-model:value="form.model" :maxlength="128" placeholder="例如：deepseek-chat" />
-      </Form.Item>
+      <a-form-item label="模型 ID" name="model">
+        <a-input v-model:value="form.model" :maxlength="128" placeholder="例如：deepseek-chat" />
+      </a-form-item>
 
-      <Form.Item label="Base URL" name="baseUrl" extra="填写 API 根路径，不包含 /chat/completions。">
-        <Input
+      <a-form-item label="Base URL" name="baseUrl" extra="填写 API 根路径，不包含 /chat/completions。">
+        <a-input
           v-model:value="form.baseUrl"
           :maxlength="512"
           placeholder="https://your-gateway.example.com/v1"
         />
-      </Form.Item>
+      </a-form-item>
 
-      <Form.Item label="API Key" name="apiKey" extra="密钥仅通过同源 API 提交，并以加密形式存储在服务端。">
-        <Input.Password
+      <a-form-item label="API Key" name="apiKey" extra="密钥仅通过同源 API 提交，并以加密形式存储在服务端。">
+        <a-input-password
           v-model:value="form.apiKey"
           autocomplete="new-password"
           :placeholder="editing?.apiKeyConfigured ? '留空保留已保存密钥；填写新值可替换' : '无鉴权服务可留空'"
         />
-      </Form.Item>
+      </a-form-item>
 
-      <Form.Item label="上下文窗口（tokens）" name="contextWindow">
-        <InputNumber
+      <a-form-item label="上下文窗口（tokens）" name="contextWindow">
+        <a-input-number
           v-model:value="contextWindowValue"
           :min="4096"
           :max="2000000"
           :controls="false"
           style="width: 100%"
         />
-      </Form.Item>
-    </Form>
+      </a-form-item>
+    </a-form>
     <footer>
       <button type="button" class="button secondary" :disabled="saving" @click="closeEditor">取消</button>
       <button type="submit" form="model-editor-form" class="button primary" :disabled="saving">

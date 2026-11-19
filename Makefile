@@ -1,4 +1,4 @@
-.PHONY: install setup build serve runner dev-backend dev-runner dev-frontend typecheck lint test
+.PHONY: install setup build serve runner dev dev-backend dev-runner dev-frontend typecheck lint test
 
 install:
 	python3 -m pip install -e 'backend[dev]'
@@ -18,6 +18,9 @@ serve:  ## 已构建的 Vue + 正式 FastAPI，默认 :5173
 
 runner: ## 正式 Harness Runner，默认 :9000
 	bash scripts/start-runner.sh
+
+dev: ## 前后端分离开发：一键启动 Runner + 控制面 + Vite（端口占用自动清理）
+	bash scripts/dev.sh
 
 dev-backend: ## 开发模式控制面 :8000；需先初始化账号
 	set -a; . ./data/business.env; set +a; cd backend && python3 -m uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000

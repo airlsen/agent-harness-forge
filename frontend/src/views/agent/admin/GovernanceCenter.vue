@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { Form, Input, InputNumber, Select } from 'ant-design-vue';
 import type { Rule } from 'ant-design-vue/es/form';
 import { api, post, put } from '../../../api/client';
 import { formatBytes } from '../../../utils/presentation';
@@ -219,7 +218,7 @@ async function save() {
         >
       </div>
       <div class="settings-layout">
-        <Form
+        <a-form
           v-if="loaded"
           class="settings-card governance-form"
           :model="policy"
@@ -275,27 +274,27 @@ async function save() {
             <h2>执行限额</h2>
           </div>
           <div class="form-grid">
-            <Form.Item label="单次模型输出上限" name="maxOutputTokens">
-              <Select v-model:value="policy.maxOutputTokens" :options="outputTokenOptions" />
-            </Form.Item>
-            <Form.Item label="模型请求超时（秒）" name="requestTimeoutSeconds">
-              <InputNumber
+            <a-form-item label="单次模型输出上限" name="maxOutputTokens">
+              <a-select v-model:value="policy.maxOutputTokens" :options="outputTokenOptions" />
+            </a-form-item>
+            <a-form-item label="模型请求超时（秒）" name="requestTimeoutSeconds">
+              <a-input-number
                 v-model:value="requestTimeoutValue"
                 :min="15"
                 :max="300"
                 :controls="false"
                 style="width: 100%"
               />
-            </Form.Item>
-            <Form.Item label="审批等待超时（秒）" name="approvalTimeoutSeconds">
-              <InputNumber
+            </a-form-item>
+            <a-form-item label="审批等待超时（秒）" name="approvalTimeoutSeconds">
+              <a-input-number
                 v-model:value="approvalTimeoutValue"
                 :min="15"
                 :max="600"
                 :controls="false"
                 style="width: 100%"
               />
-            </Form.Item>
+            </a-form-item>
           </div>
           <div class="form-divider"></div>
           <div class="settings-section-heading">
@@ -306,8 +305,8 @@ async function save() {
             每轮结束后，会话工作区的文件会保存到服务端磁盘，切换会话或服务重启后仍可查看。会话最后一次活动超过保留期限后，其文件会被自动清理。
           </p>
           <div class="form-grid">
-            <Form.Item label="文件保留天数" name="fileRetentionDays">
-              <InputNumber
+            <a-form-item label="文件保留天数" name="fileRetentionDays">
+              <a-input-number
                 v-model:value="fileRetentionValue"
                 :min="0"
                 :max="3650"
@@ -316,7 +315,7 @@ async function save() {
                 style="width: 100%"
               />
               <small class="field-hint">0 表示永久保留；修改后对所有会话即时生效。</small>
-            </Form.Item>
+            </a-form-item>
           </div>
           <div v-if="storage" class="storage-summary">
             <dl>
@@ -353,9 +352,9 @@ async function save() {
               <span v-if="saving" class="loader small"></span><Icon v-else name="save" :size="16" />保存策略
             </button>
           </footer>
-        </Form>
+        </a-form>
         <aside class="settings-aside">
-          <Form
+          <a-form
             v-if="web"
             class="settings-card governance-form web-search-card"
             :model="webForm"
@@ -386,11 +385,11 @@ async function save() {
                 <span></span>
               </button>
             </div>
-            <Form.Item label="搜索服务" name="provider">
-              <Select v-model:value="webForm.provider" :options="providerOptions" />
-            </Form.Item>
-            <Form.Item label="DeepSeek API Key" name="apiKey">
-              <Input.Password
+            <a-form-item label="搜索服务" name="provider">
+              <a-select v-model:value="webForm.provider" :options="providerOptions" />
+            </a-form-item>
+            <a-form-item label="DeepSeek API Key" name="apiKey">
+              <a-input-password
                 v-model:value="webForm.apiKey"
                 autocomplete="off"
                 :placeholder="web.apiKeyConfigured ? '已保存，留空则不修改' : '留空则复用 DeepSeek 模型密钥'"
@@ -404,10 +403,10 @@ async function save() {
                   </button></template
                 ></small
               >
-            </Form.Item>
-            <Form.Item label="服务地址（可选）" name="baseUrl">
-              <Input v-model:value="webForm.baseUrl" placeholder="留空使用 DeepSeek 默认地址" />
-            </Form.Item>
+            </a-form-item>
+            <a-form-item label="服务地址（可选）" name="baseUrl">
+              <a-input v-model:value="webForm.baseUrl" placeholder="留空使用 DeepSeek 默认地址" />
+            </a-form-item>
             <label class="web-fetch-option"
               ><input v-model="webForm.fetchEnabled" type="checkbox" /><span
                 >允许读取网页内容（web_fetch）</span
@@ -417,7 +416,7 @@ async function save() {
               <span v-if="webSaving" class="loader small"></span
               ><Icon v-else name="save" :size="16" />保存联网设置
             </button>
-          </Form>
+          </a-form>
           <section class="settings-card deployment-card">
             <div class="settings-section-heading">
               <Icon name="server" :size="18" />

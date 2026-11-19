@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { Form, Input } from 'ant-design-vue';
 import type { Rule } from 'ant-design-vue/es/form';
 import { post } from '../../../api/client';
 import Icon from '../../../components/ForgeIcon.vue';
@@ -58,7 +57,7 @@ async function createSkill() {
         </div>
       </header>
 
-      <Form
+      <a-form
         class="skill-create-workflow"
         :model="form"
         :rules="rules"
@@ -73,17 +72,17 @@ async function createSkill() {
               <p>清晰的名称和用途能帮助团队理解何时应该使用这个 Skill。</p>
             </div>
           </div>
-          <Form.Item label="Skill 名称" name="name">
-            <Input v-model:value="form.name" :maxlength="120" placeholder="例如：客户工单总结" />
-          </Form.Item>
-          <Form.Item label="用途说明" name="description">
-            <Input.TextArea
+          <a-form-item label="Skill 名称" name="name">
+            <a-input v-model:value="form.name" :maxlength="120" placeholder="例如：客户工单总结" />
+          </a-form-item>
+          <a-form-item label="用途说明" name="description">
+            <a-textarea
               v-model:value="form.description"
               :maxlength="512"
               :rows="4"
               placeholder="例如：将客户工单整理为结构化摘要，标出待跟进事项并形成可直接发送给客户的回复建议。"
             />
-          </Form.Item>
+          </a-form-item>
         </section>
         <section class="skill-create-section skill-start-section">
           <div class="skill-section-heading">
@@ -130,7 +129,7 @@ async function createSkill() {
             }}
           </button>
         </footer>
-      </Form>
+      </a-form>
     </div>
   </main>
 </template>

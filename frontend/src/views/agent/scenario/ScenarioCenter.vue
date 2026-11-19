@@ -1,21 +1,6 @@
 <script setup lang="ts">
 import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import {
-  Alert,
-  Button,
-  Checkbox,
-  Collapse,
-  Descriptions,
-  Empty,
-  Form,
-  Input,
-  Segmented,
-  Spin,
-  Tag,
-  Timeline,
-  Typography,
-} from 'ant-design-vue';
 import type { Rule } from 'ant-design-vue/es/form';
 import { usePlatform } from '../../../stores/platform';
 import { MAX_SESSION_MCP, MAX_SESSION_SKILLS, useConversation } from '../../../stores/conversation';
@@ -374,24 +359,24 @@ async function versions(scenario: Scenario) {
           <p v-else>编辑场景，试运行通过后发布。</p>
         </div>
         <div class="page-heading-actions">
-          <Button @click="toggleMaintenance">
+          <a-button @click="toggleMaintenance">
             <template #icon><Icon :name="maintenance ? 'grid' : 'settings'" :size="16" /></template
             >{{ maintenance ? '返回使用目录' : '维护场景' }}
-          </Button>
-          <Button v-if="maintenance" type="primary" @click="edit()">
+          </a-button>
+          <a-button v-if="maintenance" type="primary" @click="edit()">
             <template #icon><Icon name="plus" :size="17" /></template>新建场景
-          </Button>
+          </a-button>
         </div>
       </div>
       <div class="collection-toolbar enterprise-collection-toolbar scenario-collection-toolbar">
-        <Segmented
+        <a-segmented
           v-model:value="filter"
           class="scenario-filter-switcher"
           :options="filterOptions"
           size="large"
           aria-label="场景筛选"
         />
-        <Input
+        <a-input
           v-model:value="query"
           class="scenario-search"
           placeholder="搜索场景名称或描述"
@@ -400,10 +385,10 @@ async function versions(scenario: Scenario) {
           allow-clear
         >
           <template #prefix><Icon name="search" :size="17" /></template>
-        </Input>
+        </a-input>
       </div>
-      <div v-if="app.loading" class="loading-inline" role="status"><Spin size="small" />正在读取场景…</div>
-      <Empty v-else-if="!filtered.length" class="enterprise-empty">
+      <div v-if="app.loading" class="loading-inline" role="status"><a-spin size="small" />正在读取场景…</div>
+      <a-empty v-else-if="!filtered.length" class="enterprise-empty">
         <template #image
           ><span class="enterprise-empty-symbol"><Icon :name="query ? 'search' : 'grid'" :size="29" /></span
         ></template>
@@ -419,7 +404,7 @@ async function versions(scenario: Scenario) {
             }}
           </p>
         </template>
-        <Button
+        <a-button
           v-if="query || filter !== 'all'"
           @click="
             query = '';
@@ -427,8 +412,8 @@ async function versions(scenario: Scenario) {
           "
         >
           查看全部场景
-        </Button>
-      </Empty>
+        </a-button>
+      </a-empty>
       <div v-else class="scenario-grid enterprise-scenario-grid">
         <article
           v-for="scenario in filtered"
@@ -438,11 +423,11 @@ async function versions(scenario: Scenario) {
           <div class="scenario-card-top">
             <span :class="['scene-icon', scenario.payload.icon]"
               ><Icon :name="scenario.payload.icon" :size="24" /></span
-            ><Tag
+            ><a-tag
               :color="scenario.status === 'published' ? 'success' : undefined"
               class="scenario-status-tag"
-              >{{ scenarioState(scenario) }}</Tag
-            ><Button
+              >{{ scenarioState(scenario) }}</a-tag
+            ><a-button
               v-if="maintenance && scenario.space !== 'official'"
               type="text"
               class="icon-button delete-scenario"
@@ -451,15 +436,15 @@ async function versions(scenario: Scenario) {
               @click="toDelete = scenario"
             >
               <template #icon><Icon name="trash" :size="15" /></template>
-            </Button>
+            </a-button>
           </div>
           <h2>{{ scenario.payload.name }}</h2>
           <p>{{ scenario.payload.description || '还没有添加场景描述。' }}</p>
           <div v-if="cardLabels(scenario.payload).length" class="scenario-capabilities">
-            <Tag v-for="item in cardLabels(scenario.payload).slice(0, 2)" :key="item.key"
-              ><Icon :name="item.icon" :size="12" />{{ item.label }}</Tag
-            ><Tag v-if="cardLabels(scenario.payload).length > 2"
-              >+{{ cardLabels(scenario.payload).length - 2 }}</Tag
+            <a-tag v-for="item in cardLabels(scenario.payload).slice(0, 2)" :key="item.key"
+              ><Icon :name="item.icon" :size="12" />{{ item.label }}</a-tag
+            ><a-tag v-if="cardLabels(scenario.payload).length > 2"
+              >+{{ cardLabels(scenario.payload).length - 2 }}</a-tag
             >
           </div>
           <div v-if="maintenance" class="scenario-card-meta">
@@ -471,13 +456,13 @@ async function versions(scenario: Scenario) {
             >
           </div>
           <div class="scenario-card-actions">
-            <Button type="text" size="small" @click="detail = scenario">详情</Button
-            ><Button type="link" class="scenario-use" @click="useScenario(scenario)">
+            <a-button type="text" size="small" @click="detail = scenario">详情</a-button
+            ><a-button type="link" class="scenario-use" @click="useScenario(scenario)">
               {{ isAvailableScenario(scenario) ? '开始' : '预览草稿' }}<Icon name="arrow" :size="15" />
-            </Button>
+            </a-button>
           </div>
           <div v-if="maintenance" class="scenario-maintenance-actions">
-            <Button
+            <a-button
               size="small"
               :disabled="busy"
               @click="scenario.space === 'official' ? copy(scenario) : edit(scenario)"
@@ -485,11 +470,11 @@ async function versions(scenario: Scenario) {
               <template #icon
                 ><Icon :name="scenario.space === 'official' ? 'copy' : 'edit'" :size="13" /></template
               >{{ scenario.space === 'official' ? '复制为草稿' : '编辑' }}
-            </Button>
-            <Button type="text" size="small" @click="versions(scenario)">
+            </a-button>
+            <a-button type="text" size="small" @click="versions(scenario)">
               版本 v{{ scenario.current_version }}
-            </Button>
-            <Button
+            </a-button>
+            <a-button
               v-if="scenario.space !== 'official'"
               type="text"
               size="small"
@@ -498,8 +483,8 @@ async function versions(scenario: Scenario) {
               @click="test(scenario)"
             >
               <template #icon><Icon name="play" :size="13" /></template>试运行
-            </Button>
-            <Button
+            </a-button>
+            <a-button
               v-if="scenario.space !== 'official' && scenario.status !== 'published' && scenario.tested"
               type="text"
               size="small"
@@ -507,7 +492,7 @@ async function versions(scenario: Scenario) {
               @click="publish(scenario)"
             >
               发布
-            </Button>
+            </a-button>
           </div>
         </article>
       </div>
@@ -552,14 +537,16 @@ async function versions(scenario: Scenario) {
         </div>
         <div v-if="maintenance" class="detail-block">
           <h3>版本信息</h3>
-          <Descriptions :column="1" size="small">
-            <Descriptions.Item label="当前版本">v{{ detail.current_version }}</Descriptions.Item>
-            <Descriptions.Item label="维护账号">{{
+          <a-descriptions :column="1" size="small">
+            <a-descriptions-item label="当前版本">v{{ detail.current_version }}</a-descriptions-item>
+            <a-descriptions-item label="维护账号">{{
               detail.space === 'official' ? '平台预置' : detail.owner_id
-            }}</Descriptions.Item>
-            <Descriptions.Item label="更新时间">{{ formatDate(detail.updatedAt, true) }}</Descriptions.Item>
-          </Descriptions>
-          <Button
+            }}</a-descriptions-item>
+            <a-descriptions-item label="更新时间">{{
+              formatDate(detail.updatedAt, true)
+            }}</a-descriptions-item>
+          </a-descriptions>
+          <a-button
             type="link"
             @click="
               versions(detail);
@@ -567,15 +554,15 @@ async function versions(scenario: Scenario) {
             "
           >
             查看版本记录 <Icon name="arrow" :size="14" />
-          </Button>
+          </a-button>
         </div>
-        <Alert
+        <a-alert
           v-if="!maintenance && detail.space === 'official'"
           type="info"
           show-icon
           message="预置场景供参考，正式使用前请按业务要求确认。"
         />
-        <Alert
+        <a-alert
           v-else-if="maintenance"
           type="warning"
           show-icon
@@ -602,7 +589,7 @@ async function versions(scenario: Scenario) {
           <Icon name="close" :size="21" />
         </button>
       </header>
-      <Form
+      <a-form
         id="scenario-form"
         class="drawer-body"
         :model="draft"
@@ -611,20 +598,20 @@ async function versions(scenario: Scenario) {
         @finish="save"
       >
         <div class="form-section-title"><span>01</span>基本信息</div>
-        <Form.Item label="场景名称" name="name">
-          <Input v-model:value="draft.name" :maxlength="128" placeholder="例如：研发需求评审助手" />
-        </Form.Item>
-        <Form.Item label="一句话介绍" name="description">
-          <Input.TextArea
+        <a-form-item label="场景名称" name="name">
+          <a-input v-model:value="draft.name" :maxlength="128" placeholder="例如：研发需求评审助手" />
+        </a-form-item>
+        <a-form-item label="一句话介绍" name="description">
+          <a-textarea
             v-model:value="draft.description"
             :rows="2"
             :maxlength="512"
             placeholder="告诉使用者，这个场景适合什么工作。"
           />
-        </Form.Item>
-        <Form.Item label="场景图标">
+        </a-form-item>
+        <a-form-item label="场景图标">
           <div class="icon-options">
-            <Button
+            <a-button
               v-for="icon in ['sparkles', 'code', 'file', 'chart', 'book', 'shield']"
               :key="icon"
               :aria-label="`选择图标 ${icon}`"
@@ -632,28 +619,28 @@ async function versions(scenario: Scenario) {
               @click="draft.icon = icon"
             >
               <template #icon><Icon :name="icon" :size="22" /></template>
-            </Button>
+            </a-button>
           </div>
-        </Form.Item>
+        </a-form-item>
         <div class="form-section-title"><span>02</span>场景提示词</div>
-        <Form.Item label="角色、目标与工作方式" name="prompt_template">
-          <Input.TextArea
+        <a-form-item label="角色、目标与工作方式" name="prompt_template">
+          <a-textarea
             v-model:value="draft.prompt_template"
             class="prompt-editor"
             :rows="8"
             placeholder="定义角色、目标、步骤与输出标准。"
           />
-        </Form.Item>
+        </a-form-item>
         <p class="field-hint">作为场景级指令使用。不会自动开始任务，也不会扩大工具权限。</p>
         <div class="form-section-title"><span>03</span>授权能力</div>
         <p class="field-hint">平台基础能力（默认开启）：每个会话都可使用，范围以平台策略为上限。</p>
-        <Checkbox v-for="tool in app.tools" :key="tool.name" class="tool-checkbox" checked disabled>
+        <a-checkbox v-for="tool in app.tools" :key="tool.name" class="tool-checkbox" checked disabled>
           <span class="tool-checkbox-icon"><Icon :name="tool.icon" :size="18" /></span>
           <div>
             <strong>{{ tool.title }}</strong><small>{{ tool.description }}</small>
           </div>
           <Icon v-if="tool.permission !== 'read'" name="edit" :size="15" />
-        </Checkbox>
+        </a-checkbox>
         <section class="scenario-plugin-picker" aria-labelledby="scenario-skill-title">
           <header>
             <div>
@@ -663,12 +650,12 @@ async function versions(scenario: Scenario) {
                 直接调用。最多 {{ MAX_SESSION_SKILLS }} 个。
               </p>
             </div>
-            <Spin v-if="optionsLoading" size="small" />
+            <a-spin v-if="optionsLoading" size="small" />
           </header>
           <p v-if="!optionsLoading && !chat.capabilityOptions?.skills.length" class="field-hint">
             还没有已发布的 Skill。<RouterLink to="/agent/skills">前往 Skill 中心</RouterLink>
           </p>
-          <Checkbox
+          <a-checkbox
             v-for="skill in chat.capabilityOptions?.skills ?? []"
             :key="skill.id"
             class="scenario-plugin-option"
@@ -682,8 +669,8 @@ async function versions(scenario: Scenario) {
                 ><template v-if="skill.description"> · {{ skill.description }}</template></small
               >
             </div>
-          </Checkbox>
-          <Checkbox
+          </a-checkbox>
+          <a-checkbox
             v-for="id in missingSkills"
             :key="`missing-skill-${id}`"
             class="scenario-plugin-option"
@@ -695,8 +682,8 @@ async function versions(scenario: Scenario) {
               <strong>Skill #{{ id }}</strong
               ><small>已取消发布或已删除，取消勾选后才能保存</small>
             </div>
-            <Tag>不可用</Tag>
-          </Checkbox>
+            <a-tag>不可用</a-tag>
+          </a-checkbox>
         </section>
         <section class="scenario-plugin-picker" aria-labelledby="scenario-mcp-title">
           <header>
@@ -713,7 +700,7 @@ async function versions(scenario: Scenario) {
               >前往能力中心接入</RouterLink
             >
           </p>
-          <Checkbox
+          <a-checkbox
             v-for="server in chat.capabilityOptions?.mcpServers ?? []"
             :key="server.id"
             class="scenario-plugin-option"
@@ -733,8 +720,8 @@ async function versions(scenario: Scenario) {
                 ><template v-if="server.description"> · {{ server.description }}</template></small
               >
             </div>
-          </Checkbox>
-          <Checkbox
+          </a-checkbox>
+          <a-checkbox
             v-for="id in missingServers"
             :key="`missing-mcp-${id}`"
             class="scenario-plugin-option"
@@ -746,8 +733,8 @@ async function versions(scenario: Scenario) {
               <strong>MCP #{{ id }}</strong
               ><small>已停用或连接异常，取消勾选后才能保存</small>
             </div>
-            <Tag>不可用</Tag>
-          </Checkbox>
+            <a-tag>不可用</a-tag>
+          </a-checkbox>
         </section>
         <section class="scenario-plugin-picker" aria-labelledby="scenario-web-title">
           <header>
@@ -756,7 +743,7 @@ async function versions(scenario: Scenario) {
               <p>开启后模型可搜索网络并读取公网网页，回答需注明来源。每次搜索按一次模型调用计费。</p>
             </div>
           </header>
-          <Checkbox
+          <a-checkbox
             class="scenario-plugin-option"
             v-model:checked="draft.capabilities.web_search"
             :disabled="!draft.capabilities.web_search && !chat.capabilityOptions?.web.available"
@@ -772,8 +759,8 @@ async function versions(scenario: Scenario) {
                   : chat.capabilityOptions?.web.reason || '平台尚未开启联网搜索，请在治理中心配置'
               }}</small>
             </div>
-            <Tag v-if="chat.capabilityOptions && !chat.capabilityOptions.web.available">未开启</Tag>
-          </Checkbox>
+            <a-tag v-if="chat.capabilityOptions && !chat.capabilityOptions.web.available">未开启</a-tag>
+          </a-checkbox>
         </section>
         <section class="scenario-plugin-picker" aria-labelledby="scenario-plugin-title">
           <header>
@@ -781,10 +768,10 @@ async function versions(scenario: Scenario) {
               <h3 id="scenario-plugin-title">已批准插件</h3>
               <p>选择审核通过的插件及具体工具。插件工具会随场景版本固定，不能在会话中临时扩大权限。</p>
             </div>
-            <Spin v-if="pluginsLoading" size="small" />
+            <a-spin v-if="pluginsLoading" size="small" />
           </header>
           <p v-if="!pluginsLoading && !plugins.length" class="field-hint">当前没有可用于场景的已批准插件。</p>
-          <Checkbox
+          <a-checkbox
             v-for="plugin in plugins"
             :key="plugin.package"
             class="scenario-plugin-option"
@@ -798,19 +785,19 @@ async function versions(scenario: Scenario) {
                 >{{ plugin.description }} · v{{ plugin.version }}</small
               >
             </div>
-            <Tag v-if="demoPlugin(plugin)" color="volcano" title="仅返回模拟数据，不连接真实系统"
-              >演示数据</Tag
-            ><Tag :color="plugin.auditStatus === 'approved' && plugin.enabled ? 'success' : undefined">{{
+            <a-tag v-if="demoPlugin(plugin)" color="volcano" title="仅返回模拟数据，不连接真实系统"
+              >演示数据</a-tag
+            ><a-tag :color="plugin.auditStatus === 'approved' && plugin.enabled ? 'success' : undefined">{{
               plugin.auditStatus === 'approved' && plugin.enabled ? '已批准' : '不可用'
-            }}</Tag>
-          </Checkbox>
+            }}</a-tag>
+          </a-checkbox>
           <div
             v-for="plugin in plugins.filter(pluginSelected)"
             :key="`${plugin.package}-tools`"
             class="scenario-plugin-tools"
           >
             <strong>{{ plugin.displayName }} · 选择工具</strong
-            ><Checkbox
+            ><a-checkbox
               v-for="tool in plugin.tools"
               :key="tool.name"
               class="scenario-plugin-tool"
@@ -820,10 +807,10 @@ async function versions(scenario: Scenario) {
               <span
                 ><b>{{ tool.title }}</b
                 ><small>{{ tool.description }}</small></span
-              ><Tag :color="tool.permission === 'approval' ? 'volcano' : undefined">{{
+              ><a-tag :color="tool.permission === 'approval' ? 'volcano' : undefined">{{
                 tool.permission === 'approval' ? '需审批' : '只读'
-              }}</Tag>
-            </Checkbox>
+              }}</a-tag>
+            </a-checkbox>
           </div>
           <p class="field-hint">
             只装配审核通过的受管插件，不会安装或执行任意 npm、GitHub 插件。关联代码改为在聊天中按会话选择。
@@ -839,12 +826,12 @@ async function versions(scenario: Scenario) {
           >
         </div>
         <div class="static-form-row"><span>执行方式</span><strong>标准会话</strong></div>
-        <Alert
+        <a-alert
           type="warning"
           show-icon
           message="实际工具范围取场景与平台策略交集；用户可在聊天中临时追加 Skill、MCP 与联网，但不能取消场景绑定项。草稿须试运行通过后才能发布。"
         />
-      </Form>
+      </a-form>
       <footer>
         <button class="button secondary" :disabled="busy" @click="drawer = false">取消</button
         ><button type="submit" form="scenario-form" class="button primary" :disabled="busy">
@@ -879,25 +866,25 @@ async function versions(scenario: Scenario) {
         </button>
       </header>
       <div class="drawer-body">
-        <Timeline>
-          <Timeline.Item v-for="version in versionHistory" :key="version.version">
+        <a-timeline>
+          <a-timeline-item v-for="version in versionHistory" :key="version.version">
             <div class="version-entry">
               <div>
                 <strong>v{{ version.version }}</strong
                 ><span>{{ formatDate(version.createdAt, true) }}</span>
               </div>
               <p>{{ version.changeLog }}</p>
-              <Typography.Text code>SHA256 {{ version.bundleHash.slice(0, 24) }}…</Typography.Text>
-              <Collapse ghost>
-                <Collapse.Panel key="bundle" header="查看此版本装配单">
+              <a-typography-text code>SHA256 {{ version.bundleHash.slice(0, 24) }}…</a-typography-text>
+              <a-collapse ghost>
+                <a-collapse-panel key="bundle" header="查看此版本装配单">
                   <pre>{{
                     JSON.stringify({ payload: version.payload, bundle: version.bundle }, null, 2)
                   }}</pre>
-                </Collapse.Panel>
-              </Collapse>
+                </a-collapse-panel>
+              </a-collapse>
             </div>
-          </Timeline.Item>
-        </Timeline>
+          </a-timeline-item>
+        </a-timeline>
       </div></DialogShell
     >
   </main>

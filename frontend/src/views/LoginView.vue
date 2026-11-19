@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
-import { Form, Input } from 'ant-design-vue';
 import type { Rule } from 'ant-design-vue/es/form';
 import { usePlatform } from '../stores/platform';
 import Icon from '../components/ForgeIcon.vue';
@@ -56,29 +55,29 @@ async function login() {
       </div>
     </section>
     <section class="login-form-area">
-      <Form class="login-form" :model="form" :rules="rules" layout="vertical" @finish="login">
+      <a-form class="login-form" :model="form" :rules="rules" layout="vertical" @finish="login">
         <span class="tag soft">FORGE ENTERPRISE</span>
         <h2>欢迎回来</h2>
         <p>登录企业智能体平台，开始推进工作。</p>
         <div v-if="error" class="form-alert error" role="alert">
           <Icon name="info" :size="17" />{{ error }}
         </div>
-        <Form.Item label="账号" name="username">
-          <Input
+        <a-form-item label="账号" name="username">
+          <a-input
             v-model:value="form.username"
             autocomplete="username"
             size="large"
             placeholder="输入平台账号"
           />
-        </Form.Item>
-        <Form.Item label="密码" name="password">
-          <Input.Password
+        </a-form-item>
+        <a-form-item label="密码" name="password">
+          <a-input-password
             v-model:value="form.password"
             autocomplete="current-password"
             size="large"
             placeholder="输入管理员密码"
           />
-        </Form.Item>
+        </a-form-item>
         <button type="submit" class="button primary large" :disabled="busy">
           <span v-if="busy" class="loader small"></span>{{ busy ? '正在登录' : '进入企业平台'
           }}<Icon v-if="!busy" name="arrow" :size="17" />
@@ -92,7 +91,7 @@ async function login() {
           当前为单管理员业务预览，尚未接入员工身份与会话权限。<br />真实模型请在登录后进入「平台管理 →
           模型连接」配置。
         </div>
-      </Form>
+      </a-form>
       <span class="login-version">AgentHarness Forge · 企业版前端预览</span>
     </section>
   </div>

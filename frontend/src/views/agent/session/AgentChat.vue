@@ -8,7 +8,13 @@ import { formatBytes, sessionState } from '../../../utils/presentation';
 import { trapTabKey } from '../../../utils/focus';
 import { confirm } from '../../../utils/feedback';
 import type { KernelEvent } from '../../../types/platform';
-import { buildTurns, capabilityChanges, codeChanges, type ToolCallView, type Turn } from '../../../utils/turns';
+import {
+  buildTurns,
+  capabilityChanges,
+  codeChanges,
+  type ToolCallView,
+  type Turn,
+} from '../../../utils/turns';
 import Icon from '../../../components/ForgeIcon.vue';
 import Markdown from '../../../components/MarkdownContent.vue';
 import ProcessBlock from '../../../components/ProcessBlock.vue';
