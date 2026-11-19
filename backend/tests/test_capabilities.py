@@ -233,12 +233,13 @@ async def test_turns_send_scenario_and_chat_capabilities_and_changes_apply_next_
         assert secret not in dumped
     assert first["capabilities"] == {"skillIds": [extra.id], "mcpServerIds": [server.id], "webSearch": False}
 
-    # 不传沿用；两轮之间修改（换成远程 MCP、移除临时 Skill）从下一轮生效，Runner 会话不重建
+    # 不传沿用；修改（换成远程 MCP、移除临时 Skill）随下一条消息提交并从这一轮生效，Runner 会话不重建
     await turn(service, session["id"], "继续")
     assert runner.caps[-1]["mcp"][0]["serverName"] == "tickets"
-    saved = await service.set_capabilities(session["id"], CapabilityChoice(mcpServerIds=[remote.id]))
+    saved = await turn(
+        service, session["id"], "查文档", capabilities=CapabilityChoice(mcpServerIds=[remote.id])
+    )
     assert saved["capabilities"]["mcpServerIds"] == [remote.id]
-    await turn(service, session["id"], "查文档")
     latest = runner.caps[-1]
     assert [skill["name"] for skill in latest["skills"]] == ["weekly-report"]
     assert latest["mcp"][0]["transport"] == "streamable-http"
@@ -272,8 +273,6 @@ async def test_invalid_chat_selection_is_rejected_without_side_effects(env, tmp_
         with pytest.raises(HTTPException) as error:
             await service.start(session["id"], "hi", capabilities=choice)
         assert error.value.status_code == status and message in error.value.detail
-        with pytest.raises(HTTPException):
-            await service.set_capabilities(session["id"], choice)
     detail = await service.detail(session["id"])
     assert detail["messages"] == []
     assert detail["capabilities"] == {"skillIds": [], "mcpServerIds": [], "webSearch": False}

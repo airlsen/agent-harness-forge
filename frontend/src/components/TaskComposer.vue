@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { hasCapabilities, useConversation } from '../stores/conversation';
+import { useConversation } from '../stores/conversation';
 import { usePlatform } from '../stores/platform';
 import { isAvailableScenario } from '../utils/presentation';
 import Icon from './ForgeIcon.vue';
@@ -28,45 +28,6 @@ const selected = computed(
 );
 const choices = computed(() =>
   app.scenarios.filter((s) => isAvailableScenario(s) || s.id === chat.selectedScenarioId),
-);
-/** 输入框上方的临时扩展能力标签（名称来自能力选项；尚未读取时显示编号） */
-const capabilityChips = computed(() => {
-  const choice = chat.capabilityChoice;
-  const options = chat.capabilityOptions;
-  return [
-    ...choice.skillIds.map((id) => {
-      const skill = options?.skills.find((item) => item.id === id);
-      return {
-        key: `skill-${id}`,
-        kind: 'skill' as const,
-        id,
-        icon: 'book',
-        label: skill?.title ?? `Skill #${id}`,
-        title: skill ? `Skill · 可用 /${skill.name} 直接调用` : 'Skill',
-      };
-    }),
-    ...choice.mcpServerIds.map((id) => {
-      const server = options?.mcpServers.find((item) => item.id === id);
-      return {
-        key: `mcp-${id}`,
-        kind: 'mcp' as const,
-        id,
-        icon: 'plug',
-        label: server?.name ?? `MCP #${id}`,
-        title: 'MCP 服务',
-      };
-    }),
-    ...(choice.webSearch
-      ? [{ key: 'web', kind: 'web' as const, id: 0, icon: 'globe', label: '联网搜索', title: '联网搜索' }]
-      : []),
-  ];
-});
-watch(
-  () => hasCapabilities(chat.capabilityChoice) && !chat.capabilityOptions,
-  (missing) => {
-    if (missing) chat.loadCapabilityOptions().catch(() => undefined);
-  },
-  { immediate: true },
 );
 const canSend = computed(
   () =>
@@ -159,38 +120,6 @@ defineExpose({ focus: () => textarea.value?.focus() });
 </script>
 <template>
   <div ref="root" :class="['task-composer', { 'task-composer-hero': hero }]">
-    <div v-if="chat.codeProjects.length" class="code-chips" aria-label="已关联的代码项目（只读）">
-      <span
-        v-for="name in chat.codeProjects"
-        :key="name"
-        :title="`${name} · 只读关联${chat.current ? '，修改从下一轮起生效' : ''}`"
-      >
-        <Icon name="code" :size="13" />{{ name }}
-        <button
-          :aria-label="`取消关联 ${name}`"
-          :disabled="chat.codeSaving || chat.loading"
-          @click="codePicker?.remove(name)"
-        >
-          <Icon name="close" :size="12" />
-        </button>
-      </span>
-    </div>
-    <div v-if="capabilityChips.length" class="code-chips" aria-label="临时选用的扩展能力">
-      <span
-        v-for="chip in capabilityChips"
-        :key="chip.key"
-        :title="`${chip.title}${chat.current ? ' · 修改从下一轮起生效' : ''}`"
-      >
-        <Icon :name="chip.icon" :size="13" />{{ chip.label }}
-        <button
-          :aria-label="`移除 ${chip.label}`"
-          :disabled="chat.capabilitySaving || chat.loading"
-          @click="capabilityPicker?.remove(chip.kind, chip.id)"
-        >
-          <Icon name="close" :size="12" />
-        </button>
-      </span>
-    </div>
     <div v-if="chat.draftAttachments.length" class="attachment-chips">
       <span v-for="(file, index) in chat.draftAttachments" :key="index">
         <Icon name="file" :size="14" />{{ file.name }}
@@ -286,7 +215,6 @@ defineExpose({ focus: () => textarea.value?.focus() });
             modelPicker?.close();
             capabilityPicker?.close();
           "
-          @changed="textarea?.focus()"
         />
         <CapabilityPicker
           ref="capabilityPicker"
@@ -295,7 +223,6 @@ defineExpose({ focus: () => textarea.value?.focus() });
             modelPicker?.close();
             codePicker?.close();
           "
-          @changed="textarea?.focus()"
         />
         <span class="composer-option-divider"></span>
         <button

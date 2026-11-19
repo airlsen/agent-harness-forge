@@ -1086,7 +1086,7 @@ textarea:focus-visible {
   border-color: var(--line);
   background: #fff;
   box-shadow: 0 8px 35px #26334a1c;
-  border-radius: 8px;
+  border-radius: 10px;
   max-height: min(350px, 45dvh);
   overflow-y: auto;
 }
@@ -1145,207 +1145,235 @@ textarea:focus-visible {
   border-top: 1px solid var(--line);
   color: var(--text-secondary);
 }
-/* 关联代码（只读）：输入框上方的已选标签与多选弹层 */
-.task-composer .code-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 0 8px;
-}
-.task-composer .code-chips > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 220px;
-  padding: 3px 5px 3px 7px;
-  border: 1px solid var(--accent-line);
-  border-radius: 5px;
-  background: var(--accent-soft);
-  color: var(--accent-ink);
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.task-composer .code-chips button {
-  display: flex;
-  padding: 1px;
-  margin-left: 2px;
-  color: inherit;
-  opacity: 0.7;
-}
-.task-composer .code-chips button:hover:not(:disabled) {
-  opacity: 1;
-}
+/*
+ * 关联代码 / 扩展能力选择面板：与模型选择器同一套轻量样式。
+ * 选项是按钮行（不用 label + 原生勾选框），避免全局 label / input 样式渗入；
+ * 点选即改输入框中的选择，随下一条消息提交，因此没有确定/取消。
+ */
 .task-composer .code-picker-wrap {
   position: static;
   min-width: 0;
 }
-.task-composer .code-trigger.is-active {
+.task-composer .picker-trigger {
+  position: relative;
+  max-width: 180px;
+}
+.task-composer .picker-trigger.is-active {
   color: var(--accent-ink);
   border-color: var(--accent-line);
   background: var(--accent-soft);
 }
-.task-composer .scenario-popover.code-popover {
+.task-composer .picker-trigger.is-active:hover:not(:disabled) {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+.task-composer .picker-trigger > .picker-trigger-label {
+  min-width: 0;
+}
+/* 有未发送的修改：随下一条消息生效 */
+.picker-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  background: var(--accent-solid);
+}
+.task-composer .scenario-popover.picker-popover {
   display: flex;
   flex-direction: column;
-  width: 380px;
-  max-height: min(420px, 55dvh);
+  width: 320px;
+  max-height: min(400px, 55dvh);
+  padding: 6px;
+  border-radius: 10px;
   overflow: hidden;
 }
-.code-popover-head {
-  border-bottom: 1px solid var(--line);
+.task-composer .scenario-popover.capability-popover {
+  width: 360px;
+  max-height: min(460px, 60dvh);
 }
-.task-composer .code-popover .popover-label {
+.picker-head {
   display: flex;
-  gap: 8px;
   align-items: baseline;
   justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
-.task-composer .code-popover .popover-label > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono, ui-monospace, monospace);
+.picker-head > small {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-subtle);
 }
-.code-search {
+.picker-head > small.is-pending {
+  color: var(--accent-ink);
+}
+.picker-search {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 12px 10px;
-  padding: 5px 8px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
+  margin: 0 2px 4px;
+  padding: 0 9px;
+  border-radius: 6px;
+  background: var(--surface-subtle);
   color: var(--text-subtle);
 }
-.code-search > input {
+.picker-search:focus-within {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.task-composer .picker-search > input[type='search'] {
   flex: 1;
   min-width: 0;
+  min-height: 30px;
+  padding: 0;
   border: 0;
+  border-radius: 0;
   outline: 0;
+  box-shadow: none;
   background: transparent;
   font-size: 12px;
   color: var(--ink);
 }
-.code-options {
+.task-composer .picker-search > input[type='search']:focus,
+.task-composer .picker-search > input[type='search']:focus-visible {
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+}
+.picker-search > input::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+.picker-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 0;
 }
-.code-option {
+.picker-group + .picker-group {
+  margin-top: 6px;
+}
+.picker-group-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 8px 3px;
+  font-size: 10px;
+  color: var(--text-subtle);
+}
+.picker-group-title > small {
+  margin-left: auto;
+  font-size: 10px;
+}
+.picker-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  cursor: pointer;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  text-align: left;
+  color: var(--text-secondary);
 }
-.code-option:hover,
-.code-option.selected {
+.picker-row:hover {
+  background: var(--surface-subtle);
+}
+.picker-row.selected {
   background: var(--accent-soft);
 }
-.code-option > input {
+.picker-row > svg {
   flex-shrink: 0;
-  accent-color: var(--accent-solid);
+  color: var(--accent-ink);
 }
-.code-option > span {
-  min-width: 0;
+.picker-row-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   flex: 1;
+  min-width: 0;
 }
-.code-option strong,
-.code-option small {
-  display: block;
+.picker-row-main > b,
+.picker-row-main > small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.task-composer .code-option strong {
+.picker-row-main > b {
+  flex-shrink: 0;
+  max-width: 62%;
   font-size: 12px;
   font-weight: 500;
   color: var(--ink);
 }
-.code-option small {
-  margin-top: 2px;
+.picker-row-main > small {
+  margin-left: auto;
   font-size: 10px;
   color: var(--text-subtle);
-  font-family: var(--font-mono, ui-monospace, monospace);
 }
-.code-option.is-missing small {
-  color: #b54a3c;
-  font-family: inherit;
+.picker-row.selected .picker-row-main > b {
+  color: var(--accent-ink);
 }
-.code-empty {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 18px 14px;
-  font-size: 11px;
-  line-height: 1.7;
+/* 场景已绑定：已选且不可取消 */
+.picker-row.is-locked {
+  cursor: default;
+}
+.picker-row.is-locked.selected,
+.picker-row.is-locked:hover {
+  background: var(--surface-subtle);
+}
+.picker-row.is-locked .picker-row-main > b {
   color: var(--text-secondary);
 }
-.code-empty.is-error {
-  color: #b54a3c;
-}
-.code-empty > button {
-  margin-left: auto;
-  color: var(--accent-ink);
-  font-size: 11px;
-}
-.code-popover-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-top: 1px solid var(--line);
-  font-size: 11px;
+.picker-row.is-locked > svg {
   color: var(--text-subtle);
 }
-.code-popover-foot > span {
-  margin-right: auto;
-}
-.code-popover-foot > .button {
-  min-height: 28px;
-  padding: 4px 12px;
-  font-size: 11px;
-}
-/* 扩展能力（Skill / MCP / 联网）：沿用关联代码弹层，按类型分组 */
-.task-composer .scenario-popover.capability-popover {
-  width: 400px;
-  max-height: min(480px, 60dvh);
-}
-.capability-group-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 14px 4px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-subtle);
-}
-.capability-group-title > small {
-  margin-left: auto;
-  font-weight: 400;
-  letter-spacing: 0;
-}
-.code-option > .capability-tag {
+.picker-tag {
   flex-shrink: 0;
-  padding: 1px 6px;
-  border: 1px solid var(--accent-line);
-  border-radius: 4px;
   font-size: 10px;
   font-style: normal;
-  color: var(--accent-ink);
+  color: var(--text-subtle);
 }
-.code-option.is-disabled {
-  cursor: default;
-  opacity: 0.65;
+.picker-row.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
-.code-option.is-disabled:hover {
+.picker-row.is-disabled:hover {
   background: transparent;
 }
-.code-empty > a {
+.picker-row.is-missing.selected {
+  background: #fdf3ee;
+}
+.picker-row.is-missing .picker-row-main > b {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}
+.picker-row.is-missing .picker-row-main > small,
+.picker-row.is-missing > svg {
+  color: #b54a3c;
+}
+.picker-empty {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 8px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-subtle);
+}
+.picker-empty.is-error {
+  color: #b54a3c;
+}
+.picker-empty > button {
+  margin-left: auto;
+  color: var(--accent-ink);
+  font-size: 11px;
+}
+.picker-empty > a {
   color: var(--accent-ink);
 }
 .enterprise-model-prompt.connect-model-prompt {
@@ -4250,8 +4278,11 @@ textarea:focus-visible {
     max-width: 118px;
     padding: 5px 6px;
   }
-  .task-composer .scenario-popover.code-popover {
+  .task-composer .scenario-popover.picker-popover {
     width: 100%;
+  }
+  .task-composer .picker-trigger {
+    max-width: 118px;
   }
   .message-author > .message-model {
     max-width: 140px;
@@ -7117,4 +7148,9 @@ textarea:focus-visible {
 .link-button:disabled {
   cursor: default;
   opacity: 0.6;
+}
+/* 会话能力面板：输入框中有未发送的修改 */
+.context-section > .pending-text {
+  margin-top: 8px;
+  color: var(--accent-ink);
 }

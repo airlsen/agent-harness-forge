@@ -153,14 +153,6 @@ try {
     }
     if (suffix.startsWith('/trajectory')) return response({ events: [], nextCursor: 0 });
     if (suffix === '/files') return response({ items: [] });
-    if (suffix === '/capabilities' && method === 'PUT') {
-      row.capabilities = JSON.parse(options.body);
-      return response({ capabilities: row.capabilities });
-    }
-    if (suffix === '/code-projects' && method === 'PUT') {
-      row.codeProjects = JSON.parse(options.body).codeProjects;
-      return response({ codeProjects: row.codeProjects });
-    }
     if (suffix === '/turns' && method === 'POST') {
       if (turnGate) await turnGate.promise;
       if (failTurn) {
@@ -638,110 +630,122 @@ try {
   );
 
   reset();
+  const turnBody = () => calls.filter((call) => call.url.endsWith('/turns')).at(-1).body;
   assert.deepEqual(chat.codeProjects, []);
-  await chat.setCodeProjects(['alpha', 'beta', 'alpha']);
+  assert.deepEqual(chat.setCodeProjects(['alpha', 'beta', 'alpha']), ['alpha', 'beta']);
   assert.deepEqual(chat.codeProjects, ['alpha', 'beta']);
-  assert.equal(count(/code-projects/, 'PUT'), 0); // a new draft only changes local state
   await chat.open(11);
-  assert.deepEqual(chat.codeProjects, []); // an existing session shows its own (server) selection
+  assert.deepEqual(chat.codeProjects, []); // an existing session starts from its own applied selection
   chat.prepareStart();
   assert.deepEqual(chat.codeProjects, ['alpha', 'beta']); // the start draft keeps its selection
   chat.input = 'Analyse both repositories';
   await chat.submit();
-  const codeTurn = calls.filter((call) => call.url.endsWith('/turns')).at(-1);
-  assert.deepEqual(codeTurn.body, { message: 'Analyse both repositories', codeProjects: ['alpha', 'beta'] });
+  assert.deepEqual(turnBody(), { message: 'Analyse both repositories', codeProjects: ['alpha', 'beta'] });
   assert.deepEqual(chat.current.codeProjects, ['alpha', 'beta']);
-  assert.deepEqual(chat.draftCodeProjects, []);
+  assert.deepEqual(chat.codeProjects, ['alpha', 'beta']); // after sending, the selection is the applied one
+  assert.equal(chat.codePending, false);
   assert.deepEqual(chat.messages.at(-1).meta.codeProjects, ['alpha', 'beta']);
   chat.prepareStart();
   assert.deepEqual(chat.codeProjects, []); // a consumed draft does not leak into the next new task
   passed('a new task carries its code selection in the first turn, survives navigation and is then consumed');
 
   reset();
-  await chat.open(11);
-  const listed = await chat.loadCodeProjects();
-  assert.deepEqual(
-    listed.projects.map((project) => project.name),
-    ['alpha', 'beta'],
-  );
+  database.get(11).codeProjects = ['alpha'];
   database.get(11).status = 'running';
   await chat.open(11);
-  // running: the selection can still change; it is saved now and applies from the next turn
-  assert.deepEqual(await chat.setCodeProjects(['beta']), ['beta']);
-  assert.deepEqual(calls.filter((call) => call.method === 'PUT').at(-1).body, { codeProjects: ['beta'] });
-  assert.deepEqual(chat.current.codeProjects, ['beta']);
-  assert.equal(chat.drafts['session:11'], undefined); // not a draft and never counts as unsent work
-  assert.equal(chat.hasUnsentDrafts, false);
+  assert.deepEqual(chat.codeProjects, ['alpha']);
+  assert.equal(chat.codePending, false);
+  // running: choosing still works; it only changes the composer and rides on the next message
+  assert.deepEqual(chat.setCodeProjects(['beta']), ['beta']);
+  assert.equal(chat.codePending, true);
+  assert.deepEqual(chat.current.codeProjects, ['alpha']); // nothing is saved before sending
+  assert.equal(chat.hasUnsentDrafts, false); // like a pending model switch, never counts as unsent work
+  await chat.open(12);
   database.get(11).status = 'idle';
   await chat.open(11);
-  assert.deepEqual(chat.codeProjects, ['beta']);
+  assert.deepEqual(chat.codeProjects, ['beta']); // the pending change survives switching conversations
   chat.input = 'Next turn';
   await chat.submit();
-  // existing sessions never resend the selection: the server sends its saved list to the Runner each turn
-  assert.deepEqual(calls.filter((call) => call.url.endsWith('/turns')).at(-1).body, { message: 'Next turn' });
+  assert.deepEqual(turnBody(), { message: 'Next turn', codeProjects: ['beta'] });
+  assert.equal(chat.codePending, false);
   assert.deepEqual(chat.messages.at(-1).meta.codeProjects, ['beta']);
-  passed(
-    'an existing session saves code changes immediately (even while running) and applies them next turn',
-  );
+  database.get(11).status = 'idle';
+  await chat.open(11);
+  chat.input = 'Unchanged';
+  await chat.submit();
+  assert.deepEqual(turnBody(), { message: 'Unchanged' }); // unchanged selections are not resent
+  database.get(11).status = 'idle';
+  await chat.open(11);
+  chat.setCodeProjects([]);
+  chat.input = 'No code';
+  await chat.submit();
+  assert.deepEqual(turnBody(), { message: 'No code', codeProjects: [] }); // clearing is explicit
+  assert.equal(count(/./, 'PUT'), 0); // there is no separate save request
+  passed('an existing session sends code changes with the next message only, even if chosen while running');
+
+  reset();
+  await chat.open(11);
+  chat.setCodeProjects(['beta']);
+  chat.input = 'Rejected turn';
+  failTurn = true;
+  await assert.rejects(chat.submit());
+  assert.equal(chat.input, 'Rejected turn');
+  assert.deepEqual(chat.codeProjects, ['beta']); // a rejected turn keeps the text and the selection
+  assert.equal(chat.codePending, true);
+  assert.deepEqual(chat.current.codeProjects ?? [], []);
+  passed('a rejected turn keeps both the message and the pending selection for a retry');
 
   reset();
   const noCaps = { skillIds: [], mcpServerIds: [], webSearch: false };
   assert.deepEqual(chat.capabilityChoice, noCaps);
-  await chat.setCapabilities({ skillIds: [3, 4, 3], mcpServerIds: [9], webSearch: true });
+  chat.setCapabilities({ skillIds: [3, 4, 3], mcpServerIds: [9], webSearch: true });
   assert.deepEqual(chat.capabilityChoice, { skillIds: [3, 4], mcpServerIds: [9], webSearch: true });
-  assert.equal(count(/\/capabilities$/, 'PUT'), 0); // a new draft only changes local state
   await chat.open(11);
   assert.deepEqual(chat.capabilityChoice, noCaps); // an existing session shows its own selection
   chat.prepareStart();
   assert.deepEqual(chat.capabilityChoice.skillIds, [3, 4]); // the start draft keeps its selection
   chat.input = 'Search the web with two skills';
   await chat.submit();
-  const capsTurn = calls.filter((call) => call.url.endsWith('/turns')).at(-1);
-  assert.deepEqual(capsTurn.body, {
+  assert.deepEqual(turnBody(), {
     message: 'Search the web with two skills',
     capabilities: { skillIds: [3, 4], mcpServerIds: [9], webSearch: true },
   });
   assert.deepEqual(chat.current.capabilities, { skillIds: [3, 4], mcpServerIds: [9], webSearch: true });
-  assert.deepEqual(chat.draftCapabilities, noCaps);
+  assert.equal(chat.capabilitiesPending, false);
   chat.prepareStart();
   assert.deepEqual(chat.capabilityChoice, noCaps); // a consumed draft does not leak into the next task
   chat.input = 'Plain task';
   await chat.submit();
-  // an empty selection is not sent at all
-  assert.deepEqual(calls.filter((call) => call.url.endsWith('/turns')).at(-1).body, {
-    message: 'Plain task',
-  });
+  assert.deepEqual(turnBody(), { message: 'Plain task' }); // an empty selection is not sent at all
   passed(
     'a new task carries its capability selection in the first turn only, and the draft is then consumed',
   );
 
   reset();
-  database.get(11).status = 'running';
+  database.get(11).capabilities = { skillIds: [5], mcpServerIds: [], webSearch: true };
   await chat.open(11);
-  // running: the selection can still change; it is saved now and applies from the next turn
-  assert.deepEqual(await chat.setCapabilities({ skillIds: [5], mcpServerIds: [], webSearch: false }), {
-    skillIds: [5],
-    mcpServerIds: [],
-    webSearch: false,
-  });
-  assert.deepEqual(calls.filter((call) => call.method === 'PUT').at(-1), {
-    url: '/api/agent/sessions/11/capabilities',
-    method: 'PUT',
-    body: { skillIds: [5], mcpServerIds: [], webSearch: false },
-  });
-  assert.deepEqual(chat.current.capabilities.skillIds, [5]);
-  assert.equal(chat.capabilitySaving, false);
-  assert.equal(chat.hasUnsentDrafts, false);
-  database.get(11).status = 'idle';
+  assert.deepEqual(chat.capabilityChoice, { skillIds: [5], mcpServerIds: [], webSearch: true });
+  assert.equal(chat.capabilitiesPending, false);
+  chat.setCapabilities({ skillIds: [5, 6], mcpServerIds: [], webSearch: false });
+  assert.equal(chat.capabilitiesPending, true);
+  chat.setCapabilities({ skillIds: [5], mcpServerIds: [], webSearch: true });
+  assert.equal(chat.capabilitiesPending, false); // choosing back cancels the pending change
+  database.get(11).codeProjects = ['alpha', 'beta'];
+  await chat.open(12);
   await chat.open(11);
-  assert.deepEqual(chat.capabilityChoice.skillIds, [5]);
-  chat.input = 'Use the skill';
+  chat.setCodeProjects(['beta', 'alpha']);
+  assert.equal(chat.codePending, false); // order alone is not a change
+  chat.setCapabilities({ skillIds: [], mcpServerIds: [], webSearch: true });
+  chat.input = 'Drop the skill';
   await chat.submit();
-  // existing sessions never resend the selection: the server resolves its saved set each turn
-  assert.deepEqual(calls.filter((call) => call.url.endsWith('/turns')).at(-1).body, {
-    message: 'Use the skill',
+  assert.deepEqual(turnBody(), {
+    message: 'Drop the skill',
+    capabilities: { skillIds: [], mcpServerIds: [], webSearch: true },
   });
-  passed('an existing session saves capability changes immediately (even while running) for the next turn');
+  assert.deepEqual(chat.current.capabilities.skillIds, []);
+  assert.equal(chat.capabilitiesPending, false);
+  assert.equal(count(/./, 'PUT'), 0);
+  passed('an existing session sends capability changes with the next message; choosing back cancels them');
 
   console.log(
     JSON.stringify({

@@ -1,27 +1,23 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import {
-  MAX_SESSION_MCP,
-  MAX_SESSION_SKILLS,
-  emptyCapabilities,
-  useConversation,
-} from '../stores/conversation';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { MAX_SESSION_MCP, MAX_SESSION_SKILLS, useConversation } from '../stores/conversation';
 import { usePlatform } from '../stores/platform';
-import type { CapabilityChoice, McpOption, SkillOption } from '../types/platform';
+import type { McpOption, SkillOption } from '../types/platform';
 import Icon from './ForgeIcon.vue';
 
 /**
  * 聊天输入框的「扩展能力」：临时选用 Skill、MCP 服务与联网搜索，与场景绑定的能力取并集。
- * 场景已绑定的项显示为已选且不可取消；新会话随第一条消息提交，已有会话确定后立即保存、从下一轮起生效。
+ * 场景已绑定的项显示为已选且不可取消。点选即改输入框中的选择，随下一条消息一起提交。
  */
-const emit = defineEmits<{ opened: []; changed: [] }>();
+const emit = defineEmits<{ opened: [] }>();
 const app = usePlatform();
 const chat = useConversation();
 const open = ref(false);
 const loading = ref(false);
 const loadError = ref('');
-const picked = ref<CapabilityChoice>(emptyCapabilities());
+const query = ref('');
 const root = ref<HTMLElement | null>(null);
+const search = ref<HTMLInputElement | null>(null);
 
 /** 场景绑定的能力：已有会话取会话快照，新会话取所选场景当前版本 */
 const scenario = computed(() => {
@@ -31,6 +27,10 @@ const scenario = computed(() => {
       skillIds: bound?.skills.map((skill) => skill.id) ?? [],
       mcpServerIds: bound?.mcpServers.map((server) => server.id) ?? [],
       webSearch: Boolean(bound?.webSearch),
+      names: new Map<string, string>([
+        ...(bound?.skills ?? []).map((skill) => [`skill-${skill.id}`, skill.title] as [string, string]),
+        ...(bound?.mcpServers ?? []).map((server) => [`mcp-${server.id}`, server.name] as [string, string]),
+      ]),
     };
   }
   const caps = app.scenarios.find((item) => item.id === chat.selectedScenarioId)?.payload.capabilities;
@@ -38,36 +38,88 @@ const scenario = computed(() => {
     skillIds: caps?.skill_ids ?? [],
     mcpServerIds: caps?.mcp_server_ids ?? [],
     webSearch: Boolean(caps?.web_search),
+    names: new Map<string, string>(),
   };
 });
 const choice = computed(() => chat.capabilityChoice);
-const count = computed(
-  () =>
-    new Set([...scenario.value.skillIds, ...choice.value.skillIds]).size +
-    new Set([...scenario.value.mcpServerIds, ...choice.value.mcpServerIds]).size +
-    (scenario.value.webSearch || choice.value.webSearch ? 1 : 0),
-);
-const label = computed(() => (count.value ? `扩展 · ${count.value}` : '扩展能力'));
 const options = computed(() => chat.capabilityOptions);
 const web = computed(() => options.value?.web);
-/** 已选但已下线（取消发布、停用）的临时能力：单独列出，便于取消 */
+
+const skillOn = (id: number) => scenario.value.skillIds.includes(id) || choice.value.skillIds.includes(id);
+const serverOn = (id: number) =>
+  scenario.value.mcpServerIds.includes(id) || choice.value.mcpServerIds.includes(id);
+const webOn = computed(() => scenario.value.webSearch || choice.value.webSearch);
+
+/** 本轮将生效的全部扩展能力名称（场景 ∪ 临时选择），用于触发按钮 */
+const activeNames = computed(() => {
+  const skillIds = [...new Set([...scenario.value.skillIds, ...choice.value.skillIds])];
+  const serverIds = [...new Set([...scenario.value.mcpServerIds, ...choice.value.mcpServerIds])];
+  return [
+    ...skillIds.map(
+      (id) =>
+        options.value?.skills.find((skill) => skill.id === id)?.title ??
+        scenario.value.names.get(`skill-${id}`) ??
+        `Skill #${id}`,
+    ),
+    ...serverIds.map(
+      (id) =>
+        options.value?.mcpServers.find((server) => server.id === id)?.name ??
+        scenario.value.names.get(`mcp-${id}`) ??
+        `MCP #${id}`,
+    ),
+    ...(webOn.value ? ['联网搜索'] : []),
+  ];
+});
+const label = computed(() => {
+  const [first, ...rest] = activeNames.value;
+  if (!first) return '扩展能力';
+  return rest.length ? `${first} +${rest.length}` : first;
+});
+const title = computed(
+  () =>
+    (activeNames.value.length
+      ? `扩展能力：${activeNames.value.join('、')}`
+      : '临时选用 Skill、MCP 服务与联网搜索；与场景绑定的能力一起生效') +
+    (chat.capabilitiesPending ? ' · 随下一条消息生效' : ''),
+);
+const hint = computed(() =>
+  chat.capabilitiesPending
+    ? '随下一条消息生效'
+    : activeNames.value.length
+      ? `已选 ${activeNames.value.length}`
+      : '可多选',
+);
+
+const keyword = computed(() => query.value.trim().toLowerCase());
+const match = (...values: string[]) =>
+  !keyword.value || values.some((value) => value.toLowerCase().includes(keyword.value));
+const skills = computed(() => (options.value?.skills ?? []).filter((s) => match(s.title, s.name)));
+const servers = computed(() => (options.value?.mcpServers ?? []).filter((s) => match(s.name)));
+const searchable = computed(
+  () => (options.value?.skills.length ?? 0) + (options.value?.mcpServers.length ?? 0) > 8,
+);
+/** 已选但已下线（取消发布、停用）的临时能力：单独列出，点击即可移除 */
 const missingSkills = computed(() =>
-  options.value ? picked.value.skillIds.filter((id) => !options.value?.skills.some((s) => s.id === id)) : [],
+  options.value
+    ? choice.value.skillIds.filter(
+        (id) => !scenario.value.skillIds.includes(id) && !options.value?.skills.some((s) => s.id === id),
+      )
+    : [],
 );
 const missingServers = computed(() =>
   options.value
-    ? picked.value.mcpServerIds.filter((id) => !options.value?.mcpServers.some((s) => s.id === id))
+    ? choice.value.mcpServerIds.filter(
+        (id) =>
+          !scenario.value.mcpServerIds.includes(id) && !options.value?.mcpServers.some((s) => s.id === id),
+      )
     : [],
 );
-const dirty = computed(() => JSON.stringify(picked.value) !== JSON.stringify(choice.value));
 
 function approvalCount(server: McpOption) {
   return server.tools.filter((tool) => tool.permission === 'approval').length;
 }
 function skillHint(skill: SkillOption) {
-  return [`/${skill.name}`, skill.version ? `v${skill.version}` : '', skill.description]
-    .filter(Boolean)
-    .join(' · ');
+  return [`/${skill.name}`, skill.version ? `v${skill.version}` : ''].filter(Boolean).join(' · ');
 }
 async function load() {
   loading.value = true;
@@ -80,241 +132,221 @@ async function load() {
     loading.value = false;
   }
 }
+// 有已选能力时预先读取名称，触发按钮才能显示名称而不是编号
+watch(
+  () => Boolean(activeNames.value.length) && !options.value,
+  (missing) => {
+    if (missing) chat.loadCapabilityOptions().catch(() => undefined);
+  },
+  { immediate: true },
+);
 function toggle() {
   if (chat.loading || chat.sending) return;
   if (open.value) {
     open.value = false;
     return;
   }
-  picked.value = {
-    skillIds: [...choice.value.skillIds],
-    mcpServerIds: [...choice.value.mcpServerIds],
-    webSearch: choice.value.webSearch,
-  };
+  query.value = '';
   open.value = true;
   emit('opened');
-  void load();
+  void load().then(() => nextTick(() => search.value?.focus()));
 }
-function flip(list: number[], id: number, limit: number, noun: string) {
-  const index = list.indexOf(id);
-  if (index >= 0) list.splice(index, 1);
-  else if (list.length >= limit) app.toast(`一个会话最多临时选择 ${limit} 个${noun}`, 'info');
-  else list.push(id);
-}
-async function apply(next = picked.value) {
-  const inSession = Boolean(chat.current);
-  const running = chat.running;
-  try {
-    await chat.setCapabilities(next);
-    open.value = false;
-    emit('changed');
-    if (inSession)
-      app.toast(running ? '扩展能力已保存，将从下一轮起生效' : '扩展能力已保存，下一条消息起生效', 'info');
-  } catch (error) {
-    app.toast((error as Error).message || '扩展能力保存失败', 'error');
-  }
-}
-/** 输入框上方标签的移除按钮 */
-async function remove(kind: 'skill' | 'mcp' | 'web', id?: number) {
+function flip(kind: 'skill' | 'mcp', id: number) {
   const current = choice.value;
-  await apply({
-    skillIds: kind === 'skill' ? current.skillIds.filter((item) => item !== id) : [...current.skillIds],
-    mcpServerIds:
-      kind === 'mcp' ? current.mcpServerIds.filter((item) => item !== id) : [...current.mcpServerIds],
-    webSearch: kind === 'web' ? false : current.webSearch,
-  });
+  const key = kind === 'skill' ? 'skillIds' : 'mcpServerIds';
+  const limit = kind === 'skill' ? MAX_SESSION_SKILLS : MAX_SESSION_MCP;
+  const list = current[key];
+  if (list.includes(id)) {
+    chat.setCapabilities({ ...current, [key]: list.filter((item) => item !== id) });
+    return;
+  }
+  if (list.length >= limit) {
+    app.toast(`一个会话最多临时选择 ${limit} 个${kind === 'skill' ? ' Skill' : ' MCP 服务'}`, 'info');
+    return;
+  }
+  chat.setCapabilities({ ...current, [key]: [...list, id] });
+}
+function flipWeb() {
+  const current = choice.value;
+  // 已开启的可以随时关闭；未开启时须平台已允许联网
+  if (!current.webSearch && !web.value?.available) return;
+  chat.setCapabilities({ ...current, webSearch: !current.webSearch });
 }
 function outside(event: PointerEvent) {
   if (root.value && !root.value.contains(event.target as Node)) open.value = false;
 }
 onMounted(() => document.addEventListener('pointerdown', outside));
 onBeforeUnmount(() => document.removeEventListener('pointerdown', outside));
-defineExpose({ close: () => (open.value = false), remove });
+defineExpose({ close: () => (open.value = false) });
 </script>
 
 <template>
   <div ref="root" class="code-picker-wrap">
     <button
       type="button"
-      :class="['model-trigger', 'code-trigger', { 'is-active': count }]"
-      :disabled="chat.loading || chat.capabilitySaving || chat.sending"
+      :class="['model-trigger', 'picker-trigger', { 'is-active': activeNames.length }]"
+      :disabled="chat.loading || chat.sending"
       :aria-expanded="open"
       aria-label="扩展能力"
       aria-controls="capability-options"
-      title="临时选用 Skill、MCP 服务与联网搜索；与场景绑定的能力一起生效"
+      :title="title"
       @click="toggle"
       @keydown.esc.stop="open = false"
     >
-      <span v-if="chat.capabilitySaving" class="loader small"></span><Icon v-else name="puzzle" :size="15" />
-      <span>{{ label }}</span>
+      <Icon name="puzzle" :size="15" />
+      <span class="picker-trigger-label">{{ label }}</span>
+      <i v-if="chat.capabilitiesPending" class="picker-dot" aria-label="有未发送的修改"></i>
     </button>
     <div
       v-if="open"
       id="capability-options"
-      class="scenario-popover code-popover capability-popover"
+      class="scenario-popover picker-popover capability-popover"
       role="dialog"
       aria-label="选择扩展能力"
       @keydown.esc.stop="open = false"
     >
-      <div class="code-popover-head">
-        <div class="popover-label">
-          扩展能力<span>{{ chat.current ? '修改从下一轮起生效' : '随第一条消息生效' }}</span>
-        </div>
+      <div class="picker-head">
+        <span>扩展能力</span><small :class="{ 'is-pending': chat.capabilitiesPending }">{{ hint }}</small>
       </div>
-      <div class="code-options" role="group" aria-label="扩展能力">
-        <div v-if="loading && !options" class="code-empty">
+      <div v-if="searchable" class="picker-search">
+        <Icon name="search" :size="13" />
+        <input
+          ref="search"
+          v-model="query"
+          type="search"
+          placeholder="搜索 Skill 或 MCP 服务"
+          aria-label="搜索扩展能力"
+        />
+      </div>
+      <div class="picker-list">
+        <div v-if="loading && !options" class="picker-empty">
           <span class="loader small"></span>正在读取可用能力…
         </div>
-        <div v-else-if="loadError && !options" class="code-empty is-error">
+        <div v-else-if="loadError && !options" class="picker-empty is-error">
           {{ loadError }}<button type="button" @click="load">重试</button>
         </div>
         <template v-else-if="options">
-          <div class="capability-group-title">
-            <Icon name="book" :size="12" />Skill<small>输入 /名称 可直接调用</small>
-          </div>
-          <label
-            v-for="skill in options.skills"
-            :key="`skill-${skill.id}`"
-            :class="[
-              'code-option',
-              { selected: scenario.skillIds.includes(skill.id) || picked.skillIds.includes(skill.id) },
-            ]"
-            :title="skill.description"
-          >
-            <input
-              v-if="scenario.skillIds.includes(skill.id)"
-              type="checkbox"
-              checked
-              disabled
-              :aria-label="`${skill.title}（场景已绑定）`"
-            />
-            <input
-              v-else
-              type="checkbox"
-              :checked="picked.skillIds.includes(skill.id)"
-              @change="flip(picked.skillIds, skill.id, MAX_SESSION_SKILLS, ' Skill')"
-            />
-            <span
-              ><strong>{{ skill.title }}</strong
-              ><small>{{ skillHint(skill) }}</small></span
+          <div class="picker-group" role="listbox" aria-label="Skill" aria-multiselectable="true">
+            <div class="picker-group-title">Skill<small>输入 /名称 可直接调用</small></div>
+            <button
+              v-for="skill in skills"
+              :key="`skill-${skill.id}`"
+              type="button"
+              role="option"
+              :aria-selected="skillOn(skill.id)"
+              :aria-disabled="scenario.skillIds.includes(skill.id)"
+              :class="[
+                'picker-row',
+                { selected: skillOn(skill.id), 'is-locked': scenario.skillIds.includes(skill.id) },
+              ]"
+              :title="skill.description || skill.title"
+              @click="!scenario.skillIds.includes(skill.id) && flip('skill', skill.id)"
             >
-            <em v-if="scenario.skillIds.includes(skill.id)" class="capability-tag">场景</em>
-          </label>
-          <label v-for="id in missingSkills" :key="`missing-skill-${id}`" class="code-option is-missing">
-            <input
-              type="checkbox"
-              checked
-              @change="flip(picked.skillIds, id, MAX_SESSION_SKILLS, ' Skill')"
-            />
-            <span
-              ><strong>Skill #{{ id }}</strong
-              ><small>已取消发布，取消勾选后保存</small></span
+              <span class="picker-row-main"
+                ><b>{{ skill.title }}</b
+                ><small>{{ skillHint(skill) }}</small></span
+              ><em v-if="scenario.skillIds.includes(skill.id)" class="picker-tag">场景</em
+              ><Icon v-if="skillOn(skill.id)" name="check" :size="15" />
+            </button>
+            <button
+              v-for="id in missingSkills"
+              :key="`missing-skill-${id}`"
+              type="button"
+              role="option"
+              aria-selected="true"
+              class="picker-row is-missing selected"
+              @click="flip('skill', id)"
             >
-          </label>
-          <div v-if="!options.skills.length && !missingSkills.length" class="code-empty">
-            还没有已发布的 Skill。<RouterLink to="/agent/skills">去 Skill 中心</RouterLink>
+              <span class="picker-row-main"
+                ><b>Skill #{{ id }}</b
+                ><small>已取消发布，点击移除</small></span
+              ><Icon name="close" :size="14" />
+            </button>
+            <div v-if="!skills.length && !missingSkills.length" class="picker-empty">
+              <template v-if="keyword">没有匹配的 Skill</template>
+              <template v-else
+                >还没有已发布的 Skill。<RouterLink to="/agent/skills">去 Skill 中心</RouterLink></template
+              >
+            </div>
           </div>
 
-          <div class="capability-group-title"><Icon name="plug" :size="12" />MCP 服务</div>
-          <label
-            v-for="server in options.mcpServers"
-            :key="`mcp-${server.id}`"
-            :class="[
-              'code-option',
-              {
-                selected:
-                  scenario.mcpServerIds.includes(server.id) || picked.mcpServerIds.includes(server.id),
-              },
-            ]"
-            :title="server.tools.map((tool) => tool.name).join('、')"
-          >
-            <input
-              v-if="scenario.mcpServerIds.includes(server.id)"
-              type="checkbox"
-              checked
-              disabled
-              :aria-label="`${server.name}（场景已绑定）`"
-            />
-            <input
-              v-else
-              type="checkbox"
-              :checked="picked.mcpServerIds.includes(server.id)"
-              @change="flip(picked.mcpServerIds, server.id, MAX_SESSION_MCP, ' MCP 服务')"
-            />
-            <span
-              ><strong>{{ server.name }}</strong
-              ><small
-                >{{ server.transport === 'stdio' ? '本机进程' : 'Streamable HTTP' }} ·
-                {{ server.tools.length }} 个工具{{
-                  approvalCount(server) ? ` · ${approvalCount(server)} 个需确认` : ''
-                }}</small
-              ></span
+          <div class="picker-group" role="listbox" aria-label="MCP 服务" aria-multiselectable="true">
+            <div class="picker-group-title">MCP 服务</div>
+            <button
+              v-for="server in servers"
+              :key="`mcp-${server.id}`"
+              type="button"
+              role="option"
+              :aria-selected="serverOn(server.id)"
+              :aria-disabled="scenario.mcpServerIds.includes(server.id)"
+              :class="[
+                'picker-row',
+                { selected: serverOn(server.id), 'is-locked': scenario.mcpServerIds.includes(server.id) },
+              ]"
+              :title="server.tools.map((tool) => tool.name).join('、')"
+              @click="!scenario.mcpServerIds.includes(server.id) && flip('mcp', server.id)"
             >
-            <em v-if="scenario.mcpServerIds.includes(server.id)" class="capability-tag">场景</em>
-          </label>
-          <label v-for="id in missingServers" :key="`missing-mcp-${id}`" class="code-option is-missing">
-            <input
-              type="checkbox"
-              checked
-              @change="flip(picked.mcpServerIds, id, MAX_SESSION_MCP, ' MCP 服务')"
-            />
-            <span
-              ><strong>MCP 服务 #{{ id }}</strong
-              ><small>已停用或连接异常，取消勾选后保存</small></span
+              <span class="picker-row-main"
+                ><b>{{ server.name }}</b
+                ><small
+                  >{{ server.transport === 'stdio' ? '本机进程' : 'HTTP' }} ·
+                  {{ server.tools.length }} 个工具{{
+                    approvalCount(server) ? ` · ${approvalCount(server)} 个需确认` : ''
+                  }}</small
+                ></span
+              ><em v-if="scenario.mcpServerIds.includes(server.id)" class="picker-tag">场景</em
+              ><Icon v-if="serverOn(server.id)" name="check" :size="15" />
+            </button>
+            <button
+              v-for="id in missingServers"
+              :key="`missing-mcp-${id}`"
+              type="button"
+              role="option"
+              aria-selected="true"
+              class="picker-row is-missing selected"
+              @click="flip('mcp', id)"
             >
-          </label>
-          <div v-if="!options.mcpServers.length && !missingServers.length" class="code-empty">
-            没有可用的 MCP 服务（需管理员启用并测试连接）。
+              <span class="picker-row-main"
+                ><b>MCP #{{ id }}</b
+                ><small>已停用或连接异常，点击移除</small></span
+              ><Icon name="close" :size="14" />
+            </button>
+            <div v-if="!servers.length && !missingServers.length" class="picker-empty">
+              {{ keyword ? '没有匹配的 MCP 服务' : '暂无可用的 MCP 服务（需管理员启用并测试连接）' }}
+            </div>
           </div>
 
-          <div class="capability-group-title"><Icon name="globe" :size="12" />联网</div>
-          <label
-            :class="[
-              'code-option',
-              {
-                selected: scenario.webSearch || picked.webSearch,
-                'is-disabled': !web?.available && !picked.webSearch,
-              },
-            ]"
-          >
-            <input
-              v-if="scenario.webSearch"
-              type="checkbox"
-              checked
-              disabled
-              aria-label="联网搜索（场景已绑定）"
-            />
-            <input
-              v-else
-              v-model="picked.webSearch"
-              type="checkbox"
-              :disabled="!web?.available && !picked.webSearch"
-            />
-            <span
-              ><strong>联网搜索</strong
-              ><small>{{
-                web?.available
-                  ? [web.searchReady ? 'web_search 搜索' : '', web.fetchEnabled ? 'web_fetch 读取网页' : '']
-                      .filter(Boolean)
-                      .join(' · ')
-                  : web?.reason || '管理员尚未开启联网'
-              }}</small></span
+          <div v-if="!keyword" class="picker-group" role="listbox" aria-label="联网">
+            <div class="picker-group-title">联网</div>
+            <button
+              type="button"
+              role="option"
+              :aria-selected="webOn"
+              :aria-disabled="scenario.webSearch || (!choice.webSearch && !web?.available)"
+              :class="[
+                'picker-row',
+                {
+                  selected: webOn,
+                  'is-locked': scenario.webSearch,
+                  'is-disabled': !scenario.webSearch && !choice.webSearch && !web?.available,
+                },
+              ]"
+              @click="!scenario.webSearch && flipWeb()"
             >
-            <em v-if="scenario.webSearch" class="capability-tag">场景</em>
-          </label>
+              <span class="picker-row-main"
+                ><b>联网搜索</b
+                ><small>{{
+                  web?.available
+                    ? [web.searchReady ? '搜索网络' : '', web.fetchEnabled ? '读取网页' : '']
+                        .filter(Boolean)
+                        .join(' · ')
+                    : web?.reason || '管理员尚未开启联网'
+                }}</small></span
+              ><em v-if="scenario.webSearch" class="picker-tag">场景</em
+              ><Icon v-if="webOn" name="check" :size="15" />
+            </button>
+          </div>
         </template>
-      </div>
-      <div class="code-popover-foot">
-        <span>临时 Skill {{ picked.skillIds.length }} · MCP {{ picked.mcpServerIds.length }}</span>
-        <button type="button" class="button secondary" @click="open = false">取消</button>
-        <button
-          type="button"
-          class="button primary"
-          :disabled="!dirty || chat.capabilitySaving"
-          @click="apply()"
-        >
-          确定
-        </button>
       </div>
     </div>
   </div>

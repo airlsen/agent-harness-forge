@@ -340,31 +340,6 @@ class SessionService:
         await db.flush()
         return segment
 
-    async def set_code_projects(self, session_id, names):
-        """保存会话的关联代码（只读）。执行中也可以修改：当前轮不受影响，从下一轮起生效。"""
-        selected = normalize_code_projects(names)
-        async with SessionFactory() as db:
-            row = await self.row(db, session_id)
-            if row.status == "archived":
-                raise HTTPException(409, "此会话已归档")
-            await ensure_code_projects_exist(selected, list(row.code_projects or []))
-            row.code_projects = selected
-            await db.commit()
-            return {"codeProjects": selected}
-
-    async def set_capabilities(self, session_id, choice: CapabilityChoice):
-        """保存聊天临时选择的扩展能力。执行中也可以修改：当前轮不受影响，从下一轮起生效。"""
-        async with SessionFactory() as db:
-            row = await self.row(db, session_id)
-            if row.status == "archived":
-                raise HTTPException(409, "此会话已归档")
-            selected = await capability_service.validate_choice(
-                db, choice, selection_of(row.capability_selection)
-            )
-            row.capability_selection = selected
-            await db.commit()
-            return {"capabilities": selected}
-
     async def start(
         self,
         session_id,

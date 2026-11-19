@@ -153,7 +153,7 @@ const turnCodeChanges = computed(() => codeChanges(turns.value));
 const turnCapabilityChanges = computed(() => capabilityChanges(turns.value));
 /** 右侧面板展示的关联代码：附带代码根目录中读到的分支与提交 */
 const linkedCode = computed(() =>
-  chat.codeProjects.map((name) => {
+  (chat.current ? chat.appliedCodeProjects : chat.codeProjects).map((name) => {
     const project = chat.codeProjectList?.projects.find((item) => item.name === name);
     const version =
       project?.branch && project.commit
@@ -186,10 +186,14 @@ const scenarioExtensions = computed(() => {
     webSearch: Boolean(caps?.web_search),
   };
 });
+/** 面板展示已生效的选择（新会话为待提交的选择）；输入框中未发送的修改另行提示 */
+const shownCapabilities = computed(() => (chat.current ? chat.appliedCapabilities : chat.capabilityChoice));
 const extensionSkills = computed(() => {
   const options = chat.capabilityOptions?.skills ?? [];
   const scenario = scenarioExtensions.value.skills;
-  const chatOnly = chat.capabilityChoice.skillIds.filter((id) => !scenario.some((skill) => skill.id === id));
+  const chatOnly = shownCapabilities.value.skillIds.filter(
+    (id) => !scenario.some((skill) => skill.id === id),
+  );
   return [
     ...scenario.map((skill) => ({ ...skill, source: 'scenario' as const })),
     ...chatOnly.map((id) => ({ id, title: '', name: '', source: 'chat' as const })),
@@ -208,7 +212,7 @@ const extensionSkills = computed(() => {
 const extensionServers = computed(() => {
   const options = chat.capabilityOptions?.mcpServers ?? [];
   const scenario = scenarioExtensions.value.mcpServers;
-  const chatOnly = chat.capabilityChoice.mcpServerIds.filter((id) => !scenario.some((s) => s.id === id));
+  const chatOnly = shownCapabilities.value.mcpServerIds.filter((id) => !scenario.some((s) => s.id === id));
   return [
     ...scenario.map((server) => ({ ...server, source: 'scenario' as const })),
     ...chatOnly.map((id) => ({ id, name: '', source: 'chat' as const })),
@@ -227,7 +231,7 @@ const extensionServers = computed(() => {
   });
 });
 const extensionWeb = computed(() =>
-  scenarioExtensions.value.webSearch ? 'scenario' : chat.capabilityChoice.webSearch ? 'chat' : null,
+  scenarioExtensions.value.webSearch ? 'scenario' : shownCapabilities.value.webSearch ? 'chat' : null,
 );
 /** 整个会话的交付物：最近一轮声明的排在最前，同一路径只保留最新一次声明 */
 const sessionDeliverables = computed<FileRef[]>(() => {
@@ -378,7 +382,7 @@ watch(
 );
 // 打开「能力」面板时刷新关联代码的分支与提交；读取失败只影响版本展示
 watch(
-  () => chat.panelOpen && chat.panel === 'context' && chat.codeProjects.join('\n'),
+  () => chat.panelOpen && chat.panel === 'context' && linkedCode.value.map((p) => p.name).join('\n'),
   (visible) => {
     if (visible) void chat.loadCodeProjects().catch(() => {});
   },
@@ -779,8 +783,8 @@ async function copyMessage(text: string) {
             </div>
             <Icon name="lock" :size="13" />
           </div>
-          <p v-if="linkedCode.length && chat.current" class="small-text muted-text">
-            修改关联后，从下一轮对话起生效。
+          <p v-if="chat.codePending" class="small-text pending-text">
+            输入框中已修改关联代码，随下一条消息生效。
           </p>
         </div>
         <div class="context-section">
@@ -845,6 +849,9 @@ async function copyMessage(text: string) {
                 : '未开启。可在输入框「扩展能力」中开启联网搜索。'
             }}
           </p>
+          <p v-if="chat.capabilitiesPending" class="small-text pending-text">
+            输入框中已修改扩展能力，随下一条消息生效。
+          </p>
         </div>
         <div class="context-section">
           <h3>本次执行边界</h3>
@@ -904,7 +911,7 @@ async function copyMessage(text: string) {
         <div v-else class="context-tip">
           <Icon name="info" :size="15" />
           <p>
-            提交后会记录场景与策略快照，后续维护不会静默改变已有会话；模型、关联代码与扩展能力可在两轮之间调整，从下一轮起生效。
+            提交后会记录场景与策略快照，后续维护不会静默改变已有会话；模型、关联代码与扩展能力在输入框中调整，随下一条消息生效。
           </p>
         </div>
       </div>

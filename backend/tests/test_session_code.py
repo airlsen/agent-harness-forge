@@ -1,6 +1,4 @@
-"""会话关联代码：选择保存在会话上，每轮完整下发给 Runner，修改从下一轮生效，非法选择不留下任何记录。"""
-
-import asyncio
+"""会话关联代码：选择随消息提交并保存在会话上，每轮完整下发给 Runner，非法选择不留下任何记录。"""
 
 import pytest
 from fastapi import HTTPException
@@ -35,11 +33,10 @@ async def test_selection_is_sent_every_turn_and_changes_apply_from_the_next_turn
     await turn(service, session["id"], "继续")
     assert runner.code[-1] == ["alpha"]
 
-    # 两轮之间修改（多选），下一轮生效；Runner 会话不重建
-    saved = await service.set_code_projects(session["id"], ["beta", "alpha"])
-    assert saved == {"codeProjects": ["beta", "alpha"]}
+    # 修改（多选）随下一条消息提交，从这一轮起生效；Runner 会话不重建
+    third = await turn(service, session["id"], "对比两个仓库", code_projects=["beta", "alpha"])
+    assert third["codeProjects"] == ["beta", "alpha"]
     assert (await service.detail(session["id"]))["codeProjects"] == ["beta", "alpha"]
-    third = await turn(service, session["id"], "对比两个仓库")
     assert runner.code[-1] == ["beta", "alpha"]
     assert third["messageMeta"]["codeProjects"] == ["beta", "alpha"]
     assert len(runner.created) == 1
@@ -52,22 +49,6 @@ async def test_selection_is_sent_every_turn_and_changes_apply_from_the_next_turn
     assert "codeProjects" not in detail["messages"][-2]["meta"]
     listed = await service.list()
     assert listed[0]["codeProjects"] == []
-
-
-@pytest.mark.asyncio
-async def test_running_sessions_can_change_the_selection_for_the_next_turn(env):  # noqa: F811
-    service = session_module.SessionService()
-    session = await service.create(env["scenario"]["id"], model_id=env["models"]["chat"]["id"])
-    await turn(service, session["id"], "第一轮", code_projects=["alpha"])
-    blocker = asyncio.get_running_loop().create_future()
-    service.tasks[session["id"]] = blocker
-    try:
-        await service.set_code_projects(session["id"], ["beta"])
-    finally:
-        blocker.cancel()
-        service.tasks.pop(session["id"])
-    await turn(service, session["id"], "第二轮")
-    assert env["runner"].code[-1] == ["beta"]
 
 
 @pytest.mark.asyncio
@@ -93,21 +74,18 @@ async def test_invalid_selections_are_rejected_without_side_effects(env):  # noq
         with pytest.raises(HTTPException) as error:
             await service.start(session["id"], "换项目", code_projects=names)
         assert error.value.status_code == 422 and pattern in error.value.detail, names
-        with pytest.raises(HTTPException):
-            await service.set_code_projects(session["id"], names)
     assert await messages() == before
     assert (await service.detail(session["id"]))["codeProjects"] == ["alpha"]
     assert len(env["runner"].turns) == 1
 
     # 已关联的项目不重复向 Runner 核对（删除后由 Runner 在执行前报告）；新加入的必须存在
     env["runner"].projects = ["beta"]
-    assert await service.set_code_projects(session["id"], ["alpha", "beta"]) == {
-        "codeProjects": ["alpha", "beta"]
-    }
+    receipt = await turn(service, session["id"], "加上 beta", code_projects=["alpha", "beta"])
+    assert receipt["codeProjects"] == ["alpha", "beta"]
 
     await service.archive(session["id"])
     with pytest.raises(HTTPException) as archived:
-        await service.set_code_projects(session["id"], ["beta"])
+        await service.start(session["id"], "归档后", code_projects=["beta"])
     assert archived.value.status_code == 409
 
 
@@ -116,8 +94,11 @@ def test_request_models_bound_the_selection():
     assert routes.Turn(message="hi", codeProjects=[]).codeProjects == []
     with pytest.raises(ValidationError):
         routes.Turn(message="hi", codeProjects=[f"p{i}" for i in range(21)])
-    with pytest.raises(ValidationError):
-        routes.CodeProjects()
+    # 不再提供单独保存选择的接口：选择只随消息提交
+    assert not hasattr(routes, "CodeProjects")
+    paths = {route.path for route in routes.router.routes}
+    assert "/{session_id}/turns" in paths
+    assert not paths & {"/{session_id}/code-projects", "/{session_id}/capabilities"}
 
 
 @pytest.mark.asyncio

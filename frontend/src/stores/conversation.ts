@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { api, post, put, remove } from '../api/client';
+import { api, post, remove } from '../api/client';
 import { openEventStream } from '../api/events';
 import { usePlatform } from './platform';
 import { fileUrl, type FileRetention, type WorkspaceFile } from '../utils/files';
@@ -30,9 +30,9 @@ interface TaskDraft {
   /** 新会话所选模型；已有会话中为「从下一条消息起使用」的模型（与当前模型不同即待切换） */
   modelId: number | null;
   preview: boolean;
-  /** 新会话的关联代码；已有会话的关联代码保存在服务端（修改即保存），不进入草稿 */
+  /** 关联代码的完整选择：随下一条消息提交（已有会话与已生效的选择不同即待提交） */
   codeProjects: string[];
-  /** 新会话临时选择的扩展能力；已有会话的选择保存在服务端（修改即保存），不进入草稿 */
+  /** 临时扩展能力的完整选择：规则同关联代码 */
   capabilities: CapabilityChoice;
 }
 /** 一个会话最多关联的代码项目数，与后端、Runner 一致 */
@@ -45,13 +45,18 @@ export const emptyCapabilities = (): CapabilityChoice => ({
   mcpServerIds: [],
   webSearch: false,
 });
-export const hasCapabilities = (choice: CapabilityChoice | undefined) =>
-  Boolean(choice && (choice.skillIds.length || choice.mcpServerIds.length || choice.webSearch));
 const copyCapabilities = (choice: CapabilityChoice | undefined): CapabilityChoice => ({
   skillIds: [...(choice?.skillIds ?? [])],
   mcpServerIds: [...(choice?.mcpServerIds ?? [])],
   webSearch: Boolean(choice?.webSearch),
 });
+/** 两个已去重的选择是否相同（与顺序无关：取消后重新勾选不算修改） */
+const sameList = <T>(left: T[], right: T[]) =>
+  left.length === right.length && left.every((item) => right.includes(item));
+export const sameCapabilities = (left: CapabilityChoice, right: CapabilityChoice) =>
+  sameList(left.skillIds, right.skillIds) &&
+  sameList(left.mcpServerIds, right.mcpServerIds) &&
+  Boolean(left.webSearch) === Boolean(right.webSearch);
 // 「上次使用的模型」是按账号区分的偏好（不是草稿内容），保存在本机；读写失败时静默回退到平台默认。
 const LAST_MODEL_KEY = 'forge.last-model.v1';
 function readLastModel(username?: string): number | null {
@@ -124,16 +129,14 @@ export const useConversation = defineStore('conversation', {
     selectedModelId: null as number | null,
     input: '',
     draftAttachments: [] as { name: string; content: string }[],
-    /** 新会话（尚未创建）选择的关联代码，随第一条消息提交 */
+    /** 输入框中的关联代码选择，随下一条消息提交（已有会话初始为已生效的选择） */
     draftCodeProjects: [] as string[],
     /** 代码根目录下的项目列表（打开选择器时刷新） */
     codeProjectList: null as CodeProjectList | null,
-    codeSaving: false,
-    /** 新会话（尚未创建）临时选择的扩展能力，随第一条消息提交 */
+    /** 输入框中的临时扩展能力选择，随下一条消息提交 */
     draftCapabilities: emptyCapabilities(),
     /** 可选的扩展能力（打开选择器或能力面板时刷新） */
     capabilityOptions: null as CapabilityOptions | null,
-    capabilitySaving: false,
     draftRevision: 0,
     // Memory only, scoped to this authenticated tab. Never persist business drafts in Web Storage.
     drafts: {} as Record<string, TaskDraft>,
@@ -152,12 +155,20 @@ export const useConversation = defineStore('conversation', {
   }),
   getters: {
     running: (state) => state.sending || state.current?.status === 'running',
-    /** 当前生效（已有会话）或待提交（新会话）的关联代码 */
-    codeProjects: (state): string[] =>
-      state.current ? (state.current.codeProjects ?? []) : state.draftCodeProjects,
-    /** 当前生效（已有会话）或待提交（新会话）的临时扩展能力 */
-    capabilityChoice: (state): CapabilityChoice =>
-      state.current ? (state.current.capabilities ?? emptyCapabilities()) : state.draftCapabilities,
+    /** 输入框中选择的关联代码（随下一条消息提交） */
+    codeProjects: (state): string[] => state.draftCodeProjects,
+    /** 已生效的关联代码：已有会话为服务端记录，新会话为空 */
+    appliedCodeProjects: (state): string[] => state.current?.codeProjects ?? [],
+    /** 已有会话中关联代码有未发送的修改 */
+    codePending(): boolean {
+      return Boolean(this.current) && !sameList(this.draftCodeProjects, this.appliedCodeProjects);
+    },
+    /** 输入框中选择的临时扩展能力（随下一条消息提交） */
+    capabilityChoice: (state): CapabilityChoice => state.draftCapabilities,
+    appliedCapabilities: (state): CapabilityChoice => state.current?.capabilities ?? emptyCapabilities(),
+    capabilitiesPending(): boolean {
+      return Boolean(this.current) && !sameCapabilities(this.draftCapabilities, this.appliedCapabilities);
+    },
     hasUnsentDrafts: (state) =>
       Boolean(
         state.input.trim() ||
@@ -183,17 +194,20 @@ export const useConversation = defineStore('conversation', {
         scenarioId: this.selectedScenarioId,
         modelId: this.selectedModelId,
         preview: this.selectedScenarioId !== null && this.selectedScenarioId === this.previewScenarioId,
-        codeProjects: this.current ? [] : [...this.draftCodeProjects],
-        capabilities: this.current ? emptyCapabilities() : copyCapabilities(this.draftCapabilities),
+        codeProjects: [...this.draftCodeProjects],
+        capabilities: copyCapabilities(this.draftCapabilities),
       };
     },
     saveDraft() {
       // An opening session has not restored its cached draft yet. Do not overwrite it.
       if (this.loading || (this.draftKey !== 'new' && !this.current)) return;
       const draft = this.snapshotDraft();
-      // 已有会话里只选了待切换模型、尚未输入内容，同样保留这份选择。
-      const pendingModel = Boolean(this.current && draft.modelId !== this.current.modelId);
-      if (draft.input || draft.attachments.length || pendingModel || this.draftKey === 'new')
+      // 已有会话里只改了模型、关联代码或扩展能力，尚未输入内容，同样保留这份选择。
+      const pendingSelection = Boolean(
+        this.current &&
+        (draft.modelId !== this.current.modelId || this.codePending || this.capabilitiesPending),
+      );
+      if (draft.input || draft.attachments.length || pendingSelection || this.draftKey === 'new')
         this.drafts[this.draftKey] = draft;
       else delete this.drafts[this.draftKey];
     },
@@ -228,8 +242,9 @@ export const useConversation = defineStore('conversation', {
       this.draftId = draft?.id ?? ++this.draftSequence;
       this.input = draft?.input ?? '';
       this.draftAttachments = draft?.attachments.map((file) => ({ ...file })) ?? [];
-      this.draftCodeProjects = this.current ? [] : [...(draft?.codeProjects ?? [])];
-      this.draftCapabilities = this.current ? emptyCapabilities() : copyCapabilities(draft?.capabilities);
+      // 已有会话没有缓存的修改时，从已生效的选择开始
+      this.draftCodeProjects = [...(draft?.codeProjects ?? this.current?.codeProjects ?? [])];
+      this.draftCapabilities = copyCapabilities(draft?.capabilities ?? this.current?.capabilities);
       const platform = usePlatform();
       const selectedId = scenarioId ?? draft?.scenarioId;
       const selected = platform.scenarios.find(
@@ -451,15 +466,17 @@ export const useConversation = defineStore('conversation', {
         }
         if (pendingTurns.has(session.id)) throw new Error('这份草稿仍在提交，请稍后再试；不会重复发送。');
         if (!this.current) preparedSessions.set(submittedDraft.id, session);
-        // 新会话的关联代码随第一条消息提交；已有会话修改时即已保存，后端每轮按会话设置下发
-        const codeProjects = this.current ? [] : submittedDraft.codeProjects;
-        // 临时扩展能力同理：新会话随第一条消息提交，已有会话修改即保存
-        const capabilities = this.current ? emptyCapabilities() : submittedDraft.capabilities;
+        // 关联代码与扩展能力随消息提交：只在与已生效的选择不同时携带（空选择表示全部取消），
+        // 不携带则后端沿用会话已保存的选择。校验失败时整轮被拒绝，输入与选择都保留。
+        const appliedCode = this.current?.codeProjects ?? [];
+        const appliedCaps = this.current?.capabilities ?? emptyCapabilities();
+        const sendCode = !sameList(submittedDraft.codeProjects, appliedCode);
+        const sendCaps = !sameCapabilities(submittedDraft.capabilities, appliedCaps);
         const pending = post<TurnReceipt>(`/agent/sessions/${session.id}/turns`, {
           message,
           ...(turnModelId !== null ? { modelId: turnModelId } : {}),
-          ...(codeProjects.length ? { codeProjects } : {}),
-          ...(hasCapabilities(capabilities) ? { capabilities } : {}),
+          ...(sendCode ? { codeProjects: submittedDraft.codeProjects } : {}),
+          ...(sendCaps ? { capabilities: submittedDraft.capabilities } : {}),
         });
         pendingTurns.set(session.id, pending);
         let receipt;
@@ -477,9 +494,10 @@ export const useConversation = defineStore('conversation', {
         this.current = session;
         this.draftKey = `session:${session.id}`;
         if (receipt.codeProjects) this.current.codeProjects = receipt.codeProjects;
-        this.draftCodeProjects = [];
         if (receipt.capabilities) this.current.capabilities = receipt.capabilities;
-        this.draftCapabilities = emptyCapabilities();
+        // 提交后输入框中的选择即已生效的选择
+        this.draftCodeProjects = [...(this.current.codeProjects ?? [])];
+        this.draftCapabilities = copyCapabilities(this.current.capabilities);
         if (receipt.model) this.applyModel(receipt.model);
         this.selectedModelId = this.sessionModel(this.selectedModelId);
         this.messages.push({
@@ -503,26 +521,13 @@ export const useConversation = defineStore('conversation', {
       return list;
     },
     /**
-     * 修改关联代码（只读）。新会话只改草稿，随第一条消息提交；
-     * 已有会话立即保存到服务端，执行中也可修改，从下一轮起生效。
+     * 选择关联代码（只读）：只改输入框中的选择，随下一条消息一起提交并从该轮起生效。
+     * 执行中也可以选择；提交中的消息已带上原选择，此时不允许修改。
      */
-    async setCodeProjects(names: string[]) {
-      const selected = [...new Set(names)].slice(0, MAX_CODE_PROJECTS);
-      const session = this.current;
-      if (!session) {
-        this.draftCodeProjects = selected;
-        return selected;
-      }
-      this.codeSaving = true;
-      try {
-        const result = await put<{ codeProjects: string[] }>(`/agent/sessions/${session.id}/code-projects`, {
-          codeProjects: selected,
-        });
-        if (this.current?.id === session.id) this.current.codeProjects = result.codeProjects;
-        return result.codeProjects;
-      } finally {
-        this.codeSaving = false;
-      }
+    setCodeProjects(names: string[]): string[] {
+      if (this.sending || this.loading) return this.draftCodeProjects;
+      this.draftCodeProjects = [...new Set(names)].slice(0, MAX_CODE_PROJECTS);
+      return this.draftCodeProjects;
     },
     /** 读取可选的扩展能力（已发布 Skill、可运行的 MCP 服务、联网状态）；失败时保留上次结果并抛出错误 */
     async loadCapabilityOptions() {
@@ -530,32 +535,15 @@ export const useConversation = defineStore('conversation', {
       this.capabilityOptions = options;
       return options;
     },
-    /**
-     * 修改临时扩展能力（Skill / MCP / 联网）。新会话只改草稿，随第一条消息提交；
-     * 已有会话立即保存到服务端，执行中也可修改，从下一轮起生效。
-     */
-    async setCapabilities(choice: CapabilityChoice) {
-      const selected: CapabilityChoice = {
+    /** 选择临时扩展能力（Skill / MCP / 联网）：规则同关联代码，随下一条消息提交。 */
+    setCapabilities(choice: CapabilityChoice): CapabilityChoice {
+      if (this.sending || this.loading) return this.draftCapabilities;
+      this.draftCapabilities = {
         skillIds: [...new Set(choice.skillIds)].slice(0, MAX_SESSION_SKILLS),
         mcpServerIds: [...new Set(choice.mcpServerIds)].slice(0, MAX_SESSION_MCP),
         webSearch: Boolean(choice.webSearch),
       };
-      const session = this.current;
-      if (!session) {
-        this.draftCapabilities = selected;
-        return selected;
-      }
-      this.capabilitySaving = true;
-      try {
-        const result = await put<{ capabilities: CapabilityChoice }>(
-          `/agent/sessions/${session.id}/capabilities`,
-          selected,
-        );
-        if (this.current?.id === session.id) this.current.capabilities = result.capabilities;
-        return result.capabilities;
-      } finally {
-        this.capabilitySaving = false;
-      }
+      return this.draftCapabilities;
     },
     /** 本地同步会话当前模型（来自轮次回执或 model_switched 事件）。 */
     applyModel(model: { id: number | null; name: string; model: string; contextWindow?: number | null }) {
