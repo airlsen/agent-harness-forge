@@ -1,6 +1,6 @@
 /** Forge 业务插件：真实 OpenAI-compatible 模型出口 + 受限会话工具 + 门控。无假模型。 */
 import { LlmAdapter, attributionHeaders } from '@deepseek-ai/dsh-llm';
-import { lstatSync } from 'node:fs';
+import { lstatSync, realpathSync } from 'node:fs';
 import { mkdir, readFile, writeFile, readdir, lstat } from 'node:fs/promises';
 import { resolve, relative, dirname, sep } from 'node:path';
 
@@ -42,6 +42,81 @@ export function searchPathDenial(root, args) {
     }
   }
   return undefined;
+}
+/** DSH 原生只读 read（dsh-tool-fs，写入/编辑均关闭）：关联代码项目时由 Runner 开放 */
+export const CODE_READ_TOOL = 'read';
+const SECRET_DIRS = new Set(['.git', '.ssh', '.aws', '.gnupg', '.docker', '.kube']);
+const SECRET_FILE =
+  /^(\.env(\..+)?|\.npmrc|\.pypirc|\.netrc|\.git-credentials|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|.+\.(pem|key|p12|pfx|jks|keystore))$/i;
+const SAFE_SUFFIX = /\.(example|sample|template|dist)$/i;
+/** 版本库内部数据与密钥类文件：即使在关联项目内也不允许读取或搜索 */
+function secretPath(parts) {
+  if (parts.some((part) => SECRET_DIRS.has(part))) return true;
+  const last = parts.at(-1) ?? '';
+  return SECRET_FILE.test(last) && !SAFE_SUFFIX.test(last);
+}
+const within = (root, path) => path === root || path.startsWith(root + sep);
+/**
+ * glob/grep 的 path 与 read 的 file_path 只能落在会话工作区或已关联的代码项目内。
+ * - 工作区：沿用 searchPathDenial（相对路径，不允许隐藏目录与符号链接）；
+ * - 代码项目（只读，绝对路径）：拒绝 .git 内部与密钥类文件；解析符号链接后仍须在该项目内。
+ * projects 为 Runner 解析过符号链接的 [{name, path}]。返回拒绝原因，允许时返回 undefined。
+ */
+export function toolPathDenial(workspace, projects, exec) {
+  const search = SEARCH_TOOLS.includes(exec.name);
+  if (!search && exec.name !== CODE_READ_TOOL) return undefined;
+  const args = exec.arguments && typeof exec.arguments === 'object' ? exec.arguments : {};
+  const raw = search ? args.path : args.file_path;
+  // 不传 path 的搜索在会话工作目录（即工作区）内进行
+  if (raw === undefined && search) return undefined;
+  if (typeof raw !== 'string' || !raw.trim() || raw.length > 1000 || raw.includes('\0'))
+    return search ? '搜索路径无效' : '文件路径无效';
+  const full = resolve(workspace, raw);
+  if (within(workspace, full)) return searchPathDenial(workspace, { path: full });
+  const project = projects.find((item) => within(item.path, full));
+  if (!project)
+    return projects.length
+      ? `只能访问会话工作区与已关联的代码项目：${projects.map((item) => item.path).join('、')}`
+      : '搜索路径超出当前会话工作区，请使用工作区内的相对路径';
+  if (secretPath(relative(project.path, full).split(sep).filter(Boolean)))
+    return '不允许读取版本库内部数据或密钥类文件';
+  // 目标或其最近的已存在上级解析符号链接后必须仍在该项目内；不存在的路径交给工具报告「找不到」
+  let probe = full;
+  for (;;) {
+    try {
+      const real = realpathSync(probe);
+      if (!within(project.path, real)) return '不允许通过符号链接访问代码项目之外的路径';
+      if (secretPath(relative(project.path, real).split(sep).filter(Boolean)))
+        return '不允许读取版本库内部数据或密钥类文件';
+      return undefined;
+    } catch (error) {
+      if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') return '路径无法访问';
+      const parent = dirname(probe);
+      if (parent === probe || !within(project.path, parent)) return undefined;
+      probe = parent;
+    }
+  }
+}
+/**
+ * 搜索结果中的密钥类文件：DSH 搜索为发现配置会包含隐藏与被忽略的文件（只排除 .git 等版本库目录），
+ * 对关联项目搜索时会扫到 .env、*.pem 等。这里从 grep/glob 的结构化结果中剔除这些条目，
+ * 返回新的 value 交由工具自己的 render 重新生成文本与卡片；没有剔除时原样返回。
+ */
+export function filterSecretResults(workspace, projects, exec, result) {
+  if (!projects.length || !SEARCH_TOOLS.includes(exec.name)) return result;
+  if (!result || result.isError || !result.value || typeof result.value !== 'object') return result;
+  const secret = (path) => {
+    if (typeof path !== 'string') return false;
+    const full = resolve(workspace, path);
+    const project = projects.find((item) => within(item.path, full));
+    return Boolean(project) && secretPath(relative(project.path, full).split(sep).filter(Boolean));
+  };
+  const key = exec.name === 'grep' ? 'matches' : 'paths';
+  const items = result.value[key];
+  if (!Array.isArray(items)) return result;
+  const kept = items.filter((item) => !secret(key === 'matches' ? item?.path : item));
+  if (kept.length === items.length) return result;
+  return { isError: false, value: { ...result.value, [key]: kept } };
 }
 /** 写入内容转字节：utf8 为默认文本；base64 用于图片等二进制产物（按解码后字节计入配额）。 */
 function contentBytes(content, encoding = 'utf8') {
@@ -479,12 +554,18 @@ export async function apply(ctx, config) {
   disposers.push(
     ctx.tools.guard((exec) => (allowed.has(exec.name) ? undefined : 'Forge 当前部署禁止执行此工具')),
   );
-  // 搜索工具来自 DSH 官方插件，其路径参数不受工作区约束；在执行前统一收窄到会话工作区。
-  disposers.push(
-    ctx.tools.guard((exec) =>
-      SEARCH_TOOLS.includes(exec.name) ? searchPathDenial(root, exec.arguments) : undefined,
-    ),
-  );
+  // 搜索与只读 read 来自 DSH 官方插件，其路径参数不受工作区约束；
+  // 在执行前统一收窄到会话工作区与已关联的代码项目（只读）。
+  const codeProjects = Array.isArray(config.codeProjects)
+    ? config.codeProjects.filter((item) => item && typeof item.path === 'string')
+    : [];
+  disposers.push(ctx.tools.guard((exec) => toolPathDenial(root, codeProjects, exec)));
+  if (codeProjects.length)
+    disposers.push(
+      ctx.on('tools/execute', async (exec, next) =>
+        filterSecretResults(root, codeProjects, exec, await next()),
+      ),
+    );
   disposers.push(
     ctx.on('tools/pre-execute', (exec, next) => {
       // 会话工作区是受限目录（路径、数量与容量配额均由执行器校验），写入直接执行、无需逐次确认。

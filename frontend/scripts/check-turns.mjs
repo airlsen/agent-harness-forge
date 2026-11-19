@@ -27,7 +27,8 @@ const tool = (id, callId, name = 'workspace_read') => ({
   meta: { toolCallId: callId, tool: name, arguments: { path: 'a.txt' }, isError: false },
 });
 try {
-  const { buildTurns, processStats, processSummary } = await vite.ssrLoadModule('/src/utils/turns.ts');
+  const { buildTurns, codeChanges, processStats, processSummary } =
+    await vite.ssrLoadModule('/src/utils/turns.ts');
 
   check('一轮 = 用户消息 + 一个 AI 块；思考与正文是同一块内的步骤', () => {
     const turns = buildTurns([user(1), assistant(2, '回答', { reasoning: '先想想' })], idle);
@@ -266,6 +267,28 @@ try {
     const failed = { ...tool(3, 'c2'), meta: { ...tool(3, 'c2').meta, isError: true } };
     const [turn] = buildTurns([user(1), tool(2, 'c1'), failed, assistant(4, '完成')], idle);
     assert.equal(processSummary(processStats(turn.process)), '调用 2 个工具 · 1 个失败');
+  });
+
+  check('关联代码分隔线只出现在关联列表变化的轮次', () => {
+    const withCode = (id, codeProjects) => ({ ...user(id), meta: { codeProjects } });
+    const turns = buildTurns(
+      [
+        user(1),
+        assistant(2, '一'),
+        withCode(3, ['alpha']),
+        assistant(4, '二'),
+        withCode(5, ['alpha']),
+        assistant(6, '三'),
+        withCode(7, ['alpha', 'beta']),
+        assistant(8, '四'),
+        user(9),
+        assistant(10, '五'),
+      ],
+      idle,
+    );
+    assert.deepEqual(codeChanges(turns), [null, ['alpha'], null, ['alpha', 'beta'], []]);
+    // 没有用户消息的轮次（如历史中只剩回复）不参与比较
+    assert.deepEqual(codeChanges([{ user: null }, { user: withCode(1, ['x']) }]), [null, ['x']]);
   });
 } finally {
   await vite.close();

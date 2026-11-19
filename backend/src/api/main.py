@@ -10,7 +10,18 @@ from fastapi.staticfiles import StaticFiles
 from .core.database import close_db, init_db, SessionFactory
 from .core.config import settings
 from .core.security import initialize_security, require_auth
-from .routes import agent_scenario, agent_session, approval, audit, governance, registry, auth, model, skill
+from .routes import (
+    agent_scenario,
+    agent_session,
+    approval,
+    audit,
+    code,
+    governance,
+    registry,
+    auth,
+    model,
+    skill,
+)
 from .services.scenario_service import seed_scenarios
 from .services.plugin_service import seed_plugins
 from .services.file_service import file_service
@@ -84,6 +95,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(agent_scenario.router, prefix="/api/agent-scenarios", tags=["scenario"])
 app.include_router(agent_session.router, prefix="/api/agent/sessions", tags=["session"])
 app.include_router(approval.router, prefix="/api/agent/approvals", tags=["approval"])
+app.include_router(code.router, prefix="/api/code", tags=["code"])
 app.include_router(registry.router, prefix="/api/registry", tags=["registry"])
 app.include_router(model.router, prefix="/api/models", tags=["models"])
 app.include_router(skill.router, prefix="/api/skills", tags=["skills"])

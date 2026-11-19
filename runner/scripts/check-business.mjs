@@ -13,6 +13,20 @@ import { once } from 'node:events';
 
 const dir = await mkdtemp(join(tmpdir(), 'forge-contract-'));
 process.env.FORGE_RUNNER_DATA_DIR = join(dir, 'sessions');
+// 关联代码夹具：代码根目录下两个项目，alpha 带 git 元数据、密钥文件与指向外部的符号链接
+const codeRoot = join(dir, 'code');
+process.env.FORGE_CODE_ROOT = codeRoot;
+await mkdir(join(codeRoot, 'alpha', 'src'), { recursive: true });
+await mkdir(join(codeRoot, 'alpha', '.git', 'refs', 'heads'), { recursive: true });
+await mkdir(join(codeRoot, 'beta', 'lib'), { recursive: true });
+await writeFile(join(codeRoot, 'alpha', 'src', 'app.ts'), 'export const alphaMarker = 1;\n');
+await writeFile(join(codeRoot, 'alpha', 'README.md'), '# Alpha service\n');
+await writeFile(join(codeRoot, 'alpha', '.env'), 'SECRET=code-sentinel\n');
+await writeFile(join(codeRoot, 'alpha', '.git', 'HEAD'), 'ref: refs/heads/main\n');
+await writeFile(join(codeRoot, 'alpha', '.git', 'refs', 'heads', 'main'), 'a'.repeat(40) + '\n');
+await writeFile(join(codeRoot, 'beta', 'lib', 'beta.py'), 'BETA_MARKER = True\n');
+await writeFile(join(dir, 'outside.txt'), 'outside-sentinel\n');
+await symlink(join(dir, 'outside.txt'), join(codeRoot, 'alpha', 'escape.txt'));
 const { DshKernel, compactionConfig, BASE_TOOLS, SEARCH_TOOLS } = await import('../src/kernel/dsh-kernel.ts');
 const kernel = new DshKernel(),
   requests = [],
@@ -71,6 +85,48 @@ const server = http.createServer(async (req, res) => {
         prompt_tokens_details: { cached_tokens: 20 },
         completion_tokens_details: { reasoning_tokens: 7 },
       },
+    });
+    res.end('data: [DONE]\n\n');
+    return;
+  }
+  const code = [
+    'CODE_GREP_SECRET',
+    'CODE_GLOB_SECRET',
+    'CODE_GREP',
+    'CODE_READ_ALPHA',
+    'CODE_READ_BETA',
+    'CODE_SECRET',
+    'CODE_ESCAPE',
+  ].find((value) => instruction.includes(value));
+  if (code && !answeredTool) {
+    const [tool, args] = {
+      CODE_GREP_SECRET: ['grep', { pattern: 'SECRET|alphaMarker', path: join(codeRoot, 'alpha') }],
+      CODE_GLOB_SECRET: ['glob', { pattern: '*', path: join(codeRoot, 'alpha') }],
+      CODE_GREP: ['grep', { pattern: 'alphaMarker', path: join(codeRoot, 'alpha') }],
+      CODE_READ_ALPHA: ['read', { file_path: join(codeRoot, 'alpha', 'src', 'app.ts') }],
+      CODE_READ_BETA: ['read', { file_path: join(codeRoot, 'beta', 'lib', 'beta.py') }],
+      CODE_SECRET: ['read', { file_path: join(codeRoot, 'alpha', '.env') }],
+      CODE_ESCAPE: ['read', { file_path: join(codeRoot, 'alpha', 'escape.txt') }],
+    }[code];
+    send({
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: 'fixture-call-' + requests.length,
+                type: 'function',
+                function: { name: tool, arguments: JSON.stringify(args) },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    send({
+      choices: [{ delta: {}, finish_reason: 'tool_calls' }],
+      usage: { prompt_tokens: 100, completion_tokens: 10 },
     });
     res.end('data: [DONE]\n\n');
     return;
@@ -219,9 +275,9 @@ try {
     if (event.kind === 'approval_required' && approvalAction !== 'wait')
       void kernel.resolveApproval(id, event.payload.ticketId, { action: approvalAction });
   });
-  async function turn(text, model) {
+  async function turn(text, model, codeProjects) {
     const start = allEvents.length;
-    await kernel.sendTurn(id, text, undefined, model);
+    await kernel.sendTurn(id, text, undefined, model, codeProjects);
     return allEvents.slice(start);
   }
   check('compaction budget fits every common context window (dsh compaction-basic formula)', () => {
@@ -425,6 +481,89 @@ try {
     const result = toolResult(events);
     assert.equal(result?.isError, false);
     assert.doesNotMatch(result.result, /link\.txt|sentinel/);
+  });
+  const toolNames = () => requests.at(-1).tools.map((tool) => tool.function.name);
+  check('without associated code the session has no read tool and no code section', () => {
+    assert.equal(toolNames().includes('read'), false);
+    assert.equal(requests.at(-1).messages[0].content.includes('关联代码'), false);
+  });
+  await assert.rejects(
+    () => kernel.sendTurn(id, 'CODE_GREP', undefined, undefined, ['missing-project']),
+    /代码项目不存在/,
+  );
+  await assert.rejects(
+    () => kernel.sendTurn(id, 'CODE_GREP', undefined, undefined, ['../alpha']),
+    /代码项目不存在/,
+  );
+  events = await turn('CODE_GREP', undefined, ['alpha']);
+  check('associating a project restarts dsh with read-only code tools and project context', () => {
+    assert.ok(events.some((event) => event.kind === 'code_projects'));
+    const firstRequest = requests.findLast((request) =>
+      request.messages.some((message) => message.role === 'user' && message.content === 'CODE_GREP'),
+    );
+    const system = firstRequest.messages[0].content;
+    assert.ok(system.includes(`### alpha → `) && system.includes('（git main@aaaaaaaaaaaa）'));
+    assert.ok(system.includes('顶层：src/') && system.includes('# Alpha service'));
+    const names = firstRequest.tools.map((tool) => tool.function.name);
+    assert.ok(names.includes('read'));
+    for (const name of ['write', 'edit', 'apply_patch', 'read_image', 'bash'])
+      assert.equal(names.includes(name), false, name);
+  });
+  check('grep searches an associated project by absolute path', () => {
+    const result = toolResult(events);
+    assert.equal(result?.isError, false);
+    assert.match(result.result, /alphaMarker/);
+  });
+  events = await turn('CODE_GREP_SECRET');
+  check('project-wide grep drops matches from secret files but keeps the rest', () => {
+    const result = toolResult(events);
+    assert.equal(result?.isError, false);
+    assert.match(result.result, /alphaMarker/);
+    assert.doesNotMatch(result.result, /code-sentinel|\.env/);
+  });
+  events = await turn('CODE_GLOB_SECRET');
+  check('project-wide glob hides secret files and version-control internals', () => {
+    const result = toolResult(events);
+    assert.equal(result?.isError, false);
+    assert.match(result.result, /app\.ts/);
+    assert.doesNotMatch(result.result, /\.env|\.git\b/);
+  });
+  events = await turn('CODE_READ_ALPHA');
+  check('DSH read returns associated project code; the association persists across turns', () => {
+    const result = toolResult(events);
+    assert.equal(result?.isError, false);
+    assert.match(result.result, /export const alphaMarker = 1;/);
+  });
+  events = await turn('CODE_READ_BETA');
+  check('projects that are not associated are denied', () => {
+    const result = toolResult(events);
+    assert.equal(result?.isError, true);
+    assert.match(result.result, /只能访问会话工作区与已关联的代码项目/);
+    assert.doesNotMatch(result.result, /BETA_MARKER/);
+  });
+  events = await turn('CODE_SECRET');
+  check('secret files inside an associated project are denied', () => {
+    const result = toolResult(events);
+    assert.equal(result?.isError, true);
+    assert.doesNotMatch(result.result, /code-sentinel/);
+  });
+  events = await turn('CODE_ESCAPE');
+  check('symlinks escaping an associated project are denied', () => {
+    const result = toolResult(events);
+    assert.equal(result?.isError, true);
+    assert.match(result.result, /符号链接/);
+    assert.doesNotMatch(result.result, /outside-sentinel/);
+  });
+  events = await turn('CODE_READ_BETA', undefined, ['alpha', 'beta']);
+  check('changing the association takes effect on the next turn (multiple projects)', () => {
+    const result = toolResult(events);
+    assert.equal(result?.isError, false);
+    assert.match(result.result, /BETA_MARKER = True/);
+  });
+  events = await turn('TIME', undefined, []);
+  check('removing every project drops read and the code section again', () => {
+    assert.equal(toolNames().includes('read'), false);
+    assert.equal(requests.at(-1).messages[0].content.includes('关联代码'), false);
   });
   events = await turn('HTTP_ERROR');
   check('gateway HTTP failure produces error, not success', () => {

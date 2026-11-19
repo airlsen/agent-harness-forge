@@ -123,6 +123,12 @@ try {
     const method = options.method ?? 'GET';
     calls.push({ url, method, body: options.body ? JSON.parse(options.body) : undefined });
     if (url === '/api/agent/sessions' && method === 'GET') return response({ items: [...database.values()] });
+    if (url === '/api/code/projects')
+      return response({
+        root: '/usr/data/git',
+        available: true,
+        projects: ['alpha', 'beta'].map((name) => ({ name, path: `/usr/data/git/${name}`, branch: 'main' })),
+      });
     if (url === '/api/agent/sessions' && method === 'POST') {
       const body = JSON.parse(options.body);
       const row = detail(++nextSession, body.scenarioId, body.modelId);
@@ -147,6 +153,10 @@ try {
     }
     if (suffix.startsWith('/trajectory')) return response({ events: [], nextCursor: 0 });
     if (suffix === '/files') return response({ items: [] });
+    if (suffix === '/code-projects' && method === 'PUT') {
+      row.codeProjects = JSON.parse(options.body).codeProjects;
+      return response({ codeProjects: row.codeProjects });
+    }
     if (suffix === '/turns' && method === 'POST') {
       if (turnGate) await turnGate.promise;
       if (failTurn) {
@@ -162,15 +172,24 @@ try {
         row.model = `model-${body.modelId}`;
       }
       const to = { id: row.modelId, name: row.modelName, model: row.model };
+      if (body.codeProjects !== undefined) row.codeProjects = body.codeProjects;
+      const code = row.codeProjects ?? [];
       const messageMeta = {
         modelId: to.id,
         modelName: to.name,
         model: to.model,
         ...(from.id !== to.id ? { modelSwitch: { messageId, from, to } } : {}),
+        ...(code.length ? { codeProjects: code } : {}),
       };
       row.messages.push({ id: messageId, role: 'user', content: body.message, meta: messageMeta });
       row.status = 'running';
-      return response({ messageId, cursor: 0, messageMeta, model: { ...to, contextWindow: 64000 } });
+      return response({
+        messageId,
+        cursor: 0,
+        messageMeta,
+        model: { ...to, contextWindow: 64000 },
+        codeProjects: code,
+      });
     }
     if (suffix.startsWith('/events?')) {
       // Pending SSE is aborted by the real store's disconnect(), without a timer or network.
@@ -609,6 +628,53 @@ try {
   assert.equal(chat.selectedModelId, 7);
   passed(
     'a disabled current model can continue or be kept explicitly; a pending target that disappears falls back to no switch',
+  );
+
+  reset();
+  assert.deepEqual(chat.codeProjects, []);
+  await chat.setCodeProjects(['alpha', 'beta', 'alpha']);
+  assert.deepEqual(chat.codeProjects, ['alpha', 'beta']);
+  assert.equal(count(/code-projects/, 'PUT'), 0); // a new draft only changes local state
+  await chat.open(11);
+  assert.deepEqual(chat.codeProjects, []); // an existing session shows its own (server) selection
+  chat.prepareStart();
+  assert.deepEqual(chat.codeProjects, ['alpha', 'beta']); // the start draft keeps its selection
+  chat.input = 'Analyse both repositories';
+  await chat.submit();
+  const codeTurn = calls.filter((call) => call.url.endsWith('/turns')).at(-1);
+  assert.deepEqual(codeTurn.body, { message: 'Analyse both repositories', codeProjects: ['alpha', 'beta'] });
+  assert.deepEqual(chat.current.codeProjects, ['alpha', 'beta']);
+  assert.deepEqual(chat.draftCodeProjects, []);
+  assert.deepEqual(chat.messages.at(-1).meta.codeProjects, ['alpha', 'beta']);
+  chat.prepareStart();
+  assert.deepEqual(chat.codeProjects, []); // a consumed draft does not leak into the next new task
+  passed('a new task carries its code selection in the first turn, survives navigation and is then consumed');
+
+  reset();
+  await chat.open(11);
+  const listed = await chat.loadCodeProjects();
+  assert.deepEqual(
+    listed.projects.map((project) => project.name),
+    ['alpha', 'beta'],
+  );
+  database.get(11).status = 'running';
+  await chat.open(11);
+  // running: the selection can still change; it is saved now and applies from the next turn
+  assert.deepEqual(await chat.setCodeProjects(['beta']), ['beta']);
+  assert.deepEqual(calls.filter((call) => call.method === 'PUT').at(-1).body, { codeProjects: ['beta'] });
+  assert.deepEqual(chat.current.codeProjects, ['beta']);
+  assert.equal(chat.drafts['session:11'], undefined); // not a draft and never counts as unsent work
+  assert.equal(chat.hasUnsentDrafts, false);
+  database.get(11).status = 'idle';
+  await chat.open(11);
+  assert.deepEqual(chat.codeProjects, ['beta']);
+  chat.input = 'Next turn';
+  await chat.submit();
+  // existing sessions never resend the selection: the server sends its saved list to the Runner each turn
+  assert.deepEqual(calls.filter((call) => call.url.endsWith('/turns')).at(-1).body, { message: 'Next turn' });
+  assert.deepEqual(chat.messages.at(-1).meta.codeProjects, ['beta']);
+  passed(
+    'an existing session saves code changes immediately (even while running) and applies them next turn',
   );
 
   console.log(

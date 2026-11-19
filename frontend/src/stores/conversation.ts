@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia';
-import { api, post, remove } from '../api/client';
+import { api, post, put, remove } from '../api/client';
 import { openEventStream } from '../api/events';
 import { usePlatform } from './platform';
 import { fileUrl, type FileRetention, type WorkspaceFile } from '../utils/files';
 import type {
   Approval,
   ChatMessage,
+  CodeProjectList,
   KernelEvent,
   SessionDetail,
   SessionModelSegment,
@@ -27,7 +28,11 @@ interface TaskDraft {
   /** 新会话所选模型；已有会话中为「从下一条消息起使用」的模型（与当前模型不同即待切换） */
   modelId: number | null;
   preview: boolean;
+  /** 新会话的关联代码；已有会话的关联代码保存在服务端（修改即保存），不进入草稿 */
+  codeProjects: string[];
 }
+/** 一个会话最多关联的代码项目数，与后端、Runner 一致 */
+export const MAX_CODE_PROJECTS = 20;
 // 「上次使用的模型」是按账号区分的偏好（不是草稿内容），保存在本机；读写失败时静默回退到平台默认。
 const LAST_MODEL_KEY = 'forge.last-model.v1';
 function readLastModel(username?: string): number | null {
@@ -56,6 +61,7 @@ interface TurnReceipt {
   cursor: number;
   messageMeta?: Record<string, any>;
   model?: SessionModelSegment;
+  codeProjects?: string[];
 }
 function sameDraft(left: TaskDraft, right: TaskDraft) {
   return (
@@ -64,7 +70,8 @@ function sameDraft(left: TaskDraft, right: TaskDraft) {
     left.modelId === right.modelId &&
     left.preview === right.preview &&
     left.input === right.input &&
-    JSON.stringify(left.attachments) === JSON.stringify(right.attachments)
+    JSON.stringify(left.attachments) === JSON.stringify(right.attachments) &&
+    JSON.stringify(left.codeProjects) === JSON.stringify(right.codeProjects)
   );
 }
 
@@ -96,6 +103,11 @@ export const useConversation = defineStore('conversation', {
     selectedModelId: null as number | null,
     input: '',
     draftAttachments: [] as { name: string; content: string }[],
+    /** 新会话（尚未创建）选择的关联代码，随第一条消息提交 */
+    draftCodeProjects: [] as string[],
+    /** 代码根目录下的项目列表（打开选择器时刷新） */
+    codeProjectList: null as CodeProjectList | null,
+    codeSaving: false,
     draftRevision: 0,
     // Memory only, scoped to this authenticated tab. Never persist business drafts in Web Storage.
     drafts: {} as Record<string, TaskDraft>,
@@ -114,6 +126,9 @@ export const useConversation = defineStore('conversation', {
   }),
   getters: {
     running: (state) => state.sending || state.current?.status === 'running',
+    /** 当前生效（已有会话）或待提交（新会话）的关联代码 */
+    codeProjects: (state): string[] =>
+      state.current ? (state.current.codeProjects ?? []) : state.draftCodeProjects,
     hasUnsentDrafts: (state) =>
       Boolean(
         state.input.trim() ||
@@ -139,6 +154,7 @@ export const useConversation = defineStore('conversation', {
         scenarioId: this.selectedScenarioId,
         modelId: this.selectedModelId,
         preview: this.selectedScenarioId !== null && this.selectedScenarioId === this.previewScenarioId,
+        codeProjects: this.current ? [] : [...this.draftCodeProjects],
       };
     },
     saveDraft() {
@@ -170,6 +186,7 @@ export const useConversation = defineStore('conversation', {
       this.loading = false;
       this.input = '';
       this.draftAttachments = [];
+      this.draftCodeProjects = [];
       this.panelOpen = false;
       this.panel = 'files';
       return openGeneration;
@@ -180,6 +197,7 @@ export const useConversation = defineStore('conversation', {
       this.draftId = draft?.id ?? ++this.draftSequence;
       this.input = draft?.input ?? '';
       this.draftAttachments = draft?.attachments.map((file) => ({ ...file })) ?? [];
+      this.draftCodeProjects = this.current ? [] : [...(draft?.codeProjects ?? [])];
       const platform = usePlatform();
       const selectedId = scenarioId ?? draft?.scenarioId;
       const selected = platform.scenarios.find(
@@ -375,6 +393,9 @@ export const useConversation = defineStore('conversation', {
       this.selectedModelId = this.current ? switchTo : modelId;
       const submittedDraft = this.snapshotDraft();
       const originKey = this.draftKey;
+      // 离开再回来时缓存的是这份草稿较早的快照：先更新为提交内容，受理后才能被正确清除，
+      // 否则旧快照（如关联代码、模型选择）会在下一次新建任务时重新出现。
+      if (this.drafts[originKey]?.id === submittedDraft.id) this.drafts[originKey] = submittedDraft;
       this.sending = true;
       this.runError = '';
       this.connectionWarning = '';
@@ -398,9 +419,12 @@ export const useConversation = defineStore('conversation', {
         }
         if (pendingTurns.has(session.id)) throw new Error('这份草稿仍在提交，请稍后再试；不会重复发送。');
         if (!this.current) preparedSessions.set(submittedDraft.id, session);
+        // 新会话的关联代码随第一条消息提交；已有会话修改时即已保存，后端每轮按会话设置下发
+        const codeProjects = this.current ? [] : submittedDraft.codeProjects;
         const pending = post<TurnReceipt>(`/agent/sessions/${session.id}/turns`, {
           message,
           ...(turnModelId !== null ? { modelId: turnModelId } : {}),
+          ...(codeProjects.length ? { codeProjects } : {}),
         });
         pendingTurns.set(session.id, pending);
         let receipt;
@@ -417,6 +441,8 @@ export const useConversation = defineStore('conversation', {
         }
         this.current = session;
         this.draftKey = `session:${session.id}`;
+        if (receipt.codeProjects) this.current.codeProjects = receipt.codeProjects;
+        this.draftCodeProjects = [];
         if (receipt.model) this.applyModel(receipt.model);
         this.selectedModelId = this.sessionModel(this.selectedModelId);
         this.messages.push({
@@ -431,6 +457,34 @@ export const useConversation = defineStore('conversation', {
         return generation === openGeneration ? session.id : null;
       } finally {
         if (generation === openGeneration) this.sending = false;
+      }
+    },
+    /** 读取代码根目录下可关联的项目；失败时保留上次结果并抛出错误 */
+    async loadCodeProjects() {
+      const list = await api<CodeProjectList>('/code/projects');
+      this.codeProjectList = list;
+      return list;
+    },
+    /**
+     * 修改关联代码（只读）。新会话只改草稿，随第一条消息提交；
+     * 已有会话立即保存到服务端，执行中也可修改，从下一轮起生效。
+     */
+    async setCodeProjects(names: string[]) {
+      const selected = [...new Set(names)].slice(0, MAX_CODE_PROJECTS);
+      const session = this.current;
+      if (!session) {
+        this.draftCodeProjects = selected;
+        return selected;
+      }
+      this.codeSaving = true;
+      try {
+        const result = await put<{ codeProjects: string[] }>(`/agent/sessions/${session.id}/code-projects`, {
+          codeProjects: selected,
+        });
+        if (this.current?.id === session.id) this.current.codeProjects = result.codeProjects;
+        return result.codeProjects;
+      } finally {
+        this.codeSaving = false;
       }
     },
     /** 本地同步会话当前模型（来自轮次回执或 model_switched 事件）。 */

@@ -50,14 +50,35 @@ class RunnerClient:
         except HTTPException:
             return {"status": "offline"}
 
-    async def create_session(self, bundle, user_ctx, model_config):
+    async def create_session(self, bundle, user_ctx, model_config, code_projects=None):
         return await self.call(
-            "POST", "/v1/sessions", {"bundle": bundle, "userCtx": user_ctx, "modelConfig": model_config}
+            "POST",
+            "/v1/sessions",
+            {
+                "bundle": bundle,
+                "userCtx": user_ctx,
+                "modelConfig": model_config,
+                "codeProjects": list(code_projects or []),
+            },
         )
 
-    async def events(self, runner_session_id: str, message: str, model_config: dict | None = None):
-        # 每轮都下发当前模型配置：Runner 比对指纹，不同（会话内切换）则以新配置重启并接续会话。
-        body = {"message": message, **({"modelConfig": model_config} if model_config else {})}
+    async def code_projects(self):
+        """代码根目录（Runner 的 FORGE_CODE_ROOT）下可关联的项目；目录由 Runner 读取，控制面不接触代码。"""
+        return await self.call("GET", "/v1/code/projects")
+
+    async def events(
+        self,
+        runner_session_id: str,
+        message: str,
+        model_config: dict | None = None,
+        code_projects: list[str] | None = None,
+    ):
+        # 每轮都下发当前模型配置与关联代码：Runner 比对后，任一变化都以新配置重启并接续会话。
+        body = {
+            "message": message,
+            **({"modelConfig": model_config} if model_config else {}),
+            **({"codeProjects": list(code_projects)} if code_projects is not None else {}),
+        }
         async with self.client(stream=True) as client:
             async with client.stream(
                 "POST", f"/v1/sessions/{runner_session_id}/stream", json=body

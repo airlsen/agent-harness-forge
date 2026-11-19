@@ -30,6 +30,8 @@ class AgentSession(Base):
     files_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # 超过保留期限、文件被清理的时间；之后再有新文件会重新计时
     files_purged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 关联的代码项目（代码根目录下的一级目录名，只读）；修改后从下一轮起生效。旧会话为 NULL，视为未关联。
+    code_projects: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
 
 
 class SessionEventIndex(Base):

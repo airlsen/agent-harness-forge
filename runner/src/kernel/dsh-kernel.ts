@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DshProcess } from './dsh-process.js';
 import { mimeType } from './mime.js';
 import { buildSystemPrompt } from './system-prompt.js';
+import { projectOverview, resolveCodeProjects, sameProjects, type CodeProject } from './code-projects.js';
 import type { PluginWorkerClient } from '../plugin-worker-client.js';
 import type { AgentKernel, Bundle, KernelEvent, SessionHandle, TurnOpts, UserCtx } from './types.js';
 
@@ -19,17 +20,22 @@ export const BASE_TOOLS = ['current_time', 'workspace_list', 'workspace_read', '
 /** 版本固定的 DSH 搜索插件（随 dsh 版本锁定）提供的工具；随读取权限开放，路径由 forge-runtime 限制在工作区内。 */
 export const SEARCH_TOOLS = ['glob', 'grep'] as const;
 export const SEARCH_PLUGIN = '@deepseek-ai/dsh-tool-fs-search';
+/** DSH 原生只读 read（带行号、分页、字节上限），关联代码时开放，路径同样由 forge-runtime 收窄 */
+export const CODE_READ_TOOL = 'read';
 export interface SessionToolset {
   /** forge-runtime 白名单：模型可见、允许执行的全部工具 */
   allowed: string[];
   /** 是否加载 DSH 搜索插件 */
   search: boolean;
+  /** 是否开放 DSH 只读 read（关联了代码项目） */
+  code: boolean;
 }
 /**
  * 计算会话工具集：基础能力 ∪ 场景声明，Forge 内置工具以平台策略为上限；
  * 写入开放时附带交付声明，读取开放时附带 glob/grep 搜索；插件工具原样保留。
+ * 关联代码是会话级能力、与场景和策略无关：关联了项目就开放 glob/grep/read（只读）。
  */
-export function sessionToolset(meta: Record<string, any> | undefined): SessionToolset {
+export function sessionToolset(meta: Record<string, any> | undefined, hasCode = false): SessionToolset {
   const policy = meta?.policy ?? {};
   const ceiling: string[] | undefined = Array.isArray(policy.allowedTools) ? policy.allowedTools : undefined;
   const declared = Array.isArray(meta?.builtin_tools) ? (meta.builtin_tools as string[]) : [];
@@ -38,15 +44,16 @@ export function sessionToolset(meta: Record<string, any> | undefined): SessionTo
   // 场景声明的其他内置插件工具（如 Skill 编辑的 skill_*）沿用原有规则：以策略为上限。
   // Skill 编辑会话的策略上限只含 skill_*，因此不会被附加基础能力。
   const builtin = [...new Set([...BASE_TOOLS, ...declared])].filter(withinCeiling);
-  const search = builtin.includes('workspace_read');
+  const search = builtin.includes('workspace_read') || hasCode;
   const allowed = [
     ...builtin,
     ...(builtin.includes('workspace_write') ? [PRESENT_TOOL] : []),
     ...(search ? SEARCH_TOOLS : []),
+    ...(hasCode ? [CODE_READ_TOOL] : []),
     // 受管插件工具已由控制面按企业插件策略与场景授权筛选，不再按内置工具策略过滤。
     ...pluginTools,
   ];
-  return { allowed: [...new Set(allowed)], search };
+  return { allowed: [...new Set(allowed)], search, code: hasCode };
 }
 const MAX_RAW_BYTES = 20 * 1024 * 1024;
 /** 清单上限：远高于插件的 100 个文件配额；达到上限时标记 truncated，控制面不会据此删除记录 */
@@ -73,6 +80,8 @@ type Entry = {
   workspace: string;
   pending: Map<string, Pending>;
   calls: Map<string, any>;
+  /** 当前关联的代码项目（只读挂载）；变化时下一轮以新配置重启 dsh 并接续会话 */
+  code: CodeProject[];
 };
 function failure(message: string, statusCode = 400) {
   return Object.assign(new Error(message), { statusCode });
@@ -140,8 +149,14 @@ export class DshKernel implements AgentKernel {
       pending.resolve({ outcome: 'cancelled' });
     }
   }
-  async createSession(bundle: Bundle, _user: UserCtx, model?: RuntimeModel): Promise<SessionHandle> {
+  async createSession(
+    bundle: Bundle,
+    _user: UserCtx,
+    model?: RuntimeModel,
+    codeProjects?: unknown,
+  ): Promise<SessionHandle> {
     if (!validModel(model)) throw failure('请先在模型中心配置真实模型网关', 422);
+    const code = resolveCodeProjects(codeProjects);
     if (this.size >= this.capacity) throw failure('Runner 会话容量已满，请归档暂不使用的会话', 429);
     const approvedPlugins = new Set(['forge-runtime', 'skill-authoring', 'forge-plugin-bridge']);
     if (!Array.isArray(bundle.plugin_mounts) || bundle.plugin_mounts.some((p) => !approvedPlugins.has(p)))
@@ -178,6 +193,7 @@ export class DshKernel implements AgentKernel {
       workspace: join(DATA, id, 'workspace'),
       pending: new Map(),
       calls: new Map(),
+      code,
     };
     this.sessions.set(id, entry);
     try {
@@ -198,7 +214,7 @@ export class DshKernel implements AgentKernel {
     await mkdir(entry.workspace, { recursive: true, mode: 0o700 });
     const policy = (entry.bundle.meta?.policy as any) ?? {};
     const pluginTools = (entry.bundle.meta?.plugin_tools as string[]) ?? [];
-    const toolset = sessionToolset(entry.bundle.meta);
+    const toolset = sessionToolset(entry.bundle.meta, entry.code.length > 0);
     const pluginBindings = Array.isArray(entry.bundle.meta?.pluginBindings)
       ? entry.bundle.meta.pluginBindings
       : [];
@@ -208,6 +224,7 @@ export class DshKernel implements AgentKernel {
       config: {
         workspace: entry.workspace,
         allowedTools: toolset.allowed,
+        codeProjects: entry.code.map(({ name, path }) => ({ name, path })),
         maxOutputTokens: policy.maxOutputTokens ?? 4096,
         requestTimeoutSeconds: policy.requestTimeoutSeconds ?? 120,
       },
@@ -257,8 +274,25 @@ export class DshKernel implements AgentKernel {
         'terminal-bash',
         'terminal-pwsh',
         'tool-working-directory',
-        'tool-fs',
+        ...(toolset.code ? [] : ['tool-fs']),
       ].map((id) => ({ id, disabled: true })),
+      // 关联代码时只开放 DSH 原生 read：写入、编辑、补丁全部关闭，代码项目只读
+      ...(toolset.code
+        ? [
+            {
+              id: 'tool-fs',
+              config: {
+                read: true,
+                readImage: false,
+                write: false,
+                edit: false,
+                applyPatch: false,
+                readLimit: 2000,
+                readMaxBytes: 51200,
+              },
+            },
+          ]
+        : []),
       {
         insert: [
           { id: 'forge-user-approval', name: '@deepseek-ai/dsh-user-approval', config: { policy: 'ask' } },
@@ -316,7 +350,11 @@ export class DshKernel implements AgentKernel {
         }),
     );
     proc.hostHandlers.set('user-question/ask', async () => ({ cancelled: true }));
-    const system = buildSystemPrompt(entry.bundle.profile_patch.systemPrompt, toolset.allowed);
+    const system = buildSystemPrompt(
+      entry.bundle.profile_patch.systemPrompt,
+      toolset.allowed,
+      entry.code.map((project) => ({ ...project, overview: projectOverview(project) })),
+    );
     await proc.start({
       binPath: join(ROOT, 'scripts', 'dsh-launch.mjs'),
       profile: 'sdk-minimal',
@@ -446,18 +484,37 @@ export class DshKernel implements AgentKernel {
    * 执行一轮对话。model 为控制面下发的本轮运行配置：与当前进程不同（会话内切换模型）时，
    * 先结束旧进程，再以新配置启动并通过 session/resume 接续同一份会话日志。
    */
-  async sendTurn(id: string, message: string, _opts?: TurnOpts, model?: RuntimeModel) {
+  async sendTurn(
+    id: string,
+    message: string,
+    _opts?: TurnOpts,
+    model?: RuntimeModel,
+    codeProjects?: unknown,
+  ) {
     const entry = this.entry(id);
     if (entry.busy) throw failure('会话正在执行，请等待或中止', 409);
     if (model !== undefined && !validModel(model)) throw failure('本轮模型配置无效', 422);
+    // 不传表示沿用当前关联；传入则必须全部存在（与模型配置一样在执行前校验）
+    const code = codeProjects === undefined ? entry.code : resolveCodeProjects(codeProjects);
     entry.busy = true;
     entry.error = null;
     try {
-      if (model && modelFingerprint(model) !== modelFingerprint(entry.model)) {
+      const modelChanged = model !== undefined && modelFingerprint(model) !== modelFingerprint(entry.model);
+      const codeChanged = !sameProjects(
+        code.map((project) => project.name),
+        entry.code.map((project) => project.name),
+      );
+      if (modelChanged || codeChanged) {
+        // 模型密钥、工具白名单与系统提示都只在启动时注入：任一变化都以新配置重启并接续会话
         const previous = entry.proc;
         entry.proc = null;
         await previous?.dispose();
-        entry.model = model;
+        if (model) entry.model = model;
+        entry.code = code;
+        if (codeChanged)
+          this.emit(entry, 'code_projects', {
+            projects: code.map(({ name, branch, commit }) => ({ name, branch, commit })),
+          });
       }
       if (!entry.proc) await this.boot(entry);
       await timeout(
