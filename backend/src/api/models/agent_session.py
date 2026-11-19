@@ -32,6 +32,8 @@ class AgentSession(Base):
     files_purged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # 关联的代码项目（代码根目录下的一级目录名，只读）；修改后从下一轮起生效。旧会话为 NULL，视为未关联。
     code_projects: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
+    # 聊天中临时选择的扩展能力 {skillIds, mcpServerIds, webSearch}；与场景绑定取并集，下一轮生效。旧会话为 NULL。
+    capability_selection: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=dict)
 
 
 class SessionEventIndex(Base):

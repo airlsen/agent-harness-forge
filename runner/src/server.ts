@@ -5,6 +5,7 @@ import { DshKernel, MAX_LISTED_FILES, validModel, type RuntimeModel } from './ke
 import { PluginWorkerClient } from './plugin-worker-client.js';
 import type { Bundle, UserCtx } from './kernel/types.js';
 import { listCodeProjects, resolveCodeProjects } from './kernel/code-projects.js';
+import { resolveCapabilities } from './kernel/capabilities.js';
 
 const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
 if (nodeMajor < 24 || (nodeMajor === 24 && nodeMinor < 9))
@@ -37,6 +38,9 @@ app.get('/v1/runtime', async () => ({
     approvals: true,
     workspaceFiles: true,
     codeProjects: true,
+    skills: true,
+    mcp: ['stdio', 'streamable-http'],
+    webSearch: true,
     shell: false,
     fork: false,
   },
@@ -49,10 +53,17 @@ app.post('/v1/sessions', async (req, reply) => {
     userCtx: UserCtx;
     modelConfig: RuntimeModel;
     codeProjects?: string[];
+    capabilities?: unknown;
   };
   if (!body?.bundle || !body?.modelConfig)
     return reply.code(422).send({ message: 'bundle and modelConfig are required' });
-  return kernel.createSession(body.bundle, body.userCtx, body.modelConfig, body.codeProjects);
+  return kernel.createSession(
+    body.bundle,
+    body.userCtx,
+    body.modelConfig,
+    body.codeProjects,
+    body.capabilities,
+  );
 });
 // 代码根目录（FORGE_CODE_ROOT）下可关联的项目：一级子目录，附 git 分支与提交
 app.get('/v1/code/projects', async () => listCodeProjects());
@@ -63,7 +74,7 @@ app.get<{ Params: { id: string } }>('/v1/sessions/:id', async (req, reply) =>
 );
 app.post<{
   Params: { id: string };
-  Body: { message: string; modelConfig?: RuntimeModel; codeProjects?: string[] };
+  Body: { message: string; modelConfig?: RuntimeModel; codeProjects?: string[]; capabilities?: unknown };
 }>('/v1/sessions/:id/stream', async (req, reply) => {
   const id = req.params.id;
   if (!kernel.has(id)) return reply.code(404).send({ message: '执行会话不存在，请新建会话' });
@@ -74,6 +85,7 @@ app.post<{
   if (req.body.modelConfig !== undefined && !validModel(req.body.modelConfig))
     return reply.code(422).send({ message: 'modelConfig requires baseUrl and model' });
   if (req.body.codeProjects !== undefined) resolveCodeProjects(req.body.codeProjects);
+  if (req.body.capabilities !== undefined) resolveCapabilities(req.body.capabilities);
   reply.hijack();
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -85,7 +97,14 @@ app.post<{
   });
   reply.raw.on('close', unsubscribe);
   try {
-    await kernel.sendTurn(id, req.body.message, undefined, req.body.modelConfig, req.body.codeProjects);
+    await kernel.sendTurn(
+      id,
+      req.body.message,
+      undefined,
+      req.body.modelConfig,
+      req.body.codeProjects,
+      req.body.capabilities,
+    );
   } finally {
     unsubscribe();
     if (!reply.raw.destroyed) reply.raw.end();

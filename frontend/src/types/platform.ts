@@ -9,7 +9,10 @@ export interface ScenarioPayload {
     builtin_tool_names: string[];
     skill_ids: number[];
     mcp_server_ids: number[];
+    /** 已废弃：关联代码改为聊天中按会话选择；仅为兼容旧数据保留 */
     project_ids: string[];
+    /** 联网搜索（需平台在治理中心开启） */
+    web_search?: boolean;
   };
   model: string;
   execution_mode: 'standard';
@@ -50,6 +53,81 @@ export interface Conversation {
   isTest: boolean;
   /** 关联的代码项目（只读）；修改后从下一轮起生效。旧版本后端不返回时视为未关联 */
   codeProjects?: string[];
+  /** 聊天中临时选择的扩展能力（与场景绑定取并集）；修改后从下一轮起生效 */
+  capabilities?: CapabilityChoice;
+  /** 场景绑定的扩展能力（会话创建时冻结） */
+  scenarioCapabilities?: ScenarioCapabilities;
+}
+/** 聊天临时选择的扩展能力 */
+export interface CapabilityChoice {
+  skillIds: number[];
+  mcpServerIds: number[];
+  webSearch: boolean;
+}
+export interface ScenarioCapabilities {
+  skills: { id: number; title: string; name: string; version?: number | null }[];
+  mcpServers: { id: number; name: string }[];
+  webSearch: boolean;
+}
+/** 可选的已发布 Skill */
+export interface SkillOption {
+  id: number;
+  revisionId: number;
+  version: number | null;
+  /** 平台显示名 */
+  title: string;
+  /** 运行时名称（用户可用 /名称 直接调用） */
+  name: string;
+  description: string;
+  tags?: string[];
+}
+/** 可在会话中运行的 MCP 服务（已启用、连接测试通过） */
+export interface McpOption {
+  id: number;
+  name: string;
+  transport: 'stdio' | 'streamable-http';
+  description: string;
+  tools: { name: string; description: string; permission: 'read' | 'approval' }[];
+}
+export interface WebAvailability {
+  available: boolean;
+  searchReady: boolean;
+  fetchEnabled: boolean;
+  reason: string;
+  provider: string;
+}
+export interface CapabilityOptions {
+  skills: SkillOption[];
+  mcpServers: McpOption[];
+  web: WebAvailability;
+}
+/** 本轮生效的扩展能力摘要（用户消息 meta.capabilities） */
+export interface ActiveCapabilities {
+  skills: { id: number; name: string; title: string; version?: number | null; source: 'scenario' | 'chat' }[];
+  mcp: {
+    id: number;
+    name: string;
+    serverName: string;
+    transport: string;
+    source: 'scenario' | 'chat';
+    tools: number;
+    approvalTools: number;
+  }[];
+  web: { search: boolean; fetch: boolean; source: 'scenario' | 'chat' } | null;
+  unavailable: { kind: 'skill' | 'mcp' | 'web'; id: number | null; title: string }[];
+}
+/** 平台联网搜索设置（密钥不回传） */
+export interface WebSearchSettings {
+  enabled: boolean;
+  provider: string;
+  providers: { id: string; label: string }[];
+  baseUrl: string;
+  apiKeyConfigured: boolean;
+  keySource: 'custom' | 'model' | 'none';
+  fetchEnabled: boolean;
+  searchReady: boolean;
+  available: boolean;
+  reason: string;
 }
 /** 代码根目录下可供会话关联的项目（只读） */
 export interface CodeProject {

@@ -16,8 +16,8 @@ const root = join(temporary, 'workspace');
 const tools = new Map();
 const guards = [];
 const hooks = new Map();
-const oldConfig = process.env.FORGE_MODEL_CONFIG;
-process.env.FORGE_MODEL_CONFIG = JSON.stringify({
+const oldConfig = process.env.FORGE_MODEL_SECRET_CONFIG;
+process.env.FORGE_MODEL_SECRET_CONFIG = JSON.stringify({
   baseUrl: 'http://unused.invalid/v1',
   model: 'executor-check-no-model',
 });
@@ -334,7 +334,7 @@ try {
   );
 } finally {
   dispose?.();
-  if (oldConfig === undefined) delete process.env.FORGE_MODEL_CONFIG;
-  else process.env.FORGE_MODEL_CONFIG = oldConfig;
+  if (oldConfig === undefined) delete process.env.FORGE_MODEL_SECRET_CONFIG;
+  else process.env.FORGE_MODEL_SECRET_CONFIG = oldConfig;
   await rm(temporary, { recursive: true, force: true });
 }

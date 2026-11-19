@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..schemas.agent_scenario import ScenarioPayload
+from .capability_service import freeze_scenario_mcp, freeze_scenario_skills
 from .plugin_service import approved_bindings
 from .settings_service import TOOL_NAMES
 
@@ -44,10 +45,14 @@ class ScenarioAssembler:
         requested_plugins = list(dict.fromkeys(caps.plugin_names))
         if set(caps.builtin_tool_names) - TOOL_NAMES:
             raise HTTPException(422, "包含尚未接入的基础工具")
-        if caps.skill_ids or caps.mcp_server_ids or caps.project_ids:
-            raise HTTPException(422, "当前部署尚未挂载 Skill/MCP/项目，请先移除无效能力")
-        if scenario.model not in ("default", ""):
-            raise HTTPException(422, "当前请使用 default 模型路由，在模型中心设置实际模型")
+        # project_ids（已由聊天「关联代码」取代）与 model（模型在聊天中选择）为兼容旧数据保留，装配时忽略。
+        if len(set(caps.skill_ids)) != len(caps.skill_ids) or len(set(caps.mcp_server_ids)) != len(
+            caps.mcp_server_ids
+        ):
+            raise HTTPException(422, "能力选择中有重复项")
+        # Skill 冻结到当前已发布修订（修订不可变）；MCP 只记录服务引用，凭据与工具清单每轮实时解析。
+        skills = await freeze_scenario_skills(db, list(caps.skill_ids))
+        mcp_servers = await freeze_scenario_mcp(db, list(caps.mcp_server_ids))
         if scenario.input_schema is not None:
             raise HTTPException(422, "当前工作台仅支持文本任务输入，结构化输入表单尚未接入")
         bindings = await approved_bindings(db, requested_plugins, caps.plugin_tools)
@@ -92,6 +97,9 @@ class ScenarioAssembler:
                 "builtin_tools": builtin_tools,
                 "plugin_tools": plugin_tools,
                 "pluginBindings": bindings,
+                "skills": skills,
+                "mcpServers": mcp_servers,
+                "webSearch": caps.web_search,
                 "policy": tenant_policy,
                 "scenarioName": scenario.name,
             },

@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { api, post, put } from '../../api/client';
 import { formatBytes } from '../../utils/presentation';
 import { usePlatform } from '../../stores/platform';
+import type { WebSearchSettings } from '../../types/platform';
 import Icon from '../../components/ForgeIcon.vue';
 const app = usePlatform(),
   saving = ref(false),
@@ -56,6 +57,62 @@ async function cleanup() {
     cleaning.value = false;
   }
 }
+// 联网搜索：DSH 的 web_search（DeepSeek 联网搜索）与 web_fetch（公网网页读取）
+const web = ref<WebSearchSettings | null>(null),
+  webSaving = ref(false);
+const webForm = reactive({
+  enabled: false,
+  provider: 'deepseek-official',
+  baseUrl: '',
+  fetchEnabled: true,
+  apiKey: '',
+});
+function applyWeb(value: WebSearchSettings) {
+  web.value = value;
+  Object.assign(webForm, {
+    enabled: value.enabled,
+    provider: value.provider,
+    baseUrl: value.baseUrl,
+    fetchEnabled: value.fetchEnabled,
+    apiKey: '',
+  });
+}
+async function loadWeb() {
+  try {
+    applyWeb(await api<WebSearchSettings>('/governance/web-search'));
+  } catch {
+    web.value = null;
+  }
+}
+async function saveWeb(clearKey = false) {
+  webSaving.value = true;
+  try {
+    const result = await put<WebSearchSettings>('/governance/web-search', {
+      enabled: webForm.enabled,
+      provider: webForm.provider,
+      baseUrl: webForm.baseUrl.trim(),
+      fetchEnabled: webForm.fetchEnabled,
+      ...(webForm.apiKey.trim() ? { apiKey: webForm.apiKey.trim() } : {}),
+      clearKey,
+    });
+    applyWeb(result);
+    app.toast(
+      result.available
+        ? '联网设置已保存，场景或聊天开启联网后从下一轮起生效'
+        : result.reason || '联网设置已保存',
+      result.enabled && !result.searchReady ? 'info' : 'success',
+    );
+  } catch (e) {
+    app.toast((e as Error).message, 'error');
+  } finally {
+    webSaving.value = false;
+  }
+}
+const KEY_SOURCE: Record<WebSearchSettings['keySource'], string> = {
+  custom: '已单独配置搜索密钥',
+  model: '复用模型中心的 DeepSeek 官方模型密钥',
+  none: '未配置密钥：仅能读取网页，无法搜索',
+};
 function cleanupTime(value: string) {
   return new Date(value).toLocaleString('zh-CN', { hour12: false });
 }
@@ -63,6 +120,7 @@ onMounted(async () => {
   try {
     Object.assign(policy, await api('/governance/policies'));
     void loadStorage();
+    void loadWeb();
     await app.refreshRuntime();
   } catch (e) {
     app.toast((e as Error).message, 'error');
@@ -137,7 +195,9 @@ async function save() {
             <Icon name="lock" :size="16" />
             <div>
               <strong>部署层强制边界</strong>
-              <p>任意 Shell、宿主机文件访问和通用网络工具未开放，不能通过此页面启用。</p>
+              <p>
+                任意 Shell 与宿主机文件访问未开放，不能通过此页面启用；联网仅限下方受控的搜索与公网网页读取。
+              </p>
             </div>
           </div>
           <div class="form-divider"></div>
@@ -237,6 +297,70 @@ async function save() {
           </footer>
         </form>
         <aside class="settings-aside">
+          <form v-if="web" class="settings-card governance-form web-search-card" @submit.prevent="saveWeb()">
+            <div class="settings-section-heading">
+              <Icon name="globe" :size="18" />
+              <h2>联网搜索</h2>
+            </div>
+            <p class="section-description">
+              开启后，场景或聊天可选用联网：模型能搜索网络并读取公网网页（不访问内网地址）。每次搜索约等于一次模型调用。
+            </p>
+            <div class="switch-setting">
+              <div>
+                <strong>允许联网</strong>
+                <p>{{ web.available ? '已可用' : web.reason || '未开启' }}</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="webForm.enabled"
+                aria-label="允许联网"
+                :class="['switch-control', { checked: webForm.enabled }]"
+                @click="webForm.enabled = !webForm.enabled"
+              >
+                <span></span>
+              </button>
+            </div>
+            <label for="web-provider">搜索服务</label
+            ><select id="web-provider" v-model="webForm.provider">
+              <option v-for="provider in web.providers" :key="provider.id" :value="provider.id">
+                {{ provider.label }}
+              </option>
+            </select>
+            <label for="web-key">DeepSeek API Key</label
+            ><input
+              id="web-key"
+              v-model="webForm.apiKey"
+              type="password"
+              autocomplete="off"
+              :placeholder="web.apiKeyConfigured ? '已保存，留空则不修改' : '留空则复用 DeepSeek 模型密钥'"
+            />
+            <small class="field-hint"
+              >{{ KEY_SOURCE[web.keySource]
+              }}<template v-if="web.apiKeyConfigured">
+                ·
+                <button type="button" class="link-button" :disabled="webSaving" @click="saveWeb(true)">
+                  清除已保存密钥
+                </button></template
+              ></small
+            >
+            <label for="web-base">服务地址（可选）</label
+            ><input
+              id="web-base"
+              v-model="webForm.baseUrl"
+              type="url"
+              placeholder="留空使用 DeepSeek 默认地址"
+            />
+            <label class="web-fetch-option"
+              ><input v-model="webForm.fetchEnabled" type="checkbox" /><span
+                >允许读取网页内容（web_fetch）</span
+              ></label
+            >
+            <button class="button primary" :disabled="webSaving">
+              <span v-if="webSaving" class="loader small"></span
+              ><Icon v-else name="save" :size="16" />保存联网设置
+            </button>
+          </form>
           <section class="settings-card deployment-card">
             <div class="settings-section-heading">
               <Icon name="server" :size="18" />

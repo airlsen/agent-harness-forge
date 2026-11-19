@@ -36,6 +36,9 @@ assert.deepEqual(sessionToolset({ builtin_tools: ['current_time'], policy }), {
   allowed: [...BASE_TOOLS, 'workspace_present', ...SEARCH_TOOLS],
   search: true,
   code: false,
+  read: false,
+  skills: false,
+  approval: [],
 });
 // 旧 Bundle 没有 policy/builtin_tools 时同样补齐
 assert.deepEqual(sessionToolset(undefined).allowed, [...BASE_TOOLS, 'workspace_present', ...SEARCH_TOOLS]);
@@ -58,10 +61,20 @@ assert.deepEqual(sessionToolset({ builtin_tools: authoring, policy: { allowedToo
   allowed: authoring,
   search: false,
   code: false,
+  read: false,
+  skills: false,
+  approval: [],
 });
 // 关联代码：与场景、策略无关，关联了项目就开放 glob/grep/read（只读）
 const codeOnly = sessionToolset({ policy: { allowedTools: ['current_time'] } }, true);
-assert.deepEqual(codeOnly, { allowed: ['current_time', 'glob', 'grep', 'read'], search: true, code: true });
+assert.deepEqual(codeOnly, {
+  allowed: ['current_time', 'glob', 'grep', 'read'],
+  search: true,
+  code: true,
+  read: true,
+  skills: false,
+  approval: [],
+});
 const project = {
   name: 'forge',
   path: '/usr/data/git/forge',

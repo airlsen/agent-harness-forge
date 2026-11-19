@@ -7,6 +7,15 @@ import { DshProcess } from './dsh-process.js';
 import { mimeType } from './mime.js';
 import { buildSystemPrompt } from './system-prompt.js';
 import { projectOverview, resolveCodeProjects, sameProjects, type CodeProject } from './code-projects.js';
+import {
+  EMPTY_CAPABILITIES,
+  WEB_SEARCH_PROVIDERS,
+  capabilityFingerprint,
+  capabilitySummary,
+  mcpToolNames,
+  resolveCapabilities,
+  type RuntimeCapabilities,
+} from './capabilities.js';
 import type { PluginWorkerClient } from '../plugin-worker-client.js';
 import type { AgentKernel, Bundle, KernelEvent, SessionHandle, TurnOpts, UserCtx } from './types.js';
 
@@ -22,20 +31,36 @@ export const SEARCH_TOOLS = ['glob', 'grep'] as const;
 export const SEARCH_PLUGIN = '@deepseek-ai/dsh-tool-fs-search';
 /** DSH 原生只读 read（带行号、分页、字节上限），关联代码时开放，路径同样由 forge-runtime 收窄 */
 export const CODE_READ_TOOL = 'read';
+/** dsh-tool-skill 提供的 Skill 加载工具 */
+export const SKILL_TOOL = 'skill';
+/** dsh-tool-web 提供的联网工具 */
+export const WEB_SEARCH_TOOL = 'web_search';
+export const WEB_FETCH_TOOL = 'web_fetch';
 export interface SessionToolset {
   /** forge-runtime 白名单：模型可见、允许执行的全部工具 */
   allowed: string[];
   /** 是否加载 DSH 搜索插件 */
   search: boolean;
-  /** 是否开放 DSH 只读 read（关联了代码项目） */
+  /** 是否关联了代码项目 */
   code: boolean;
+  /** 是否开放 DSH 只读 read（关联代码或 Skill 带参考资料） */
+  read: boolean;
+  /** 是否装配 Skill（dsh-skill + dsh-tool-skill） */
+  skills: boolean;
+  /** 需要逐次确认的工具（管理员标记为需确认的 MCP 工具） */
+  approval: string[];
 }
 /**
  * 计算会话工具集：基础能力 ∪ 场景声明，Forge 内置工具以平台策略为上限；
  * 写入开放时附带交付声明，读取开放时附带 glob/grep 搜索；插件工具原样保留。
  * 关联代码是会话级能力、与场景和策略无关：关联了项目就开放 glob/grep/read（只读）。
+ * 扩展能力（Skill / MCP / 联网）由控制面按场景绑定 ∪ 聊天临时选择、并经企业策略筛选后下发，原样加入白名单。
  */
-export function sessionToolset(meta: Record<string, any> | undefined, hasCode = false): SessionToolset {
+export function sessionToolset(
+  meta: Record<string, any> | undefined,
+  hasCode = false,
+  caps: RuntimeCapabilities = EMPTY_CAPABILITIES,
+): SessionToolset {
   const policy = meta?.policy ?? {};
   const ceiling: string[] | undefined = Array.isArray(policy.allowedTools) ? policy.allowedTools : undefined;
   const declared = Array.isArray(meta?.builtin_tools) ? (meta.builtin_tools as string[]) : [];
@@ -45,17 +70,27 @@ export function sessionToolset(meta: Record<string, any> | undefined, hasCode = 
   // Skill 编辑会话的策略上限只含 skill_*，因此不会被附加基础能力。
   const builtin = [...new Set([...BASE_TOOLS, ...declared])].filter(withinCeiling);
   const search = builtin.includes('workspace_read') || hasCode;
+  const skills = caps.skills.length > 0;
+  const read = hasCode || caps.skills.some((skill) => skill.references.length > 0);
+  const mcp = mcpToolNames(caps);
   const allowed = [
     ...builtin,
     ...(builtin.includes('workspace_write') ? [PRESENT_TOOL] : []),
     ...(search ? SEARCH_TOOLS : []),
-    ...(hasCode ? [CODE_READ_TOOL] : []),
+    ...(read ? [CODE_READ_TOOL] : []),
     // 受管插件工具已由控制面按企业插件策略与场景授权筛选，不再按内置工具策略过滤。
     ...pluginTools,
+    ...(skills ? [SKILL_TOOL] : []),
+    ...(caps.web?.search ? [WEB_SEARCH_TOOL] : []),
+    ...(caps.web?.fetch ? [WEB_FETCH_TOOL] : []),
+    ...mcp.allowed,
   ];
-  return { allowed: [...new Set(allowed)], search, code: hasCode };
+  return { allowed: [...new Set(allowed)], search, code: hasCode, read, skills, approval: mcp.approval };
 }
 const MAX_RAW_BYTES = 20 * 1024 * 1024;
+/** 联网搜索密钥的环境变量名（含 KEY，不会被传给 stdio MCP 子进程） */
+const WEB_SEARCH_KEY_ENV = 'FORGE_WEB_SEARCH_API_KEY';
+const MCP_TOOL_TIMEOUT_MS = 60000;
 /** 清单上限：远高于插件的 100 个文件配额；达到上限时标记 truncated，控制面不会据此删除记录 */
 export const MAX_LISTED_FILES = 1000;
 const DATA = resolve(process.env.FORGE_RUNNER_DATA_DIR ?? join(ROOT, 'data', 'sessions'));
@@ -82,6 +117,8 @@ type Entry = {
   calls: Map<string, any>;
   /** 当前关联的代码项目（只读挂载）；变化时下一轮以新配置重启 dsh 并接续会话 */
   code: CodeProject[];
+  /** 本轮生效的扩展能力（场景绑定 ∪ 聊天临时选择）；变化时同样重启接续 */
+  caps: RuntimeCapabilities;
 };
 function failure(message: string, statusCode = 400) {
   return Object.assign(new Error(message), { statusCode });
@@ -154,9 +191,11 @@ export class DshKernel implements AgentKernel {
     _user: UserCtx,
     model?: RuntimeModel,
     codeProjects?: unknown,
+    capabilities?: unknown,
   ): Promise<SessionHandle> {
     if (!validModel(model)) throw failure('请先在模型中心配置真实模型网关', 422);
     const code = resolveCodeProjects(codeProjects);
+    const caps = resolveCapabilities(capabilities);
     if (this.size >= this.capacity) throw failure('Runner 会话容量已满，请归档暂不使用的会话', 429);
     const approvedPlugins = new Set(['forge-runtime', 'skill-authoring', 'forge-plugin-bridge']);
     if (!Array.isArray(bundle.plugin_mounts) || bundle.plugin_mounts.some((p) => !approvedPlugins.has(p)))
@@ -194,6 +233,7 @@ export class DshKernel implements AgentKernel {
       pending: new Map(),
       calls: new Map(),
       code,
+      caps,
     };
     this.sessions.set(id, entry);
     try {
@@ -214,7 +254,10 @@ export class DshKernel implements AgentKernel {
     await mkdir(entry.workspace, { recursive: true, mode: 0o700 });
     const policy = (entry.bundle.meta?.policy as any) ?? {};
     const pluginTools = (entry.bundle.meta?.plugin_tools as string[]) ?? [];
-    const toolset = sessionToolset(entry.bundle.meta, entry.code.length > 0);
+    const toolset = sessionToolset(entry.bundle.meta, entry.code.length > 0, entry.caps);
+    const skillDirs = await this.materializeSkills(entry);
+    // stdio MCP 进程的工作目录：独立空目录，不指向会话工作区或代码项目
+    if (entry.caps.mcp.length) await mkdir(join(dir, 'mcp'), { recursive: true, mode: 0o700 });
     const pluginBindings = Array.isArray(entry.bundle.meta?.pluginBindings)
       ? entry.bundle.meta.pluginBindings
       : [];
@@ -224,7 +267,9 @@ export class DshKernel implements AgentKernel {
       config: {
         workspace: entry.workspace,
         allowedTools: toolset.allowed,
+        approvalTools: toolset.approval,
         codeProjects: entry.code.map(({ name, path }) => ({ name, path })),
+        readRoots: Object.entries(skillDirs).map(([name, path]) => ({ name: `skill:${name}`, path })),
         maxOutputTokens: policy.maxOutputTokens ?? 4096,
         requestTimeoutSeconds: policy.requestTimeoutSeconds ?? 120,
       },
@@ -272,10 +317,10 @@ export class DshKernel implements AgentKernel {
         'persistent-pwsh',
         'terminal-pwsh',
         'tool-working-directory',
-        ...(toolset.code ? [] : ['tool-fs']),
+        ...(toolset.read ? [] : ['tool-fs']),
       ].map((id) => ({ id, disabled: true })),
-      // 关联代码时只开放 DSH 原生 read：写入、编辑、补丁全部关闭，代码项目只读
-      ...(toolset.code
+      // 关联代码或 Skill 参考资料时只开放 DSH 原生 read：写入、编辑、补丁全部关闭，只读
+      ...(toolset.read
         ? [
             {
               id: 'tool-fs',
@@ -312,6 +357,7 @@ export class DshKernel implements AgentKernel {
             : []),
           ...(pluginBridge ? [pluginBridge] : []),
           ...(skillAuthoringPlugin ? [skillAuthoringPlugin] : []),
+          ...this.capabilityRows(entry, skillDirs),
         ],
       },
     ];
@@ -348,16 +394,39 @@ export class DshKernel implements AgentKernel {
         }),
     );
     proc.hostHandlers.set('user-question/ask', async () => ({ cancelled: true }));
+    const summary = capabilitySummary(entry.caps);
     const system = buildSystemPrompt(
       entry.bundle.profile_patch.systemPrompt,
       toolset.allowed,
       entry.code.map((project) => ({ ...project, overview: projectOverview(project) })),
+      {
+        skills: entry.caps.skills.map((skill) => ({
+          name: skill.name,
+          title: skill.title,
+          hasReferences: skill.references.length > 0,
+        })),
+        mcp: summary.mcp.map((server) => ({
+          serverName: server.serverName,
+          title: server.title,
+          tools: server.tools.map((tool) => ({
+            publicName: tool.publicName,
+            approval: tool.permission === 'approval',
+          })),
+        })),
+        webSearch: Boolean(entry.caps.web?.search),
+        webFetch: Boolean(entry.caps.web?.fetch),
+      },
     );
     await proc.start({
       binPath: join(ROOT, 'scripts', 'dsh-launch.mjs'),
       profile: 'sdk-minimal',
       patchPaths: [patchPath],
-      env: { FORGE_MODEL_CONFIG: JSON.stringify(entry.model), DSH_SYSTEM_PROMPT: system },
+      // 密钥类变量名都含 SECRET/KEY：DSH 为 stdio MCP 子进程清洗环境变量时会剔除，外部程序拿不到
+      env: {
+        FORGE_MODEL_SECRET_CONFIG: JSON.stringify(entry.model),
+        DSH_SYSTEM_PROMPT: system,
+        ...(entry.caps.web?.apiKey ? { [WEB_SEARCH_KEY_ENV]: entry.caps.web.apiKey } : {}),
+      },
     });
     await timeout(
       proc.request('initialize', {
@@ -371,6 +440,104 @@ export class DshKernel implements AgentKernel {
     );
     if (entry.hasHistory) await timeout(proc.request('session/resume', { sessionId: entry.id }), 15000);
   }
+  /**
+   * 物化 Skill 参考资料：DATA/<id>/skills/<name>/references/<file>，每次启动整体重建，
+   * 已移除的 Skill 不留下文件。正文不落盘（以运行时 Skill 注册），返回 Skill 名 → 资料根目录。
+   */
+  private async materializeSkills(entry: Entry) {
+    const root = join(DATA, entry.id, 'skills');
+    await rm(root, { recursive: true, force: true });
+    const dirs: Record<string, string> = {};
+    for (const skill of entry.caps.skills) {
+      if (!skill.references.length) continue;
+      const dir = join(root, skill.name);
+      await mkdir(join(dir, 'references'), { recursive: true, mode: 0o700 });
+      for (const reference of skill.references)
+        await writeFile(join(dir, 'references', reference.filename), reference.content, { mode: 0o400 });
+      dirs[skill.name] = dir;
+    }
+    return dirs;
+  }
+  /** 扩展能力对应的 DSH 插件行：Skill 注册表与加载工具、每个 MCP 服务一个客户端、联网服务与工具 */
+  private capabilityRows(entry: Entry, skillDirs: Record<string, string>) {
+    const caps = entry.caps;
+    const rows: Record<string, unknown>[] = [];
+    if (caps.skills.length)
+      rows.push(
+        { id: 'forge-skill-registry', name: '@deepseek-ai/dsh-skill' },
+        {
+          id: 'forge-skills',
+          name: pathToFileURL(join(ROOT, 'forge-skills-plugin', 'index.js')).href,
+          config: {
+            skills: caps.skills.map((skill) => ({
+              name: skill.name,
+              description: skill.description,
+              ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
+              content: skill.content,
+              ...(skillDirs[skill.name] ? { dir: skillDirs[skill.name] } : {}),
+            })),
+          },
+        },
+        { id: 'forge-tool-skill', name: '@deepseek-ai/dsh-tool-skill' },
+      );
+    if (caps.mcp.length) {
+      const cwd = join(DATA, entry.id, 'mcp');
+      for (const server of caps.mcp)
+        rows.push({
+          id: `forge-mcp-${server.serverName}`,
+          name: '@deepseek-ai/dsh-mcp-client',
+          config:
+            server.transport === 'stdio'
+              ? {
+                  transport: 'stdio',
+                  serverName: server.serverName,
+                  command: server.command,
+                  args: server.args ?? [],
+                  env: server.env ?? {},
+                  cwd,
+                  toolCallTimeoutMs: MCP_TOOL_TIMEOUT_MS,
+                }
+              : {
+                  transport: 'streamable-http',
+                  serverName: server.serverName,
+                  url: server.url,
+                  headers: server.headers ?? {},
+                  toolCallTimeoutMs: MCP_TOOL_TIMEOUT_MS,
+                },
+        });
+    }
+    const web = caps.web;
+    if (web) {
+      rows.push({
+        id: 'forge-web',
+        name: '@deepseek-ai/dsh-web',
+        config: { ...(web.search ? { searchProvider: web.provider } : {}), fetchProvider: 'http' },
+      });
+      if (web.search)
+        rows.push({
+          id: 'forge-web-search',
+          name: WEB_SEARCH_PROVIDERS[web.provider!],
+          // 密钥只经环境变量传入，不写入落盘的 patch 文件
+          config: { apiKeyEnv: WEB_SEARCH_KEY_ENV, ...(web.baseUrl ? { baseURL: web.baseUrl } : {}) },
+        });
+      rows.push(
+        { id: 'forge-web-fetch', name: '@deepseek-ai/dsh-web-fetch-http' },
+        {
+          id: 'forge-tool-web',
+          name: '@deepseek-ai/dsh-tool-web',
+          config: {
+            search: web.search,
+            fetch: web.fetch,
+            searchMaxResults: 8,
+            searchTimeoutMs: 60000,
+            fetchTimeoutMs: 30000,
+            fetchMaxOutputChars: 60000,
+          },
+        },
+      );
+    }
+    return rows;
+  }
   private notification(entry: Entry, method: string, params: any) {
     if (method === 'forge.delta') this.emit(entry, 'message_delta', params, 'llm');
     else if (method === 'forge.reasoning_delta') this.emit(entry, 'reasoning_delta', params, 'llm');
@@ -380,6 +547,7 @@ export class DshKernel implements AgentKernel {
     } else if (method === 'forge.policy') this.emit(entry, 'policy_decision', params, 'tools');
     else if (method === 'forge.skill_revision') this.emit(entry, 'skill_revision', params, 'tools');
     else if (method === 'forge.plugin_loaded') this.emit(entry, 'plugin_loaded', params, 'tools');
+    else if (method === 'forge.skills_loaded') this.emit(entry, 'skills_loaded', params, 'tools');
     else if (method === 'forge.plugin_call') this.emit(entry, 'plugin_call', params, 'tools');
     else if (method === 'forge.artifact') this.emit(entry, 'files', { files: [params] }, 'tools');
     else if (method === 'forge.present') this.emit(entry, 'deliverables', params, 'tools');
@@ -488,12 +656,15 @@ export class DshKernel implements AgentKernel {
     _opts?: TurnOpts,
     model?: RuntimeModel,
     codeProjects?: unknown,
+    capabilities?: unknown,
   ) {
     const entry = this.entry(id);
     if (entry.busy) throw failure('会话正在执行，请等待或中止', 409);
     if (model !== undefined && !validModel(model)) throw failure('本轮模型配置无效', 422);
     // 不传表示沿用当前关联；传入则必须全部存在（与模型配置一样在执行前校验）
     const code = codeProjects === undefined ? entry.code : resolveCodeProjects(codeProjects);
+    // 扩展能力同理：不传沿用，传入即本轮生效的完整集合
+    const caps = capabilities === undefined ? entry.caps : resolveCapabilities(capabilities);
     entry.busy = true;
     entry.error = null;
     try {
@@ -502,13 +673,16 @@ export class DshKernel implements AgentKernel {
         code.map((project) => project.name),
         entry.code.map((project) => project.name),
       );
-      if (modelChanged || codeChanged) {
+      const capsChanged = capabilityFingerprint(caps) !== capabilityFingerprint(entry.caps);
+      if (modelChanged || codeChanged || capsChanged) {
         // 模型密钥、工具白名单与系统提示都只在启动时注入：任一变化都以新配置重启并接续会话
         const previous = entry.proc;
         entry.proc = null;
         await previous?.dispose();
         if (model) entry.model = model;
         entry.code = code;
+        entry.caps = caps;
+        if (capsChanged) this.emit(entry, 'capabilities', capabilitySummary(caps));
         if (codeChanged)
           this.emit(entry, 'code_projects', {
             projects: code.map(({ name, branch, commit }) => ({ name, branch, commit })),
