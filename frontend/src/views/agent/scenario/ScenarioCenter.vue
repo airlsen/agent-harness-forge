@@ -923,7 +923,8 @@ async function versions(scenario: Scenario) {
 }
 
 /* ============ 场景筛选：antd Segmented ============ */
-/* 浅灰底槽 + 白色浮起的选中项；只有选中文字用主题色，数量保持中性灰 */
+/* 浅灰底槽 + 白色浮起的选中项；只有选中文字用主题色，数量保持中性灰。
+   选中 / 未选中的字重与数量盒子尺寸完全一致，切换时选项宽度不变，只有白色滑块平移。 */
 .scenario-filter {
   flex: 0 1 auto;
   max-width: 100%;
@@ -971,30 +972,29 @@ async function versions(scenario: Scenario) {
   line-height: 26px;
   white-space: nowrap;
 }
-.scenario-filter :deep(.ant-segmented-item-selected .ant-segmented-item-label) {
-  font-weight: 600;
-}
-.scenario-filter :deep(.ant-segmented-item:focus-within) {
+/* 鼠标点击不出现描边；只在键盘 Tab 聚焦时给出聚焦提示（无障碍需要） */
+.scenario-filter :deep(.ant-segmented-item:has(.ant-segmented-item-input:focus-visible)) {
   outline: 2px solid var(--border-focus);
   outline-offset: 1px;
 }
+/* 数量：两种状态共用同一个胶囊盒子，未选中时底色透明，选中时铺浅灰 */
 .scenario-filter-count {
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  line-height: 1;
-}
-/* 选中项的数量收进浅灰小胶囊 */
-.scenario-filter :deep(.ant-segmented-item-selected) .scenario-filter-count {
   display: inline-grid;
   min-width: 20px;
   height: 18px;
   place-items: center;
   padding: 0 6px;
   border-radius: 999px;
+  color: var(--color-text-secondary);
+  background: transparent;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  line-height: 1;
+  transition: background-color 150ms ease;
+}
+.scenario-filter :deep(.ant-segmented-item-selected) .scenario-filter-count {
   background: var(--surface-muted);
-  font-weight: 600;
 }
 
 /* ============ 搜索框：antd 默认外观（圆角 / 边框 / 聚焦光圈），只定宽度 ============ */
