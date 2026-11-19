@@ -23,7 +23,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const PRESENT_TOOL = 'workspace_present';
 /**
  * 基础能力：每个会话默认加载，不需要场景逐个授权。仍以平台策略（allowedTools）为上限，
- * 写入仍按策略逐次审批。场景 Bundle 是发布时的快照，由 Runner 统一补齐，已发布场景与存量会话同样生效。
+ * workspace_write 仅写入受限会话目录并直接执行；终端命令按风险逐次审批。场景 Bundle 是发布时的快照，由 Runner 统一补齐，已发布场景与存量会话同样生效。
  */
 export const BASE_TOOLS = [
   'current_time',

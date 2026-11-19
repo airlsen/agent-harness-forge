@@ -79,7 +79,7 @@ async def check_execution_ui(
             await page.get_by_label("任务输入").fill("HOLD reconnect fixture")
             await page.get_by_role("button", name="发送任务", exact=True).click()
             await expect(
-                page.locator(".message-author").filter(has_text="正在输出")
+                page.locator(".message-author").filter(has_text="正在工作")
             ).to_be_visible()
             sid = page.url.rsplit("/", 1)[-1]
             assert sid.isdigit(), page.url
@@ -102,7 +102,7 @@ async def check_execution_ui(
                 .click()
             )
             await expect(page.locator(".message-main .markdown-body")).to_contain_text(
-                "Not a real model.", timeout=10000
+                "Not a real model.", timeout=20000
             )
             await expect(page.locator(".message-row.assistant")).to_have_count(1)
             await expect(
@@ -113,19 +113,21 @@ async def check_execution_ui(
             )
             await page.get_by_label("任务输入").fill("WRITE artifact fixture")
             await page.get_by_role("button", name="发送任务", exact=True).click()
-            await expect(page.get_by_role("button", name="允许本次")).to_be_visible()
-            await page.locator(".approval-card summary").click()
-            await expect(page.locator(".approval-card pre")).to_contain_text(
+            process = page.locator(".process-block").last
+            await expect(process.locator(".process-header")).to_contain_text(
+                "调用 1 个工具"
+            )
+            await process.locator(".process-header").click()
+            tool_call = process.locator(".tool-call-row").last
+            await expect(tool_call).to_be_visible()
+            await tool_call.locator("summary").click()
+            await expect(tool_call.locator(".tool-call-details")).to_contain_text(
                 "result.md"
             )
-            await page.get_by_role("button", name="允许本次").click()
-            await expect(page.locator(".message-row.tool")).to_have_count(1)
-            await expect(
-                page.get_by_role("button", name="发送任务", exact=True)
-            ).to_be_visible()
-            await expect(page.locator(".message-row.tool")).to_contain_text("执行完成")
+            await expect(tool_call.locator(".tool-status.error")).to_have_count(0)
+            await expect(page.locator(".approval-card")).to_have_count(0)
             passed(
-                "real tool approval card controls actual workspace_write and persists the tool card"
+                "workspace_write appears as a successful process-block tool call without an approval prompt"
             )
             await expect(page.locator(".context-panel")).to_have_count(0)
             await page.get_by_role("button", name="查看结果", exact=True).click()
@@ -152,23 +154,23 @@ async def check_execution_ui(
                 "actual generated file opens in preview and downloads with correct content"
             )
             await page.get_by_role("button", name="关闭会话详情").click()
-            await page.get_by_label("任务输入").fill("WRITE denied fixture")
+            await page.get_by_label("任务输入").fill("APPROVAL denied fixture")
             await page.get_by_role("button", name="发送任务", exact=True).click()
             await expect(
                 page.get_by_role("button", name="拒绝", exact=True)
             ).to_be_visible()
             await page.get_by_role("button", name="拒绝", exact=True).click()
-            await expect(page.locator(".message-row.tool")).to_have_count(2)
-            await expect(page.locator(".message-row.tool").last).to_contain_text(
-                "调用未成功"
-            )
+            await expect(page.locator(".approval-card")).to_have_count(0)
+            process = page.locator(".process-block").last
+            await expect(process.locator(".process-header")).to_contain_text("1 个失败")
+            await process.locator(".process-header").click()
             await expect(
-                page.get_by_role("button", name="发送任务", exact=True)
+                process.locator(".tool-call-row .tool-status.error")
             ).to_be_visible()
             passed(
                 "denied tool call renders an error result instead of successful execution"
             )
-            await page.get_by_label("任务输入").fill("WRITE interrupt fixture")
+            await page.get_by_label("任务输入").fill("APPROVAL interrupt fixture")
             await page.get_by_role("button", name="发送任务", exact=True).click()
             await expect(page.get_by_role("button", name="允许本次")).to_be_visible()
             await page.get_by_role("button", name="中止", exact=True).click()
@@ -181,9 +183,14 @@ async def check_execution_ui(
                 "interruption closes pending approval and renders persistent failure state"
             )
             await page.reload()
-            await page.wait_for_selector(".message-row.tool")
-            await expect(page.locator(".message-row.tool")).to_have_count(2)
+            await page.wait_for_selector(".process-block .process-header")
+            await expect(page.locator(".process-block")).to_have_count(4)
             await expect(page.locator(".form-alert.error")).to_contain_text("中止")
+            denied_process = page.locator(".process-block").nth(2)
+            await denied_process.locator(".process-header").click()
+            await expect(
+                denied_process.locator(".tool-call-row .tool-status.error")
+            ).to_be_visible()
             passed(
                 "page reload restores conversation, tool results, and last failure from database"
             )
@@ -273,7 +280,7 @@ async def check_execution_ui(
                 }
             )
             await page.get_by_label("任务输入").fill(
-                "WRITE enterprise workbench fixture"
+                "APPROVAL WRITE enterprise workbench fixture"
             )
             await page.get_by_role("button", name="发送任务", exact=True).click()
             await expect(page.get_by_role("button", name="允许本次")).to_be_visible()
@@ -305,10 +312,18 @@ async def check_execution_ui(
             await page.keyboard.press("Escape")
             await expect(page.locator(".context-panel")).to_have_count(0)
             await page.get_by_role("button", name="允许本次").click()
-            await expect(page.locator(".message-row.tool")).to_contain_text("执行完成")
-            await expect(page.locator(".session-result-receipt")).to_be_visible()
-            await page.locator(".session-result-receipt").click()
-            await expect(page.locator(".artifact-file")).to_contain_text("result.md")
+            process = page.locator(".process-block").last
+            await expect(process.locator(".process-header")).to_contain_text(
+                "调用 1 个工具"
+            )
+            await page.get_by_role("button", name="查看结果", exact=True).click()
+            result_file = page.locator(".file-card-main").filter(has_text="result.md")
+            await expect(result_file).to_be_visible()
+            await result_file.click()
+            await expect(page.get_by_role("dialog", name="产物预览")).to_be_visible()
+            await expect(page.locator(".file-preview>pre")).to_contain_text(
+                "# API integration fixture"
+            )
             await page.keyboard.press("Escape")
             passed(
                 "mobile process drawer traps focus; approval still writes and results open only on request"
@@ -490,11 +505,11 @@ async def check_execution_ui(
             await page.get_by_role("link", name="我的会话", exact=True).click()
             await page.get_by_label("搜索会话").fill("enterprise workbench fixture")
             # We deliberately leave while the second answer is still streaming:
-            # the fixture holds for 3s, then the background list polls every 3s.
-            # A 5s default assertion can expire just before the next legitimate poll.
+            # the fixture holds for 8s, then the background list polls every 3s.
+            # Allow for that response plus one legitimate poll interval.
             await expect(
                 page.locator(".conversation-table-row .session-state")
-            ).to_have_text("可继续", timeout=10000)
+            ).to_have_text("可继续", timeout=20000)
             await expect(
                 page.locator(".conversation-table-actions button")
             ).to_be_enabled()

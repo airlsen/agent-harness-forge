@@ -18,6 +18,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,7 +71,29 @@ class GatewayFixture(BaseHTTPRequestHandler):
         tool_answered = any(
             item["role"] == "tool" for item in body["messages"][last + 1 :]
         )
-        if "WRITE" in text and not tool_answered:
+        if not tool_answered and "PENDING INTERRUPT" in text.upper():
+            tool_name = "bash"
+            tool_arguments = {"command": "date > pending.txt"}
+        elif not tool_answered and "APPROVAL" in text.upper():
+            tool_name = "bash"
+            tool_arguments = {
+                "command": (
+                    "echo '# API integration fixture' > result.md"
+                    if "WRITE" in text.upper()
+                    else "date > approved.txt"
+                )
+            }
+        elif not tool_answered and "WRITE" in text:
+            tool_name = "workspace_write"
+            tool_arguments = {
+                "path": "result.md",
+                "content": "# API integration fixture\n",
+            }
+        else:
+            tool_name = None
+            tool_arguments = None
+
+        if tool_name:
             chunks = [
                 {
                     "choices": [
@@ -82,13 +105,8 @@ class GatewayFixture(BaseHTTPRequestHandler):
                                         "id": f"fixture-{len(requests)}",
                                         "type": "function",
                                         "function": {
-                                            "name": "workspace_write",
-                                            "arguments": json.dumps(
-                                                {
-                                                    "path": "result.md",
-                                                    "content": "# API integration fixture\n",
-                                                }
-                                            ),
+                                            "name": tool_name,
+                                            "arguments": json.dumps(tool_arguments),
                                         },
                                     }
                                 ]
@@ -120,19 +138,34 @@ class GatewayFixture(BaseHTTPRequestHandler):
                     "usage": {"prompt_tokens": 100, "completion_tokens": 10},
                 },
             ]
-        raw = (
-            "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks)
-            + "data: [DONE]\n\n"
-        ).encode()
+        frames = [f"data: {json.dumps(chunk)}\n\n".encode() for chunk in chunks]
+        raw = b"".join(frames) + b"data: [DONE]\n\n"
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         if "HOLD" in text:
-            boundary = raw.find(b"\n\n") + 2
+            # Pause after visible assistant text starts so the browser can reliably
+            # observe the in-progress state before the fixture completes the turn.
+            content_index = next(
+                (
+                    index
+                    for index, chunk in enumerate(chunks)
+                    if any(
+                        choice.get("delta", {}).get("content")
+                        for choice in chunk.get("choices", [])
+                    )
+                ),
+                None,
+            )
+            boundary = (
+                sum(len(frame) for frame in frames[: content_index + 1])
+                if content_index is not None
+                else len(frames[0])
+            )
             self.wfile.write(raw[:boundary])
             self.wfile.flush()
-            time.sleep(3)
+            time.sleep(8 if content_index is not None else 3)
             self.wfile.write(raw[boundary:])
         else:
             self.wfile.write(raw)
@@ -334,15 +367,18 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
             )
             session = api("POST", "/agent/sessions", {"scenarioId": scene["id"]})
             sid = session["id"]
-            receipt = api(
-                "POST", f"/agent/sessions/{sid}/turns", {"message": "WRITE"}, 202
+            api(
+                "POST",
+                f"/agent/sessions/{sid}/turns",
+                {"message": "APPROVAL HOLD"},
+                202,
             )
             approvals = wait_value(
                 lambda: api("GET", "/agent/approvals")["items"], bool
             )
             api("POST", f"/agent/sessions/{sid}/turns", {"message": "second"}, 409)
             check(
-                "one turn per session; background execution waits for approval",
+                "one turn per session; an approval-required command pauses execution",
                 api("GET", f"/agent/sessions/{sid}")["status"] == "running",
             )
             api(
@@ -357,7 +393,9 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
             check(
                 "assistant and actual tool results persist",
                 any(
-                    m["role"] == "tool" and not m["meta"]["isError"]
+                    m["role"] == "tool"
+                    and m["meta"]["tool"] == "bash"
+                    and not m["meta"]["isError"]
                     for m in detail["messages"]
                 )
                 and any(m["role"] == "assistant" for m in detail["messages"]),
@@ -376,10 +414,30 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                 and detail["tokensOut"] == 20
                 and abs(detail["cost"] - 0.00048) < 1e-8,
             )
+            api(
+                "POST",
+                f"/agent/sessions/{sid}/turns",
+                {"message": "WRITE"},
+                202,
+            )
+            write_detail = wait_value(
+                lambda: api("GET", f"/agent/sessions/{sid}"),
+                lambda item: item["status"] != "running",
+            )
+            check(
+                "workspace_write runs directly without an approval prompt",
+                any(
+                    message["role"] == "tool"
+                    and message["meta"]["tool"] == "workspace_write"
+                    and not message["meta"]["isError"]
+                    for message in write_detail["messages"]
+                )
+                and not api("GET", "/agent/approvals")["items"],
+            )
+            files = api("GET", f"/agent/sessions/{sid}/files")["items"]
             check(
                 "workspace file can be listed and read",
-                api("GET", f"/agent/sessions/{sid}/files")["items"][0]["path"]
-                == "result.md"
+                any(item["path"] == "result.md" for item in files)
                 and api("GET", f"/agent/sessions/{sid}/file?path=result.md")[
                     "content"
                 ].startswith("# API"),
@@ -431,16 +489,58 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                 "publish requires successful current-version current-environment test",
                 published["status"] == "published",
             )
+            plugin_scenario = api(
+                "POST",
+                "/agent-scenarios",
+                {
+                    **payload,
+                    "name": "API plugin policy fixture",
+                    "capabilities": {
+                        **payload["capabilities"],
+                        "plugin_names": ["forge-runtime", "forge-demo-crm"],
+                        "plugin_tools": {
+                            "forge-demo-crm": [
+                                "crm_find_customer",
+                                "crm_add_customer_note",
+                            ]
+                        },
+                    },
+                },
+            )
             policy = api("GET", "/governance/policies")
             api(
                 "PUT",
                 "/governance/policies",
-                {**policy, "allowedTools": ["current_time"]},
+                {
+                    **policy,
+                    "allowedTools": ["current_time"],
+                    "allowedPluginTools": ["crm_find_customer"],
+                },
             )
             api("POST", f"/agent-scenarios/{scene['id']}/publish", code=409)
             check(
                 "policy changes invalidate the earlier publish test",
                 not api("GET", f"/agent-scenarios/{scene['id']}")["tested"],
+            )
+            existing_snapshot = api("GET", f"/agent/sessions/{sid}")["bundle"]["meta"]
+            check(
+                "governance changes leave existing session policy snapshots unchanged",
+                "workspace_write" in existing_snapshot["builtin_tools"]
+                and "workspace_write" in existing_snapshot["policy"]["allowedTools"],
+            )
+            plugin_session = api(
+                "POST",
+                "/agent/sessions",
+                {"scenarioId": plugin_scenario["id"]},
+            )
+            plugin_meta = api("GET", f"/agent/sessions/{plugin_session['id']}")[
+                "bundle"
+            ]["meta"]
+            check(
+                "new sessions intersect frozen plugin bindings with current policy",
+                plugin_meta["plugin_tools"] == ["crm_find_customer"]
+                and [tool["name"] for tool in plugin_meta["pluginBindings"][0]["tools"]]
+                == ["crm_find_customer"],
             )
             restricted = api("POST", "/agent/sessions", {"scenarioId": scene["id"]})
             api(
@@ -665,20 +765,59 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
 
                 log_drain = threading.Thread(target=drain_browser_logs, daemon=True)
                 log_drain.start()
-                asyncio.run(
-                    check_execution_ui(
-                        f"http://127.0.0.1:{api_port}",
-                        "admin",
-                        password,
-                        ROOT
-                        / (
-                            "data/business-checks/execution-ui-cookie-blocked-report.json"
-                            if cookie_blocked
-                            else "data/business-checks/execution-ui-report.json"
-                        ),
-                        cookie_blocked=cookie_blocked,
-                    )
+                browser_report = ROOT / (
+                    "data/business-checks/execution-ui-cookie-blocked-report.json"
+                    if cookie_blocked
+                    else "data/business-checks/execution-ui-report.json"
                 )
+                try:
+                    asyncio.run(
+                        check_execution_ui(
+                            f"http://127.0.0.1:{api_port}",
+                            "admin",
+                            password,
+                            browser_report,
+                            cookie_blocked=cookie_blocked,
+                        )
+                    )
+                except Exception as error:
+                    detail = f"{type(error).__name__}: {error}"
+                    failure_report = browser_report.with_name(
+                        browser_report.stem + "-failure.json"
+                    )
+                    if failure_report.is_file():
+                        try:
+                            state = json.loads(failure_report.read_text())
+                            context = {
+                                key: state.get(key)
+                                for key in (
+                                    "completedChecks",
+                                    "url",
+                                    "apiState",
+                                    "pendingApprovalCards",
+                                )
+                            }
+                            detail += " | browser state: " + json.dumps(
+                                context, ensure_ascii=False, separators=(",", ":")
+                            )
+                        except (OSError, json.JSONDecodeError):
+                            pass
+                    annotation = (
+                        detail.replace("%", "%25")
+                        .replace("\r", "%0D")
+                        .replace("\n", "%0A")
+                    )
+                    print(
+                        f"::error title=Browser acceptance failure::{annotation}",
+                        flush=True,
+                    )
+                    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+                    if summary_path:
+                        with Path(summary_path).open("a", encoding="utf-8") as summary:
+                            summary.write("### Browser acceptance failure\n\n```text\n")
+                            summary.write(traceback.format_exc())
+                            summary.write("\n```\n")
+                    raise
             finally:
                 api_process.terminate()
                 try:

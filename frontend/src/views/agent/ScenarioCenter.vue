@@ -58,11 +58,28 @@ const blank = (): ScenarioPayload => ({
 const draft = reactive<ScenarioPayload>(blank());
 const base = computed(() => (maintenance.value ? app.scenarios : app.availableScenarios));
 const filters = computed(() => [
-  { id: 'all', label: '全部', count: base.value.length },
-  { id: 'template', label: '平台预置', count: base.value.filter((s) => s.status === 'template').length },
-  { id: 'published', label: '已发布', count: base.value.filter((s) => s.status === 'published').length },
+  { id: 'all', label: '全部', icon: 'grid', count: base.value.length },
+  {
+    id: 'template',
+    label: '平台预置',
+    icon: 'box',
+    count: base.value.filter((s) => s.status === 'template').length,
+  },
+  {
+    id: 'published',
+    label: '已发布',
+    icon: 'check',
+    count: base.value.filter((s) => s.status === 'published').length,
+  },
   ...(maintenance.value
-    ? [{ id: 'draft', label: '维护草稿', count: base.value.filter((s) => s.status === 'draft').length }]
+    ? [
+        {
+          id: 'draft',
+          label: '维护草稿',
+          icon: 'edit',
+          count: base.value.filter((s) => s.status === 'draft').length,
+        },
+      ]
     : []),
 ]);
 const filtered = computed(() =>
@@ -316,8 +333,11 @@ async function versions(scenario: Scenario) {
 <template>
   <main class="page-content enterprise-page scenarios-page">
     <div class="enterprise-page-inner">
-      <div class="page-heading">
-        <div>
+      <div class="page-heading catalog-page-heading scenario-page-heading">
+        <div class="catalog-heading-copy">
+          <span class="catalog-kicker"
+            ><span class="catalog-kicker-mark"><Icon name="layers" :size="12" /></span>SCENARIO LIBRARY</span
+          >
           <h1>企业场景</h1>
           <p v-if="!maintenance">按工作目标选择场景，进入对话直接开始。</p>
           <p v-else>编辑场景，试运行通过后发布。</p>
@@ -332,16 +352,18 @@ async function versions(scenario: Scenario) {
           </button>
         </div>
       </div>
-      <div class="collection-toolbar enterprise-collection-toolbar">
-        <div class="collection-tabs" aria-label="场景筛选">
+      <div class="collection-toolbar enterprise-collection-toolbar scenario-collection-toolbar">
+        <div class="collection-tabs scenario-filter-switcher" role="group" aria-label="场景筛选">
           <button
             v-for="item in filters"
             :key="item.id"
-            :class="{ selected: filter === item.id }"
+            :class="['scenario-filter-option', { selected: filter === item.id }]"
             :aria-pressed="filter === item.id"
             @click="filter = item.id"
           >
-            {{ item.label }}<span>{{ item.count }}</span>
+            <Icon :name="item.icon" :size="15" />
+            <span class="scenario-filter-label">{{ item.label }}</span>
+            <span class="scenario-filter-count">{{ item.count }}</span>
           </button>
         </div>
         <label class="search-field"

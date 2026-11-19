@@ -32,6 +32,36 @@ class Bundle:
         ).hexdigest()
 
 
+def apply_current_policy(bundle: Bundle, tenant_policy: dict) -> Bundle:
+    """Apply current tenant limits to a frozen scenario bundle for a new session."""
+    allowed_tools = set(tenant_policy.get("allowedTools", []))
+    allowed_plugin_tools = set(tenant_policy.get("allowedPluginTools", []))
+    bundle.meta["builtin_tools"] = [
+        name for name in bundle.meta.get("builtin_tools", []) if name in allowed_tools
+    ]
+
+    bindings = []
+    for binding in bundle.meta.get("pluginBindings", []):
+        tools = [
+            tool
+            for tool in binding.get("tools", [])
+            if "*" in allowed_plugin_tools or tool.get("name") in allowed_plugin_tools
+        ]
+        if tools:
+            bindings.append({**binding, "tools": tools})
+    bundle.meta["pluginBindings"] = bindings
+    bundle.meta["plugin_tools"] = [tool["name"] for binding in bindings for tool in binding["tools"]]
+
+    bundle.plugin_mounts = [mount for mount in bundle.plugin_mounts if mount != "forge-plugin-bridge"]
+    if bindings:
+        bundle.plugin_mounts.append("forge-plugin-bridge")
+
+    bundle.meta["policy"] = tenant_policy
+    policy_json = json.dumps(tenant_policy, sort_keys=True)
+    bundle.policy_ref = hashlib.sha256(policy_json.encode()).hexdigest()[:16]
+    return bundle
+
+
 class ScenarioAssembler:
     async def compile(
         self,
@@ -82,7 +112,7 @@ class ScenarioAssembler:
                     "domain": rendered_prompt,
                     "safety": [
                         "只使用当前场景已授权工具；不要编造工具结果、文件或网络访问。",
-                        "插件工具的权限不高于场景和平台策略；写入或对外动作必须等待审批。",
+                        "插件工具的权限不高于场景和平台策略；需要确认的插件写入或对外动作必须等待审批。",
                     ],
                     "workspace": ["所有产物仅允许保存在当前会话的受限工作区。"],
                 },

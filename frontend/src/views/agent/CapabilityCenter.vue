@@ -379,31 +379,45 @@ onMounted(load);
 <template>
   <main class="page-content enterprise-page capabilities-page">
     <div class="enterprise-page-inner">
-      <div class="page-heading">
-        <div>
+      <div class="page-heading catalog-page-heading capability-page-heading">
+        <div class="catalog-heading-copy">
+          <span class="catalog-kicker"
+            ><span class="catalog-kicker-mark"><Icon name="sparkles" :size="12" /></span>CAPABILITY
+            STUDIO</span
+          >
           <h1>能力管理</h1>
           <p>查看工具、技能和 MCP 服务，按需配置到场景或会话。</p>
         </div>
       </div>
-      <div class="collection-toolbar enterprise-collection-toolbar">
-        <div class="collection-tabs" aria-label="能力分类">
+      <div class="collection-toolbar enterprise-collection-toolbar capability-collection-toolbar">
+        <div class="collection-tabs capability-category-switcher" role="group" aria-label="能力分类">
           <button
             v-for="item in tabs"
             :key="item.id"
-            :class="{ selected: tab === item.id }"
+            :class="['capability-category-option', { selected: tab === item.id }]"
             :aria-pressed="tab === item.id"
             @click="selectTab(item.id)"
           >
-            <Icon :name="item.icon" :size="16" />{{ item.label
-            }}<span v-if="item.count !== undefined">{{ item.count }}</span>
+            <Icon :name="item.icon" :size="16" />
+            <span class="capability-category-label">{{ item.label }}</span>
+            <span v-if="item.count !== undefined" class="capability-category-count">{{ item.count }}</span>
           </button>
         </div>
-        <label v-if="tab === 'tools' || tab === 'plugins'" class="search-field"
-          ><Icon name="search" :size="17" /><input
-            v-model="query"
-            :placeholder="tab === 'plugins' ? '搜索插件、工具或说明' : '搜索用途、名称或说明'"
-            :aria-label="tab === 'plugins' ? '搜索插件' : '搜索基础工具'"
-        /></label>
+        <div class="capability-toolbar-actions">
+          <label v-if="tab === 'tools' || tab === 'plugins'" class="search-field"
+            ><Icon name="search" :size="17" /><input
+              v-model="query"
+              :placeholder="tab === 'plugins' ? '搜索插件、工具或说明' : '搜索用途、名称或说明'"
+              :aria-label="tab === 'plugins' ? '搜索插件' : '搜索基础工具'"
+          /></label>
+          <div v-else-if="tab === 'skills' && skills?.items.length" class="skill-capability-actions">
+            <RouterLink to="/agent/skills" class="button secondary small"
+              >全部技能 <Icon name="arrow" :size="14" /></RouterLink
+            ><RouterLink to="/agent/skills/new" class="button primary small"
+              ><Icon name="plus" :size="15" />新建技能</RouterLink
+            >
+          </div>
+        </div>
       </div>
       <div v-if="loadError" class="form-alert error" role="alert">
         <Icon name="info" :size="18" />
@@ -720,14 +734,12 @@ onMounted(load);
         </div>
       </section>
       <section v-else-if="tab === 'skills' && skills" class="mcp-directory skill-capability-directory">
-        <header v-if="skills.items.length" class="capability-list-heading">
-          <div class="skill-capability-actions">
-            <RouterLink to="/agent/skills" class="button secondary small"
-              >全部技能 <Icon name="arrow" :size="14" /></RouterLink
-            ><RouterLink to="/agent/skills/new" class="button primary small"
-              ><Icon name="plus" :size="15" />新建技能</RouterLink
-            >
+        <header v-if="skills.items.length" class="capability-list-heading capability-content-heading">
+          <div>
+            <h2>可复用技能</h2>
+            <span>查看状态，或将已发布版本配置到场景与会话。</span>
           </div>
+          <span class="capability-content-count">{{ skills.items.length }} 项</span>
         </header>
         <div v-if="!skills.items.length" class="enterprise-empty">
           <span class="enterprise-empty-symbol"><Icon name="book" :size="29" /></span>
