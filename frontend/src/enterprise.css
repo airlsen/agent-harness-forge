@@ -2,30 +2,8 @@
    Existing management/form styles remain in style.css; this file owns the new shell,
    shared-resource pages and conversation layout at every breakpoint. */
 :root {
-  --accent: #da724d;
-  --accent-hover: #c9623d;
-  --accent-soft: #faeee7;
-  --ink: #292e38;
-  --muted: #9299a5;
-  --line: #e9ebef;
-  --panel: #f8f9fb;
   --sidebar: 242px;
   --header: 0px;
-  /* Keep the original brand; deeper orange variants make text and white-label buttons legible. */
-  --accent-ink: #a34e30;
-  --accent-solid: #bd5836;
-  --accent-solid-hover: #a74a2b;
-  --accent-line: #efd8cc;
-  --accent-wash: #fffbf8;
-  --accent-focus: #d6967a;
-  --accent-focus-ring: #d8977c1a;
-  --text-secondary: #58616f;
-  --text-subtle: #687180;
-  --surface: #ffffff;
-  --canvas: #fafbfc;
-  --surface-subtle: #f7f8fa;
-  --border-soft: #edf0f4;
-  --border-strong: #d8dfe7;
   --page-padding-top: 36px;
   --page-padding-x: 40px;
   --page-title-size: 28px;
@@ -33,11 +11,11 @@
   --page-heading-gap: 24px;
 }
 body {
-  color: #30353e;
-  background: var(--surface);
+  color: var(--color-text-primary);
+  background: var(--surface-content);
 }
 ::selection {
-  background: #f1d4c3;
+  background: var(--brand-200);
 }
 button:focus-visible,
 a:focus-visible,
@@ -60,12 +38,12 @@ textarea:focus-visible {
   box-shadow: 0 3px 9px #26334a12;
 }
 .button.secondary {
-  border-color: var(--line);
+  border-color: var(--border-default);
   color: var(--text-secondary);
 }
 .button.secondary:not(:disabled):hover {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
 }
 .text-link {
   color: var(--accent-ink);
@@ -76,21 +54,30 @@ textarea:focus-visible {
   font-size: 11px;
 }
 .tag.success {
-  color: #426c51;
-  background: #edf5ed;
-  border-color: #e2eddf;
+  color: var(--color-success-text);
+  background: var(--color-success-bg);
+  border-color: var(--color-success-border);
 }
 .tag.neutral,
 .tag.soft {
-  color: var(--text-secondary);
-  background: var(--surface-subtle);
-  border-color: var(--line);
+  color: var(--color-neutral-status-text);
+  background: var(--color-neutral-status-bg);
+  border-color: var(--color-neutral-status-border);
 }
-.tag.warm,
+.tag.warm {
+  color: var(--color-brand-active);
+  background: var(--color-brand-muted);
+  border-color: var(--color-brand-border);
+}
 .tag.warning {
-  color: #895f2a;
-  background: #fbf4e6;
-  border-color: #eee4ce;
+  color: var(--color-warning-text);
+  background: var(--color-warning-bg);
+  border-color: var(--color-warning-border);
+}
+.tag.danger {
+  color: var(--color-danger-text);
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger-border);
 }
 .icon-button {
   border-radius: 6px;
@@ -141,7 +128,7 @@ textarea:focus-visible {
   width: var(--sidebar);
   min-height: 0;
   padding: 30px 17px 0;
-  background: #f7f8fa;
+  background: var(--surface-shell);
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
@@ -2829,9 +2816,9 @@ textarea:focus-visible {
   font-size: 11px;
 }
 .enterprise-chat .message-avatar.agent {
-  color: var(--accent-ink);
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-line);
+  color: var(--color-agent-type-text);
+  background: var(--color-agent-type-bg);
+  border: 1px solid var(--color-agent-type-border);
   border-radius: 9px;
 }
 .enterprise-chat .message-author {
@@ -3576,7 +3563,7 @@ textarea:focus-visible {
   }
   .enterprise-sidebar {
     padding-inline: 13px;
-    background: #f7f8fa;
+    background: var(--surface-shell);
   }
   .enterprise-scenario-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4873,8 +4860,8 @@ textarea:focus-visible {
 }
 .skill-library-card:hover,
 .capability-skill-card:hover {
-  border-color: var(--accent-line);
-  background: var(--accent-wash);
+  border-color: var(--border-strong);
+  background: var(--surface-card);
 }
 .skill-library-card:focus-visible,
 .capability-skill-card:focus-visible {
@@ -4895,9 +4882,10 @@ textarea:focus-visible {
   height: 38px;
   display: grid;
   place-items: center;
+  border: 1px solid var(--color-skill-type-border);
   border-radius: 9px;
-  background: var(--accent-soft);
-  color: var(--accent-ink);
+  background: var(--color-skill-type-bg);
+  color: var(--color-skill-type-text);
 }
 .skill-library-card-copy {
   min-width: 0;
@@ -7166,9 +7154,7 @@ textarea:focus-visible {
 /* Modern workspace catalogs: deliberate surfaces, compact segmented navigation, no legacy tab rule. */
 .enterprise-view .page-content.capabilities-page,
 .enterprise-view .page-content.scenarios-page {
-  background:
-    radial-gradient(ellipse 42rem 23rem at 96% -10%, #f4dfd222, transparent 72%),
-    linear-gradient(180deg, #fbfaf9 0, #f8f9fb 480px, #f8f9fb 100%);
+  background: var(--surface-content);
 }
 .enterprise-view .catalog-page-heading {
   align-items: flex-end;
@@ -7182,7 +7168,7 @@ textarea:focus-visible {
   align-items: center;
   gap: 8px;
   margin-bottom: 9px;
-  color: #8d6a5d;
+  color: var(--color-brand-active);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 1.65px;
@@ -7193,13 +7179,13 @@ textarea:focus-visible {
   width: 22px;
   height: 22px;
   place-items: center;
-  color: var(--accent-ink);
-  background: linear-gradient(145deg, #fff5ee, #f4dfd2);
-  border: 1px solid #f0ddd2;
+  color: var(--color-brand-active);
+  background: var(--color-brand-muted);
+  border: 1px solid var(--color-brand-border);
   border-radius: 8px;
 }
 .enterprise-view .catalog-page-heading .catalog-heading-copy h1 {
-  color: #252a33;
+  color: var(--color-text-primary);
   font-size: 31px;
   font-weight: 650;
   letter-spacing: -0.9px;
@@ -7207,7 +7193,7 @@ textarea:focus-visible {
 }
 .enterprise-view .catalog-page-heading .catalog-heading-copy p {
   margin-top: 9px;
-  color: #697281;
+  color: var(--color-text-secondary);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -7236,13 +7222,12 @@ textarea:focus-visible {
   width: max-content;
   max-width: 100%;
   min-height: 52px;
-  padding: 5px;
+  padding: 4px;
   overflow-x: auto;
   overflow-y: hidden;
-  background: #f0f2f5e8;
-  border: 1px solid #e7eaee;
-  border-radius: 16px;
-  box-shadow: inset 0 1px 1px #18223005;
+  background: var(--surface-muted);
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
   scrollbar-width: none;
 }
 .enterprise-view .capabilities-page .capability-category-switcher,
@@ -7261,12 +7246,11 @@ textarea:focus-visible {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 40px;
-  padding: 0 13px;
+  min-height: 42px;
+  padding: 0 14px;
   border: 1px solid transparent;
-  border-bottom: 1px solid transparent;
-  border-radius: 11px;
-  color: #687282;
+  border-radius: 999px;
+  color: var(--color-text-secondary);
   background: transparent;
   font-size: 12px;
   font-weight: 550;
@@ -7276,26 +7260,31 @@ textarea:focus-visible {
     color 150ms ease,
     background 150ms ease,
     border-color 150ms ease,
-    box-shadow 150ms ease,
-    transform 150ms ease;
+    box-shadow 150ms ease;
 }
 .enterprise-view .capabilities-page .capability-category-switcher > button:hover,
 .enterprise-view .scenarios-page .scenario-filter-switcher > button:hover {
-  color: #353c47;
-  background: #ffffffb8;
+  color: var(--color-text-primary);
+  background: var(--surface-content);
 }
 .enterprise-view .capabilities-page .capability-category-switcher > button.selected,
 .enterprise-view .scenarios-page .scenario-filter-switcher > button.selected {
-  color: #93472e;
-  background: linear-gradient(180deg, #fffefd, #fff9f5);
-  border-color: #efd6ca;
-  box-shadow: 0 2px 7px #4232260d;
+  color: var(--color-brand-active);
+  background: var(--surface-selected);
+  border-color: var(--color-brand-border);
+  box-shadow: 0 1px 2px #2027330a;
   font-weight: 650;
+}
+.enterprise-view .capabilities-page .capability-category-switcher > button:focus-visible,
+.enterprise-view .scenarios-page .scenario-filter-switcher > button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  z-index: 1;
 }
 .capability-category-option > svg,
 .scenario-filter-option > svg {
   flex: 0 0 auto;
-  color: #7c8795;
+  color: var(--color-text-secondary);
   stroke-width: 1.8;
 }
 .capability-category-option.selected > svg,
@@ -7315,9 +7304,9 @@ textarea:focus-visible {
   place-items: center;
   padding: 0 6px;
   border: 0;
-  border-radius: 7px;
-  color: #737d8b;
-  background: #e7eaee;
+  border-radius: 999px;
+  color: var(--color-neutral-status-text);
+  background: var(--color-neutral-status-bg);
   font-family: inherit;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
@@ -7330,8 +7319,8 @@ textarea:focus-visible {
   > button.selected
   .capability-category-count,
 .enterprise-view .scenarios-page .scenario-filter-switcher > button.selected .scenario-filter-count {
-  color: #994b31;
-  background: #f7e8df;
+  color: var(--color-brand-active);
+  background: var(--brand-200);
 }
 .capability-toolbar-actions {
   display: flex;
@@ -7347,10 +7336,10 @@ textarea:focus-visible {
   min-height: 42px;
   margin: 0;
   padding: 0 13px;
-  border-color: #e5e8ed;
+  border-color: var(--border-default);
   border-radius: 12px;
-  background: #ffffffd9;
-  box-shadow: 0 2px 6px #26334a05;
+  background: var(--surface-card);
+  box-shadow: 0 1px 3px #20273308;
 }
 .enterprise-view .capability-toolbar-actions .search-field > input:not([type='checkbox']),
 .enterprise-view .scenario-collection-toolbar .search-field > input:not([type='checkbox']) {
@@ -7360,7 +7349,7 @@ textarea:focus-visible {
 .enterprise-view .capability-toolbar-actions .search-field:focus-within,
 .enterprise-view .scenario-collection-toolbar .search-field:focus-within {
   border-color: var(--accent-focus);
-  background: #fff;
+  background: var(--surface-card);
   box-shadow: 0 0 0 3px var(--accent-focus-ring);
 }
 .enterprise-view .capability-toolbar-actions .skill-capability-actions {
@@ -7385,13 +7374,13 @@ textarea:focus-visible {
   gap: 4px;
 }
 .capability-content-heading h2 {
-  color: #303640;
+  color: var(--color-text-primary);
   font-size: 16px;
   font-weight: 650;
   letter-spacing: -0.2px;
 }
 .capability-content-heading > div > span {
-  color: #7b8491;
+  color: var(--color-text-secondary);
   font-size: 11px;
 }
 .capability-content-count {
@@ -7399,9 +7388,9 @@ textarea:focus-visible {
   align-items: center;
   min-height: 28px;
   padding: 0 10px;
-  color: #657080;
-  background: #ffffffb8;
-  border: 1px solid #e8ebef;
+  color: var(--color-text-secondary);
+  background: var(--surface-subtle-bg);
+  border: 1px solid var(--border-default);
   border-radius: 9px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -7409,15 +7398,16 @@ textarea:focus-visible {
 .capabilities-page .capability-skill-grid,
 .capabilities-page .enterprise-tool-grid,
 .capabilities-page .mcp-server-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
 .capabilities-page .capability-skill-card,
 .capabilities-page .enterprise-tool-card,
 .capabilities-page .mcp-server-card {
-  border-color: #e7eaf0;
-  border-radius: 17px;
-  background: linear-gradient(160deg, #fff 0%, #fff 72%, #fffaf7 100%);
-  box-shadow: 0 3px 12px #27364a07;
+  border: 1px solid var(--border-default);
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: 0 2px 8px #20273308;
   transition:
     transform 170ms ease,
     border-color 170ms ease,
@@ -7426,9 +7416,10 @@ textarea:focus-visible {
 .capabilities-page .capability-skill-card:hover,
 .capabilities-page .enterprise-tool-card:hover,
 .capabilities-page .mcp-server-card:hover {
-  transform: translateY(-3px);
-  border-color: #e8cabc;
-  box-shadow: 0 12px 28px #42322612;
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+  background: var(--surface-card);
+  box-shadow: 0 7px 18px #20273310;
 }
 .capabilities-page .capability-skill-card {
   min-height: 202px;
@@ -7437,10 +7428,10 @@ textarea:focus-visible {
 .capabilities-page .capability-skill-icon {
   width: 43px;
   height: 43px;
-  color: #98482f;
-  background: linear-gradient(145deg, #fff2ea, #f4dfd4);
-  border: 1px solid #f0ded4;
-  border-radius: 13px;
+  color: var(--color-skill-type-text);
+  background: var(--color-skill-type-bg);
+  border: 1px solid var(--color-skill-type-border);
+  border-radius: 12px;
 }
 .capabilities-page .capability-skill-card .tag,
 .enterprise-view .scenarios-page .enterprise-scenario-card .scenario-card-top > .tag {
@@ -7448,13 +7439,13 @@ textarea:focus-visible {
 }
 .capabilities-page .capability-skill-card h3 {
   margin-top: 19px;
-  color: #292f39;
+  color: var(--color-text-primary);
   font-size: 16px;
   font-weight: 650;
   letter-spacing: -0.2px;
 }
 .capabilities-page .capability-skill-card p {
-  color: #66707e;
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.75;
 }
@@ -7464,33 +7455,46 @@ textarea:focus-visible {
 .capabilities-page .skill-open-link {
   gap: 6px;
   padding: 7px 10px;
-  color: #96482f;
-  background: #fff3ec;
-  border: 1px solid #f2e1d8;
+  color: var(--color-brand-active);
+  background: var(--color-brand-muted);
+  border: 1px solid var(--color-brand-border);
   border-radius: 9px;
   transition:
     background 150ms ease,
     border-color 150ms ease;
 }
 .capabilities-page .capability-skill-card:hover .skill-open-link {
-  background: #fbe9df;
-  border-color: #edcdbd;
+  background: var(--color-brand-subtle);
+  border-color: var(--brand-300);
 }
 .capabilities-page .enterprise-tool-card {
   padding: 22px 22px 0;
 }
 .capabilities-page .enterprise-tool-card .scene-icon {
-  border-radius: 13px;
+  width: 48px;
+  height: 48px;
+  color: var(--color-brand-active);
+  background: var(--color-brand-muted);
+  border: 1px solid var(--color-brand-border);
+  border-radius: 12px;
 }
 .capabilities-page .mcp-server-card {
   padding: 18px;
 }
+.capabilities-page .mcp-card-icon {
+  width: 48px;
+  height: 48px;
+  color: var(--color-mcp-type-text);
+  background: var(--color-mcp-type-bg);
+  border: 1px solid var(--color-mcp-type-border);
+  border-radius: 12px;
+}
 .capabilities-page .enterprise-empty,
 .scenarios-page .enterprise-empty {
-  border-color: #e4e8ee;
-  border-radius: 18px;
-  background: #ffffffb8;
-  box-shadow: 0 5px 18px #27364a05;
+  border-color: var(--border-default);
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: 0 2px 8px #20273308;
 }
 .enterprise-view .scenarios-page .scenario-page-heading .page-heading-actions {
   align-items: center;
@@ -7503,15 +7507,16 @@ textarea:focus-visible {
   font-size: 12px;
 }
 .enterprise-view .scenario-page-heading .page-heading-actions .button.secondary {
-  background: #ffffffbf;
-  border-color: #e5e8ed;
+  background: var(--surface-card);
+  border-color: var(--border-default);
 }
 .enterprise-view .scenario-page-heading .page-heading-actions .button.secondary[aria-pressed='true'] {
-  color: #93472e;
-  background: #fff4ed;
-  border-color: #efd6ca;
+  color: var(--color-brand-active);
+  background: var(--surface-selected);
+  border-color: var(--color-brand-border);
 }
 .enterprise-view .scenarios-page .enterprise-scenario-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card {
@@ -7519,19 +7524,20 @@ textarea:focus-visible {
   min-height: 278px;
   padding: 23px 23px 0;
   overflow: hidden;
-  border-color: #e6e9ef;
-  border-radius: 18px;
-  background: linear-gradient(160deg, #fff 0%, #fff 73%, #fffaf7 100%);
-  box-shadow: 0 3px 12px #27364a07;
+  border: 1px solid var(--border-default);
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: 0 2px 8px #20273308;
   transition:
     transform 170ms ease,
     border-color 170ms ease,
     box-shadow 170ms ease;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card:hover {
-  transform: translateY(-3px);
-  border-color: #e8cabc;
-  box-shadow: 0 13px 30px #42322612;
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+  background: var(--surface-card);
+  box-shadow: 0 7px 18px #20273310;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card .scenario-card-top {
   align-items: center;
@@ -7552,14 +7558,14 @@ textarea:focus-visible {
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card > h2 {
   margin-bottom: 8px;
-  color: #292f39;
+  color: var(--color-text-primary);
   font-size: 18px;
   font-weight: 650;
   letter-spacing: -0.35px;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card > p {
   min-height: 48px;
-  color: #66707e;
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.8;
 }
@@ -7570,15 +7576,15 @@ textarea:focus-visible {
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card .scenario-capabilities > span {
   padding: 5px 8px;
-  color: #697381;
-  background: #f7f8fa;
-  border-color: #eceef2;
+  color: var(--color-text-secondary);
+  background: var(--surface-subtle-bg);
+  border-color: var(--border-light);
   border-radius: 8px;
   font-size: 10px;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card .scenario-card-meta {
   margin-bottom: 12px;
-  color: #838b97;
+  color: var(--color-text-secondary);
   font-size: 10px;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card .scenario-card-actions {
@@ -7587,16 +7593,16 @@ textarea:focus-visible {
   border-top: 0;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card .scenario-card-actions > .button {
-  color: #707987;
+  color: var(--color-text-secondary);
   font-size: 11px;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card .scenario-use {
   gap: 7px;
   margin-left: auto;
   padding: 9px 12px;
-  color: #96482f;
-  background: #fff2eb;
-  border: 1px solid #f1dfd4;
+  color: var(--color-brand-active);
+  background: var(--color-brand-muted);
+  border: 1px solid var(--color-brand-border);
   border-radius: 10px;
   font-size: 11px;
   font-weight: 650;
@@ -7606,15 +7612,15 @@ textarea:focus-visible {
     transform 150ms ease;
 }
 .enterprise-view .scenarios-page .enterprise-scenario-card .scenario-use:hover {
-  color: #843d29;
-  background: #fbe7dc;
-  border-color: #edcdbd;
+  color: var(--color-brand-active);
+  background: var(--color-brand-subtle);
+  border-color: var(--brand-300);
   transform: translateX(1px);
 }
 .enterprise-view .scenarios-page .scenario-maintenance-actions {
   gap: 6px;
   padding: 11px 0 14px;
-  border-top: 1px solid #edf0f3;
+  border-top: 1px solid var(--border-light);
 }
 .enterprise-view .scenarios-page .scenario-maintenance-actions .button {
   min-height: 31px;

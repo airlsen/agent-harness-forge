@@ -1,0 +1,104 @@
+// Raw Forge color scales. Components should consume semantic tokens from tokens.scss,
+// not these palette values directly.
+$brand: (
+  50: #fff5f0,
+  100: #fceae2,
+  200: #f5c7b5,
+  300: #eda58a,
+  400: #e58b6b,
+  500: #da724d,
+  600: #c65d3b,
+  700: #a94b2e,
+  800: #873b27,
+  900: #642b1e,
+);
+
+$neutral: (
+  0: #ffffff,
+  25: #fcfcfd,
+  50: #f8f9fb,
+  100: #f2f4f7,
+  200: #e5e7eb,
+  300: #d0d5dd,
+  400: #98a2b3,
+  500: #667085,
+  600: #475467,
+  700: #344054,
+  800: #202733,
+  900: #161b22,
+);
+
+$success: (
+  50: #f0fdf4,
+  100: #eaf7f0,
+  200: #bbe7cc,
+  500: #22a06b,
+  600: #168653,
+  700: #126b43,
+);
+
+$info: (
+  50: #f5f9ff,
+  100: #edf4ff,
+  200: #c9ddff,
+  500: #4a90e2,
+  600: #3478c8,
+  700: #245ea8,
+);
+
+$warning: (
+  50: #fffbf2,
+  100: #fff6e5,
+  200: #f6d99a,
+  500: #d99a2b,
+  600: #b7791f,
+  700: #8f5b16,
+);
+
+$danger: (
+  50: #fff5f5,
+  100: #fff0f0,
+  200: #f7caca,
+  500: #f05b5b,
+  600: #d64545,
+  700: #b83232,
+);
+
+$status-neutral: (
+  50: #f9fafb,
+  100: #f0f1f3,
+  200: #e5e7eb,
+  500: #667085,
+  600: #475467,
+  700: #344054,
+);
+
+$agent-purple: (
+  50: #f8f5ff,
+  100: #f3eeff,
+  200: #ddd0ff,
+  300: #bba2ff,
+  500: #8b5cf6,
+  600: #7545d6,
+  700: #5b32b5,
+);
+
+$mcp-cyan: (
+  50: #f0fcfe,
+  100: #eaf9fc,
+  200: #bdecf3,
+  300: #82d9e6,
+  500: #06b6d4,
+  600: #0891b2,
+  700: #0e7490,
+);
+
+$skill-blue: (
+  50: #f5f9ff,
+  100: #edf4ff,
+  200: #c9ddff,
+  300: #9fc4ff,
+  500: #4a90e2,
+  600: #3478c8,
+  700: #245ea8,
+);
