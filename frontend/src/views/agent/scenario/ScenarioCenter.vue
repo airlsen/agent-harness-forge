@@ -9,7 +9,6 @@ import { formatDate, isAvailableScenario, scenarioSource, scenarioState } from '
 import type { Scenario, ScenarioPayload } from '../../../types/platform';
 import type { PluginPackage } from '../../../types/plugin';
 import Icon from '../../../components/ForgeIcon.vue';
-import DialogShell from '../../../components/DialogShell.vue';
 
 const app = usePlatform();
 const chat = useConversation();
@@ -19,10 +18,13 @@ const query = ref('');
 const filter = ref('all');
 const drawer = ref(false);
 const editing = ref<Scenario | null>(null);
+// 弹层的开合状态与内容数据分开：关闭时只收起 antd 抽屉/对话框，内容保留到退场动画结束，避免闪空。
 const detail = ref<Scenario | null>(null);
+const detailOpen = ref(false);
 const busy = ref(false);
 const testing = ref<number | null>(null);
 const toDelete = ref<Scenario | null>(null);
+const deleteOpen = ref(false);
 const deleting = ref(false);
 const plugins = ref<PluginPackage[]>([]);
 const pluginsLoading = ref(false);
@@ -38,6 +40,7 @@ const versionHistory = ref<
   | null
 >(null);
 const historyTitle = ref('');
+const historyOpen = ref(false);
 const maintenance = computed(() => route.query.view === 'maintain');
 const blank = (): ScenarioPayload => ({
   name: '',
@@ -244,8 +247,22 @@ function edit(scenario?: Scenario) {
   void loadPlugins();
   void loadCapabilityOptions();
 }
+function openDetail(scenario: Scenario) {
+  detail.value = scenario;
+  detailOpen.value = true;
+}
+function closeEditor() {
+  if (!busy.value) drawer.value = false;
+}
+function askDelete(scenario: Scenario) {
+  toDelete.value = scenario;
+  deleteOpen.value = true;
+}
+function cancelDelete() {
+  if (!deleting.value) deleteOpen.value = false;
+}
 function useScenario(scenario: Scenario) {
-  detail.value = null;
+  detailOpen.value = false;
   if (chat.requestNewConversation(scenario.id)) void router.push('/agent/chat');
 }
 async function save() {
@@ -287,7 +304,7 @@ async function discard() {
   try {
     await remove(`/agent-scenarios/${toDelete.value.id}`);
     await app.refreshScenarios();
-    toDelete.value = null;
+    deleteOpen.value = false;
     app.toast('场景已删除，历史会话快照仍保留');
   } catch (e) {
     app.toast((e as Error).message, 'error');
@@ -330,6 +347,7 @@ async function versions(scenario: Scenario) {
   try {
     historyTitle.value = scenario.payload.name;
     versionHistory.value = await api(`/agent-scenarios/${scenario.id}/versions`);
+    historyOpen.value = true;
   } catch (e) {
     app.toast((e as Error).message, 'error');
   }
@@ -427,7 +445,7 @@ async function versions(scenario: Scenario) {
               class="icon-button delete-scenario"
               :aria-label="`删除场景 ${scenario.payload.name}`"
               title="删除场景"
-              @click="toDelete = scenario"
+              @click="askDelete(scenario)"
             >
               <template #icon><Icon name="trash" :size="15" /></template>
             </a-button>
@@ -450,7 +468,7 @@ async function versions(scenario: Scenario) {
             >
           </div>
           <div class="scenario-card-actions">
-            <a-button type="text" size="small" @click="detail = scenario">详情</a-button
+            <a-button type="text" size="small" @click="openDetail(scenario)">详情</a-button
             ><a-button type="link" class="scenario-use" @click="useScenario(scenario)">
               {{ isAvailableScenario(scenario) ? '开始' : '预览草稿' }}<Icon name="arrow" :size="15" />
             </a-button>
@@ -491,19 +509,23 @@ async function versions(scenario: Scenario) {
         </article>
       </div>
     </div>
-    <DialogShell v-if="detail" label="场景详情" panel-class="scenario-detail" @close="detail = null"
-      ><header>
-        <div>
+    <!-- class="drawer" 落在 .ant-drawer-content 上，复用全局 .drawer 下的正文排版（detail-block / version-entry 等） -->
+    <a-drawer
+      :open="detailOpen"
+      :width="580"
+      class="drawer scenario-detail"
+      aria-label="场景详情"
+      @close="detailOpen = false"
+    >
+      <template v-if="detail" #title>
+        <div class="scenario-drawer-title">
           <h2>{{ detail.payload.name }}</h2>
           <p v-if="maintenance">
             {{ scenarioSource(detail) }} · {{ scenarioState(detail) }} · v{{ detail.current_version }}
           </p>
         </div>
-        <button class="icon-button" aria-label="关闭场景详情" @click="detail = null">
-          <Icon name="close" :size="21" />
-        </button>
-      </header>
-      <div class="drawer-body">
+      </template>
+      <template v-if="detail">
         <div class="detail-block">
           <h3>用途</h3>
           <p>{{ detail.payload.description || '尚未添加用途说明。' }}</p>
@@ -544,7 +566,7 @@ async function versions(scenario: Scenario) {
             type="link"
             @click="
               versions(detail);
-              detail = null;
+              detailOpen = false;
             "
           >
             查看版本记录 <Icon name="arrow" :size="14" />
@@ -562,35 +584,35 @@ async function versions(scenario: Scenario) {
           show-icon
           message="新会话会记录场景、模型与策略快照；维护场景不会改写已有会话。"
         />
-      </div>
-      <footer>
-        <button class="button primary" @click="useScenario(detail)">
-          {{ isAvailableScenario(detail) ? '开始' : '预览草稿' }}<Icon name="arrow" :size="16" />
-        </button></footer
-    ></DialogShell>
-    <DialogShell
-      v-if="drawer"
-      label="场景编辑器"
-      panel-class="scenario-editor"
-      @close="!busy && (drawer = false)"
-      ><header>
-        <div>
+      </template>
+      <template v-if="detail" #footer>
+        <div class="scenario-drawer-footer">
+          <a-button type="primary" @click="useScenario(detail)">
+            {{ isAvailableScenario(detail) ? '开始' : '预览草稿' }}<Icon name="arrow" :size="16" />
+          </a-button>
+        </div>
+      </template>
+    </a-drawer>
+    <!-- destroy-on-close：每次打开重建表单，避免沿用上一次的校验提示 -->
+    <a-drawer
+      :open="drawer"
+      :width="640"
+      class="drawer scenario-editor"
+      aria-label="场景编辑器"
+      :closable="!busy"
+      :mask-closable="!busy"
+      :keyboard="!busy"
+      destroy-on-close
+      @close="closeEditor"
+    >
+      <template #title>
+        <div class="scenario-drawer-title">
           <span class="eyebrow">SCENARIO BUILDER</span>
           <h2>{{ editing ? '编辑场景' : '新建工作场景' }}</h2>
           <p>维护可复用的工作方式，保存后进入草稿。</p>
         </div>
-        <button class="icon-button" :disabled="busy" aria-label="关闭编辑器" @click="drawer = false">
-          <Icon name="close" :size="21" />
-        </button>
-      </header>
-      <a-form
-        id="scenario-form"
-        class="drawer-body"
-        :model="draft"
-        :rules="rules"
-        layout="vertical"
-        @finish="save"
-      >
+      </template>
+      <a-form id="scenario-form" :model="draft" :rules="rules" layout="vertical" @finish="save">
         <div class="form-section-title"><span>01</span>基本信息</div>
         <a-form-item label="场景名称" name="name">
           <a-input v-model:value="draft.name" :maxlength="128" placeholder="例如：研发需求评审助手" />
@@ -826,61 +848,72 @@ async function versions(scenario: Scenario) {
           message="实际工具范围取场景与平台策略交集；用户可在聊天中临时追加 Skill、MCP 与联网，但不能取消场景绑定项。草稿须试运行通过后才能发布。"
         />
       </a-form>
-      <footer>
-        <button class="button secondary" :disabled="busy" @click="drawer = false">取消</button
-        ><button type="submit" form="scenario-form" class="button primary" :disabled="busy">
-          <span v-if="busy" class="loader small"></span><Icon v-else name="save" :size="16" />保存草稿
-        </button>
-      </footer>
-    </DialogShell>
-    <DialogShell
-      v-if="toDelete"
-      variant="modal"
-      label="删除场景确认"
-      panel-class="confirm-modal"
-      @close="!deleting && (toDelete = null)"
-      ><span class="confirm-icon"><Icon name="trash" :size="25" /></span>
-      <h2>删除「{{ toDelete.payload.name }}」？</h2>
-      <p>该场景将从目录移出，已有会话的配置快照和审计记录仍保留。</p>
-      <footer>
-        <button class="button secondary" :disabled="deleting" @click="toDelete = null">取消</button
-        ><button class="button danger" :disabled="deleting" @click="discard">
-          <span v-if="deleting" class="loader small"></span>确认删除
-        </button>
-      </footer></DialogShell
+      <template #footer>
+        <div class="scenario-drawer-footer">
+          <a-button :disabled="busy" @click="closeEditor">取消</a-button>
+          <a-button type="primary" html-type="submit" form="scenario-form" :loading="busy">
+            <template #icon><Icon name="save" :size="16" /></template>保存草稿
+          </a-button>
+        </div>
+      </template>
+    </a-drawer>
+    <a-modal
+      :open="deleteOpen"
+      :width="430"
+      centered
+      wrap-class-name="scenario-delete-modal"
+      aria-label="删除场景确认"
+      ok-text="确认删除"
+      cancel-text="取消"
+      :ok-button-props="{ danger: true }"
+      :cancel-button-props="{ disabled: deleting }"
+      :confirm-loading="deleting"
+      :closable="!deleting"
+      :mask-closable="!deleting"
+      :keyboard="!deleting"
+      @ok="discard"
+      @cancel="cancelDelete"
     >
-    <DialogShell v-if="versionHistory" label="场景版本历史" @close="versionHistory = null"
-      ><header>
-        <div>
+      <template #title>
+        <span class="scenario-delete-title"
+          ><span class="confirm-icon"><Icon name="trash" :size="18" /></span>删除「{{
+            toDelete?.payload.name
+          }}」？</span
+        >
+      </template>
+      <p class="scenario-delete-text">该场景将从目录移出，已有会话的配置快照和审计记录仍保留。</p>
+    </a-modal>
+    <a-drawer
+      :open="historyOpen"
+      :width="580"
+      class="drawer scenario-history"
+      aria-label="场景版本历史"
+      @close="historyOpen = false"
+    >
+      <template #title>
+        <div class="scenario-drawer-title">
           <h2>{{ historyTitle }}</h2>
           <p>不可变版本记录</p>
         </div>
-        <button class="icon-button" aria-label="关闭版本历史" @click="versionHistory = null">
-          <Icon name="close" :size="20" />
-        </button>
-      </header>
-      <div class="drawer-body">
-        <a-timeline>
-          <a-timeline-item v-for="version in versionHistory" :key="version.version">
-            <div class="version-entry">
-              <div>
-                <strong>v{{ version.version }}</strong
-                ><span>{{ formatDate(version.createdAt, true) }}</span>
-              </div>
-              <p>{{ version.changeLog }}</p>
-              <a-typography-text code>SHA256 {{ version.bundleHash.slice(0, 24) }}…</a-typography-text>
-              <a-collapse ghost>
-                <a-collapse-panel key="bundle" header="查看此版本装配单">
-                  <pre>{{
-                    JSON.stringify({ payload: version.payload, bundle: version.bundle }, null, 2)
-                  }}</pre>
-                </a-collapse-panel>
-              </a-collapse>
+      </template>
+      <a-timeline v-if="versionHistory">
+        <a-timeline-item v-for="version in versionHistory" :key="version.version">
+          <div class="version-entry">
+            <div>
+              <strong>v{{ version.version }}</strong
+              ><span>{{ formatDate(version.createdAt, true) }}</span>
             </div>
-          </a-timeline-item>
-        </a-timeline>
-      </div></DialogShell
-    >
+            <p>{{ version.changeLog }}</p>
+            <a-typography-text code>SHA256 {{ version.bundleHash.slice(0, 24) }}…</a-typography-text>
+            <a-collapse ghost>
+              <a-collapse-panel key="bundle" header="查看此版本装配单">
+                <pre>{{ JSON.stringify({ payload: version.payload, bundle: version.bundle }, null, 2) }}</pre>
+              </a-collapse-panel>
+            </a-collapse>
+          </div>
+        </a-timeline-item>
+      </a-timeline>
+    </a-drawer>
   </main>
 </template>
 
@@ -1137,5 +1170,66 @@ async function versions(scenario: Scenario) {
 }
 .version-entry :deep(.ant-collapse) {
   margin-top: 17px;
+}
+
+/* ============ antd 抽屉 / 对话框插槽内容 ============ */
+/* 插槽内容在本组件内编译，scoped 样式随 Teleport 一并生效 */
+.scenario-drawer-title {
+  min-width: 0;
+}
+.scenario-drawer-title .eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 1.5px;
+  color: var(--text-subtle);
+}
+.scenario-drawer-title h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 550;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.scenario-drawer-title p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.7;
+}
+.scenario-drawer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.scenario-drawer-footer :deep(.ant-btn) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.scenario-delete-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+.scenario-delete-title .confirm-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  border-radius: 9px;
+  color: var(--color-danger-text);
+  background: var(--color-danger-bg);
+}
+.scenario-delete-text {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.9;
 }
 </style>
