@@ -9,13 +9,15 @@ import { useConversation } from '../../../stores/conversation';
 import type { Scenario, Tool } from '../../../types/platform';
 import type { SkillSummary } from '../../../types/skill';
 import type { PluginPackage } from '../../../types/plugin';
+import { Empty } from 'ant-design-vue';
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
 import Icon from '../../../components/ForgeIcon.vue';
 import CatalogCard from '../../../components/catalog/CatalogCard.vue';
 import CatalogFilter from '../../../components/catalog/CatalogFilter.vue';
 import CatalogGrid from '../../../components/catalog/CatalogGrid.vue';
 import CatalogSearch from '../../../components/catalog/CatalogSearch.vue';
-import DialogShell from '../../../components/DialogShell.vue';
+import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
+import { drawerA11y, useRetained } from '../../../utils/overlay';
 
 type RuntimeComponent = PluginPackage;
 type McpServer = {
@@ -40,9 +42,7 @@ const loadError = ref('');
 const components = ref<RuntimeComponent[]>([]);
 const pluginSubmissions = ref<PluginPackage[]>([]);
 const pluginUploadOpen = ref(false);
-const pluginFileInput = ref<HTMLInputElement | null>(null);
 const pluginArchive = ref<File | null>(null);
-const pluginDragActive = ref(false);
 const pluginUploadBusy = ref(false);
 const pluginUploadMessage = ref('');
 const MAX_PLUGIN_ARCHIVE_BYTES = 5 * 1024 * 1024;
@@ -91,11 +91,19 @@ const mcpTesting = ref<number | null>(null);
 const mcpToggling = ref<number | null>(null);
 // 仅用于导入弹窗内、需要用户修改输入的错误；操作结果统一走全局 toast。
 const mcpImportError = ref('');
+// 修改 JSON 后清掉上一次的格式错误
+watch(
+  () => mcpJson.value,
+  () => {
+    mcpImportError.value = '';
+  },
+);
 const mcpEditorOpen = ref(false);
 const selectedMcp = ref<McpServer | null>(null);
 const mcpToolQuery = ref('');
+const shownMcp = useRetained(() => selectedMcp.value);
 const visibleMcpTools = computed(() =>
-  (selectedMcp.value?.tools ?? []).filter((tool) =>
+  (shownMcp.value?.tools ?? []).filter((tool) =>
     `${tool.name} ${tool.description}`.toLowerCase().includes(mcpToolQuery.value.trim().toLowerCase()),
   ),
 );
@@ -105,6 +113,16 @@ function openMcpTools(server: McpServer) {
 }
 const detail = ref<Tool | null>(null);
 const componentDetail = ref<RuntimeComponent | null>(null);
+// 关闭动画期间沿用上一次的内容
+const shownTool = useRetained(() => detail.value);
+const shownComponent = useRetained(() => componentDetail.value);
+const shownPluginTools = useRetained(() => pluginTools.value);
+const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE;
+const mcpTransportOptions = [
+  { value: 'streamable-http', label: 'Streamable HTTP（推荐）' },
+  { value: 'sse', label: 'SSE（旧版 HTTP，仅测试连接）' },
+  { value: 'stdio', label: 'stdio（本机进程）' },
+];
 const tab = computed(() => {
   const requestedTab = String(route.query.tab ?? '');
   // Keep the legacy ?tab=tools deep link focused on the managed plugin directory.
@@ -181,7 +199,7 @@ const pendingPluginSubmissions = computed(() =>
 );
 const related = computed(() =>
   app.availableScenarios.filter(
-    (s) => detail.value && s.payload.capabilities.builtin_tool_names.includes(detail.value.name),
+    (s) => shownTool.value && s.payload.capabilities.builtin_tool_names.includes(shownTool.value.name),
   ),
 );
 const guidance: Record<string, { example: string; boundary: string }> = {
@@ -230,46 +248,31 @@ async function load() {
 function openPluginUpload() {
   pluginArchive.value = null;
   pluginUploadMessage.value = '';
-  pluginDragActive.value = false;
-  if (pluginFileInput.value) pluginFileInput.value.value = '';
   pluginUploadOpen.value = true;
 }
 function clearPluginArchive() {
   pluginArchive.value = null;
   pluginUploadMessage.value = '';
-  if (pluginFileInput.value) pluginFileInput.value.value = '';
 }
 function setPluginArchive(file: File | null) {
   if (pluginUploadBusy.value) return;
   pluginUploadMessage.value = '';
   if (!file) return;
-  if (!file.name.toLowerCase().endsWith('.zip')) {
-    pluginArchive.value = null;
-    pluginUploadMessage.value = '当前仅支持 .zip Forge 插件包。';
-    if (pluginFileInput.value) pluginFileInput.value.value = '';
-    return;
-  }
-  if (!file.size) {
-    pluginArchive.value = null;
-    pluginUploadMessage.value = '所选文件为空，请重新选择插件包。';
-    if (pluginFileInput.value) pluginFileInput.value.value = '';
-    return;
-  }
-  if (file.size > MAX_PLUGIN_ARCHIVE_BYTES) {
-    pluginArchive.value = null;
-    pluginUploadMessage.value = '插件包不能超过 5 MB，请压缩后重试。';
-    if (pluginFileInput.value) pluginFileInput.value.value = '';
-    return;
-  }
-  pluginArchive.value = file;
+  let problem = '';
+  if (!file.name.toLowerCase().endsWith('.zip')) problem = '当前仅支持 .zip Forge 插件包。';
+  else if (!file.size) problem = '所选文件为空，请重新选择插件包。';
+  else if (file.size > MAX_PLUGIN_ARCHIVE_BYTES) problem = '插件包不能超过 5 MB，请压缩后重试。';
+  pluginArchive.value = problem ? null : file;
+  pluginUploadMessage.value = problem;
 }
-function choosePluginArchive(event: Event) {
-  const input = event.currentTarget as HTMLInputElement;
-  setPluginArchive(input.files?.[0] ?? null);
+// a-upload-dragger 只负责选择 / 拖放文件；返回 false 阻止组件自行上传，由「上传并校验」统一提交
+function beforePluginUpload(file: File) {
+  setPluginArchive(file);
+  return false;
 }
-function handlePluginDrop(event: DragEvent) {
-  pluginDragActive.value = false;
-  setPluginArchive(event.dataTransfer?.files?.[0] ?? null);
+// 拖放的文件不符合 accept 时组件会直接丢弃，这里补上同样的提示
+function rejectPluginFiles(files: File[]) {
+  setPluginArchive(files[0] ?? null);
 }
 async function uploadPluginArchive() {
   const file = pluginArchive.value;
@@ -292,7 +295,6 @@ async function uploadPluginArchive() {
     if (!response.ok || body.code !== 0) throw new Error(body.message ?? body.detail ?? '插件包上传失败');
     const displayName = body.data?.displayName ?? file.name;
     pluginArchive.value = null;
-    if (pluginFileInput.value) pluginFileInput.value.value = '';
     pluginUploadOpen.value = false;
     app.toast(`“${displayName}”已完成契约检查，等待审核。`);
     await load();
@@ -513,12 +515,14 @@ onMounted(load);
             </template>
           </CatalogCard>
         </CatalogGrid>
-        <div v-else class="enterprise-empty">
-          <span class="enterprise-empty-symbol"><Icon name="search" :size="28" /></span>
-          <h2>没有匹配的能力</h2>
-          <p>试试搜索“文件”“时间”，或清除关键词。</p>
+        <CatalogEmpty
+          v-else
+          icon="search"
+          title="没有匹配的能力"
+          description="试试搜索“文件”“时间”，或清除关键词。"
+        >
           <a-button @click="query = ''">清除搜索</a-button>
-        </div>
+        </CatalogEmpty>
       </template>
       <template v-else-if="tab === 'plugins'">
         <div v-if="loading" class="loading-inline" role="status">
@@ -530,18 +534,18 @@ onMounted(load);
             <span>{{ components.length }} 个当前可用版本 · {{ pluginSubmissions.length }} 个上传版本</span>
             <p>上传的 ZIP 会先经过契约检查并进入审核；批准后，维护者可以在企业场景中绑定具体插件和工具。</p>
           </header>
-          <div v-if="!visiblePlugins.length" class="enterprise-empty plugin-empty-state">
-            <span class="enterprise-empty-symbol"><Icon name="blocks" :size="28" /></span>
-            <h2>{{ query.trim() ? '没有匹配的插件' : '还没有可用的受管插件' }}</h2>
-            <p>
-              {{
-                query.trim()
-                  ? '试试其他插件名称、工具名称或说明。'
-                  : '上传 Forge 插件包后会先进入审核；审核通过并启用后，才可在场景中授权使用。'
-              }}
-            </p>
+          <CatalogEmpty
+            v-if="!visiblePlugins.length"
+            icon="blocks"
+            :title="query.trim() ? '没有匹配的插件' : '还没有可用的受管插件'"
+            :description="
+              query.trim()
+                ? '试试其他插件名称、工具名称或说明。'
+                : '上传 Forge 插件包后会先进入审核；审核通过并启用后，才可在场景中授权使用。'
+            "
+          >
             <a-button v-if="query.trim()" @click="query = ''">清除搜索</a-button>
-          </div>
+          </CatalogEmpty>
           <CatalogGrid v-else>
             <CatalogCard
               v-for="plugin in visiblePlugins"
@@ -672,18 +676,24 @@ onMounted(load);
         <a-spin size="small" />正在读取接入状态…
       </div>
       <section v-else-if="tab === 'mcp' && mcp" class="mcp-directory">
-        <div v-if="!mcp.items.length" class="enterprise-empty">
-          <span class="enterprise-empty-symbol"><Icon name="plug" :size="29" /></span>
-          <h2>还没有 MCP 服务</h2>
-          <p>连接外部工具服务，供场景或会话调用。</p>
-          <a-button type="primary" @click="openMcpEditor">添加 MCP 服务</a-button>
-        </div>
-        <div v-else-if="!visibleMcp.length" class="enterprise-empty">
-          <span class="enterprise-empty-symbol"><Icon name="search" :size="28" /></span>
-          <h2>没有匹配的 MCP 服务</h2>
-          <p>试试其他服务名称或地址，或清除关键词。</p>
+        <CatalogEmpty
+          v-if="!mcp.items.length"
+          icon="plug"
+          title="还没有 MCP 服务"
+          description="连接外部工具服务，供场景或会话调用。"
+        >
+          <a-button type="primary" @click="openMcpEditor">
+            <template #icon><Icon name="plus" :size="16" /></template>添加 MCP 服务
+          </a-button>
+        </CatalogEmpty>
+        <CatalogEmpty
+          v-else-if="!visibleMcp.length"
+          icon="search"
+          title="没有匹配的 MCP 服务"
+          description="试试其他服务名称或地址，或清除关键词。"
+        >
           <a-button @click="query = ''">清除搜索</a-button>
-        </div>
+        </CatalogEmpty>
         <CatalogGrid v-else>
           <CatalogCard
             v-for="server in visibleMcp"
@@ -752,22 +762,26 @@ onMounted(load);
         </CatalogGrid>
       </section>
       <section v-else-if="tab === 'skills' && skills" class="skill-capability-directory">
-        <div v-if="!skills.items.length" class="enterprise-empty">
-          <span class="enterprise-empty-symbol"><Icon name="book" :size="29" /></span>
-          <h2>还没有技能</h2>
-          <p>创建一项可复用的工作方法。</p>
+        <CatalogEmpty
+          v-if="!skills.items.length"
+          icon="book"
+          title="还没有技能"
+          description="创建一项可复用的工作方法。"
+        >
           <RouterLink v-slot="{ href, navigate }" to="/agent/skills/new" custom>
             <a-button type="primary" :href="href" @click="navigate">
               <template #icon><Icon name="plus" :size="16" /></template>新建技能
             </a-button>
           </RouterLink>
-        </div>
-        <div v-else-if="!visibleSkills.length" class="enterprise-empty">
-          <span class="enterprise-empty-symbol"><Icon name="search" :size="28" /></span>
-          <h2>没有匹配的技能</h2>
-          <p>试试其他技能名称或说明，或清除关键词。</p>
+        </CatalogEmpty>
+        <CatalogEmpty
+          v-else-if="!visibleSkills.length"
+          icon="search"
+          title="没有匹配的技能"
+          description="试试其他技能名称或说明，或清除关键词。"
+        >
           <a-button @click="query = ''">清除搜索</a-button>
-        </div>
+        </CatalogEmpty>
         <CatalogGrid v-else>
           <CatalogCard
             v-for="skill in visibleSkills"
@@ -804,20 +818,21 @@ onMounted(load);
         }}</span>
       </div>
     </div>
+    <!-- 弹层统一用 antd Drawer / Modal；class="drawer" 落在 .ant-drawer-content 上，复用全局 .drawer 下的正文排版 -->
     <a-drawer
       :open="!!pluginTools"
       :width="480"
       class="drawer"
-      aria-label="插件工具与权限"
+      v-bind="drawerA11y('插件工具与权限', !!pluginTools)"
       @close="pluginTools = null"
     >
-      <template v-if="pluginTools" #title>
+      <template v-if="shownPluginTools" #title>
         <div class="capability-drawer-title">
-          <h2>{{ pluginTools.displayName }}</h2>
-          <p>v{{ pluginTools.version }} · {{ pluginTools.tools.length }} 项已声明工具</p>
+          <h2>{{ shownPluginTools.displayName }}</h2>
+          <p>v{{ shownPluginTools.version }} · {{ shownPluginTools.tools.length }} 项已声明工具</p>
         </div>
       </template>
-      <a-list v-if="pluginTools" class="plugin-tool-list" :data-source="pluginTools.tools">
+      <a-list v-if="shownPluginTools" class="plugin-tool-list" :data-source="shownPluginTools.tools">
         <template #renderItem="{ item }">
           <a-list-item>
             <a-list-item-meta :title="item.title" :description="item.description" />
@@ -838,289 +853,282 @@ onMounted(load);
         </div>
       </template>
     </a-drawer>
-    <DialogShell
-      v-if="pluginUploadOpen"
-      variant="modal"
-      label="上传受管插件包"
-      panel-class="plugin-upload-dialog"
-      @close="!pluginUploadBusy && (pluginUploadOpen = false)"
+    <a-modal
+      :open="pluginUploadOpen"
+      :width="560"
+      centered
+      destroy-on-close
+      wrap-class-name="plugin-upload-modal"
+      :closable="!pluginUploadBusy"
+      :mask-closable="!pluginUploadBusy"
+      :keyboard="!pluginUploadBusy"
+      @cancel="pluginUploadOpen = false"
     >
-      <header class="plugin-upload-header">
-        <span class="plugin-upload-icon"><Icon name="blocks" :size="22" /></span>
-        <div>
-          <span class="eyebrow">MANAGED PLUGIN</span>
+      <template #title>
+        <div class="capability-modal-title">
           <h2>上传插件包</h2>
           <p>先检查插件契约，再进入平台审核流程。</p>
         </div>
-        <button
-          class="icon-button"
-          aria-label="关闭上传插件"
-          :disabled="pluginUploadBusy"
-          @click="pluginUploadOpen = false"
-        >
-          <Icon name="close" :size="20" />
-        </button>
-      </header>
+      </template>
       <div class="plugin-upload-content">
-        <div
-          :class="['plugin-upload-dropzone', { 'is-dragging': pluginDragActive }]"
-          @dragenter.prevent="pluginDragActive = true"
-          @dragover.prevent="pluginDragActive = true"
-          @dragleave.prevent="pluginDragActive = false"
-          @drop.prevent="handlePluginDrop"
+        <a-upload-dragger
+          class="plugin-upload-dropzone"
+          name="plugin"
+          accept=".zip,application/zip,application/x-zip-compressed"
+          :file-list="[]"
+          :multiple="false"
+          :show-upload-list="false"
+          :disabled="pluginUploadBusy"
+          :before-upload="beforePluginUpload"
+          @reject="rejectPluginFiles"
         >
           <span class="plugin-upload-dropzone-icon"><Icon name="arrow-up-line" :size="22" /></span>
-          <strong>{{ pluginArchive ? '插件包已就绪' : '拖放 ZIP 插件包到这里' }}</strong>
-          <small>{{ pluginArchive ? '确认文件后即可上传并进行契约检查。' : '或从设备中选择文件' }}</small>
-          <label :class="['plugin-file-picker', { 'is-disabled': pluginUploadBusy }]">
-            <input
-              ref="pluginFileInput"
-              type="file"
-              accept=".zip,application/zip,application/x-zip-compressed"
-              aria-label="选择 ZIP 插件包"
-              :disabled="pluginUploadBusy"
-              @change="choosePluginArchive"
-            />
-            <span class="button secondary small">浏览文件</span>
-          </label>
-        </div>
+          <p class="plugin-upload-dropzone-title">
+            {{ pluginArchive ? '插件包已就绪，可重新选择' : '点击选择或拖放 ZIP 插件包到这里' }}
+          </p>
+          <p class="plugin-upload-dropzone-hint">
+            仅支持 .zip · 单个文件不超过 5 MB · forge.plugin.json 需位于包根目录
+          </p>
+        </a-upload-dragger>
         <div v-if="pluginArchive" class="plugin-selected-file">
-          <span class="plugin-selected-file-icon"><Icon name="box" :size="17" /></span>
+          <Icon name="box" :size="16" />
           <span class="plugin-selected-file-name" :title="pluginArchive.name">{{ pluginArchive.name }}</span>
           <small>{{ formatBytes(pluginArchive.size) }}</small>
-          <button
-            type="button"
-            class="button text small"
-            :disabled="pluginUploadBusy"
-            @click="clearPluginArchive"
+          <a-button type="text" size="small" :disabled="pluginUploadBusy" @click="clearPluginArchive"
+            >移除</a-button
           >
-            移除
-          </button>
         </div>
-        <div class="plugin-upload-requirements" aria-label="上传要求">
-          <div><strong>ZIP</strong><span>仅支持 .zip</span></div>
-          <div><strong>5 MB</strong><span>单个文件上限</span></div>
-          <div><strong>Manifest</strong><span>需位于包根目录</span></div>
-        </div>
-        <div class="plugin-upload-boundary">
-          <Icon name="shield" :size="17" />
-          <p>
+        <a-alert
+          v-if="pluginUploadMessage"
+          class="plugin-upload-alert"
+          type="error"
+          show-icon
+          :message="pluginUploadMessage"
+        />
+        <a-alert type="info" show-icon>
+          <template #message>
             上传只校验 Manifest 与制品，不安装依赖或执行包内代码。可进入审核流程的 Worker 包需使用
             <code>forge-remote-worker-v1</code>；原生 DSH 包只登记为候选。
-          </p>
-        </div>
-        <div v-if="pluginUploadMessage" class="plugin-upload-alert" role="alert" aria-live="polite">
-          <Icon name="info" :size="16" /><span>{{ pluginUploadMessage }}</span>
-        </div>
+          </template>
+        </a-alert>
       </div>
-      <footer class="plugin-upload-footer">
-        <span>审核通过后，才可在场景中授权使用。</span>
-        <div>
-          <button class="button secondary" :disabled="pluginUploadBusy" @click="pluginUploadOpen = false">
-            取消
-          </button>
-          <button
-            class="button primary"
-            :disabled="pluginUploadBusy || !pluginArchive"
-            @click="uploadPluginArchive"
-          >
-            <span v-if="pluginUploadBusy" class="loader small"></span>
-            {{ pluginUploadBusy ? '正在校验…' : '上传并校验' }}
-          </button>
+      <template #footer>
+        <div class="plugin-upload-footer">
+          <span>审核通过后，才可在场景中授权使用。</span>
+          <div>
+            <a-button :disabled="pluginUploadBusy" @click="pluginUploadOpen = false">取消</a-button>
+            <a-button
+              type="primary"
+              :loading="pluginUploadBusy"
+              :disabled="!pluginArchive"
+              @click="uploadPluginArchive"
+            >
+              {{ pluginUploadBusy ? '正在校验…' : '上传并校验' }}
+            </a-button>
+          </div>
         </div>
-      </footer>
-    </DialogShell>
-    <DialogShell
-      v-if="mcpEditorOpen"
-      variant="modal"
-      label="导入 MCP 服务配置"
-      panel-class="mcp-import-dialog"
-      @close="mcpEditorOpen = false"
+      </template>
+    </a-modal>
+    <a-modal
+      :open="mcpEditorOpen"
+      :width="600"
+      centered
+      destroy-on-close
+      ok-text="导入配置"
+      cancel-text="取消"
+      :confirm-loading="mcpBusy"
+      :ok-button-props="{ disabled: !mcpJson.trim() }"
+      :cancel-button-props="{ disabled: mcpBusy }"
+      @ok="importMcpJson"
+      @cancel="mcpEditorOpen = false"
     >
-      <header>
-        <div>
+      <template #title>
+        <div class="capability-modal-title">
           <h2>导入 MCP 服务</h2>
           <p>选择连接协议并粘贴 mcpServers JSON。远程服务须使用 HTTPS；旧版 SSE 仅可测试连接。</p>
         </div>
-        <button class="icon-button" aria-label="关闭" @click="mcpEditorOpen = false">
-          <Icon name="close" :size="20" />
-        </button>
-      </header>
-      <div class="mcp-import-body">
-        <div class="mcp-format-row">
-          <label class="mcp-json-label" for="mcp-import-json">连接协议</label
-          ><select v-model="mcpTransport" class="mcp-transport-select" @change="changeMcpTransport">
-            <option value="streamable-http">Streamable HTTP（推荐）</option>
-            <option value="sse">SSE（旧版 HTTP，仅测试连接）</option>
-            <option value="stdio">stdio（本机进程）</option>
-          </select>
+      </template>
+      <a-form layout="vertical" class="mcp-import-form">
+        <a-form-item label="连接协议">
+          <a-select
+            v-model:value="mcpTransport"
+            :options="mcpTransportOptions"
+            @change="changeMcpTransport"
+          />
+        </a-form-item>
+        <a-form-item
+          label="mcpServers 配置 JSON"
+          html-for="mcp-import-json"
+          extra="凭据和 stdio 参数会加密保存在本机，不会在服务列表中显示。stdio 命令会以 Forge 服务进程权限启动，请只配置可信 MCP 程序；导入后需先测试连接。"
+        >
+          <a-textarea
+            id="mcp-import-json"
+            v-model:value="mcpJson"
+            class="mcp-json-input"
+            :rows="10"
+            spellcheck="false"
+            :placeholder="mcpExample"
+          />
+        </a-form-item>
+      </a-form>
+      <a-alert
+        v-if="mcpImportError"
+        class="mcp-import-error"
+        type="error"
+        show-icon
+        :message="mcpImportError"
+      />
+    </a-modal>
+    <a-modal :open="!!selectedMcp" :width="600" centered :footer="null" @cancel="selectedMcp = null">
+      <template v-if="shownMcp" #title>
+        <div class="capability-modal-title">
+          <h2>{{ shownMcp.name }} 工具清单</h2>
+          <p>
+            {{ transportLabel(shownMcp.transport) }} · {{ shownMcp.tools.length }} 项工具 · 由 MCP 服务提供
+          </p>
         </div>
-        <label class="mcp-json-label" for="mcp-import-json">mcpServers 配置 JSON</label>
-        <textarea
-          id="mcp-import-json"
-          v-model="mcpJson"
-          class="mcp-json-input"
-          @input="mcpImportError = ''"
-          rows="8"
-          spellcheck="false"
-          :placeholder="mcpExample"
-        ></textarea>
-        <p class="mcp-import-hint">
-          凭据和 stdio 参数会加密保存在本机，不会在服务列表中显示。stdio 命令会以 Forge
-          服务进程权限启动，请只配置可信 MCP 程序；导入后需先测试连接。
-        </p>
-        <div v-if="mcpImportError" class="mcp-import-error" role="alert">
-          <Icon name="info" :size="16" /><span>{{ mcpImportError }}</span>
-        </div>
-      </div>
-      <footer>
-        <button class="button secondary" :disabled="mcpBusy" @click="mcpEditorOpen = false">取消</button>
-        <button class="button primary" :disabled="mcpBusy || !mcpJson.trim()" @click="importMcpJson">
-          {{ mcpBusy ? '处理中…' : '导入配置' }}
-        </button>
-      </footer>
-    </DialogShell>
-    <DialogShell
-      v-if="selectedMcp"
-      variant="modal"
-      :label="`${selectedMcp.name} 工具清单`"
-      panel-class="mcp-tools-dialog"
-      @close="selectedMcp = null"
+      </template>
+      <a-input
+        v-model:value="mcpToolQuery"
+        class="mcp-tools-search"
+        placeholder="搜索工具名称或用途"
+        aria-label="搜索 MCP 工具"
+        allow-clear
+      >
+        <template #prefix><Icon name="search" :size="15" /></template>
+      </a-input>
+      <a-list v-if="visibleMcpTools.length" class="mcp-tools-list" :data-source="visibleMcpTools">
+        <template #renderItem="{ item }">
+          <a-list-item>
+            <a-list-item-meta :title="item.name" :description="item.description || '此工具未提供用途说明。'">
+              <template #avatar
+                ><span class="scene-icon code mcp-tool-symbol"><Icon name="wrench" :size="16" /></span
+              ></template>
+            </a-list-item-meta>
+          </a-list-item>
+        </template>
+      </a-list>
+      <a-empty
+        v-else
+        class="mcp-tools-empty"
+        :image="simpleEmptyImage"
+        :description="shownMcp?.tools.length ? '没有匹配的工具' : '服务尚未返回工具清单，请先测试连接。'"
+      />
+    </a-modal>
+    <a-drawer
+      :open="!!detail"
+      :width="520"
+      class="drawer capability-detail"
+      v-bind="drawerA11y('工具详情', !!detail)"
+      @close="closeTool"
     >
-      <header class="mcp-tools-header">
-        <div>
-          <span class="mcp-transport-badge">{{
-            selectedMcp.transport === 'stdio'
-              ? 'stdio'
-              : selectedMcp.transport === 'sse'
-                ? '旧版 SSE'
-                : 'Streamable HTTP'
-          }}</span>
-          <h2>{{ selectedMcp.name }}</h2>
-          <p>{{ selectedMcp.tools.length }} 项工具 · 由 MCP 服务提供</p>
-        </div>
-        <button class="icon-button" aria-label="关闭工具清单" @click="selectedMcp = null">
-          <Icon name="close" :size="20" />
-        </button>
-      </header>
-      <label class="mcp-tools-search"
-        ><Icon name="search" :size="16" /><input v-model="mcpToolQuery" placeholder="搜索工具名称或用途"
-      /></label>
-      <div class="mcp-tools-list">
-        <article v-for="tool in visibleMcpTools" :key="tool.name" class="mcp-tool-row">
-          <span class="mcp-tool-symbol"><Icon name="wrench" :size="16" /></span>
-          <div>
-            <strong>{{ tool.name }}</strong>
-            <p>{{ tool.description || '此工具未提供用途说明。' }}</p>
-          </div>
-        </article>
-        <div v-if="!visibleMcpTools.length" class="mcp-tools-empty">
-          {{ selectedMcp.tools.length ? '没有匹配的工具' : '服务尚未返回工具清单，请先测试连接。' }}
-        </div>
-      </div>
-    </DialogShell>
-    <DialogShell v-if="detail" label="工具详情" panel-class="capability-detail" @close="closeTool"
-      ><header>
-        <div>
-          <div class="eyebrow">SHARED TOOL</div>
-          <h2>{{ detail.title }}</h2>
+      <template v-if="shownTool" #title>
+        <div class="capability-drawer-title">
+          <span class="eyebrow">SHARED TOOL</span>
+          <h2>{{ shownTool.title }}</h2>
           <p>平台提供 · 按场景范围调用</p>
         </div>
-        <button class="icon-button" aria-label="关闭工具详情" @click="closeTool">
-          <Icon name="close" :size="21" />
-        </button>
-      </header>
-      <div class="drawer-body">
-        <span :class="['scene-icon', detail.permission === 'read' ? 'shield' : 'book']"
-          ><Icon :name="detail.icon" :size="26"
-        /></span>
+      </template>
+      <template v-if="shownTool">
         <div class="detail-block">
           <h3>能做什么</h3>
-          <p>{{ detail.description }}</p>
+          <p>{{ shownTool.description }}</p>
         </div>
         <div class="detail-block">
           <h3>可以这样描述需求</h3>
           <blockquote class="capability-example">
-            {{ guidance[detail.name]?.example ?? '在允许使用此工具的场景中描述你的目标。' }}
+            {{ guidance[shownTool.name]?.example ?? '在允许使用此工具的场景中描述你的目标。' }}
           </blockquote>
         </div>
         <div class="detail-block">
           <h3>使用范围</h3>
-          <p>{{ guidance[detail.name]?.boundary ?? '执行范围由场景与平台策略共同限制。' }}</p>
+          <p>{{ guidance[shownTool.name]?.boundary ?? '执行范围由场景与平台策略共同限制。' }}</p>
         </div>
         <div class="detail-block">
           <h3>适用场景</h3>
           <p v-if="!related.length">暂无预置或已发布场景引用此工具。维护者可在场景中配置授权。</p>
-          <button
-            v-for="scenario in related"
-            :key="scenario.id"
-            class="related-scenario"
-            @click="start(scenario)"
-          >
-            <span :class="['scene-icon', scenario.payload.icon]"
-              ><Icon :name="scenario.payload.icon" :size="18"
-            /></span>
-            <div>
-              <strong>{{ scenario.payload.name }}</strong><small
-                >v{{ scenario.current_version }} ·
-                {{ scenario.space === 'official' ? '平台预置' : '已发布' }}</small
-              >
-            </div>
-            <span>开始会话</span><Icon name="arrow" :size="15" />
-          </button>
+          <a-list v-else class="related-scenario-list" :data-source="related">
+            <template #renderItem="{ item: scenario }">
+              <a-list-item class="related-scenario">
+                <a-list-item-meta
+                  :title="scenario.payload.name"
+                  :description="`v${scenario.current_version} · ${scenario.space === 'official' ? '平台预置' : '已发布'}`"
+                >
+                  <template #avatar
+                    ><span :class="['scene-icon', scenario.payload.icon]"
+                      ><Icon :name="scenario.payload.icon" :size="16" /></span
+                  ></template>
+                </a-list-item-meta>
+                <template #actions>
+                  <a-button size="small" @click="start(scenario)">
+                    <template #icon><Icon name="play" :size="14" /></template>开始会话
+                  </a-button>
+                </template>
+              </a-list-item>
+            </template>
+          </a-list>
         </div>
-        <details class="technical-detail">
-          <summary>技术标识</summary>
-          <code>{{ detail.name }}</code>
-        </details>
-      </div>
-      <footer>
-        <RouterLink to="/agent/scenarios" class="button secondary"
-          >查看企业场景 <Icon name="arrow" :size="15"
-        /></RouterLink></footer
-    ></DialogShell>
-    <DialogShell v-if="componentDetail" label="组件详情" @close="componentDetail = null"
-      ><header>
-        <div>
-          <h2>{{ componentDetail.displayName }}</h2>
-          <p>{{ componentDetail.package }}</p>
+        <a-collapse class="tool-technical-detail" ghost>
+          <a-collapse-panel key="name" header="技术标识">
+            <code>{{ shownTool.name }}</code>
+          </a-collapse-panel>
+        </a-collapse>
+      </template>
+      <template #footer>
+        <div class="capability-drawer-footer">
+          <RouterLink v-slot="{ href, navigate }" to="/agent/scenarios" custom>
+            <a-button :href="href" @click="navigate">查看企业场景</a-button>
+          </RouterLink>
         </div>
-        <button class="icon-button" aria-label="关闭组件详情" @click="componentDetail = null">
-          <Icon name="close" :size="21" />
-        </button>
-      </header>
-      <div class="drawer-body">
-        <div class="detail-block">
-          <h3>组件说明</h3>
-          <p>{{ componentDetail.description }}</p>
-        </div>
-        <div class="detail-block">
-          <h3>版本</h3>
-          <code>{{ componentDetail.version }}</code>
-        </div>
-        <div class="detail-block">
-          <h3>扩展点</h3>
-          <div class="chip-list">
-            <span v-for="point in componentDetail.extensionPoints" :key="point" class="tag soft">{{
-              point
-            }}</span>
-          </div>
-        </div>
-        <div class="detail-block">
-          <h3>权限范围</h3>
-          <div class="chip-list">
-            <span v-for="point in componentDetail.permissions" :key="point" class="tag warm">{{
-              point
-            }}</span>
-          </div>
-        </div>
-        <div class="form-alert">
-          <Icon name="info" :size="17" /><span
-            >仅可由平台审核、固定版本并通过场景授权；不支持自由安装 npm、GitHub 或本地插件。</span
-          >
-        </div>
-      </div></DialogShell
+      </template>
+    </a-drawer>
+    <a-drawer
+      :open="!!componentDetail"
+      :width="480"
+      class="drawer"
+      v-bind="drawerA11y('组件详情', !!componentDetail)"
+      @close="componentDetail = null"
     >
+      <template v-if="shownComponent" #title>
+        <div class="capability-drawer-title">
+          <h2>{{ shownComponent.displayName }}</h2>
+          <p>{{ shownComponent.package }}</p>
+        </div>
+      </template>
+      <template v-if="shownComponent">
+        <a-descriptions class="component-descriptions" :column="1" size="small" bordered>
+          <a-descriptions-item label="组件说明">{{ shownComponent.description }}</a-descriptions-item>
+          <a-descriptions-item label="版本"
+            ><code>{{ shownComponent.version }}</code></a-descriptions-item
+          >
+          <a-descriptions-item label="运行时">{{ shownComponent.runtime }}</a-descriptions-item>
+          <a-descriptions-item label="扩展点">
+            <span class="component-tags">
+              <a-tag v-for="point in shownComponent.extensionPoints" :key="point" :bordered="false">{{
+                point
+              }}</a-tag>
+            </span>
+          </a-descriptions-item>
+          <a-descriptions-item label="权限范围">
+            <span class="component-tags">
+              <a-tag
+                v-for="point in shownComponent.permissions"
+                :key="point"
+                color="warning"
+                :bordered="false"
+                >{{ point }}</a-tag
+              >
+            </span>
+          </a-descriptions-item>
+        </a-descriptions>
+        <a-alert
+          class="component-boundary"
+          type="info"
+          show-icon
+          message="仅可由平台审核、固定版本并通过场景授权；不支持自由安装 npm、GitHub 或本地插件。"
+        />
+      </template>
+    </a-drawer>
   </main>
 </template>
 
@@ -1140,7 +1148,6 @@ onMounted(load);
 }
 /* icon 插槽里是 ForgeIcon 裸 <svg>，不是 .anticon，antd 不会补图标与文字的间距 */
 .capability-toolbar-actions :deep(.ant-btn),
-.enterprise-empty :deep(.ant-btn),
 .capability-drawer-footer :deep(.ant-btn) {
   display: inline-flex;
   align-items: center;
@@ -1247,8 +1254,21 @@ onMounted(load);
   cursor: pointer;
 }
 
-/* ============ antd 抽屉插槽内容（插槽在本组件内编译，scoped 样式随 Teleport 一并生效） ============ */
-.capability-drawer-title h2 {
+/* ============ antd 抽屉 / 对话框插槽内容（插槽在本组件内编译，scoped 样式随 Teleport 一并生效） ============ */
+.capability-drawer-title,
+.capability-modal-title {
+  min-width: 0;
+}
+.capability-drawer-title .eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-subtle);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 1.5px;
+}
+.capability-drawer-title h2,
+.capability-modal-title h2 {
   margin: 0;
   color: var(--ink);
   font-size: 18px;
@@ -1256,7 +1276,11 @@ onMounted(load);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.capability-drawer-title p {
+.capability-modal-title h2 {
+  font-size: 16px;
+}
+.capability-drawer-title p,
+.capability-modal-title p {
   margin: 4px 0 0;
   color: var(--text-secondary);
   font-size: 12px;
@@ -1268,11 +1292,179 @@ onMounted(load);
   justify-content: flex-end;
   gap: 8px;
 }
+.capability-drawer-footer :deep(.ant-btn),
+.plugin-upload-footer :deep(.ant-btn),
+.related-scenario :deep(.ant-btn) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .plugin-tool-list :deep(.ant-list-item-extra) {
   margin-inline-start: 16px;
 }
 .plugin-tool-list :deep(.ant-tag) {
   margin: 0;
+}
+
+/* 上传插件包：内容区自身滚动，整个对话框始终留在视口内（含 320px 宽的小屏） */
+.plugin-upload-content {
+  display: grid;
+  gap: 12px;
+  max-height: calc(100vh - 240px);
+  max-height: calc(100dvh - 240px);
+  min-height: 120px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+.plugin-upload-content :deep(.ant-upload-drag) {
+  border-radius: 8px;
+}
+.plugin-upload-content :deep(.ant-upload-btn) {
+  padding: 20px 16px;
+}
+.plugin-upload-dropzone-icon {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 8px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--color-brand-active);
+  background: var(--color-brand-muted);
+}
+.plugin-upload-dropzone-title {
+  margin: 0 0 4px;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 500;
+}
+.plugin-upload-dropzone-hint {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.plugin-selected-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+}
+.plugin-selected-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plugin-selected-file small {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.plugin-upload-content code {
+  overflow-wrap: anywhere;
+}
+.plugin-upload-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: start;
+}
+.plugin-upload-footer > span {
+  min-width: 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.plugin-upload-footer > div {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+/* antd 默认会给相邻按钮加 margin-inline-start，这里统一用 gap */
+.plugin-upload-footer :deep(.ant-btn + .ant-btn) {
+  margin-inline-start: 0;
+}
+
+/* 导入 MCP 服务 */
+.mcp-import-form :deep(.ant-form-item:last-child) {
+  margin-bottom: 0;
+}
+.mcp-json-input {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+}
+.mcp-import-error {
+  margin-top: 12px;
+}
+
+/* MCP 工具清单 */
+.mcp-tools-search {
+  margin-bottom: 8px;
+}
+.mcp-tools-search :deep(.ant-input) {
+  min-height: 0; /* 中和 style.css 全局 :where(input){min-height:41px} */
+}
+.mcp-tools-list {
+  max-height: min(56vh, 480px);
+  overflow-y: auto;
+}
+.mcp-tools-list :deep(.ant-list-item-meta-title) {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  overflow-wrap: anywhere;
+}
+.mcp-tool-symbol,
+.related-scenario .scene-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+.mcp-tools-empty {
+  margin: 24px 0;
+}
+
+/* 工具详情 / 组件详情 */
+.related-scenario-list {
+  margin-top: 4px;
+}
+.tool-technical-detail :deep(.ant-collapse-header),
+.tool-technical-detail :deep(.ant-collapse-content-box) {
+  padding-inline: 0;
+}
+.tool-technical-detail code,
+.component-descriptions code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.component-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.component-tags :deep(.ant-tag) {
+  margin: 0;
+}
+.component-boundary {
+  margin-top: 16px;
+}
+
+@media (max-width: 620px) {
+  .plugin-upload-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .plugin-upload-footer > div > * {
+    flex: 1;
+    justify-content: center;
+  }
 }
 
 @media (max-width: 700px) {
