@@ -30,7 +30,7 @@ export function workspaceGuide(tools: readonly string[]): string[] {
     );
   if (has('bash'))
     lines.push(
-      '你可以调用 bash 执行受限的终端与 Git 命令。只读查看命令（如 git status、git branch、git log、git diff、ls、pwd、cat）直接执行；编译、修改等操作会由系统向用户发起确认。支持在会话工作区或已关联代码项目（cwd）中执行。',
+      '你可以调用 bash 执行受限的终端与 Git 命令。只读查看命令（如 git status、git branch、git log、git diff、ls、pwd、cat）直接执行；编译、修改等操作会由系统向用户发起确认。支持在会话工作区或关联项目（cwd）中执行。',
     );
   if (has('glob') || has('grep') || has('workspace_read'))
     lines.push(

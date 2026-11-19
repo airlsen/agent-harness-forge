@@ -165,6 +165,21 @@ async def init_db() -> None:
                 row.status, row.ended_at = "interrupted", datetime.now(timezone.utc)
                 append("error", {"message": "控制面重启，未完成的任务已标记中断，请新建会话"})
                 append("done", {"status": "error", "reason": "control-plane-restart"})
+
+        # Additive compatibility for existing platform policies and official scenarios to include bash
+        policy_row = await db.get(PlatformSetting, "policy")
+        if policy_row and isinstance(policy_row.value, dict):
+            allowed = policy_row.value.get("allowedTools")
+            if isinstance(allowed, list) and "bash" not in allowed:
+                policy_row.value = {**policy_row.value, "allowedTools": [*allowed, "bash"]}
+        from ..models.agent_scenario import AgentScenario
+
+        scenarios = (await db.scalars(select(AgentScenario).where(AgentScenario.official == True))).all()
+        for sc in scenarios:
+            if sc.name in ("通用助手", "代码与研发") and isinstance(sc.capabilities, dict):
+                tools = sc.capabilities.get("builtin_tool_names", [])
+                if isinstance(tools, list) and "bash" not in tools:
+                    sc.capabilities = {**sc.capabilities, "builtin_tool_names": [*tools, "bash"]}
         await db.commit()
 
 

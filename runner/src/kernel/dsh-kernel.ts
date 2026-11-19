@@ -25,7 +25,13 @@ const PRESENT_TOOL = 'workspace_present';
  * 基础能力：每个会话默认加载，不需要场景逐个授权。仍以平台策略（allowedTools）为上限，
  * 写入仍按策略逐次审批。场景 Bundle 是发布时的快照，由 Runner 统一补齐，已发布场景与存量会话同样生效。
  */
-export const BASE_TOOLS = ['current_time', 'workspace_list', 'workspace_read', 'workspace_write'] as const;
+export const BASE_TOOLS = [
+  'current_time',
+  'workspace_list',
+  'workspace_read',
+  'workspace_write',
+  'bash',
+] as const;
 /** 版本固定的 DSH 搜索插件（随 dsh 版本锁定）提供的工具；随读取权限开放，路径由 forge-runtime 限制在工作区内。 */
 export const SEARCH_TOOLS = ['glob', 'grep'] as const;
 export const SEARCH_PLUGIN = '@deepseek-ai/dsh-tool-fs-search';
@@ -53,7 +59,7 @@ export interface SessionToolset {
 /**
  * 计算会话工具集：基础能力 ∪ 场景声明，Forge 内置工具以平台策略为上限；
  * 写入开放时附带交付声明，读取开放时附带 glob/grep 搜索；插件工具原样保留。
- * 关联代码是会话级能力、与场景和策略无关：关联了项目就开放 glob/grep/read（只读）。
+ * 关联代码是会话级能力、与场景和策略无关：关联了项目就开放 glob/grep/read 与受控终端命令（bash）。
  * 扩展能力（Skill / MCP / 联网）由控制面按场景绑定 ∪ 聊天临时选择、并经企业策略筛选后下发，原样加入白名单。
  */
 export function sessionToolset(
@@ -72,12 +78,14 @@ export function sessionToolset(
   const search = builtin.includes('workspace_read') || hasCode;
   const skills = caps.skills.length > 0;
   const read = hasCode || caps.skills.some((skill) => skill.references.length > 0);
+  const bash = builtin.includes('bash') || hasCode;
   const mcp = mcpToolNames(caps);
   const allowed = [
     ...builtin,
     ...(builtin.includes('workspace_write') ? [PRESENT_TOOL] : []),
     ...(search ? SEARCH_TOOLS : []),
     ...(read ? [CODE_READ_TOOL] : []),
+    ...(bash ? ['bash'] : []),
     // 受管插件工具已由控制面按企业插件策略与场景授权筛选，不再按内置工具策略过滤。
     ...pluginTools,
     ...(skills ? [SKILL_TOOL] : []),
