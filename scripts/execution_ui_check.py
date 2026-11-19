@@ -79,7 +79,7 @@ async def check_execution_ui(
             await page.get_by_label("任务输入").fill("HOLD reconnect fixture")
             await page.get_by_role("button", name="发送任务", exact=True).click()
             await expect(
-                page.locator(".message-author").filter(has_text="正在输出")
+                page.locator(".message-author").filter(has_text="正在工作")
             ).to_be_visible()
             sid = page.url.rsplit("/", 1)[-1]
             assert sid.isdigit(), page.url
