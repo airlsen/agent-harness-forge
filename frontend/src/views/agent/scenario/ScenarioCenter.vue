@@ -398,13 +398,13 @@ async function versions(scenario: Scenario) {
         </a-input>
       </div>
       <div v-if="app.loading" class="loading-inline" role="status"><a-spin size="small" />正在读取场景…</div>
-      <a-empty v-else-if="!filtered.length" class="enterprise-empty">
-        <template #image
-          ><span class="enterprise-empty-symbol"><Icon :name="query ? 'search' : 'grid'" :size="29" /></span
-        ></template>
-        <template #description>
-          <h2>{{ query ? '没有找到匹配的场景' : '这个分类还没有场景' }}</h2>
-          <p>
+      <a-empty v-else-if="!filtered.length" class="scenario-empty" :description="false">
+        <template #image>
+          <span class="scenario-empty-symbol"><Icon :name="query ? 'search' : 'grid'" :size="24" /></span>
+        </template>
+        <div class="scenario-empty-copy">
+          <h2 class="scenario-empty-title">{{ query ? '没有找到匹配的场景' : '这个分类还没有场景' }}</h2>
+          <p class="scenario-empty-description">
             {{
               query
                 ? '试试其他关键词，或清除搜索。'
@@ -413,7 +413,7 @@ async function versions(scenario: Scenario) {
                   : '新场景经过维护和发布后，会出现在这里。'
             }}
           </p>
-        </template>
+        </div>
         <a-button
           v-if="query || filter !== 'all'"
           @click="
@@ -934,6 +934,19 @@ async function versions(scenario: Scenario) {
 </template>
 
 <style scoped>
+/* ============ 页面节奏：页头 / 筛选栏 / 内容统一间距 ============ */
+.scenarios-page .scenario-page-heading {
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.scenarios-page .page-heading.scenario-page-heading .page-heading-actions {
+  gap: 8px;
+}
+.scenarios-page .enterprise-collection-toolbar.scenario-collection-toolbar {
+  min-height: 32px;
+  margin-bottom: 24px;
+}
+
 /* ============ 页头动作按钮 ============ */
 /* 尺寸、圆角、配色全部沿用 antd 默认；只补图标间距：
    icon 插槽里是 ForgeIcon 裸 <svg>，不是 .anticon，antd 不会给它和文字之间留空 */
@@ -1182,19 +1195,80 @@ async function versions(scenario: Scenario) {
   }
 }
 
-/* ============ 空态收敛 ============ */
-.scenarios-page .enterprise-empty {
-  min-height: 220px;
+/* ============ 空态：独立布局，避免公共 empty 的 margin / :last-child 规则叠加 ============ */
+.scenario-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 240px;
+  margin: 0;
   padding: 40px 24px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: center;
 }
-.enterprise-empty :deep(.ant-empty-image) {
+.scenario-empty :deep(.ant-empty-image) {
   height: auto;
-  margin-bottom: 14px;
+  margin: 0;
 }
-.enterprise-empty-symbol {
-  width: 56px;
-  height: 56px;
-  margin-bottom: 18px;
+.scenario-empty-symbol {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--color-brand-active);
+  background: var(--color-brand-muted);
+}
+/* 标题和说明使用默认插槽，不放进 Empty 自带的 <p>，避免标题 / 段落嵌套。 */
+.scenario-empty :deep(.ant-empty-footer) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  margin: 16px 0 0;
+}
+.scenario-empty-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 400px;
+}
+.scenario-empty-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+.scenario-empty-description {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 22px;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.scenario-empty :deep(.ant-btn) {
+  box-shadow: none;
+}
+@media (max-width: 700px) {
+  .scenarios-page .scenario-page-heading .page-heading-actions {
+    flex-wrap: wrap;
+  }
+  .page-heading-actions :deep(.ant-btn) {
+    flex: 1 1 0;
+  }
+  .scenario-search {
+    width: 100%;
+  }
+  .scenario-empty {
+    padding: 32px 16px;
+  }
 }
 
 /* ============ 编辑器内 antd 细节（保持不变的功能性修正）============ */
