@@ -132,6 +132,8 @@ async def init_db() -> None:
     from sqlalchemy import select, func
     from ..models.agent_session import AgentSession, SessionEventIndex
     from ..models.approval_ticket import ApprovalTicket
+    from ..models.platform import PlatformSetting
+    from ..models.agent_scenario import AgentScenario
 
     async with SessionFactory() as db:
         active = (await db.scalars(select(AgentSession).where(AgentSession.status == "running"))).all()
@@ -172,7 +174,6 @@ async def init_db() -> None:
             allowed = policy_row.value.get("allowedTools")
             if isinstance(allowed, list) and "bash" not in allowed:
                 policy_row.value = {**policy_row.value, "allowedTools": [*allowed, "bash"]}
-        from ..models.agent_scenario import AgentScenario
 
         scenarios = (await db.scalars(select(AgentScenario).where(AgentScenario.official == True))).all()
         for sc in scenarios:
