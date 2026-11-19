@@ -10,6 +10,10 @@ import { formatDate, isAvailableScenario, scenarioSource, scenarioState } from '
 import type { Scenario, ScenarioPayload } from '../../../types/platform';
 import type { PluginPackage } from '../../../types/plugin';
 import Icon from '../../../components/ForgeIcon.vue';
+import CatalogCard from '../../../components/catalog/CatalogCard.vue';
+import CatalogFilter from '../../../components/catalog/CatalogFilter.vue';
+import CatalogGrid from '../../../components/catalog/CatalogGrid.vue';
+import CatalogSearch from '../../../components/catalog/CatalogSearch.vue';
 
 const app = usePlatform();
 const chat = useConversation();
@@ -80,9 +84,8 @@ const filters = computed(() => [
     ? [{ id: 'draft', label: '维护草稿', count: base.value.filter((s) => s.status === 'draft').length }]
     : []),
 ]);
-// a-segmented 选项：不传 label，交给 #label 插槽渲染「名称 + 数量」
 const filterOptions = computed(() =>
-  filters.value.map((item) => ({ value: item.id, title: item.label, payload: item })),
+  filters.value.map((item) => ({ value: item.id, label: item.label, count: item.count })),
 );
 const filtered = computed(() =>
   base.value.filter(
@@ -374,28 +377,8 @@ async function versions(scenario: Scenario) {
         </div>
       </div>
       <div class="collection-toolbar enterprise-collection-toolbar scenario-collection-toolbar">
-        <a-segmented
-          v-model:value="filter"
-          class="scenario-filter"
-          aria-label="场景筛选"
-          :options="filterOptions"
-        >
-          <template #label="{ payload }">
-            <span class="scenario-filter-label">{{ payload.label }}</span><span
-              class="scenario-filter-count"
-              >{{ payload.count }}</span
-            >
-          </template>
-        </a-segmented>
-        <a-input
-          v-model:value="query"
-          class="scenario-search"
-          placeholder="搜索场景名称或描述"
-          aria-label="搜索场景"
-          allow-clear
-        >
-          <template #prefix><Icon name="search" :size="15" /></template>
-        </a-input>
+        <CatalogFilter v-model:value="filter" aria-label="场景筛选" :options="filterOptions" />
+        <CatalogSearch v-model:value="query" placeholder="搜索场景名称或描述" aria-label="搜索场景" />
       </div>
       <div v-if="app.loading" class="loading-inline" role="status"><a-spin size="small" />正在读取场景…</div>
       <a-empty v-else-if="!filtered.length" class="scenario-empty" :description="false">
@@ -424,106 +407,97 @@ async function versions(scenario: Scenario) {
           查看全部场景
         </a-button>
       </a-empty>
-      <div v-else class="scenario-grid enterprise-scenario-grid">
-        <article v-for="scenario in filtered" :key="scenario.id" class="scenario-card">
-          <header class="scenario-card-head">
-            <span :class="['scene-icon', scenario.payload.icon]"
-              ><Icon :name="scenario.payload.icon" :size="20"
-            /></span>
-            <div class="scenario-card-heading">
-              <h2 :title="scenario.payload.name">{{ scenario.payload.name }}</h2>
-              <p v-if="maintenance" class="scenario-card-sub">
-                <span>{{ scenarioSource(scenario) }}</span><span>v{{ scenario.current_version }}</span
-                ><span :class="['scenario-card-test', { 'is-passed': scenario.tested }]"
-                  ><Icon :name="scenario.tested ? 'check' : 'circle'" :size="12" />{{
-                    scenario.tested ? '试运行通过' : '未试运行'
-                  }}</span
-                >
-              </p>
-            </div>
-            <a-tag
-              class="scenario-card-status"
-              :color="scenario.status === 'published' ? 'success' : undefined"
-              :bordered="false"
-              >{{ scenarioState(scenario) }}</a-tag
+      <CatalogGrid v-else>
+        <CatalogCard
+          v-for="scenario in filtered"
+          :key="scenario.id"
+          :title="scenario.payload.name"
+          :icon="scenario.payload.icon"
+          :tone="scenario.payload.icon"
+          :description="scenario.payload.description"
+          placeholder="还没有添加场景描述。"
+          :status="scenarioState(scenario)"
+          :status-color="scenario.status === 'published' ? 'success' : undefined"
+        >
+          <template v-if="maintenance" #sub>
+            <span>{{ scenarioSource(scenario) }}</span><span>v{{ scenario.current_version }}</span
+            ><span :class="['scenario-card-test', { 'is-passed': scenario.tested }]"
+              ><Icon :name="scenario.tested ? 'check' : 'circle'" :size="12" />{{
+                scenario.tested ? '试运行通过' : '未试运行'
+              }}</span
             >
-          </header>
-          <p class="scenario-card-desc">{{ scenario.payload.description || '还没有添加场景描述。' }}</p>
-          <div v-if="cardLabels(scenario.payload).length" class="scenario-card-tags">
+          </template>
+          <template v-if="cardLabels(scenario.payload).length" #tags>
             <a-tag v-for="item in cardLabels(scenario.payload).slice(0, 2)" :key="item.key" :bordered="false"
               ><Icon :name="item.icon" :size="12" /><span>{{ item.label }}</span></a-tag
             ><a-tag v-if="cardLabels(scenario.payload).length > 2" :bordered="false"
               >+{{ cardLabels(scenario.payload).length - 2 }}</a-tag
             >
-          </div>
-          <footer class="scenario-card-footer">
-            <!-- 使用目录：详情（文字按钮）+ 开始（主题色主按钮，图标在左） -->
-            <template v-if="!maintenance">
-              <a-button type="text" size="small" @click="openDetail(scenario)">详情</a-button>
-              <a-button type="primary" size="small" @click="useScenario(scenario)">
-                <template #icon
-                  ><Icon :name="isAvailableScenario(scenario) ? 'play' : 'eye'" :size="14"
-                /></template>
-                {{ isAvailableScenario(scenario) ? '开始' : '预览草稿' }}
+          </template>
+          <!-- 使用目录：详情（文字按钮）+ 开始（主题色主按钮，图标在左） -->
+          <template v-if="!maintenance" #footer>
+            <a-button type="text" size="small" @click="openDetail(scenario)">详情</a-button>
+            <a-button type="primary" size="small" @click="useScenario(scenario)">
+              <template #icon
+                ><Icon :name="isAvailableScenario(scenario) ? 'play' : 'eye'" :size="14"
+              /></template>
+              {{ isAvailableScenario(scenario) ? '开始' : '预览草稿' }}
+            </a-button>
+          </template>
+          <!-- 维护模式：编辑 / 试运行 / 发布 在左；详情与「更多」在右，版本记录、删除收进下拉 -->
+          <template v-if="maintenance" #ops>
+            <a-button
+              size="small"
+              :disabled="busy"
+              @click="scenario.space === 'official' ? copy(scenario) : edit(scenario)"
+            >
+              <template #icon
+                ><Icon :name="scenario.space === 'official' ? 'copy' : 'edit'" :size="14"
+              /></template>
+              {{ scenario.space === 'official' ? '复制为草稿' : '编辑' }}
+            </a-button>
+            <a-button
+              v-if="scenario.space !== 'official'"
+              type="text"
+              size="small"
+              :disabled="testing !== null"
+              :loading="testing === scenario.id"
+              @click="test(scenario)"
+            >
+              <template #icon><Icon name="play" :size="14" /></template>试运行
+            </a-button>
+            <a-button
+              v-if="scenario.space !== 'official' && scenario.status !== 'published' && scenario.tested"
+              type="text"
+              size="small"
+              :disabled="busy"
+              @click="publish(scenario)"
+            >
+              <template #icon><Icon name="check" :size="14" /></template>发布
+            </a-button>
+          </template>
+          <template v-if="maintenance" #footer>
+            <a-button type="text" size="small" @click="openDetail(scenario)">详情</a-button>
+            <a-dropdown :trigger="['click']" placement="bottomRight">
+              <a-button
+                type="text"
+                size="small"
+                class="scenario-card-more"
+                :aria-label="`更多操作 ${scenario.payload.name}`"
+                title="更多操作"
+              >
+                <template #icon><Icon name="more" :size="16" /></template>
               </a-button>
-            </template>
-            <!-- 维护模式：编辑 / 试运行 / 发布 在左；详情与「更多」在右，版本记录、删除收进下拉 -->
-            <template v-else>
-              <div class="scenario-card-ops">
-                <a-button
-                  size="small"
-                  :disabled="busy"
-                  @click="scenario.space === 'official' ? copy(scenario) : edit(scenario)"
-                >
-                  <template #icon
-                    ><Icon :name="scenario.space === 'official' ? 'copy' : 'edit'" :size="14"
-                  /></template>
-                  {{ scenario.space === 'official' ? '复制为草稿' : '编辑' }}
-                </a-button>
-                <a-button
-                  v-if="scenario.space !== 'official'"
-                  type="text"
-                  size="small"
-                  :disabled="testing !== null"
-                  :loading="testing === scenario.id"
-                  @click="test(scenario)"
-                >
-                  <template #icon><Icon name="play" :size="14" /></template>试运行
-                </a-button>
-                <a-button
-                  v-if="scenario.space !== 'official' && scenario.status !== 'published' && scenario.tested"
-                  type="text"
-                  size="small"
-                  :disabled="busy"
-                  @click="publish(scenario)"
-                >
-                  <template #icon><Icon name="check" :size="14" /></template>发布
-                </a-button>
-              </div>
-              <a-button type="text" size="small" @click="openDetail(scenario)">详情</a-button>
-              <a-dropdown :trigger="['click']" placement="bottomRight">
-                <a-button
-                  type="text"
-                  size="small"
-                  class="scenario-card-more"
-                  :aria-label="`更多操作 ${scenario.payload.name}`"
-                  title="更多操作"
-                >
-                  <template #icon><Icon name="more" :size="16" /></template>
-                </a-button>
-                <template #overlay>
-                  <a-menu @click="(info: MenuInfo) => moreAction(String(info.key), scenario)">
-                    <a-menu-item key="versions">版本记录 v{{ scenario.current_version }}</a-menu-item>
-                    <a-menu-item v-if="scenario.space !== 'official'" key="delete" danger
-                      >删除场景</a-menu-item
-                    >
-                  </a-menu>
-                </template>
-              </a-dropdown>
-            </template>
-          </footer>
-        </article>
-      </div>
+              <template #overlay>
+                <a-menu @click="(info: MenuInfo) => moreAction(String(info.key), scenario)">
+                  <a-menu-item key="versions">版本记录 v{{ scenario.current_version }}</a-menu-item>
+                  <a-menu-item v-if="scenario.space !== 'official'" key="delete" danger>删除场景</a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+          </template>
+        </CatalogCard>
+      </CatalogGrid>
     </div>
     <!-- class="drawer" 落在 .ant-drawer-content 上，复用全局 .drawer 下的正文排版（detail-block / version-entry 等） -->
     <a-drawer
@@ -959,155 +933,7 @@ async function versions(scenario: Scenario) {
   flex-shrink: 0;
 }
 
-/* ============ 场景筛选：antd Segmented ============ */
-/* 浅灰底槽 + 白色浮起的选中项；只有选中文字用主题色，数量保持中性灰。
-   选中 / 未选中的字重与数量盒子尺寸完全一致，切换时选项宽度不变，只有白色滑块平移。 */
-.scenario-filter {
-  flex: 0 1 auto;
-  max-width: 100%;
-  padding: 3px;
-  overflow-x: auto;
-  color: var(--btn-secondary-fg);
-  background: var(--surface-muted);
-  border-radius: 999px;
-  scrollbar-width: none;
-}
-.scenario-filter::-webkit-scrollbar {
-  display: none;
-}
-.scenario-filter :deep(.ant-segmented-item),
-.scenario-filter :deep(.ant-segmented-thumb) {
-  border-radius: 999px;
-}
-.scenario-filter :deep(.ant-segmented-item) {
-  flex: 0 0 auto;
-}
-/* 未选中项悬停：不铺灰底，只加深文字，保持底槽干净 */
-.scenario-filter :deep(.ant-segmented-item::after) {
-  display: none;
-}
-.scenario-filter :deep(.ant-segmented-item:hover:not(.ant-segmented-item-selected)) {
-  color: var(--color-text-primary);
-}
-.scenario-filter :deep(.ant-segmented-item-selected),
-.scenario-filter :deep(.ant-segmented-thumb) {
-  background: var(--surface-card);
-  box-shadow: var(--shadow-sm);
-}
-.scenario-filter :deep(.ant-segmented-item-selected) {
-  color: var(--color-brand);
-}
-.scenario-filter :deep(.ant-segmented-item-label) {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  /* 26px 选项 + 上下 3px 底槽 = 32px，与 antd 默认按钮 / 输入框齐平 */
-  min-height: 26px;
-  padding: 0 12px;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 26px;
-  white-space: nowrap;
-}
-/* 鼠标点击不出现描边；只在键盘 Tab 聚焦时给出聚焦提示（无障碍需要） */
-.scenario-filter :deep(.ant-segmented-item:has(.ant-segmented-item-input:focus-visible)) {
-  outline: 2px solid var(--border-focus);
-  outline-offset: 1px;
-}
-/* 数量：两种状态共用同一个胶囊盒子，未选中时底色透明，选中时铺浅灰 */
-.scenario-filter-count {
-  display: inline-grid;
-  min-width: 20px;
-  height: 18px;
-  place-items: center;
-  padding: 0 6px;
-  border-radius: 999px;
-  color: var(--color-text-secondary);
-  background: transparent;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  line-height: 1;
-  transition: background-color 150ms ease;
-}
-.scenario-filter :deep(.ant-segmented-item-selected) .scenario-filter-count {
-  background: var(--surface-muted);
-}
-
-/* ============ 搜索框：antd 默认外观（圆角 / 边框 / 聚焦光圈），只定宽度 ============ */
-.scenario-search {
-  width: 240px;
-  flex-shrink: 0;
-}
-.scenario-search :deep(.ant-input) {
-  min-height: 0; /* 中和 style.css 全局 :where(input){min-height:41px}，否则输入框被撑高 */
-}
-.scenario-search :deep(.ant-input-prefix) {
-  color: var(--color-text-tertiary);
-}
-
-/* ============ 场景卡片：扁平，无投影；hover 边框变主题色并上浮 2px ============ */
-.scenario-card {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  padding: 16px 16px 0;
-  background: var(--surface-card);
-  border: 1px solid var(--border-default);
-  border-radius: 8px;
-  box-shadow: none;
-  transition:
-    transform 170ms ease,
-    border-color 170ms ease;
-}
-.scenario-card:hover,
-.scenario-card:has(:focus-visible) {
-  transform: translateY(-2px);
-  border-color: var(--color-brand);
-  box-shadow: none;
-}
-.scenario-card-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-.scenario-card .scene-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-}
-.scenario-card-heading {
-  flex: 1;
-  min-width: 0;
-}
-.scenario-card-heading h2 {
-  margin: 0;
-  overflow: hidden;
-  color: var(--color-text-primary);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 36px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* 维护模式下标题收成两行：标题 + 元信息，整体与 36px 图标同高 */
-.scenario-card-heading:has(.scenario-card-sub) h2 {
-  line-height: 20px;
-}
-.scenario-card-sub {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0 8px;
-  margin: 2px 0 0;
-  color: var(--color-text-tertiary);
-  font-size: 12px;
-  line-height: 16px;
-}
-.scenario-card-sub > span + span::before {
-  content: '·';
-  margin-right: 8px;
-}
+/* 筛选、搜索、卡片样式见 components/catalog/*（与技能管理页共用）；这里只保留维护模式元信息里的试运行状态 */
 .scenario-card-test {
   display: inline-flex;
   align-items: center;
@@ -1115,83 +941,6 @@ async function versions(scenario: Scenario) {
 }
 .scenario-card-test.is-passed {
   color: var(--color-success-text);
-}
-.scenario-card-status {
-  flex-shrink: 0;
-  margin: 7px 0 0;
-}
-.scenario-card-desc {
-  /* 固定两行：描述长短不一时同一行卡片仍等高 */
-  display: -webkit-box;
-  flex: 0 0 auto;
-  min-height: calc(13px * 1.7 * 2);
-  margin: 12px 0 0;
-  overflow: hidden;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  line-height: 1.7;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-}
-.scenario-card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 12px;
-}
-.scenario-card-tags :deep(.ant-tag) {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  margin: 0;
-}
-.scenario-card-tags :deep(.ant-tag > span) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.scenario-card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  min-height: 48px;
-  margin-top: auto;
-  padding: 8px 0;
-}
-/* 底栏 margin-top:auto 把它压到卡片底部；紧挨底栏的内容块再留 16px，保证最小间距 */
-.scenario-card > :has(+ .scenario-card-footer) {
-  margin-bottom: 16px;
-}
-.scenario-card-ops {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  margin-right: auto;
-}
-/* icon 插槽里是 ForgeIcon 裸 <svg>，不是 .anticon，antd 不会补图标与文字的间距 */
-.scenario-card-footer :deep(.ant-btn) {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.scenario-card-footer :deep(.ant-btn-text:not(:disabled)) {
-  color: var(--color-text-secondary);
-}
-.scenario-card-footer :deep(.ant-btn-text:not(:disabled):hover) {
-  color: var(--color-text-primary);
-}
-@media (prefers-reduced-motion: reduce) {
-  .scenario-card {
-    transition: none;
-  }
-  .scenario-card:hover,
-  .scenario-card:has(:focus-visible) {
-    transform: none;
-  }
 }
 
 /* ============ 空态：独立布局，避免公共 empty 的 margin / :last-child 规则叠加 ============ */
@@ -1261,9 +1010,6 @@ async function versions(scenario: Scenario) {
   }
   .page-heading-actions :deep(.ant-btn) {
     flex: 1 1 0;
-  }
-  .scenario-search {
-    width: 100%;
   }
   .scenario-empty {
     padding: 32px 16px;

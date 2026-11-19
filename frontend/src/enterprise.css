@@ -7499,15 +7499,10 @@ textarea:focus-visible {
     gap: 12px;
     margin-bottom: 23px;
   }
-  .enterprise-view .capabilities-page .capability-category-switcher,
-  .enterprise-view .scenarios-page .scenario-filter {
+  .enterprise-view .catalog-filter {
     width: 100%;
     max-width: 100%;
     flex: 1 1 100%;
-  }
-  .enterprise-view .capabilities-page .capability-category-switcher > button {
-    flex: 0 0 auto;
-    padding-inline: 11px;
   }
   .capability-toolbar-actions {
     width: 100%;
