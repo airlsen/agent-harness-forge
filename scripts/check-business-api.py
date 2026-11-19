@@ -18,6 +18,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -743,20 +744,39 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
 
                 log_drain = threading.Thread(target=drain_browser_logs, daemon=True)
                 log_drain.start()
-                asyncio.run(
-                    check_execution_ui(
-                        f"http://127.0.0.1:{api_port}",
-                        "admin",
-                        password,
-                        ROOT
-                        / (
-                            "data/business-checks/execution-ui-cookie-blocked-report.json"
-                            if cookie_blocked
-                            else "data/business-checks/execution-ui-report.json"
-                        ),
-                        cookie_blocked=cookie_blocked,
+                try:
+                    asyncio.run(
+                        check_execution_ui(
+                            f"http://127.0.0.1:{api_port}",
+                            "admin",
+                            password,
+                            ROOT
+                            / (
+                                "data/business-checks/execution-ui-cookie-blocked-report.json"
+                                if cookie_blocked
+                                else "data/business-checks/execution-ui-report.json"
+                            ),
+                            cookie_blocked=cookie_blocked,
+                        )
                     )
-                )
+                except Exception as error:
+                    detail = f"{type(error).__name__}: {error}"
+                    annotation = (
+                        detail.replace("%", "%25")
+                        .replace("\r", "%0D")
+                        .replace("\n", "%0A")
+                    )
+                    print(
+                        f"::error title=Browser acceptance failure::{annotation}",
+                        flush=True,
+                    )
+                    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+                    if summary_path:
+                        with Path(summary_path).open("a", encoding="utf-8") as summary:
+                            summary.write("### Browser acceptance failure\n\n```text\n")
+                            summary.write(traceback.format_exc())
+                            summary.write("\n```\n")
+                    raise
             finally:
                 api_process.terminate()
                 try:
