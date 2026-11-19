@@ -340,11 +340,19 @@ onUnmounted(() => {
       <footer><button class="button primary" @click="help = false">关闭帮助</button></footer>
     </DialogShell>
   </div>
-  <Transition name="toast"
-    ><div v-if="app.notice" :class="['toast-message', app.notice.type]" role="alert">
-      <Icon :name="app.notice.type === 'success' ? 'check' : 'info'" :size="17" /><span>{{
-        app.notice.message
-      }}</span
-      ><button aria-label="关闭提示" @click="app.notice = null"><Icon name="close" :size="15" /></button></div
-  ></Transition>
+  <!-- 全局轻提示挂到 body：弹窗打开时 #app 会被设为 inert，留在 #app 内的提示既无法关闭也不会被读屏播报。 -->
+  <Teleport to="body"
+    ><Transition name="toast"
+      ><div
+        v-if="app.notice"
+        :class="['toast-message', app.notice.type]"
+        :role="app.notice.type === 'error' ? 'alert' : 'status'"
+      >
+        <Icon :name="app.notice.type === 'success' ? 'check' : 'info'" :size="17" /><span>{{
+          app.notice.message
+        }}</span
+        ><button aria-label="关闭提示" @click="app.notice = null">
+          <Icon name="close" :size="15" />
+        </button></div></Transition
+  ></Teleport>
 </template>

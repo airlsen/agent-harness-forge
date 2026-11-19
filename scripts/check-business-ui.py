@@ -670,6 +670,23 @@ async def main():
             await expect(page.locator(".enterprise-empty")).to_contain_text(
                 "还没有 MCP 服务"
             )
+            await page.get_by_role("button", name="添加 MCP 服务").click()
+            mcp_dialog = page.get_by_role("dialog", name="导入 MCP 服务配置")
+            await expect(mcp_dialog).to_be_visible()
+            await page.locator("#mcp-import-json").fill("{")
+            await mcp_dialog.get_by_role("button", name="导入配置").click()
+            await expect(mcp_dialog.locator(".mcp-import-error")).to_contain_text(
+                "JSON 格式不正确"
+            )
+            await page.locator("#mcp-import-json").fill("{ ")
+            await expect(mcp_dialog.locator(".mcp-import-error")).to_have_count(0)
+            await page.keyboard.press("Escape")
+            await expect(mcp_dialog).to_have_count(0)
+            # 操作结果走全局 toast，页面内不再堆叠常驻提示条。
+            await expect(page.locator(".mcp-directory [role=status]")).to_have_count(0)
+            check(
+                "MCP import keeps input errors inside the dialog and adds no in-page result banner"
+            )
             await screenshot("mcp-desktop.png")
             check("Skill/MCP tabs have concise empty states and one clear next action")
             await go("/agent/conversations")
