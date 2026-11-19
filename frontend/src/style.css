@@ -99,8 +99,10 @@ textarea {
   max-width: 100%;
 }
 /* 用 :where() 把全局表单元素样式的优先级降到 0，让 antd 组件的类样式（.ant-input 等）
-   按设计令牌生效；原生表单控件（无竞争类样式）仍沿用此处的 Forge 外观。 */
-:where(input:not([type='checkbox']):not([type='file'])),
+   按设计令牌生效；原生表单控件（无竞争类样式）仍沿用此处的 Forge 外观。
+   注意：优先级为 0 只保证 antd「声明过」的属性胜出，antd 没声明的属性（min-height、padding、margin…）
+   仍会漏进 antd 组件内部。a-segmented 每一项是 <label> + 隐藏的单选 <input>，必须整个排除。 */
+:where(input:not([type='checkbox']):not([type='file']):not([class*='ant-segmented'])),
 :where(select),
 :where(textarea) {
   width: 100%;
@@ -118,12 +120,12 @@ input::placeholder,
 textarea::placeholder {
   color: var(--color-text-tertiary);
 }
-:where(input:not([type='checkbox']):hover:not(:disabled)),
+:where(input:not([type='checkbox']):not([class*='ant-segmented']):hover:not(:disabled)),
 :where(textarea:hover:not(:disabled)),
 :where(select:hover:not(:disabled)) {
   border-color: var(--input-border-hover);
 }
-:where(input:not([type='checkbox']):focus),
+:where(input:not([type='checkbox']):not([class*='ant-segmented']):focus),
 :where(textarea:focus),
 :where(select:focus) {
   border-color: var(--input-border-focus);
@@ -134,7 +136,8 @@ textarea {
   resize: vertical;
   line-height: 1.75;
 }
-:where(label) {
+/* 排除 a-segmented 的选项 <label>：否则 margin: 20px 0 8px / display / color 会把选项下推、撑高底槽 */
+:where(label:not([class*='ant-segmented'])) {
   display: block;
   font-size: 13px;
   font-weight: 500;
