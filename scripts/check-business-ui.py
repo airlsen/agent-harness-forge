@@ -402,9 +402,9 @@ async def main():
             await expect(page.get_by_role("dialog", name="场景详情")).to_contain_text(
                 "用途"
             )
-            await expect(page.get_by_role("dialog", name="场景详情")).not_to_contain_text(
-                "工作规范"
-            )
+            await expect(
+                page.get_by_role("dialog", name="场景详情")
+            ).not_to_contain_text("工作规范")
             await page.keyboard.press("Escape")
             await screenshot("scenarios-desktop.png")
             check(
@@ -538,18 +538,34 @@ async def main():
             check(
                 "SDK/runtime components are advanced information, not fake installable business plugins"
             )
-            await page.locator(".collection-tabs > button").filter(has_text="技能").click()
-            await expect(page.locator(".enterprise-empty")).to_contain_text("还没有技能")
+            await (
+                page.locator(".collection-tabs > button")
+                .filter(has_text="技能")
+                .click()
+            )
+            await expect(page.locator(".enterprise-empty")).to_contain_text(
+                "还没有技能"
+            )
             await expect(
                 page.locator(".enterprise-empty").get_by_role("link", name="新建技能")
             ).to_be_visible()
-            await page.locator(".collection-tabs > button").filter(has_text="MCP 服务").click()
-            await expect(page.locator(".enterprise-empty")).to_contain_text("还没有 MCP 服务")
+            await (
+                page.locator(".collection-tabs > button")
+                .filter(has_text="MCP 服务")
+                .click()
+            )
+            await expect(page.locator(".enterprise-empty")).to_contain_text(
+                "还没有 MCP 服务"
+            )
             await expect(
-                page.locator(".enterprise-empty").get_by_role("button", name="添加 MCP 服务")
+                page.locator(".enterprise-empty").get_by_role(
+                    "button", name="添加 MCP 服务"
+                )
             ).to_be_visible()
             await page.reload()
-            await expect(page.locator(".enterprise-empty")).to_contain_text("还没有 MCP 服务")
+            await expect(page.locator(".enterprise-empty")).to_contain_text(
+                "还没有 MCP 服务"
+            )
             await screenshot("mcp-desktop.png")
             check("Skill/MCP tabs have concise empty states and one clear next action")
             await go("/agent/conversations")
