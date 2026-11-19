@@ -43,6 +43,13 @@ TOOLS = [
         "permission": "write",
         "icon": "edit",
     },
+    {
+        "name": "bash",
+        "title": "终端命令执行",
+        "description": "受控执行终端与 Git 命令；只读命令自动放行，修改或编译命令须经用户审批。",
+        "permission": "write",
+        "icon": "terminal",
+    },
 ]
 TOOL_NAMES = {x["name"] for x in TOOLS}
 DEFAULT_POLICY = {

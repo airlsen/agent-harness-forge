@@ -44,6 +44,8 @@ export interface CodeProject {
   path: string;
   branch?: string;
   commit?: string;
+  branches?: string[];
+  tags?: string[];
 }
 export interface CodeProjectList {
   root: string;
@@ -70,8 +72,13 @@ export function validProjectName(name: unknown): name is string {
   );
 }
 
-/** 读取 .git/HEAD 得到分支与提交（不依赖 git 命令；失败时返回空） */
-export function gitHead(dir: string): { branch?: string; commit?: string } {
+/** 读取 .git/HEAD 得到分支与提交，并提取已知分支与标签（不依赖 git 命令；失败时返回空） */
+export function gitHead(dir: string): {
+  branch?: string;
+  commit?: string;
+  branches?: string[];
+  tags?: string[];
+} {
   try {
     let gitDir = join(dir, '.git');
     // worktree / submodule：.git 是一个指向真实目录的文件
@@ -82,20 +89,65 @@ export function gitHead(dir: string): { branch?: string; commit?: string } {
     }
     const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim();
     const ref = /^ref:\s*(.+)$/.exec(head)?.[1];
-    if (!ref) return /^[0-9a-f]{40}$/.test(head) ? { commit: head.slice(0, 12) } : {};
-    const branch = ref.replace(/^refs\/heads\//, '');
+    let branch = ref ? ref.replace(/^refs\/heads\//, '') : undefined;
     let commit = '';
-    try {
-      commit = readFileSync(join(gitDir, ref), 'utf8').trim();
-    } catch {
-      const packed = readFileSync(join(gitDir, 'packed-refs'), 'utf8');
-      commit =
-        packed
-          .split('\n')
-          .find((line) => line.endsWith(' ' + ref))
-          ?.split(' ')[0] ?? '';
+    if (!ref && /^[0-9a-f]{40}$/.test(head)) {
+      commit = head;
+    } else if (ref) {
+      try {
+        commit = readFileSync(join(gitDir, ref), 'utf8').trim();
+      } catch {
+        // commit might be in packed-refs
+      }
     }
-    return { branch, ...(/^[0-9a-f]{40}$/.test(commit) ? { commit: commit.slice(0, 12) } : {}) };
+
+    const branches = new Set<string>();
+    const tags = new Set<string>();
+    if (branch) branches.add(branch);
+
+    // 读取本地松散分支 (refs/heads)
+    const headsDir = join(gitDir, 'refs', 'heads');
+    if (existsSync(headsDir)) {
+      const walkHeads = (d: string, prefix = '') => {
+        try {
+          for (const f of readdirSync(d, { withFileTypes: true })) {
+            if (f.isDirectory()) walkHeads(join(d, f.name), prefix + f.name + '/');
+            else branches.add(prefix + f.name);
+          }
+        } catch {}
+      };
+      walkHeads(headsDir);
+    }
+
+    // 读取本地松散标签 (refs/tags)
+    const tagsDir = join(gitDir, 'refs', 'tags');
+    if (existsSync(tagsDir)) {
+      try {
+        for (const f of readdirSync(tagsDir)) tags.add(f);
+      } catch {}
+    }
+
+    // 读取 packed-refs（打包的分支与标签）
+    try {
+      const packed = readFileSync(join(gitDir, 'packed-refs'), 'utf8');
+      for (const line of packed.split('\n')) {
+        const trimmed = line.trim();
+        if (ref && !commit && trimmed.endsWith(' ' + ref)) {
+          commit = trimmed.split(' ')[0] ?? '';
+        }
+        const matchBranch = /^[0-9a-f]{40}\s+refs\/heads\/(.+)$/.exec(trimmed);
+        if (matchBranch) branches.add(matchBranch[1]);
+        const matchTag = /^[0-9a-f]{40}\s+refs\/tags\/(.+)$/.exec(trimmed);
+        if (matchTag) tags.add(matchTag[1]);
+      }
+    } catch {}
+
+    return {
+      ...(branch ? { branch } : {}),
+      ...(/^[0-9a-f]{40}$/.test(commit) ? { commit: commit.slice(0, 12) } : {}),
+      ...(branches.size ? { branches: [...branches].sort() } : {}),
+      ...(tags.size ? { tags: [...tags].sort() } : {}),
+    };
   } catch {
     return {};
   }

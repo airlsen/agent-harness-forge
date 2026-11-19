@@ -68,6 +68,29 @@ try {
     assert.deepEqual(gitHead(join(dir, 'outside')), {});
   });
 
+  await check('git branches and tags metadata are extracted from loose and packed refs', async () => {
+    const gitDir = join(dir, 'meta-git');
+    await mkdir(join(gitDir, 'refs', 'heads', 'feature'), { recursive: true });
+    await mkdir(join(gitDir, 'refs', 'tags'), { recursive: true });
+    await writeFile(join(gitDir, 'HEAD'), 'ref: refs/heads/main\n');
+    await writeFile(join(gitDir, 'refs', 'heads', 'main'), 'a'.repeat(40) + '\n');
+    await writeFile(join(gitDir, 'refs', 'heads', 'feature', 'login'), 'b'.repeat(40) + '\n');
+    await writeFile(join(gitDir, 'refs', 'tags', 'v1.0.0'), 'c'.repeat(40) + '\n');
+    await writeFile(
+      join(gitDir, 'packed-refs'),
+      `# pack-refs with: peeled fully-peeled sorted\n${'d'.repeat(40)} refs/heads/release\n${'e'.repeat(40)} refs/tags/v0.9.0\n`,
+    );
+    const metaProj = join(dir, 'meta-proj');
+    await mkdir(metaProj, { recursive: true });
+    await writeFile(join(metaProj, '.git'), `gitdir: ${gitDir}\n`);
+
+    const result = gitHead(metaProj);
+    assert.equal(result.branch, 'main');
+    assert.equal(result.commit, 'a'.repeat(12));
+    assert.deepEqual(result.branches, ['feature/login', 'main', 'release']);
+    assert.deepEqual(result.tags, ['v0.9.0', 'v1.0.0']);
+  });
+
   await check('resolving the selection validates names, count, duplicates and existence', () => {
     assert.deepEqual(
       resolveCodeProjects(['beta', 'alpha']).map((project) => project.name),

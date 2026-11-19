@@ -28,6 +28,10 @@ export function workspaceGuide(tools: readonly string[]): string[] {
     lines.push(
       '文件写好后调用 workspace_present 声明最终交付物（通常 1–2 个），界面会在回复下方展示可预览、下载的文件卡片；回复里简要说明文件内容即可，不必再完整粘贴。',
     );
+  if (has('bash'))
+    lines.push(
+      '你可以调用 bash 执行受限的终端与 Git 命令。只读查看命令（如 git status、git branch、git log、git diff、ls、pwd、cat）直接执行；编译、修改等操作会由系统向用户发起确认。支持在会话工作区或已关联代码项目（cwd）中执行。',
+    );
   if (has('glob') || has('grep') || has('workspace_read'))
     lines.push(
       [
@@ -50,6 +54,8 @@ export interface CodeContext {
   path: string;
   branch?: string;
   commit?: string;
+  branches?: string[];
+  tags?: string[];
   overview?: string;
 }
 
@@ -62,7 +68,16 @@ export function codeGuide(projects: readonly CodeContext[]): string[] {
   const list = projects
     .map((project) => {
       const git = [project.branch, project.commit].filter(Boolean).join('@');
-      return [`### ${project.name} → ${project.path}${git ? `（git ${git}）` : ''}`, project.overview ?? '']
+      const gitMeta = [
+        project.branches?.length ? `已知分支: ${project.branches.join(', ')}` : '',
+        project.tags?.length ? `已知标签: ${project.tags.join(', ')}` : '',
+      ]
+        .filter(Boolean)
+        .join('；');
+      return [
+        `### ${project.name} → ${project.path}${git ? `（git ${git}）` : ''}${gitMeta ? ` [${gitMeta}]` : ''}`,
+        project.overview ?? '',
+      ]
         .filter(Boolean)
         .join('\n');
     })
@@ -71,7 +86,7 @@ export function codeGuide(projects: readonly CodeContext[]): string[] {
     [
       '## 关联代码（只读）',
       '用户为本会话关联了以下代码项目。分析、解答与代码相关的问题时，先检索并阅读这些项目里的真实代码，以代码为依据回答，引用时给出文件路径与行号；不要凭印象猜测实现。',
-      '检索方法：grep 按正则搜索内容（path 传项目绝对路径，可用 include 限定文件类型，如 *.ts）；glob 按文件名模式查找（path 传项目绝对路径；结果包含依赖与构建目录，尽量用更具体的子目录或模式）；read 读取文件（file_path 用绝对路径，大文件用 offset/limit 分段读取）。',
+      '检索与查看方法：grep 按正则搜索内容（path 传项目绝对路径，可用 include 限定文件类型，如 *.ts）；glob 按文件名模式查找（path 传项目绝对路径；结果包含依赖与构建目录，尽量用更具体的子目录或模式）；read 读取文件（file_path 用绝对路径，大文件用 offset/limit 分段读取）；或通过 bash 执行只读 Git 命令（如 git branch -a、git log、git status、git diff，cwd 传项目绝对路径）。',
       '这些项目只读：不能修改其中的文件。需要产出文档、补丁或代码时，写入会话工作区。只能访问下列项目，未列出的目录会被拒绝。',
       list,
     ].join('\n\n'),

@@ -13,6 +13,7 @@ export const BUILTIN_TOOL_TITLES: Record<string, string> = {
   // Runner 基础能力中的 DSH 搜索插件
   glob: '查找文件',
   grep: '搜索文件内容',
+  bash: '执行终端命令',
 };
 
 export interface WorkspaceFile {
