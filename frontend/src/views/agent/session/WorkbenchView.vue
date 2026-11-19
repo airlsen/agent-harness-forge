@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { useConversation } from '../../stores/conversation';
-import ConversationStart from '../../components/ConversationStart.vue';
+import { useConversation } from '../../../stores/conversation';
+import ConversationStart from '../../../components/ConversationStart.vue';
 
 const router = useRouter();
 const chat = useConversation();

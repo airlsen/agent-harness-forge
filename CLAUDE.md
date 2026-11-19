@@ -12,6 +12,8 @@ npm ci 会先删掉 frontend/node_modules 再按 package-lock.json 完整重装�
 
 npm --prefix frontend run build
 
+每次改完代码，在回复末尾用一两句话说明改了什么（改了哪些文件、做了什么），方便直接拿去 commit。
+
 ## What this is
 
 AgentHarness Forge — an enterprise agent platform built on the **DeepSeek Harness (`dsh`) plugin architecture**. It is a single-workspace / single-admin control plane (multi-tenant OIDC/RBAC is explicitly *not* implemented) that executes against a **real user-configured model** — there is no fake model or canned-script execution in the business path. All UI copy, comments, and docstrings are Chinese.

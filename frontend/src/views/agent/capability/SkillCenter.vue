@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { api } from '../../api/client';
-import Icon from '../../components/ForgeIcon.vue';
-import type { SkillSummary } from '../../types/skill';
+import { api } from '../../../api/client';
+import Icon from '../../../components/ForgeIcon.vue';
+import type { SkillSummary } from '../../../types/skill';
 
 const skills = ref<SkillSummary[]>([]);
 const query = ref('');

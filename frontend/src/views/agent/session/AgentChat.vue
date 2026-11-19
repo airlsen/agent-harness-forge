@@ -1,24 +1,24 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { usePlatform } from '../../stores/platform';
-import { useConversation } from '../../stores/conversation';
-import { downloadResponse } from '../../api/client';
-import { formatBytes, sessionState } from '../../utils/presentation';
-import { trapTabKey } from '../../utils/focus';
-import { confirm } from '../../utils/feedback';
-import type { KernelEvent } from '../../types/platform';
-import { buildTurns, capabilityChanges, codeChanges, type ToolCallView, type Turn } from '../../utils/turns';
-import Icon from '../../components/ForgeIcon.vue';
-import Markdown from '../../components/MarkdownContent.vue';
-import ProcessBlock from '../../components/ProcessBlock.vue';
-import TaskComposer from '../../components/TaskComposer.vue';
-import ConversationStart from '../../components/ConversationStart.vue';
-import FileCard from '../../components/FileCard.vue';
-import FilePreview from '../../components/FilePreview.vue';
-import FileTree from '../../components/FileTree.vue';
-import FileDiff from '../../components/FileDiff.vue';
-import TurnChanges from '../../components/TurnChanges.vue';
+import { usePlatform } from '../../../stores/platform';
+import { useConversation } from '../../../stores/conversation';
+import { downloadResponse } from '../../../api/client';
+import { formatBytes, sessionState } from '../../../utils/presentation';
+import { trapTabKey } from '../../../utils/focus';
+import { confirm } from '../../../utils/feedback';
+import type { KernelEvent } from '../../../types/platform';
+import { buildTurns, capabilityChanges, codeChanges, type ToolCallView, type Turn } from '../../../utils/turns';
+import Icon from '../../../components/ForgeIcon.vue';
+import Markdown from '../../../components/MarkdownContent.vue';
+import ProcessBlock from '../../../components/ProcessBlock.vue';
+import TaskComposer from '../../../components/TaskComposer.vue';
+import ConversationStart from '../../../components/ConversationStart.vue';
+import FileCard from '../../../components/FileCard.vue';
+import FilePreview from '../../../components/FilePreview.vue';
+import FileTree from '../../../components/FileTree.vue';
+import FileDiff from '../../../components/FileDiff.vue';
+import TurnChanges from '../../../components/TurnChanges.vue';
 import {
   builtinToolTitle,
   archiveUrl,
@@ -29,7 +29,7 @@ import {
   type Deliverable,
   type FileChange,
   type FileRef,
-} from '../../utils/files';
+} from '../../../utils/files';
 
 const app = usePlatform();
 const chat = useConversation();

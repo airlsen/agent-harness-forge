@@ -1,16 +1,30 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Form, Input } from 'ant-design-vue';
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Collapse,
+  Descriptions,
+  Empty,
+  Form,
+  Input,
+  Segmented,
+  Spin,
+  Tag,
+  Timeline,
+  Typography,
+} from 'ant-design-vue';
 import type { Rule } from 'ant-design-vue/es/form';
-import { usePlatform } from '../../stores/platform';
-import { MAX_SESSION_MCP, MAX_SESSION_SKILLS, useConversation } from '../../stores/conversation';
-import { api, post, put, remove } from '../../api/client';
-import { formatDate, isAvailableScenario, scenarioSource, scenarioState } from '../../utils/presentation';
-import type { Scenario, ScenarioPayload } from '../../types/platform';
-import type { PluginPackage } from '../../types/plugin';
-import Icon from '../../components/ForgeIcon.vue';
-import DialogShell from '../../components/DialogShell.vue';
+import { usePlatform } from '../../../stores/platform';
+import { MAX_SESSION_MCP, MAX_SESSION_SKILLS, useConversation } from '../../../stores/conversation';
+import { api, post, put, remove } from '../../../api/client';
+import { formatDate, isAvailableScenario, scenarioSource, scenarioState } from '../../../utils/presentation';
+import type { Scenario, ScenarioPayload } from '../../../types/platform';
+import type { PluginPackage } from '../../../types/plugin';
+import Icon from '../../../components/ForgeIcon.vue';
+import DialogShell from '../../../components/DialogShell.vue';
 
 const app = usePlatform();
 const chat = useConversation();
@@ -94,6 +108,18 @@ const filters = computed(() => [
       ]
     : []),
 ]);
+// antd Segmented 的选项：图标 + 文字 + 数量，复用 Forge 的标签样式。
+const filterOptions = computed(() =>
+  filters.value.map((item) => ({
+    value: item.id,
+    label: () =>
+      h('span', { class: 'scenario-filter-option' }, [
+        h(Icon, { name: item.icon, size: 15 }),
+        h('span', { class: 'scenario-filter-label' }, item.label),
+        h('span', { class: 'scenario-filter-count' }, String(item.count)),
+      ]),
+  })),
+);
 const filtered = computed(() =>
   base.value.filter(
     (s) =>
@@ -348,62 +374,61 @@ async function versions(scenario: Scenario) {
           <p v-else>编辑场景，试运行通过后发布。</p>
         </div>
         <div class="page-heading-actions">
-          <button class="button secondary" :aria-pressed="maintenance" @click="toggleMaintenance">
-            <Icon :name="maintenance ? 'grid' : 'settings'" :size="16" />{{
-              maintenance ? '返回使用目录' : '维护场景'
-            }}</button
-          ><button v-if="maintenance" class="button primary" @click="edit()">
-            <Icon name="plus" :size="17" />新建场景
-          </button>
+          <Button @click="toggleMaintenance">
+            <template #icon><Icon :name="maintenance ? 'grid' : 'settings'" :size="16" /></template
+            >{{ maintenance ? '返回使用目录' : '维护场景' }}
+          </Button>
+          <Button v-if="maintenance" type="primary" @click="edit()">
+            <template #icon><Icon name="plus" :size="17" /></template>新建场景
+          </Button>
         </div>
       </div>
       <div class="collection-toolbar enterprise-collection-toolbar scenario-collection-toolbar">
-        <div class="collection-tabs scenario-filter-switcher" role="group" aria-label="场景筛选">
-          <button
-            v-for="item in filters"
-            :key="item.id"
-            :class="['scenario-filter-option', { selected: filter === item.id }]"
-            :aria-pressed="filter === item.id"
-            @click="filter = item.id"
-          >
-            <Icon :name="item.icon" :size="15" />
-            <span class="scenario-filter-label">{{ item.label }}</span>
-            <span class="scenario-filter-count">{{ item.count }}</span>
-          </button>
-        </div>
-        <label class="search-field"
-          ><Icon name="search" :size="17" /><input
-            v-model="query"
-            placeholder="搜索场景名称或描述"
-            aria-label="搜索场景"
-        /></label>
+        <Segmented
+          v-model:value="filter"
+          class="scenario-filter-switcher"
+          :options="filterOptions"
+          size="large"
+          aria-label="场景筛选"
+        />
+        <Input
+          v-model:value="query"
+          class="scenario-search"
+          placeholder="搜索场景名称或描述"
+          aria-label="搜索场景"
+          size="large"
+          allow-clear
+        >
+          <template #prefix><Icon name="search" :size="17" /></template>
+        </Input>
       </div>
-      <div v-if="app.loading" class="loading-inline" role="status">
-        <span class="loader"></span>正在读取场景…
-      </div>
-      <div v-else-if="!filtered.length" class="enterprise-empty">
-        <span class="enterprise-empty-symbol"><Icon :name="query ? 'search' : 'grid'" :size="29" /></span>
-        <h2>{{ query ? '没有找到匹配的场景' : '这个分类还没有场景' }}</h2>
-        <p>
-          {{
-            query
-              ? '试试其他关键词，或清除搜索。'
-              : maintenance
-                ? '从预置模板创建草稿，或新建一个工作场景。'
-                : '新场景经过维护和发布后，会出现在这里。'
-          }}
-        </p>
-        <button
+      <div v-if="app.loading" class="loading-inline" role="status"><Spin size="small" />正在读取场景…</div>
+      <Empty v-else-if="!filtered.length" class="enterprise-empty">
+        <template #image
+          ><span class="enterprise-empty-symbol"><Icon :name="query ? 'search' : 'grid'" :size="29" /></span
+        ></template>
+        <template #description>
+          <h2>{{ query ? '没有找到匹配的场景' : '这个分类还没有场景' }}</h2>
+          <p>
+            {{
+              query
+                ? '试试其他关键词，或清除搜索。'
+                : maintenance
+                  ? '从预置模板创建草稿，或新建一个工作场景。'
+                  : '新场景经过维护和发布后，会出现在这里。'
+            }}
+          </p>
+        </template>
+        <Button
           v-if="query || filter !== 'all'"
-          class="button secondary"
           @click="
             query = '';
             filter = 'all';
           "
         >
           查看全部场景
-        </button>
-      </div>
+        </Button>
+      </Empty>
       <div v-else class="scenario-grid enterprise-scenario-grid">
         <article
           v-for="scenario in filtered"
@@ -413,26 +438,28 @@ async function versions(scenario: Scenario) {
           <div class="scenario-card-top">
             <span :class="['scene-icon', scenario.payload.icon]"
               ><Icon :name="scenario.payload.icon" :size="24" /></span
-            ><span :class="['tag', scenario.status === 'published' ? 'success' : 'neutral']">{{
-              scenarioState(scenario)
-            }}</span
-            ><button
+            ><Tag
+              :color="scenario.status === 'published' ? 'success' : undefined"
+              class="scenario-status-tag"
+              >{{ scenarioState(scenario) }}</Tag
+            ><Button
               v-if="maintenance && scenario.space !== 'official'"
+              type="text"
               class="icon-button delete-scenario"
               :aria-label="`删除场景 ${scenario.payload.name}`"
               title="删除场景"
               @click="toDelete = scenario"
             >
-              <Icon name="trash" :size="15" />
-            </button>
+              <template #icon><Icon name="trash" :size="15" /></template>
+            </Button>
           </div>
           <h2>{{ scenario.payload.name }}</h2>
           <p>{{ scenario.payload.description || '还没有添加场景描述。' }}</p>
           <div v-if="cardLabels(scenario.payload).length" class="scenario-capabilities">
-            <span v-for="item in cardLabels(scenario.payload).slice(0, 2)" :key="item.key"
-              ><Icon :name="item.icon" :size="12" />{{ item.label }}</span
-            ><span v-if="cardLabels(scenario.payload).length > 2"
-              >+{{ cardLabels(scenario.payload).length - 2 }}</span
+            <Tag v-for="item in cardLabels(scenario.payload).slice(0, 2)" :key="item.key"
+              ><Icon :name="item.icon" :size="12" />{{ item.label }}</Tag
+            ><Tag v-if="cardLabels(scenario.payload).length > 2"
+              >+{{ cardLabels(scenario.payload).length - 2 }}</Tag
             >
           </div>
           <div v-if="maintenance" class="scenario-card-meta">
@@ -444,38 +471,43 @@ async function versions(scenario: Scenario) {
             >
           </div>
           <div class="scenario-card-actions">
-            <button class="button text small" @click="detail = scenario">详情</button
-            ><button class="scenario-use" @click="useScenario(scenario)">
+            <Button type="text" size="small" @click="detail = scenario">详情</Button
+            ><Button type="link" class="scenario-use" @click="useScenario(scenario)">
               {{ isAvailableScenario(scenario) ? '开始' : '预览草稿' }}<Icon name="arrow" :size="15" />
-            </button>
+            </Button>
           </div>
           <div v-if="maintenance" class="scenario-maintenance-actions">
-            <button
-              class="button secondary small"
+            <Button
+              size="small"
               :disabled="busy"
               @click="scenario.space === 'official' ? copy(scenario) : edit(scenario)"
             >
-              <Icon :name="scenario.space === 'official' ? 'copy' : 'edit'" :size="13" />{{
-                scenario.space === 'official' ? '复制为草稿' : '编辑'
-              }}</button
-            ><button class="button text small" @click="versions(scenario)">
-              版本 v{{ scenario.current_version }}</button
-            ><button
+              <template #icon
+                ><Icon :name="scenario.space === 'official' ? 'copy' : 'edit'" :size="13" /></template
+              >{{ scenario.space === 'official' ? '复制为草稿' : '编辑' }}
+            </Button>
+            <Button type="text" size="small" @click="versions(scenario)">
+              版本 v{{ scenario.current_version }}
+            </Button>
+            <Button
               v-if="scenario.space !== 'official'"
-              class="button text small"
+              type="text"
+              size="small"
               :disabled="testing !== null"
+              :loading="testing === scenario.id"
               @click="test(scenario)"
             >
-              <span v-if="testing === scenario.id" class="loader small"></span
-              ><Icon v-else name="play" :size="13" />试运行</button
-            ><button
+              <template #icon><Icon name="play" :size="13" /></template>试运行
+            </Button>
+            <Button
               v-if="scenario.space !== 'official' && scenario.status !== 'published' && scenario.tested"
-              class="button text small"
+              type="text"
+              size="small"
               :disabled="busy"
               @click="publish(scenario)"
             >
               发布
-            </button>
+            </Button>
           </div>
         </article>
       </div>
@@ -520,38 +552,35 @@ async function versions(scenario: Scenario) {
         </div>
         <div v-if="maintenance" class="detail-block">
           <h3>版本信息</h3>
-          <dl class="resource-metadata">
-            <div>
-              <dt>当前版本</dt>
-              <dd>v{{ detail.current_version }}</dd>
-            </div>
-            <div>
-              <dt>维护账号</dt>
-              <dd>{{ detail.space === 'official' ? '平台预置' : detail.owner_id }}</dd>
-            </div>
-            <div>
-              <dt>更新时间</dt>
-              <dd>{{ formatDate(detail.updatedAt, true) }}</dd>
-            </div>
-          </dl>
-          <button
-            class="text-link"
+          <Descriptions :column="1" size="small">
+            <Descriptions.Item label="当前版本">v{{ detail.current_version }}</Descriptions.Item>
+            <Descriptions.Item label="维护账号">{{
+              detail.space === 'official' ? '平台预置' : detail.owner_id
+            }}</Descriptions.Item>
+            <Descriptions.Item label="更新时间">{{ formatDate(detail.updatedAt, true) }}</Descriptions.Item>
+          </Descriptions>
+          <Button
+            type="link"
             @click="
               versions(detail);
               detail = null;
             "
           >
             查看版本记录 <Icon name="arrow" :size="14" />
-          </button>
+          </Button>
         </div>
-        <div v-if="!maintenance && detail.space === 'official'" class="editor-safety">
-          <Icon name="info" :size="17" />
-          <p>预置场景供参考，正式使用前请按业务要求确认。</p>
-        </div>
-        <div v-else-if="maintenance" class="editor-safety">
-          <Icon name="shield" :size="17" />
-          <p>新会话会记录场景、模型与策略快照；维护场景不会改写已有会话。</p>
-        </div>
+        <Alert
+          v-if="!maintenance && detail.space === 'official'"
+          type="info"
+          show-icon
+          message="预置场景供参考，正式使用前请按业务要求确认。"
+        />
+        <Alert
+          v-else-if="maintenance"
+          type="warning"
+          show-icon
+          message="新会话会记录场景、模型与策略快照；维护场景不会改写已有会话。"
+        />
       </div>
       <footer>
         <button class="button primary" @click="useScenario(detail)">
@@ -595,16 +624,15 @@ async function versions(scenario: Scenario) {
         </Form.Item>
         <Form.Item label="场景图标">
           <div class="icon-options">
-            <button
+            <Button
               v-for="icon in ['sparkles', 'code', 'file', 'chart', 'book', 'shield']"
               :key="icon"
-              type="button"
               :aria-label="`选择图标 ${icon}`"
               :class="{ selected: draft.icon === icon }"
               @click="draft.icon = icon"
             >
-              <Icon :name="icon" :size="22" />
-            </button>
+              <template #icon><Icon :name="icon" :size="22" /></template>
+            </Button>
           </div>
         </Form.Item>
         <div class="form-section-title"><span>02</span>场景提示词</div>
@@ -619,15 +647,13 @@ async function versions(scenario: Scenario) {
         <p class="field-hint">作为场景级指令使用。不会自动开始任务，也不会扩大工具权限。</p>
         <div class="form-section-title"><span>03</span>授权能力</div>
         <p class="field-hint">平台基础能力（默认开启）：每个会话都可使用，范围以平台策略为上限。</p>
-        <label v-for="tool in app.tools" :key="tool.name" class="tool-checkbox"
-          ><input type="checkbox" checked disabled /><span class="tool-checkbox-icon"
-            ><Icon :name="tool.icon" :size="18"
-          /></span>
+        <Checkbox v-for="tool in app.tools" :key="tool.name" class="tool-checkbox" checked disabled>
+          <span class="tool-checkbox-icon"><Icon :name="tool.icon" :size="18" /></span>
           <div>
             <strong>{{ tool.title }}</strong><small>{{ tool.description }}</small>
           </div>
-          <Icon v-if="tool.permission !== 'read'" name="edit" :size="15"
-        /></label>
+          <Icon v-if="tool.permission !== 'read'" name="edit" :size="15" />
+        </Checkbox>
         <section class="scenario-plugin-picker" aria-labelledby="scenario-skill-title">
           <header>
             <div>
@@ -637,37 +663,40 @@ async function versions(scenario: Scenario) {
                 直接调用。最多 {{ MAX_SESSION_SKILLS }} 个。
               </p>
             </div>
-            <span v-if="optionsLoading" class="loader small"></span>
+            <Spin v-if="optionsLoading" size="small" />
           </header>
           <p v-if="!optionsLoading && !chat.capabilityOptions?.skills.length" class="field-hint">
             还没有已发布的 Skill。<RouterLink to="/agent/skills">前往 Skill 中心</RouterLink>
           </p>
-          <label
+          <Checkbox
             v-for="skill in chat.capabilityOptions?.skills ?? []"
             :key="skill.id"
             class="scenario-plugin-option"
-            ><input
-              type="checkbox"
-              :checked="draft.capabilities.skill_ids.includes(skill.id)"
-              @change="setSkill(skill.id, ($event.target as HTMLInputElement).checked)"
-            /><span class="tool-checkbox-icon"><Icon name="book" :size="18" /></span>
+            :checked="draft.capabilities.skill_ids.includes(skill.id)"
+            @change="setSkill(skill.id, ($event.target as HTMLInputElement).checked)"
+          >
+            <span class="tool-checkbox-icon"><Icon name="book" :size="18" /></span>
             <div>
               <strong>{{ skill.title }}</strong><small
                 >/{{ skill.name }}<template v-if="skill.version"> · v{{ skill.version }}</template
                 ><template v-if="skill.description"> · {{ skill.description }}</template></small
               >
-            </div></label
+            </div>
+          </Checkbox>
+          <Checkbox
+            v-for="id in missingSkills"
+            :key="`missing-skill-${id}`"
+            class="scenario-plugin-option"
+            checked
+            @change="setSkill(id, false)"
           >
-          <label v-for="id in missingSkills" :key="`missing-skill-${id}`" class="scenario-plugin-option"
-            ><input type="checkbox" checked @change="setSkill(id, false)" /><span class="tool-checkbox-icon"
-              ><Icon name="book" :size="18"
-            /></span>
+            <span class="tool-checkbox-icon"><Icon name="book" :size="18" /></span>
             <div>
               <strong>Skill #{{ id }}</strong
               ><small>已取消发布或已删除，取消勾选后才能保存</small>
             </div>
-            <span class="tag neutral">不可用</span></label
-          >
+            <Tag>不可用</Tag>
+          </Checkbox>
         </section>
         <section class="scenario-plugin-picker" aria-labelledby="scenario-mcp-title">
           <header>
@@ -684,15 +713,14 @@ async function versions(scenario: Scenario) {
               >前往能力中心接入</RouterLink
             >
           </p>
-          <label
+          <Checkbox
             v-for="server in chat.capabilityOptions?.mcpServers ?? []"
             :key="server.id"
             class="scenario-plugin-option"
-            ><input
-              type="checkbox"
-              :checked="draft.capabilities.mcp_server_ids.includes(server.id)"
-              @change="setServer(server.id, ($event.target as HTMLInputElement).checked)"
-            /><span class="tool-checkbox-icon"><Icon name="plug" :size="18" /></span>
+            :checked="draft.capabilities.mcp_server_ids.includes(server.id)"
+            @change="setServer(server.id, ($event.target as HTMLInputElement).checked)"
+          >
+            <span class="tool-checkbox-icon"><Icon name="plug" :size="18" /></span>
             <div>
               <strong>{{ server.name }}</strong><small
                 >{{ server.transport === 'stdio' ? '本地进程' : 'HTTP' }} ·
@@ -704,18 +732,22 @@ async function versions(scenario: Scenario) {
                   个需确认</template
                 ><template v-if="server.description"> · {{ server.description }}</template></small
               >
-            </div></label
+            </div>
+          </Checkbox>
+          <Checkbox
+            v-for="id in missingServers"
+            :key="`missing-mcp-${id}`"
+            class="scenario-plugin-option"
+            checked
+            @change="setServer(id, false)"
           >
-          <label v-for="id in missingServers" :key="`missing-mcp-${id}`" class="scenario-plugin-option"
-            ><input type="checkbox" checked @change="setServer(id, false)" /><span class="tool-checkbox-icon"
-              ><Icon name="plug" :size="18"
-            /></span>
+            <span class="tool-checkbox-icon"><Icon name="plug" :size="18" /></span>
             <div>
               <strong>MCP #{{ id }}</strong
               ><small>已停用或连接异常，取消勾选后才能保存</small>
             </div>
-            <span class="tag neutral">不可用</span></label
-          >
+            <Tag>不可用</Tag>
+          </Checkbox>
         </section>
         <section class="scenario-plugin-picker" aria-labelledby="scenario-web-title">
           <header>
@@ -724,12 +756,12 @@ async function versions(scenario: Scenario) {
               <p>开启后模型可搜索网络并读取公网网页，回答需注明来源。每次搜索按一次模型调用计费。</p>
             </div>
           </header>
-          <label class="scenario-plugin-option"
-            ><input
-              v-model="draft.capabilities.web_search"
-              type="checkbox"
-              :disabled="!draft.capabilities.web_search && !chat.capabilityOptions?.web.available"
-            /><span class="tool-checkbox-icon"><Icon name="globe" :size="18" /></span>
+          <Checkbox
+            class="scenario-plugin-option"
+            v-model:checked="draft.capabilities.web_search"
+            :disabled="!draft.capabilities.web_search && !chat.capabilityOptions?.web.available"
+          >
+            <span class="tool-checkbox-icon"><Icon name="globe" :size="18" /></span>
             <div>
               <strong>联网搜索</strong
               ><small>{{
@@ -740,10 +772,8 @@ async function versions(scenario: Scenario) {
                   : chat.capabilityOptions?.web.reason || '平台尚未开启联网搜索，请在治理中心配置'
               }}</small>
             </div>
-            <span v-if="chat.capabilityOptions && !chat.capabilityOptions.web.available" class="tag neutral"
-              >未开启</span
-            ></label
-          >
+            <Tag v-if="chat.capabilityOptions && !chat.capabilityOptions.web.available">未开启</Tag>
+          </Checkbox>
         </section>
         <section class="scenario-plugin-picker" aria-labelledby="scenario-plugin-title">
           <header>
@@ -751,46 +781,49 @@ async function versions(scenario: Scenario) {
               <h3 id="scenario-plugin-title">已批准插件</h3>
               <p>选择审核通过的插件及具体工具。插件工具会随场景版本固定，不能在会话中临时扩大权限。</p>
             </div>
-            <span v-if="pluginsLoading" class="loader small"></span>
+            <Spin v-if="pluginsLoading" size="small" />
           </header>
           <p v-if="!pluginsLoading && !plugins.length" class="field-hint">当前没有可用于场景的已批准插件。</p>
-          <label v-for="plugin in plugins" :key="plugin.package" class="scenario-plugin-option"
-            ><input
-              type="checkbox"
-              :checked="pluginSelected(plugin)"
-              :disabled="plugin.auditStatus !== 'approved' || !plugin.enabled"
-              @change="setPluginSelected(plugin, ($event.target as HTMLInputElement).checked)"
-            /><span class="tool-checkbox-icon"><Icon name="blocks" :size="18" /></span>
+          <Checkbox
+            v-for="plugin in plugins"
+            :key="plugin.package"
+            class="scenario-plugin-option"
+            :checked="pluginSelected(plugin)"
+            :disabled="plugin.auditStatus !== 'approved' || !plugin.enabled"
+            @change="setPluginSelected(plugin, ($event.target as HTMLInputElement).checked)"
+          >
+            <span class="tool-checkbox-icon"><Icon name="blocks" :size="18" /></span>
             <div>
               <strong>{{ plugin.displayName }}</strong><small
                 >{{ plugin.description }} · v{{ plugin.version }}</small
               >
             </div>
-            <span v-if="demoPlugin(plugin)" class="tag warm" title="仅返回模拟数据，不连接真实系统"
-              >演示数据</span
-            ><span
-              :class="['tag', plugin.auditStatus === 'approved' && plugin.enabled ? 'success' : 'neutral']"
-              >{{ plugin.auditStatus === 'approved' && plugin.enabled ? '已批准' : '不可用' }}</span
-            ></label
-          >
+            <Tag v-if="demoPlugin(plugin)" color="volcano" title="仅返回模拟数据，不连接真实系统"
+              >演示数据</Tag
+            ><Tag :color="plugin.auditStatus === 'approved' && plugin.enabled ? 'success' : undefined">{{
+              plugin.auditStatus === 'approved' && plugin.enabled ? '已批准' : '不可用'
+            }}</Tag>
+          </Checkbox>
           <div
             v-for="plugin in plugins.filter(pluginSelected)"
             :key="`${plugin.package}-tools`"
             class="scenario-plugin-tools"
           >
             <strong>{{ plugin.displayName }} · 选择工具</strong
-            ><label v-for="tool in plugin.tools" :key="tool.name" class="scenario-plugin-tool"
-              ><input
-                type="checkbox"
-                :checked="pluginToolSelected(plugin, tool.name)"
-                @change="setPluginTool(plugin, tool.name, ($event.target as HTMLInputElement).checked)"
-              /><span
+            ><Checkbox
+              v-for="tool in plugin.tools"
+              :key="tool.name"
+              class="scenario-plugin-tool"
+              :checked="pluginToolSelected(plugin, tool.name)"
+              @change="setPluginTool(plugin, tool.name, ($event.target as HTMLInputElement).checked)"
+            >
+              <span
                 ><b>{{ tool.title }}</b
                 ><small>{{ tool.description }}</small></span
-              ><span :class="['tag', tool.permission === 'approval' ? 'warm' : 'neutral']">{{
+              ><Tag :color="tool.permission === 'approval' ? 'volcano' : undefined">{{
                 tool.permission === 'approval' ? '需审批' : '只读'
-              }}</span></label
-            >
+              }}</Tag>
+            </Checkbox>
           </div>
           <p class="field-hint">
             只装配审核通过的受管插件，不会安装或执行任意 npm、GitHub 插件。关联代码改为在聊天中按会话选择。
@@ -806,13 +839,11 @@ async function versions(scenario: Scenario) {
           >
         </div>
         <div class="static-form-row"><span>执行方式</span><strong>标准会话</strong></div>
-        <div class="editor-safety">
-          <Icon name="shield" :size="17" />
-          <p>
-            实际工具范围取场景与平台策略交集；用户可在聊天中临时追加 Skill、MCP
-            与联网，但不能取消场景绑定项。草稿须试运行通过后才能发布。
-          </p>
-        </div>
+        <Alert
+          type="warning"
+          show-icon
+          message="实际工具范围取场景与平台策略交集；用户可在聊天中临时追加 Skill、MCP 与联网，但不能取消场景绑定项。草稿须试运行通过后才能发布。"
+        />
       </Form>
       <footer>
         <button class="button secondary" :disabled="busy" @click="drawer = false">取消</button
@@ -848,19 +879,120 @@ async function versions(scenario: Scenario) {
         </button>
       </header>
       <div class="drawer-body">
-        <article v-for="version in versionHistory" :key="version.version" class="version-entry">
-          <div>
-            <strong>v{{ version.version }}</strong
-            ><span>{{ formatDate(version.createdAt, true) }}</span>
-          </div>
-          <p>{{ version.changeLog }}</p>
-          <code>SHA256 {{ version.bundleHash.slice(0, 24) }}…</code>
-          <details>
-            <summary>查看此版本装配单</summary>
-            <pre>{{ JSON.stringify({ payload: version.payload, bundle: version.bundle }, null, 2) }}</pre>
-          </details>
-        </article>
+        <Timeline>
+          <Timeline.Item v-for="version in versionHistory" :key="version.version">
+            <div class="version-entry">
+              <div>
+                <strong>v{{ version.version }}</strong
+                ><span>{{ formatDate(version.createdAt, true) }}</span>
+              </div>
+              <p>{{ version.changeLog }}</p>
+              <Typography.Text code>SHA256 {{ version.bundleHash.slice(0, 24) }}…</Typography.Text>
+              <Collapse ghost>
+                <Collapse.Panel key="bundle" header="查看此版本装配单">
+                  <pre>{{
+                    JSON.stringify({ payload: version.payload, bundle: version.bundle }, null, 2)
+                  }}</pre>
+                </Collapse.Panel>
+              </Collapse>
+            </div>
+          </Timeline.Item>
+        </Timeline>
       </div></DialogShell
     >
   </main>
 </template>
+
+<style scoped>
+/* 场景筛选 Segmented：对齐 Forge 胶囊样式 */
+.scenario-filter-switcher {
+  flex: 0 1 auto;
+  max-width: 100%;
+  padding: 4px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+}
+.scenario-filter-switcher :deep(.ant-segmented-group) {
+  gap: 3px;
+}
+.scenario-filter-switcher :deep(.ant-segmented-item) {
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  font-weight: 550;
+}
+.scenario-filter-switcher :deep(.ant-segmented-item:hover) {
+  color: var(--color-text-primary);
+  background: var(--surface-content);
+}
+.scenario-filter-switcher :deep(.ant-segmented-item-selected) {
+  color: var(--color-brand-active);
+  background: var(--surface-selected);
+  font-weight: 650;
+}
+.scenario-filter-switcher :deep(.scenario-filter-option) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.scenario-filter-switcher :deep(.scenario-filter-option > svg) {
+  color: var(--color-text-secondary);
+}
+.scenario-filter-switcher :deep(.ant-segmented-item-selected .scenario-filter-option > svg) {
+  color: var(--accent-ink);
+}
+.scenario-filter-switcher :deep(.ant-segmented-item-selected .scenario-filter-count) {
+  color: var(--color-brand-active);
+  background: var(--brand-200);
+}
+
+/* 工具栏搜索框 */
+.scenario-search {
+  min-width: 220px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--surface-card);
+  border-color: var(--border-default);
+}
+
+/* 图标选择按钮去掉 antd 默认内边距，保留 Forge 方块布局 */
+.icon-options :deep(.ant-btn) {
+  padding: 0;
+}
+
+/* Checkbox 选项行：antd 默认 inline-flex/baseline 会破坏纵向居中，重新对齐 */
+.tool-checkbox,
+.scenario-plugin-option,
+.scenario-plugin-tool {
+  display: flex;
+  align-items: center;
+}
+
+/* 标签在选项行右对齐 */
+.scenario-plugin-option :deep(.ant-tag),
+.scenario-plugin-tool :deep(.ant-tag) {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* 卡片状态标签与能力标签 */
+.scenario-card-top :deep(.ant-tag) {
+  margin-left: auto;
+  font-size: 10px;
+  margin-top: 2px;
+}
+.scenario-capabilities :deep(.ant-tag) {
+  font-size: 10px;
+}
+
+/* 卡片动作按钮保持紧凑 */
+.scenario-card-actions :deep(.ant-btn),
+.scenario-maintenance-actions :deep(.ant-btn) {
+  font-size: 11px;
+}
+
+/* 版本历史折叠面板间距 */
+.version-entry :deep(.ant-collapse) {
+  margin-top: 17px;
+}
+</style>

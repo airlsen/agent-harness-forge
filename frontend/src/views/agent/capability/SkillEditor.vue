@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { onBeforeRouteLeave, useRoute } from 'vue-router';
-import { api, apiFetch, post, put } from '../../api/client';
-import DialogShell from '../../components/DialogShell.vue';
-import Icon from '../../components/ForgeIcon.vue';
-import { usePlatform } from '../../stores/platform';
-import { confirm } from '../../utils/feedback';
+import { api, apiFetch, post, put } from '../../../api/client';
+import DialogShell from '../../../components/DialogShell.vue';
+import Icon from '../../../components/ForgeIcon.vue';
+import { usePlatform } from '../../../stores/platform';
+import { confirm } from '../../../utils/feedback';
 import type {
   SkillAuthoringMessage,
   SkillAuthoringSession,
   SkillDetail,
   SkillRevision,
-} from '../../types/skill';
+} from '../../../types/skill';
 
 type Panel = 'content' | 'references' | 'history';
 const route = useRoute();

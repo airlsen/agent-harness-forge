@@ -3,9 +3,9 @@ import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { Form, Input } from 'ant-design-vue';
 import type { Rule } from 'ant-design-vue/es/form';
-import { post } from '../../api/client';
-import Icon from '../../components/ForgeIcon.vue';
-import type { SkillDetail } from '../../types/skill';
+import { post } from '../../../api/client';
+import Icon from '../../../components/ForgeIcon.vue';
+import type { SkillDetail } from '../../../types/skill';
 
 const router = useRouter();
 const form = reactive({ name: '', description: '', startMode: 'assistant' as 'assistant' | 'blank' });

@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api, apiFetch } from '../../api/client';
-import { formatBytes } from '../../utils/presentation';
-import { confirm } from '../../utils/feedback';
-import { usePlatform } from '../../stores/platform';
-import { useConversation } from '../../stores/conversation';
-import type { Scenario, Tool } from '../../types/platform';
-import type { SkillSummary } from '../../types/skill';
-import type { PluginPackage } from '../../types/plugin';
-import Icon from '../../components/ForgeIcon.vue';
-import DialogShell from '../../components/DialogShell.vue';
+import { api, apiFetch } from '../../../api/client';
+import { formatBytes } from '../../../utils/presentation';
+import { confirm } from '../../../utils/feedback';
+import { usePlatform } from '../../../stores/platform';
+import { useConversation } from '../../../stores/conversation';
+import type { Scenario, Tool } from '../../../types/platform';
+import type { SkillSummary } from '../../../types/skill';
+import type { PluginPackage } from '../../../types/plugin';
+import Icon from '../../../components/ForgeIcon.vue';
+import DialogShell from '../../../components/DialogShell.vue';
 
 type RuntimeComponent = PluginPackage;
 type McpServer = {

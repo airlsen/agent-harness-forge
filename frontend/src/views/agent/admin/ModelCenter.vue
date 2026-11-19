@@ -2,12 +2,12 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { Form, Input, InputNumber } from 'ant-design-vue';
 import type { Rule } from 'ant-design-vue/es/form';
-import { api, post, put, remove } from '../../api/client';
-import { usePlatform } from '../../stores/platform';
-import { confirm } from '../../utils/feedback';
-import type { ModelConnection } from '../../types/platform';
-import Icon from '../../components/ForgeIcon.vue';
-import DialogShell from '../../components/DialogShell.vue';
+import { api, post, put, remove } from '../../../api/client';
+import { usePlatform } from '../../../stores/platform';
+import { confirm } from '../../../utils/feedback';
+import type { ModelConnection } from '../../../types/platform';
+import Icon from '../../../components/ForgeIcon.vue';
+import DialogShell from '../../../components/DialogShell.vue';
 
 type ModelHealthTone = 'normal' | 'attention' | 'unverified' | 'disabled';
 type ModelTestResult = ModelConnection['lastTest'];
