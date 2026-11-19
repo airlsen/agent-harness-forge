@@ -17,6 +17,7 @@ import SkillEditor from './views/agent/SkillEditor.vue';
 import TrajectoryView from './views/agent/TrajectoryView.vue';
 import './style.css';
 import './enterprise.css';
+import './styles/tokens.scss';
 
 const router = createRouter({
   history: createWebHistory(),

@@ -1,0 +1,113 @@
+@use './palette' as palette;
+
+@mixin emit-scale($name, $scale) {
+  @each $step, $value in $scale {
+    --#{$name}-#{$step}: #{$value};
+  }
+}
+
+:root {
+  @include emit-scale('brand', palette.$brand);
+  @include emit-scale('neutral', palette.$neutral);
+  @include emit-scale('success', palette.$success);
+  @include emit-scale('info', palette.$info);
+  @include emit-scale('warning', palette.$warning);
+  @include emit-scale('danger', palette.$danger);
+  @include emit-scale('status-neutral', palette.$status-neutral);
+  @include emit-scale('agent-purple', palette.$agent-purple);
+  @include emit-scale('mcp-cyan', palette.$mcp-cyan);
+  @include emit-scale('skill-blue', palette.$skill-blue);
+
+  /* Brand roles */
+  --color-brand: var(--brand-500);
+  --color-brand-hover: var(--brand-600);
+  --color-brand-active: var(--brand-700);
+  --color-brand-action: var(--brand-700);
+  --color-brand-action-hover: var(--brand-800);
+  --color-brand-action-active: var(--brand-900);
+  --color-brand-subtle: var(--brand-100);
+  --color-brand-muted: var(--brand-50);
+  --color-brand-border: var(--brand-200);
+
+  /* Text and surfaces */
+  --color-text-primary: var(--neutral-800);
+  --color-text-secondary: var(--neutral-500);
+  --color-text-tertiary: var(--neutral-400);
+  --color-text-disabled: #c0c4cc;
+  --color-text-inverse: var(--neutral-0);
+  --surface-content: var(--neutral-0);
+  --surface-card: var(--neutral-0);
+  --surface-shell: var(--neutral-50);
+  --surface-subtle-bg: var(--neutral-25);
+  --surface-muted: var(--neutral-100);
+  --surface-hover: #f5f6f8;
+  --surface-selected: var(--brand-100);
+
+  /* Borders and focus */
+  --border-default: var(--neutral-200);
+  --border-light: #f0f1f3;
+  --border-strong: var(--neutral-300);
+  --border-focus: var(--brand-500);
+  --border-disabled: #eaecf0;
+  --focus-ring-brand: #da724d33;
+
+  /* Semantic status roles: pale surfaces, readable dark labels */
+  --color-success: var(--success-500);
+  --color-success-bg: var(--success-100);
+  --color-success-border: var(--success-200);
+  --color-success-text: var(--success-700);
+  --color-info: var(--info-500);
+  --color-info-bg: var(--info-100);
+  --color-info-border: var(--info-200);
+  --color-info-text: var(--info-700);
+  --color-warning: var(--warning-500);
+  --color-warning-bg: var(--warning-100);
+  --color-warning-border: var(--warning-200);
+  --color-warning-text: var(--warning-700);
+  --color-danger: var(--danger-500);
+  --color-danger-bg: var(--danger-100);
+  --color-danger-border: var(--danger-200);
+  --color-danger-text: var(--danger-700);
+  --color-neutral-status: var(--status-neutral-500);
+  --color-neutral-status-bg: var(--status-neutral-100);
+  --color-neutral-status-border: var(--status-neutral-200);
+  --color-neutral-status-text: var(--status-neutral-700);
+
+  /* Ability type accents belong on icons and small labels, never on card surfaces. */
+  --color-agent-type: var(--agent-purple-500);
+  --color-agent-type-bg: var(--agent-purple-100);
+  --color-agent-type-border: var(--agent-purple-200);
+  --color-agent-type-text: var(--agent-purple-700);
+  --color-mcp-type: var(--mcp-cyan-500);
+  --color-mcp-type-bg: var(--mcp-cyan-100);
+  --color-mcp-type-border: var(--mcp-cyan-200);
+  --color-mcp-type-text: var(--mcp-cyan-700);
+  --color-skill-type: var(--skill-blue-500);
+  --color-skill-type-bg: var(--skill-blue-100);
+  --color-skill-type-border: var(--skill-blue-200);
+  --color-skill-type-text: var(--skill-blue-700);
+
+  /* Compatibility aliases for existing styles; migrate usage gradually. */
+  --accent: var(--color-brand);
+  --accent-hover: var(--color-brand-hover);
+  --accent-soft: var(--color-brand-subtle);
+  --accent-ink: var(--color-brand-active);
+  --accent-solid: var(--color-brand-action);
+  --accent-solid-hover: var(--color-brand-action-hover);
+  --accent-line: var(--color-brand-border);
+  --accent-wash: var(--color-brand-muted);
+  --accent-focus: var(--border-focus);
+  --accent-focus-ring: var(--focus-ring-brand);
+  --ink: var(--color-text-primary);
+  --muted: var(--color-text-tertiary);
+  --line: var(--border-default);
+  --line-subtle: var(--border-light);
+  --border-soft: var(--border-light);
+  --green: var(--color-success);
+  --panel: var(--surface-shell);
+  --text-secondary: var(--color-text-secondary);
+  --text-subtle: var(--color-text-secondary);
+  --surface: var(--surface-content);
+  --canvas: var(--surface-subtle-bg);
+  --surface-subtle: var(--surface-subtle-bg);
+}

@@ -579,8 +579,8 @@ onMounted(load);
                       plugin.auditStatus === 'approved'
                         ? 'success'
                         : plugin.auditStatus === 'rejected'
-                          ? 'warm'
-                          : 'neutral',
+                          ? 'danger'
+                          : 'warning',
                     ]"
                     >{{
                       plugin.auditStatus === 'approved'
