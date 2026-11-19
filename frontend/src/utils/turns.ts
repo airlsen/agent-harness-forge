@@ -195,3 +195,25 @@ export function processSummary(stats: ProcessStats): string {
   ];
   return parts.join(' · ') || '执行过程';
 }
+
+/** 一轮用户消息记录的关联代码（旧消息未记录时视为未关联） */
+function turnCode(turn: Pick<Turn, 'user'>): string[] | null {
+  if (!turn.user) return null;
+  const value = turn.user.meta?.codeProjects;
+  return Array.isArray(value) ? value.filter((name): name is string => typeof name === 'string') : [];
+}
+/**
+ * 关联代码的变化点：与上一轮用户消息相比关联列表有变化时，返回本轮的列表
+ * （空数组表示已取消全部关联），未变化或没有用户消息时为 null。用于渲染分隔线。
+ */
+export function codeChanges(turns: Pick<Turn, 'user'>[]): (string[] | null)[] {
+  let previous: string[] = [];
+  return turns.map((turn) => {
+    const current = turnCode(turn);
+    if (current === null) return null;
+    const changed =
+      current.length !== previous.length || current.some((name, index) => name !== previous[index]);
+    previous = current;
+    return changed ? current : null;
+  });
+}

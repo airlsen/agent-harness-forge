@@ -48,6 +48,21 @@ export interface Conversation {
   /** 当前模型的上下文窗口；第一期之前创建、尚未继续过的旧会话为 null */
   modelContextWindow: number | null;
   isTest: boolean;
+  /** 关联的代码项目（只读）；修改后从下一轮起生效。旧版本后端不返回时视为未关联 */
+  codeProjects?: string[];
+}
+/** 代码根目录下可供会话关联的项目（只读） */
+export interface CodeProject {
+  name: string;
+  path: string;
+  branch?: string;
+  commit?: string;
+}
+export interface CodeProjectList {
+  root: string;
+  /** 代码根目录是否存在且可读 */
+  available: boolean;
+  projects: CodeProject[];
 }
 export interface ChatMessage {
   id: number | string;

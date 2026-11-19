@@ -6,6 +6,7 @@ import { usePlatform } from '../stores/platform';
 import { isAvailableScenario } from '../utils/presentation';
 import Icon from './ForgeIcon.vue';
 import ModelPicker from './ModelPicker.vue';
+import CodePicker from './CodePicker.vue';
 
 const props = withDefaults(defineProps<{ hero?: boolean }>(), { hero: false });
 const emit = defineEmits<{ submitted: [id: number]; capabilities: [] }>();
@@ -17,6 +18,7 @@ const root = ref<HTMLElement | null>(null);
 const textarea = ref<HTMLTextAreaElement | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const modelPicker = ref<InstanceType<typeof ModelPicker> | null>(null);
+const codePicker = ref<InstanceType<typeof CodePicker> | null>(null);
 const attaching = ref(false);
 const submitting = ref(false);
 const selected = computed(
@@ -116,6 +118,22 @@ defineExpose({ focus: () => textarea.value?.focus() });
 </script>
 <template>
   <div ref="root" :class="['task-composer', { 'task-composer-hero': hero }]">
+    <div v-if="chat.codeProjects.length" class="code-chips" aria-label="已关联的代码项目（只读）">
+      <span
+        v-for="name in chat.codeProjects"
+        :key="name"
+        :title="`${name} · 只读关联${chat.current ? '，修改从下一轮起生效' : ''}`"
+      >
+        <Icon name="code" :size="13" />{{ name }}
+        <button
+          :aria-label="`取消关联 ${name}`"
+          :disabled="chat.codeSaving || chat.loading"
+          @click="codePicker?.remove(name)"
+        >
+          <Icon name="close" :size="12" />
+        </button>
+      </span>
+    </div>
     <div v-if="chat.draftAttachments.length" class="attachment-chips">
       <span v-for="(file, index) in chat.draftAttachments" :key="index">
         <Icon name="file" :size="14" />{{ file.name }}
@@ -151,6 +169,7 @@ defineExpose({ focus: () => textarea.value?.focus() });
             @click="
               picker = !picker;
               modelPicker?.close();
+              codePicker?.close();
             "
             @keydown.esc.stop="picker = false"
           >
@@ -193,7 +212,22 @@ defineExpose({ focus: () => textarea.value?.focus() });
             <RouterLink to="/agent/scenarios">浏览企业场景 <Icon name="arrow" :size="14" /></RouterLink>
           </div>
         </div>
-        <ModelPicker ref="modelPicker" @opened="picker = false" @selected="textarea?.focus()" />
+        <ModelPicker
+          ref="modelPicker"
+          @opened="
+            picker = false;
+            codePicker?.close();
+          "
+          @selected="textarea?.focus()"
+        />
+        <CodePicker
+          ref="codePicker"
+          @opened="
+            picker = false;
+            modelPicker?.close();
+          "
+          @changed="textarea?.focus()"
+        />
         <span class="composer-option-divider"></span>
         <button
           class="icon-button"

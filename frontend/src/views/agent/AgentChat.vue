@@ -7,7 +7,7 @@ import { downloadResponse } from '../../api/client';
 import { formatBytes, sessionState } from '../../utils/presentation';
 import { trapTabKey } from '../../utils/focus';
 import type { KernelEvent } from '../../types/platform';
-import { buildTurns, type ToolCallView, type Turn } from '../../utils/turns';
+import { buildTurns, codeChanges, type ToolCallView, type Turn } from '../../utils/turns';
 import Icon from '../../components/ForgeIcon.vue';
 import Markdown from '../../components/MarkdownContent.vue';
 import ProcessBlock from '../../components/ProcessBlock.vue';
@@ -148,6 +148,24 @@ const turns = computed(() =>
     activeTools: pendingTools.value,
   }),
 );
+/** 每轮相对上一轮的关联代码变化（渲染分隔线） */
+const turnCodeChanges = computed(() => codeChanges(turns.value));
+/** 右侧面板展示的关联代码：附带代码根目录中读到的分支与提交 */
+const linkedCode = computed(() =>
+  chat.codeProjects.map((name) => {
+    const project = chat.codeProjectList?.projects.find((item) => item.name === name);
+    const version =
+      project?.branch && project.commit
+        ? `${project.branch} @ ${project.commit.slice(0, 7)}`
+        : (project?.branch ?? (project?.commit ? `@ ${project.commit.slice(0, 7)}` : ''));
+    return {
+      name,
+      path: project?.path ?? '',
+      version,
+      missing: Boolean(chat.codeProjectList?.available) && !project,
+    };
+  }),
+);
 /** 整个会话的交付物：最近一轮声明的排在最前，同一路径只保留最新一次声明 */
 const sessionDeliverables = computed<FileRef[]>(() => {
   const seen = new Set<string>();
@@ -286,6 +304,14 @@ watch(
       await scrollToBottom();
     }
   },
+);
+// 打开「能力」面板时刷新关联代码的分支与提交；读取失败只影响版本展示
+watch(
+  () => chat.panelOpen && chat.panel === 'context' && chat.codeProjects.join('\n'),
+  (visible) => {
+    if (visible) void chat.loadCodeProjects().catch(() => {});
+  },
+  { immediate: true },
 );
 watch(
   () => chat.liveText + chat.liveReasoning + chat.messages.length + chat.events.length,
@@ -431,6 +457,19 @@ async function copyMessage(text: string) {
                 ><Icon name="cpu" :size="12" />模型已切换：{{ turn.switch.from }} →
                 <strong>{{ turn.switch.to }}</strong></span
               >
+            </div>
+            <div
+              v-if="turnCodeChanges[turnIndex]"
+              class="model-switch-divider"
+              role="separator"
+              :title="turnCodeChanges[turnIndex]?.join('、')"
+            >
+              <span v-if="turnCodeChanges[turnIndex]?.length"
+                ><Icon name="code" :size="12" />关联代码（只读）：<strong>{{
+                  turnCodeChanges[turnIndex]?.join('、')
+                }}</strong></span
+              >
+              <span v-else><Icon name="code" :size="12" />已取消关联代码</span>
             </div>
             <div v-if="turn.user" class="message-row user">
               <div class="user-message-text">{{ turn.user.content }}</div>
@@ -625,9 +664,41 @@ async function copyMessage(text: string) {
           </div>
         </div>
         <div class="context-section">
+          <h3>
+            关联代码 <span>{{ linkedCode.length }}</span>
+          </h3>
+          <p v-if="!linkedCode.length" class="small-text muted-text">
+            未关联。可在输入框「关联代码」中选择一个或多个项目，模型将只读搜索与分析。
+          </p>
+          <div
+            v-for="project in linkedCode"
+            :key="project.name"
+            class="context-tool"
+            :title="project.path || project.name"
+          >
+            <span><Icon name="code" :size="16" /></span>
+            <div>
+              <strong>{{ project.name }}</strong><small>{{
+                project.missing ? '已不在代码根目录中' : project.version || '只读'
+              }}</small>
+            </div>
+            <Icon name="lock" :size="13" />
+          </div>
+          <p v-if="linkedCode.length && chat.current" class="small-text muted-text">
+            修改关联后，从下一轮对话起生效。
+          </p>
+        </div>
+        <div class="context-section">
           <h3>本次执行边界</h3>
           <ul class="boundary-list">
-            <li><Icon name="check" :size="12" />文件访问限定当前会话目录</li>
+            <li>
+              <Icon name="check" :size="12" />{{
+                linkedCode.length ? '文件写入限定当前会话目录' : '文件访问限定当前会话目录'
+              }}
+            </li>
+            <li v-if="linkedCode.length">
+              <Icon name="check" :size="12" />关联代码只读，不读取 .git 与密钥文件
+            </li>
             <li><Icon name="check" :size="12" />工具范围由场景与策略共同限制</li>
             <li><Icon name="check" :size="12" />消息与执行事件持久化记录</li>
             <li><Icon name="lock" :size="12" />不开放任意 Shell 命令</li>

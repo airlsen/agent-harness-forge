@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** 系统提示词拼装检查：渲染说明由 runner 统一追加，不依赖场景 Bundle 快照。 */
 import assert from 'node:assert/strict';
-import { buildSystemPrompt, RENDER_GUIDE, workspaceGuide } from '../src/kernel/system-prompt.ts';
+import { buildSystemPrompt, codeGuide, RENDER_GUIDE, workspaceGuide } from '../src/kernel/system-prompt.ts';
 import { sessionToolset, BASE_TOOLS, SEARCH_TOOLS } from '../src/kernel/dsh-kernel.ts';
 const s = buildSystemPrompt({
   identity: 'I',
@@ -35,6 +35,7 @@ const policy = { allowedTools: [...BASE_TOOLS] };
 assert.deepEqual(sessionToolset({ builtin_tools: ['current_time'], policy }), {
   allowed: [...BASE_TOOLS, 'workspace_present', ...SEARCH_TOOLS],
   search: true,
+  code: false,
 });
 // 旧 Bundle 没有 policy/builtin_tools 时同样补齐
 assert.deepEqual(sessionToolset(undefined).allowed, [...BASE_TOOLS, 'workspace_present', ...SEARCH_TOOLS]);
@@ -56,5 +57,24 @@ const authoring = ['skill_read_draft', 'skill_update_draft'];
 assert.deepEqual(sessionToolset({ builtin_tools: authoring, policy: { allowedTools: authoring } }), {
   allowed: authoring,
   search: false,
+  code: false,
 });
+// 关联代码：与场景、策略无关，关联了项目就开放 glob/grep/read（只读）
+const codeOnly = sessionToolset({ policy: { allowedTools: ['current_time'] } }, true);
+assert.deepEqual(codeOnly, { allowed: ['current_time', 'glob', 'grep', 'read'], search: true, code: true });
+const project = {
+  name: 'forge',
+  path: '/usr/data/git/forge',
+  branch: 'main',
+  commit: 'abc123',
+  overview: '顶层：src/',
+};
+const coded = buildSystemPrompt({ identity: 'I' }, [...full, 'read'], [project]);
+assert.ok(coded.includes('## 关联代码（只读）'));
+assert.ok(coded.includes('### forge → /usr/data/git/forge（git main@abc123）'));
+assert.ok(coded.includes('顶层：src/'));
+assert.ok(coded.includes('关联的代码项目只读'));
+assert.ok(coded.endsWith('不可声称执行了未实际调用的工具。'));
+assert.ok(!withTools.includes('关联代码'));
+assert.deepEqual(codeGuide([]), []);
 console.log('system-prompt OK');

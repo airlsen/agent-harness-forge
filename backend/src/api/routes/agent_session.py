@@ -23,6 +23,12 @@ class Turn(BaseModel):
     message: str = Field(min_length=1, max_length=64000)
     # 从本轮起使用的模型；不传或与当前相同则沿用会话当前模型。
     modelId: int | None = Field(default=None, gt=0)
+    # 关联代码（代码根目录下的项目名，只读）；不传沿用会话已保存的选择，传入则从本轮起生效。
+    codeProjects: list[str] | None = Field(default=None, max_length=20)
+
+
+class CodeProjects(BaseModel):
+    codeProjects: list[str] = Field(max_length=20)
 
 
 @router.get("")
@@ -42,7 +48,17 @@ async def detail(session_id: int):
 
 @router.post("/{session_id}/turns", status_code=202)
 async def turn(session_id: int, payload: Turn):
-    return ResponseUtil.ok(await session_service.start(session_id, payload.message, model_id=payload.modelId))
+    return ResponseUtil.ok(
+        await session_service.start(
+            session_id, payload.message, model_id=payload.modelId, code_projects=payload.codeProjects
+        )
+    )
+
+
+@router.put("/{session_id}/code-projects")
+async def code_projects(session_id: int, payload: CodeProjects):
+    """修改会话的关联代码：执行中也可修改，从下一轮起生效。"""
+    return ResponseUtil.ok(await session_service.set_code_projects(session_id, payload.codeProjects))
 
 
 @router.get("/{session_id}/events")

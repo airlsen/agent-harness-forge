@@ -4,6 +4,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { DshKernel, MAX_LISTED_FILES, validModel, type RuntimeModel } from './kernel/dsh-kernel.js';
 import { PluginWorkerClient } from './plugin-worker-client.js';
 import type { Bundle, UserCtx } from './kernel/types.js';
+import { listCodeProjects, resolveCodeProjects } from './kernel/code-projects.js';
 
 const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
 if (nodeMajor < 24 || (nodeMajor === 24 && nodeMinor < 9))
@@ -31,50 +32,65 @@ app.get('/v1/runtime', async () => ({
   sessions: kernel.size,
   capacity: kernel.capacity,
   mode: 'real-model-only',
-  capabilities: { stream: true, approvals: true, workspaceFiles: true, shell: false, fork: false },
+  capabilities: {
+    stream: true,
+    approvals: true,
+    workspaceFiles: true,
+    codeProjects: true,
+    shell: false,
+    fork: false,
+  },
 }));
 app.post('/v1/sessions', async (req, reply) => {
   if (kernel.size >= kernel.capacity)
     return reply.code(429).send({ message: '会话容量已满，请关闭暂不使用的会话' });
-  const body = req.body as { bundle: Bundle; userCtx: UserCtx; modelConfig: RuntimeModel };
+  const body = req.body as {
+    bundle: Bundle;
+    userCtx: UserCtx;
+    modelConfig: RuntimeModel;
+    codeProjects?: string[];
+  };
   if (!body?.bundle || !body?.modelConfig)
     return reply.code(422).send({ message: 'bundle and modelConfig are required' });
-  return kernel.createSession(body.bundle, body.userCtx, body.modelConfig);
+  return kernel.createSession(body.bundle, body.userCtx, body.modelConfig, body.codeProjects);
 });
+// 代码根目录（FORGE_CODE_ROOT）下可关联的项目：一级子目录，附 git 分支与提交
+app.get('/v1/code/projects', async () => listCodeProjects());
 app.get<{ Params: { id: string } }>('/v1/sessions/:id', async (req, reply) =>
   kernel.has(req.params.id)
     ? { exists: true, busy: kernel.isBusy(req.params.id) }
     : reply.code(404).send({ message: '执行会话不存在，Runner 可能已重启' }),
 );
-app.post<{ Params: { id: string }; Body: { message: string; modelConfig?: RuntimeModel } }>(
-  '/v1/sessions/:id/stream',
-  async (req, reply) => {
-    const id = req.params.id;
-    if (!kernel.has(id)) return reply.code(404).send({ message: '执行会话不存在，请新建会话' });
-    if (kernel.isBusy(id)) return reply.code(409).send({ message: '会话正在执行' });
-    if (!req.body?.message || req.body.message.length > 64000)
-      return reply.code(422).send({ message: 'message is required (<=64000 chars)' });
-    // 必须在接管响应流之前校验，否则错误无法以 422 返回给控制面。
-    if (req.body.modelConfig !== undefined && !validModel(req.body.modelConfig))
-      return reply.code(422).send({ message: 'modelConfig requires baseUrl and model' });
-    reply.hijack();
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'X-Accel-Buffering': 'no',
-    });
-    const unsubscribe = kernel.onEvent(id, (event) => {
-      if (!reply.raw.destroyed) reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
-    });
-    reply.raw.on('close', unsubscribe);
-    try {
-      await kernel.sendTurn(id, req.body.message, undefined, req.body.modelConfig);
-    } finally {
-      unsubscribe();
-      if (!reply.raw.destroyed) reply.raw.end();
-    }
-  },
-);
+app.post<{
+  Params: { id: string };
+  Body: { message: string; modelConfig?: RuntimeModel; codeProjects?: string[] };
+}>('/v1/sessions/:id/stream', async (req, reply) => {
+  const id = req.params.id;
+  if (!kernel.has(id)) return reply.code(404).send({ message: '执行会话不存在，请新建会话' });
+  if (kernel.isBusy(id)) return reply.code(409).send({ message: '会话正在执行' });
+  if (!req.body?.message || req.body.message.length > 64000)
+    return reply.code(422).send({ message: 'message is required (<=64000 chars)' });
+  // 必须在接管响应流之前校验，否则错误无法以 422 返回给控制面。
+  if (req.body.modelConfig !== undefined && !validModel(req.body.modelConfig))
+    return reply.code(422).send({ message: 'modelConfig requires baseUrl and model' });
+  if (req.body.codeProjects !== undefined) resolveCodeProjects(req.body.codeProjects);
+  reply.hijack();
+  reply.raw.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'X-Accel-Buffering': 'no',
+  });
+  const unsubscribe = kernel.onEvent(id, (event) => {
+    if (!reply.raw.destroyed) reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+  });
+  reply.raw.on('close', unsubscribe);
+  try {
+    await kernel.sendTurn(id, req.body.message, undefined, req.body.modelConfig, req.body.codeProjects);
+  } finally {
+    unsubscribe();
+    if (!reply.raw.destroyed) reply.raw.end();
+  }
+});
 app.post<{ Params: { id: string } }>('/v1/sessions/:id/interrupt', async (req) => {
   await kernel.interrupt(req.params.id);
   return { ok: true };

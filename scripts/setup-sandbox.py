@@ -32,6 +32,8 @@ if not env.exists():
         "FORGE_RUNNER_TOKEN="
         + secrets.token_urlsafe(40)
         + "\nFORGE_RUNNER_ENDPOINTS=http://127.0.0.1:9000\nRUNNER_MAX_SESSIONS=4\n"
+        # 会话「关联代码」的根目录（Runner 读取，一级子目录即可选项目，只读）
+        + "FORGE_CODE_ROOT=/usr/data/git\n"
     )
     env.chmod(0o600)
 print(

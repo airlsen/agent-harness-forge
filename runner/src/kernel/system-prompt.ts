@@ -39,13 +39,48 @@ export function workspaceGuide(tools: readonly string[]): string[] {
           : '',
       ]
         .filter(Boolean)
-        .join('，') + '。这些工具只能访问当前会话工作区，路径一律使用相对路径。',
+        .join('，') + '。访问工作区文件时路径一律使用相对路径。',
     );
   return lines;
 }
 
+/** 本会话关联的代码项目（只读），概览由 Runner 在启动时生成 */
+export interface CodeContext {
+  name: string;
+  path: string;
+  branch?: string;
+  commit?: string;
+  overview?: string;
+}
+
+/**
+ * 关联代码说明：列出项目绝对路径与概览，并说明用 glob/grep/read 以绝对路径检索、阅读代码。
+ * 只在关联了项目时出现；项目变化时 Runner 重启进程，新的说明从下一轮生效。
+ */
+export function codeGuide(projects: readonly CodeContext[]): string[] {
+  if (!projects.length) return [];
+  const list = projects
+    .map((project) => {
+      const git = [project.branch, project.commit].filter(Boolean).join('@');
+      return [`### ${project.name} → ${project.path}${git ? `（git ${git}）` : ''}`, project.overview ?? '']
+        .filter(Boolean)
+        .join('\n');
+    })
+    .join('\n\n');
+  return [
+    [
+      '## 关联代码（只读）',
+      '用户为本会话关联了以下代码项目。分析、解答与代码相关的问题时，先检索并阅读这些项目里的真实代码，以代码为依据回答，引用时给出文件路径与行号；不要凭印象猜测实现。',
+      '检索方法：grep 按正则搜索内容（path 传项目绝对路径，可用 include 限定文件类型，如 *.ts）；glob 按文件名模式查找（path 传项目绝对路径；结果包含依赖与构建目录，尽量用更具体的子目录或模式）；read 读取文件（file_path 用绝对路径，大文件用 offset/limit 分段读取）。',
+      '这些项目只读：不能修改其中的文件。需要产出文档、补丁或代码时，写入会话工作区。只能访问下列项目，未列出的目录会被拒绝。',
+      list,
+    ].join('\n\n'),
+  ];
+}
+
 const FALLBACK_IDENTITY = '你是 Forge 企业智能体，请准确、清晰地回答用户。';
 const WORKSPACE_RULE = '所有文件操作仅限当前会话工作区。不可声称执行了未实际调用的工具。';
+const CODE_RULE = '文件写入仅限当前会话工作区，关联的代码项目只读。不可声称执行了未实际调用的工具。';
 
 type StructuredPrompt = {
   identity?: string;
@@ -54,8 +89,12 @@ type StructuredPrompt = {
   workspace?: string[];
 };
 
-export function buildSystemPrompt(prompt: unknown, tools: readonly string[] = []): string {
-  const guide = workspaceGuide(tools);
+export function buildSystemPrompt(
+  prompt: unknown,
+  tools: readonly string[] = [],
+  code: readonly CodeContext[] = [],
+): string {
+  const guide = [...workspaceGuide(tools), ...codeGuide(code)];
   const sections =
     prompt && typeof prompt === 'object'
       ? [
@@ -65,7 +104,7 @@ export function buildSystemPrompt(prompt: unknown, tools: readonly string[] = []
           ...((prompt as StructuredPrompt).workspace ?? []),
           ...RENDER_GUIDE,
           ...guide,
-          WORKSPACE_RULE,
+          code.length ? CODE_RULE : WORKSPACE_RULE,
         ]
       : [prompt == null || prompt === '' ? FALLBACK_IDENTITY : String(prompt), ...RENDER_GUIDE, ...guide];
   return sections.filter(Boolean).join('\n\n');

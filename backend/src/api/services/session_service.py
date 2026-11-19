@@ -83,6 +83,43 @@ def runtime_config(segment: AgentSessionModel) -> dict:
     }
 
 
+MAX_CODE_PROJECTS = 20
+
+
+def normalize_code_projects(names) -> list[str]:
+    """校验会话选择的代码项目名：只能是代码根目录下的一级目录名，去重前就拒绝重复，最多 20 个。"""
+    if not isinstance(names, list):
+        raise HTTPException(422, "关联代码必须是项目名列表")
+    if len(names) > MAX_CODE_PROJECTS:
+        raise HTTPException(422, f"一个会话最多关联 {MAX_CODE_PROJECTS} 个代码项目")
+    for name in names:
+        if (
+            not isinstance(name, str)
+            or not name
+            or len(name) > 200
+            or name in (".", "..")
+            or name.startswith(".")
+            or any(char in name for char in "/\\\0")
+            or not name.isprintable()
+        ):
+            raise HTTPException(422, f"代码项目不存在：{str(name)[:200]}")
+    if len(set(names)) != len(names):
+        raise HTTPException(422, "关联代码中有重复项目")
+    return list(names)
+
+
+async def ensure_code_projects_exist(names: list[str], previous: list[str]):
+    """新加入的项目必须真实存在于代码根目录（由 Runner 列举）；已关联的不重复检查，Runner 执行前还会整体校验。"""
+    added = [name for name in names if name not in previous]
+    if not added:
+        return
+    listing = await runner_client.code_projects()
+    available = {project["name"] for project in listing.get("projects", [])}
+    missing = [name for name in added if name not in available]
+    if missing:
+        raise HTTPException(422, f"代码项目不存在：{'、'.join(missing)}")
+
+
 async def current_segments(db, session_ids) -> dict[int, AgentSessionModel]:
     """批量读取各会话的当前模型分段（最新一段），避免会话列表逐条查询。"""
     if not session_ids:
@@ -130,6 +167,7 @@ class SessionService:
             "modelName": current.get("modelName", ""),
             "modelContextWindow": segment.context_window if segment else None,
             "isTest": meta.get("isTest", False),
+            "codeProjects": list(row.code_projects or []),
         }
 
     async def create(self, scenario_id, *, model_id=None, is_test=False):
@@ -290,7 +328,19 @@ class SessionService:
         await db.flush()
         return segment
 
-    async def start(self, session_id, message, *, model_id=None):
+    async def set_code_projects(self, session_id, names):
+        """保存会话的关联代码（只读）。执行中也可以修改：当前轮不受影响，从下一轮起生效。"""
+        selected = normalize_code_projects(names)
+        async with SessionFactory() as db:
+            row = await self.row(db, session_id)
+            if row.status == "archived":
+                raise HTTPException(409, "此会话已归档")
+            await ensure_code_projects_exist(selected, list(row.code_projects or []))
+            row.code_projects = selected
+            await db.commit()
+            return {"codeProjects": selected}
+
+    async def start(self, session_id, message, *, model_id=None, code_projects=None):
         if not message.strip():
             raise HTTPException(422, "任务内容不能为空")
         lock = self.locks.setdefault(session_id, asyncio.Lock())
@@ -305,6 +355,12 @@ class SessionService:
                 previous = await self._current_segment(db, row)
                 if not previous:
                     raise HTTPException(409, "此会话没有完整的模型快照，请新建会话")
+                # 本轮随消息提交的关联代码（不传则沿用会话已保存的选择）；先校验，失败时不留下任何记录
+                if code_projects is not None:
+                    selected = normalize_code_projects(code_projects)
+                    await ensure_code_projects_exist(selected, list(row.code_projects or []))
+                    row.code_projects = selected
+                code = list(row.code_projects or [])
                 segment = previous
                 if model_id is not None and model_id != previous.connection_id:
                     # 切换目标必须存在且已启用（404 / 409）；沿用当前模型则不受其后启停影响。
@@ -329,6 +385,7 @@ class SessionService:
                             "roles": ["workspace-admin"],
                         },
                         runtime,
+                        code,
                     )
                     row.runner_session_id, row.runner_id = handle["sessionId"], "local-runner"
                     row.workspace_uri = "session://" + handle["sessionId"]
@@ -358,7 +415,12 @@ class SessionService:
                         "to": {"id": segment.connection_id, "name": segment.name, "model": segment.model},
                     }
                 # 用户消息记录本轮模型；切换轮额外记录来源，供聊天页渲染切换分隔线。
-                user.meta = {**model_ref(segment), **({"modelSwitch": switch} if switch else {})}
+                user.meta = {
+                    **model_ref(segment),
+                    **({"modelSwitch": switch} if switch else {}),
+                    # 本轮可读取的代码项目，供历史消息回溯
+                    **({"codeProjects": code} if code else {}),
+                }
                 pump_cursor = cursor
                 if switch:
                     pump_cursor += 1
@@ -379,7 +441,9 @@ class SessionService:
                 runner_id = row.runner_session_id
                 turn = {"segmentId": segment.id, "ref": model_ref(segment), "messageId": user.id}
                 current = segment_view(segment)
-            task = asyncio.create_task(self.pump(session_id, runner_id, message, pump_cursor, runtime, turn))
+            task = asyncio.create_task(
+                self.pump(session_id, runner_id, message, pump_cursor, runtime, turn, code)
+            )
             self.tasks[session_id] = task
             task.add_done_callback(
                 lambda done: self.tasks.pop(session_id, None) if self.tasks.get(session_id) is done else None
@@ -391,9 +455,10 @@ class SessionService:
                 "cursor": cursor,
                 "messageMeta": user.meta,
                 "model": current,
+                "codeProjects": code,
             }
 
-    async def pump(self, session_id, runner_id, message, cursor, runtime, turn):
+    async def pump(self, session_id, runner_id, message, cursor, runtime, turn, code_projects=None):
         """转发一轮执行事件并落库。turn 为本轮模型分段：回复署名与计费都以它为准。"""
         failed, got_done, partial, partial_reasoning = False, False, "", ""
 
@@ -503,7 +568,8 @@ class SessionService:
             log.warning("会话 %s 的轮前文件快照失败", session_id, exc_info=True)
         try:
             await persist("session", {"sessionId": session_id, "workspaceUri": "session://" + runner_id})
-            async for event in runner_client.events(runner_id, message, runtime):
+            # 每轮下发完整的关联代码列表（空列表表示不关联），Runner 与数据库始终一致
+            async for event in runner_client.events(runner_id, message, runtime, list(code_projects or [])):
                 kind, payload = event["kind"], event.get("payload") or {}
                 if kind == "files":
                     # 先同步再发布事件：客户端收到事件后刷新清单时即可看到新文件
