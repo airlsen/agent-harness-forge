@@ -8,6 +8,7 @@
 import argparse
 import asyncio
 import json
+import re
 from pathlib import Path
 import time
 from playwright.async_api import async_playwright, expect
@@ -390,12 +391,12 @@ async def main():
             check("model preset stays an unsaved draft until explicit save")
             await screenshot("models-desktop.png")
             await page.get_by_role("link", name="企业场景", exact=True).click()
-            await expect(page.locator(".scenario-card")).to_have_count(4)
+            await expect(page.locator(".catalog-card")).to_have_count(4)
             await expect(
                 page.get_by_role("button", name="新建场景", exact=True)
             ).to_have_count(0)
             await (
-                page.locator(".scenario-card")
+                page.locator(".catalog-card")
                 .first.get_by_role("button", name="详情")
                 .click()
             )
@@ -412,7 +413,7 @@ async def main():
             )
             await page.get_by_role("button", name="维护场景", exact=True).click()
             await (
-                page.locator(".scenario-card")
+                page.locator(".catalog-card")
                 .first.get_by_role("button", name="详情")
                 .click()
             )
@@ -429,13 +430,13 @@ async def main():
                 )
             ) as response:
                 await (
-                    page.locator(".scenario-card")
+                    page.locator(".catalog-card")
                     .first.get_by_role("button", name="复制为草稿")
                     .click()
                 )
             fixture_id = (await (await response.value).json())["data"]["id"]
-            await expect(page.locator(".scenario-card")).to_have_count(1)
-            card = page.locator(".scenario-card").first
+            await expect(page.locator(".catalog-card")).to_have_count(1)
+            card = page.locator(".catalog-card").first
             await card.get_by_role("button", name="编辑", exact=True).click()
             await page.get_by_label("场景名称").fill(fixture_name)
             await page.get_by_label("一句话介绍").fill(
@@ -464,8 +465,8 @@ async def main():
                 "template copy, maintenance edit and immutable version history persist"
             )
             await page.get_by_role("button", name="返回使用目录").click()
-            await expect(page.locator(".scenario-card")).to_have_count(4)
-            await expect(page.locator(".scenario-grid")).not_to_contain_text(
+            await expect(page.locator(".catalog-card")).to_have_count(4)
+            await expect(page.locator(".catalog-grid")).not_to_contain_text(
                 fixture_name
             )
             check(
@@ -475,7 +476,7 @@ async def main():
             await page.get_by_label("搜索场景").fill(fixture_name)
             # 维护卡片不再直接放「预览草稿」，从详情抽屉进入
             await (
-                page.locator(".scenario-card")
+                page.locator(".catalog-card")
                 .first.get_by_role("button", name="详情")
                 .click()
             )
@@ -525,7 +526,7 @@ async def main():
             await expect(
                 page.get_by_role("heading", name="技能管理", exact=True)
             ).to_be_visible()
-            await expect(page.locator(".enterprise-tool-card")).to_have_count(4)
+            await expect(page.locator(".catalog-card")).to_have_count(4)
             await expect(page.locator(".plugin-card")).to_have_count(0)
             await page.get_by_label("搜索基础工具").fill("nonexistent-tool")
             await expect(
@@ -548,8 +549,8 @@ async def main():
             await go("/agent/capabilities?tab=tools")
             await expect(page.get_by_role("heading", name="受管插件")).to_be_visible()
             await expect(
-                page.locator(".collection-tabs button").nth(1)
-            ).to_have_attribute("aria-pressed", "true")
+                page.locator(".catalog-filter .ant-segmented-item").nth(1)
+            ).to_have_class(re.compile(r"\bant-segmented-item-selected\b"))
             await expect(
                 page.get_by_role("button", name="上传插件包", exact=True)
             ).to_be_visible()
@@ -646,10 +647,10 @@ async def main():
                 "plugin upload dialog stays inside mobile and compact viewports, restores focus and remains dismissible"
             )
             await page.set_viewport_size({"width": 1440, "height": 1000})
-            await page.locator(".runtime-details>summary").click()
-            await expect(page.locator(".runtime-component-list>article")).to_have_count(
-                2
-            )
+            await page.locator(".runtime-details .ant-collapse-header").click()
+            await expect(
+                page.locator(".runtime-component-list .ant-list-item")
+            ).to_have_count(2)
             await page.get_by_role("button", name="组件详情", exact=True).first.click()
             await expect(page.get_by_role("dialog", name="组件详情")).to_be_visible()
             await page.keyboard.press("Escape")
@@ -657,7 +658,7 @@ async def main():
                 "SDK/runtime components are advanced information, not fake installable business plugins"
             )
             await (
-                page.locator(".collection-tabs > button")
+                page.locator(".catalog-filter .ant-segmented-item")
                 .filter(has_text="技能")
                 .click()
             )
@@ -668,7 +669,7 @@ async def main():
                 page.locator(".enterprise-empty").get_by_role("link", name="新建技能")
             ).to_be_visible()
             await (
-                page.locator(".collection-tabs > button")
+                page.locator(".catalog-filter .ant-segmented-item")
                 .filter(has_text="MCP 服务")
                 .click()
             )

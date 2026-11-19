@@ -9,7 +9,12 @@ import { useConversation } from '../../../stores/conversation';
 import type { Scenario, Tool } from '../../../types/platform';
 import type { SkillSummary } from '../../../types/skill';
 import type { PluginPackage } from '../../../types/plugin';
+import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
 import Icon from '../../../components/ForgeIcon.vue';
+import CatalogCard from '../../../components/catalog/CatalogCard.vue';
+import CatalogFilter from '../../../components/catalog/CatalogFilter.vue';
+import CatalogGrid from '../../../components/catalog/CatalogGrid.vue';
+import CatalogSearch from '../../../components/catalog/CatalogSearch.vue';
 import DialogShell from '../../../components/DialogShell.vue';
 
 type RuntimeComponent = PluginPackage;
@@ -42,6 +47,11 @@ const pluginUploadBusy = ref(false);
 const pluginUploadMessage = ref('');
 const MAX_PLUGIN_ARCHIVE_BYTES = 5 * 1024 * 1024;
 const reviewingPlugin = ref<number | null>(null);
+// 卡片「工具与权限」抽屉当前展示的插件
+const pluginTools = ref<PluginPackage | null>(null);
+// 插件页底部折叠面板：有待审核版本时默认展开审核队列
+const pluginPanels = ref<string[]>([]);
+let pluginPanelsInitialized = false;
 const skills = ref<{ items: SkillSummary[] } | null>(null);
 const mcp = ref<{ items: McpServer[]; available: boolean; reason: string } | null>(null);
 const mcpJson = ref('');
@@ -77,6 +87,8 @@ function changeMcpTransport() {
   mcpTemplate.value = mcpExample.value;
 }
 const mcpBusy = ref(false);
+const mcpTesting = ref<number | null>(null);
+const mcpToggling = ref<number | null>(null);
 // 仅用于导入弹窗内、需要用户修改输入的错误；操作结果统一走全局 toast。
 const mcpImportError = ref('');
 const mcpEditorOpen = ref(false);
@@ -100,11 +112,51 @@ const tab = computed(() => {
   return ['skills', 'mcp'].includes(requestedTab) ? requestedTab : 'tools';
 });
 const tabs = computed(() => [
-  { id: 'tools', label: '基础工具', icon: 'wrench', count: app.tools.length },
-  { id: 'plugins', label: '插件', icon: 'blocks', count: components.value.length },
-  { id: 'skills', label: '技能', icon: 'book', count: skills.value?.items.length },
-  { id: 'mcp', label: 'MCP 服务', icon: 'plug', count: mcp.value?.items.length },
+  { value: 'tools', label: '基础工具', count: app.tools.length },
+  { value: 'plugins', label: '插件', count: components.value.length },
+  { value: 'skills', label: '技能', count: skills.value?.items.length },
+  { value: 'mcp', label: 'MCP 服务', count: mcp.value?.items.length },
 ]);
+const searchCopy: Record<string, { placeholder: string; label: string }> = {
+  tools: { placeholder: '搜索用途、名称或说明', label: '搜索基础工具' },
+  plugins: { placeholder: '搜索插件、工具或说明', label: '搜索插件' },
+  skills: { placeholder: '搜索技能名称或说明', label: '搜索技能' },
+  mcp: { placeholder: '搜索服务名称或地址', label: '搜索 MCP 服务' },
+};
+const search = computed(() => searchCopy[tab.value] ?? searchCopy.tools);
+function matches(text: string) {
+  return text.toLowerCase().includes(query.value.trim().toLowerCase());
+}
+const visibleSkills = computed(() =>
+  (skills.value?.items ?? []).filter((skill) => matches(`${skill.name} ${skill.description}`)),
+);
+const visibleMcp = computed(() =>
+  (mcp.value?.items ?? []).filter((server) =>
+    matches(`${server.name} ${server.url} ${server.serverInfo?.name ?? ''} ${server.transport}`),
+  ),
+);
+function transportLabel(transport: string) {
+  if (transport === 'stdio') return '本机进程';
+  if (transport === 'sse') return '旧版 SSE';
+  return 'Streamable HTTP';
+}
+function mcpState(server: McpServer) {
+  if (server.status === 'connected') return { label: '连接正常', color: 'success' };
+  if (server.status === 'error') return { label: '连接失败', color: 'error' };
+  return { label: '待测试', color: undefined };
+}
+function mcpDescription(server: McpServer) {
+  const name = String(
+    server.serverInfo?.name || (server.transport === 'stdio' ? '本机 MCP 进程' : server.url),
+  );
+  return server.serverInfo?.version ? `${name} · ${String(server.serverInfo.version)}` : name;
+}
+function submissionState(plugin: PluginPackage) {
+  if (plugin.auditStatus === 'approved')
+    return plugin.enabled ? { label: '已批准', color: 'success' } : { label: '已停用', color: undefined };
+  if (plugin.auditStatus === 'rejected') return { label: '已拒绝', color: 'error' };
+  return { label: '待审核', color: 'warning' };
+}
 const visibleTools = computed(() =>
   app.tools.filter((tool) =>
     `${tool.name} ${tool.title} ${tool.description}`.toLowerCase().includes(query.value.trim().toLowerCase()),
@@ -161,6 +213,12 @@ async function load() {
     ]);
     components.value = plugins.items;
     pluginSubmissions.value = plugins.submissions;
+    // 只在首次读取时决定是否展开审核队列，之后尊重用户的展开 / 收起操作
+    if (!pluginPanelsInitialized) {
+      pluginPanelsInitialized = true;
+      if (plugins.submissions.some((plugin) => plugin.auditStatus === 'pending'))
+        pluginPanels.value = ['review'];
+    }
     skills.value = skillResult;
     mcp.value = mcpResult;
   } catch (error) {
@@ -325,6 +383,7 @@ async function refreshMcp() {
 }
 async function testMcp(server: McpServer) {
   mcpBusy.value = true;
+  mcpTesting.value = server.id;
   try {
     await api(`/registry/mcp-servers/${server.id}/test`, { method: 'POST' });
     await refreshMcp();
@@ -335,9 +394,11 @@ async function testMcp(server: McpServer) {
     await load();
   } finally {
     mcpBusy.value = false;
+    mcpTesting.value = null;
   }
 }
 async function toggleMcp(server: McpServer) {
+  mcpToggling.value = server.id;
   try {
     await api(`/registry/mcp-servers/${server.id}`, {
       method: 'PATCH',
@@ -347,6 +408,8 @@ async function toggleMcp(server: McpServer) {
     await load();
   } catch (error) {
     app.toast((error as Error).message, 'error');
+  } finally {
+    mcpToggling.value = null;
   }
 }
 async function deleteMcp(server: McpServer) {
@@ -363,6 +426,7 @@ async function deleteMcp(server: McpServer) {
 function selectTab(id: string) {
   query.value = '';
   detail.value = null;
+  pluginTools.value = null;
   const routeTab = id === 'tools' ? 'base-tools' : id;
   void router.replace({ query: { ...route.query, tab: routeTab, tool: undefined } });
 }
@@ -397,93 +461,75 @@ onMounted(load);
           <p>查看工具、技能和 MCP 服务，按需配置到场景或会话。</p>
         </div>
       </div>
+      <!-- 分类 tab 在左；搜索与当前分类的主要操作在右，和企业场景页同一套组件 -->
       <div class="collection-toolbar enterprise-collection-toolbar capability-collection-toolbar">
-        <div class="collection-tabs capability-category-switcher" role="group" aria-label="能力分类">
-          <button
-            v-for="item in tabs"
-            :key="item.id"
-            :class="['capability-category-option', { selected: tab === item.id }]"
-            :aria-pressed="tab === item.id"
-            @click="selectTab(item.id)"
-          >
-            <Icon :name="item.icon" :size="16" />
-            <span class="capability-category-label">{{ item.label }}</span>
-            <span v-if="item.count !== undefined" class="capability-category-count">{{ item.count }}</span>
-          </button>
-        </div>
+        <CatalogFilter :value="tab" :options="tabs" aria-label="能力分类" @update:value="selectTab" />
         <div class="capability-toolbar-actions">
-          <label v-if="tab === 'tools' || tab === 'plugins'" class="search-field"
-            ><Icon name="search" :size="17" /><input
-              v-model="query"
-              :placeholder="tab === 'plugins' ? '搜索插件、工具或说明' : '搜索用途、名称或说明'"
-              :aria-label="tab === 'plugins' ? '搜索插件' : '搜索基础工具'"
-          /></label>
-          <div v-else-if="tab === 'skills' && skills?.items.length" class="skill-capability-actions">
-            <RouterLink to="/agent/skills" class="button secondary small"
-              >全部技能 <Icon name="arrow" :size="14" /></RouterLink
-            ><RouterLink to="/agent/skills/new" class="button primary small"
-              ><Icon name="plus" :size="15" />新建技能</RouterLink
-            >
-          </div>
+          <CatalogSearch v-model:value="query" :placeholder="search.placeholder" :aria-label="search.label" />
+          <a-button v-if="tab === 'plugins'" type="primary" @click="openPluginUpload">
+            <template #icon><Icon name="arrow-up-line" :size="16" /></template>上传插件包
+          </a-button>
+          <template v-else-if="tab === 'skills' && skills?.items.length">
+            <RouterLink v-slot="{ href, navigate }" to="/agent/skills" custom>
+              <a-button :href="href" @click="navigate">全部技能</a-button>
+            </RouterLink>
+            <RouterLink v-slot="{ href, navigate }" to="/agent/skills/new" custom>
+              <a-button type="primary" :href="href" @click="navigate">
+                <template #icon><Icon name="plus" :size="16" /></template>新建技能
+              </a-button>
+            </RouterLink>
+          </template>
+          <a-button v-else-if="tab === 'mcp' && mcp?.items.length" type="primary" @click="openMcpEditor">
+            <template #icon><Icon name="plus" :size="16" /></template>添加服务
+          </a-button>
         </div>
       </div>
-      <div v-if="loadError" class="form-alert error" role="alert">
-        <Icon name="info" :size="18" />
-        <div>
-          <strong>部分能力信息未能读取</strong>
-          <p>{{ loadError }}</p>
-        </div>
-        <button class="button secondary small" @click="load">重试</button>
-      </div>
+      <a-alert
+        v-if="loadError"
+        class="capability-load-error"
+        type="error"
+        show-icon
+        message="部分能力信息未能读取"
+        :description="loadError"
+      >
+        <template #action><a-button size="small" @click="load">重试</a-button></template>
+      </a-alert>
       <template v-if="tab === 'tools'">
-        <div class="capability-section-label">
-          <span><span class="availability-dot"></span>基础工具 · {{ visibleTools.length }} 项</span>
-          <p>默认可用</p>
-        </div>
-        <div v-if="visibleTools.length" class="enterprise-tool-grid">
-          <article v-for="tool in visibleTools" :key="tool.name" class="enterprise-tool-card">
-            <div class="enterprise-tool-top">
-              <span :class="['scene-icon', tool.permission === 'read' ? 'shield' : 'book']"
-                ><Icon :name="tool.icon" :size="24" /></span
-              ><span :class="['tag', tool.permission === 'read' ? 'success' : 'warm']"
-                ><Icon :name="tool.permission === 'read' ? 'eye' : 'edit'" :size="12" />{{
-                  tool.permission === 'read' ? '只读' : '写入会话目录'
-                }}</span
+        <CatalogGrid v-if="visibleTools.length">
+          <CatalogCard
+            v-for="tool in visibleTools"
+            :key="tool.name"
+            :title="tool.title"
+            :icon="tool.icon"
+            :tone="tool.permission === 'read' ? 'shield' : 'book'"
+            :description="tool.description"
+            :status="tool.permission === 'read' ? '只读' : '写入会话目录'"
+            :status-color="tool.permission === 'read' ? 'success' : 'warning'"
+          >
+            <template #footer>
+              <a-button type="text" size="small" :aria-label="`查看${tool.title}详情`" @click="detail = tool"
+                >详情</a-button
               >
-            </div>
-            <h2>{{ tool.title }}</h2>
-            <p>{{ tool.description }}</p>
-            <footer>
-              <button :aria-label="`查看${tool.title}详情`" @click="detail = tool">
-                详情 <Icon name="arrow" :size="15" />
-              </button>
-            </footer>
-          </article>
-        </div>
+            </template>
+          </CatalogCard>
+        </CatalogGrid>
         <div v-else class="enterprise-empty">
           <span class="enterprise-empty-symbol"><Icon name="search" :size="28" /></span>
           <h2>没有匹配的能力</h2>
           <p>试试搜索“文件”“时间”，或清除关键词。</p>
-          <button class="button secondary" @click="query = ''">清除搜索</button>
+          <a-button @click="query = ''">清除搜索</a-button>
         </div>
       </template>
       <template v-else-if="tab === 'plugins'">
         <div v-if="loading" class="loading-inline" role="status">
-          <span class="loader"></span>正在读取插件目录…
+          <a-spin size="small" />正在读取插件目录…
         </div>
         <section v-else class="plugin-directory">
-          <header class="capability-list-heading plugin-directory-heading">
-            <div>
-              <h2>受管插件</h2>
-              <span>{{ components.length }} 个当前可用版本 · {{ pluginSubmissions.length }} 个上传版本</span>
-            </div>
-            <button class="button primary small" @click="openPluginUpload">
-              <Icon name="arrow-up-line" :size="15" />上传插件包
-            </button>
+          <header class="capability-section-head">
+            <h2>受管插件</h2>
+            <span>{{ components.length }} 个当前可用版本 · {{ pluginSubmissions.length }} 个上传版本</span>
+            <p>上传的 ZIP 会先经过契约检查并进入审核；批准后，维护者可以在企业场景中绑定具体插件和工具。</p>
           </header>
-          <p class="plugin-directory-description">
-            上传的 ZIP 会先经过契约检查并进入审核；批准后，维护者可以在企业场景中绑定具体插件和工具。
-          </p>
           <div v-if="!visiblePlugins.length" class="enterprise-empty plugin-empty-state">
             <span class="enterprise-empty-symbol"><Icon name="blocks" :size="28" /></span>
             <h2>{{ query.trim() ? '没有匹配的插件' : '还没有可用的受管插件' }}</h2>
@@ -494,291 +540,261 @@ onMounted(load);
                   : '上传 Forge 插件包后会先进入审核；审核通过并启用后，才可在场景中授权使用。'
               }}
             </p>
-            <button v-if="query.trim()" class="button secondary" @click="query = ''">清除搜索</button>
+            <a-button v-if="query.trim()" @click="query = ''">清除搜索</a-button>
           </div>
-          <section v-if="visiblePlugins.length" class="managed-plugin-section">
-            <div class="capability-section-label">
-              <span><Icon name="shield" :size="15" />受管插件 · {{ visiblePlugins.length }}</span>
-            </div>
-            <div class="enterprise-tool-grid">
-              <article
-                v-for="plugin in visiblePlugins"
-                :key="plugin.package"
-                class="enterprise-tool-card managed-plugin-card"
-              >
-                <div class="enterprise-tool-top">
-                  <span class="scene-icon shield"><Icon name="blocks" :size="24" /></span
-                  ><span
-                    :class="[
-                      'tag',
-                      plugin.auditStatus === 'approved' && plugin.enabled ? 'success' : 'neutral',
-                    ]"
-                    >{{ plugin.auditStatus === 'approved' && plugin.enabled ? '已批准' : '不可用' }}</span
-                  >
-                </div>
-                <h2>{{ plugin.displayName }}</h2>
-                <p>{{ plugin.description }}</p>
-                <div class="managed-plugin-meta">
-                  <span>v{{ plugin.version }}</span
-                  ><span>{{ plugin.tools.length }} 项已声明工具</span
-                  ><span
-                    v-if="plugin.source.includes('demo')"
-                    class="tag warm"
-                    title="仅返回模拟数据，不连接真实系统"
-                    >演示数据</span
-                  >
-                </div>
-                <details class="managed-plugin-tools-details">
-                  <summary>查看工具与权限</summary>
-                  <ul class="managed-plugin-tools">
-                    <li v-for="tool in plugin.tools" :key="tool.name">
-                      <span
-                        ><b>{{ tool.title }}</b
-                        ><small>{{ tool.description }}</small></span
-                      ><em>{{ tool.permission === 'approval' ? '需审批' : '只读' }}</em>
-                    </li>
-                  </ul>
-                </details>
-                <footer>
-                  <RouterLink to="/agent/scenarios">场景授权 <Icon name="arrow" :size="15" /></RouterLink>
-                </footer>
-              </article>
-            </div>
-          </section>
-          <details
-            v-if="visiblePluginSubmissions.length"
-            class="plugin-review-section"
-            :open="pendingPluginSubmissions.length > 0"
-          >
-            <summary class="capability-section-label">
-              <span
-                ><Icon name="box" :size="15" />上传版本与审核队列 ·
-                {{ pendingPluginSubmissions.length }} 项待处理</span
-              ><Icon class="plugin-review-toggle-icon" name="chevronDown" :size="15" />
-            </summary>
-            <div class="plugin-submission-list">
-              <article
-                v-for="plugin in visiblePluginSubmissions"
-                :key="plugin.id"
-                class="plugin-submission-card"
-              >
-                <div>
-                  <strong>{{ plugin.displayName }}</strong><small
-                    >{{ plugin.package }} · v{{ plugin.version }} ·
-                    {{ plugin.artifactName || '已登记制品' }}</small
-                  >
-                </div>
-                <p>
-                  {{
-                    plugin.runtime === 'dsh-native'
-                      ? '原生 DSH 插件候选：只能由平台团队通过专用 Runner 镜像审核。'
-                      : plugin.reviewNote ||
-                        'Manifest 已校验，等待管理员审核远程 Worker、工具权限与网络域名。'
-                  }}
-                </p>
-                <small v-if="plugin.execution?.networkDomains?.length" class="plugin-network-scope"
-                  >网络白名单：{{ plugin.execution.networkDomains.join('、') }} ·
-                  {{ plugin.execution.timeoutSeconds ?? 20 }} 秒超时</small
+          <CatalogGrid v-else>
+            <CatalogCard
+              v-for="plugin in visiblePlugins"
+              :key="plugin.package"
+              :title="plugin.displayName"
+              icon="blocks"
+              tone="shield"
+              :description="plugin.description"
+              :status="plugin.auditStatus === 'approved' && plugin.enabled ? '已批准' : '不可用'"
+              :status-color="plugin.auditStatus === 'approved' && plugin.enabled ? 'success' : undefined"
+            >
+              <template #sub>
+                <span>v{{ plugin.version }}</span
+                ><span>{{ plugin.tools.length }} 项工具</span>
+              </template>
+              <template v-if="plugin.source.includes('demo')" #tags>
+                <a-tag color="warning" :bordered="false" title="仅返回模拟数据，不连接真实系统"
+                  >演示数据</a-tag
                 >
-                <div class="plugin-submission-meta">
-                  <span
-                    :class="[
-                      'tag',
-                      plugin.auditStatus === 'approved'
-                        ? 'success'
-                        : plugin.auditStatus === 'rejected'
-                          ? 'danger'
-                          : 'warning',
-                    ]"
-                    >{{
-                      plugin.auditStatus === 'approved'
-                        ? plugin.enabled
-                          ? '已批准'
-                          : '已停用'
-                        : plugin.auditStatus === 'rejected'
-                          ? '已拒绝'
-                          : '待审核'
-                    }}</span><code>{{ plugin.artifactHash.slice(0, 12) }}</code>
-                </div>
-                <footer>
-                  <template v-if="plugin.auditStatus === 'pending'"
-                    ><button
-                      class="button secondary small"
-                      :disabled="reviewingPlugin === plugin.id"
-                      @click="reviewPlugin(plugin, 'rejected')"
-                    >
-                      拒绝</button
-                    ><button
-                      class="button primary small"
-                      :disabled="reviewingPlugin === plugin.id || plugin.runtime === 'dsh-native'"
-                      @click="reviewPlugin(plugin, 'approved')"
-                    >
-                      批准并发布
-                    </button></template
-                  ><button
-                    v-else-if="plugin.auditStatus === 'approved'"
-                    class="button secondary small"
-                    :disabled="reviewingPlugin === plugin.id"
-                    @click="togglePlugin(plugin)"
-                  >
-                    {{ plugin.enabled ? '停用版本' : '启用版本' }}
-                  </button>
-                </footer>
-              </article>
-            </div>
-          </details>
-          <details class="runtime-details">
-            <summary>
-              <Icon name="box" :size="17" /><span>平台运行组件</span><small>只读 · 非业务插件</small
-              ><Icon name="chevronDown" :size="15" />
-            </summary>
-            <div v-if="loading" class="loading-inline"><span class="loader small"></span>读取组件信息…</div>
-            <div v-else class="runtime-component-list">
-              <article v-for="item in components" :key="item.package">
-                <span class="component-runtime-icon"><Icon name="blocks" :size="20" /></span>
-                <div>
-                  <strong
-                    >{{ item.displayName }}<small>v{{ item.version }}</small></strong
-                  >
-                  <p>{{ item.package }} · {{ item.runtime }}</p>
-                </div>
-                <button class="button text small" @click="componentDetail = item">
-                  组件详情 <Icon name="arrow" :size="14" />
-                </button>
-              </article>
-            </div>
-          </details>
+              </template>
+              <template #footer>
+                <a-button type="text" size="small" @click="pluginTools = plugin">工具与权限</a-button>
+                <RouterLink v-slot="{ href, navigate }" to="/agent/scenarios" custom>
+                  <a-button type="primary" size="small" :href="href" @click="navigate">场景授权</a-button>
+                </RouterLink>
+              </template>
+            </CatalogCard>
+          </CatalogGrid>
+          <!-- 审核队列与平台运行组件属于次要信息，收进折叠面板 -->
+          <a-collapse v-model:activeKey="pluginPanels" class="capability-panels" ghost>
+            <a-collapse-panel
+              v-if="visiblePluginSubmissions.length"
+              key="review"
+              class="plugin-review-section"
+            >
+              <template #header>
+                <span class="capability-panel-title"
+                  >上传版本与审核队列<a-tag
+                    :color="pendingPluginSubmissions.length ? 'warning' : undefined"
+                    :bordered="false"
+                    >{{ pendingPluginSubmissions.length }} 项待处理</a-tag
+                  ></span
+                >
+              </template>
+              <a-list class="plugin-submission-list" :data-source="visiblePluginSubmissions">
+                <template #renderItem="{ item: plugin }">
+                  <a-list-item class="plugin-submission-item">
+                    <a-list-item-meta>
+                      <template #title>
+                        <span class="plugin-submission-title"
+                          >{{ plugin.displayName
+                          }}<a-tag :color="submissionState(plugin).color" :bordered="false">{{
+                            submissionState(plugin).label
+                          }}</a-tag></span
+                        >
+                      </template>
+                      <template #description>
+                        <span class="plugin-submission-meta"
+                          >{{ plugin.package }} · v{{ plugin.version }} ·
+                          {{ plugin.artifactName || '已登记制品' }} ·
+                          <code>{{ plugin.artifactHash.slice(0, 12) }}</code></span
+                        >
+                        <span class="plugin-submission-note">{{
+                          plugin.runtime === 'dsh-native'
+                            ? '原生 DSH 插件候选：只能由平台团队通过专用 Runner 镜像审核。'
+                            : plugin.reviewNote ||
+                              'Manifest 已校验，等待管理员审核远程 Worker、工具权限与网络域名。'
+                        }}</span>
+                        <span v-if="plugin.execution?.networkDomains?.length" class="plugin-submission-meta"
+                          >网络白名单：{{ plugin.execution.networkDomains.join('、') }} ·
+                          {{ plugin.execution.timeoutSeconds ?? 20 }} 秒超时</span
+                        >
+                      </template>
+                    </a-list-item-meta>
+                    <template #actions>
+                      <template v-if="plugin.auditStatus === 'pending'">
+                        <a-button
+                          size="small"
+                          :disabled="reviewingPlugin === plugin.id"
+                          @click="reviewPlugin(plugin, 'rejected')"
+                          >拒绝</a-button
+                        >
+                        <a-button
+                          type="primary"
+                          size="small"
+                          :disabled="reviewingPlugin === plugin.id || plugin.runtime === 'dsh-native'"
+                          @click="reviewPlugin(plugin, 'approved')"
+                          >批准并发布</a-button
+                        >
+                      </template>
+                      <a-button
+                        v-else-if="plugin.auditStatus === 'approved'"
+                        size="small"
+                        :loading="reviewingPlugin === plugin.id"
+                        @click="togglePlugin(plugin)"
+                        >{{ plugin.enabled ? '停用版本' : '启用版本' }}</a-button
+                      >
+                    </template>
+                  </a-list-item>
+                </template>
+              </a-list>
+            </a-collapse-panel>
+            <a-collapse-panel key="runtime" class="runtime-details">
+              <template #header>
+                <span class="capability-panel-title">平台运行组件<small>只读 · 非业务插件</small></span>
+              </template>
+              <a-list class="runtime-component-list" :data-source="components">
+                <template #renderItem="{ item }">
+                  <a-list-item>
+                    <a-list-item-meta :description="`${item.package} · ${item.runtime}`">
+                      <template #title>
+                        <span class="plugin-submission-title"
+                          >{{ item.displayName }}<small>v{{ item.version }}</small></span
+                        >
+                      </template>
+                    </a-list-item-meta>
+                    <template #actions>
+                      <a-button type="text" size="small" @click="componentDetail = item">组件详情</a-button>
+                    </template>
+                  </a-list-item>
+                </template>
+              </a-list>
+            </a-collapse-panel>
+          </a-collapse>
         </section>
       </template>
       <div v-else-if="loading" class="loading-inline" role="status">
-        <span class="loader"></span>正在读取接入状态…
+        <a-spin size="small" />正在读取接入状态…
       </div>
       <section v-else-if="tab === 'mcp' && mcp" class="mcp-directory">
-        <header v-if="mcp.items.length" class="capability-list-heading">
-          <button class="button secondary small" @click="openMcpEditor">
-            <Icon name="plus" :size="15" />添加服务
-          </button>
-        </header>
         <div v-if="!mcp.items.length" class="enterprise-empty">
           <span class="enterprise-empty-symbol"><Icon name="plug" :size="29" /></span>
           <h2>还没有 MCP 服务</h2>
           <p>连接外部工具服务，供场景或会话调用。</p>
-          <button class="button primary" @click="openMcpEditor">添加 MCP 服务</button>
+          <a-button type="primary" @click="openMcpEditor">添加 MCP 服务</a-button>
         </div>
-        <div v-else class="mcp-server-list">
-          <article v-for="server in mcp.items" :key="server.id" class="mcp-server-card">
-            <div class="mcp-card-main">
-              <span class="mcp-card-icon"><Icon name="plug" :size="20" /></span>
-              <div class="mcp-card-info">
-                <div class="mcp-card-title">
-                  <h3>{{ server.name }}</h3>
-                  <span
-                    :class="[
-                      'tag',
-                      server.status === 'connected'
-                        ? 'success'
-                        : server.status === 'error'
-                          ? 'danger'
-                          : 'neutral',
-                    ]"
-                    >{{
-                      server.status === 'connected'
-                        ? '连接正常'
-                        : server.status === 'error'
-                          ? '连接失败'
-                          : '待测试'
-                    }}</span
-                  >
-                  <span
-                    v-if="server.transport === 'stdio' || server.transport === 'sse'"
-                    class="mcp-transport-badge"
-                    >{{ server.transport === 'stdio' ? '本机进程' : '旧版 SSE' }}</span
-                  >
-                </div>
-                <details class="mcp-connection-details">
-                  <summary>连接详情</summary>
-                  <p class="mcp-card-description">
-                    {{
-                      server.serverInfo?.name ||
-                      (server.transport === 'stdio' ? '本机 MCP 进程' : server.url)
-                    }}<span v-if="server.serverInfo?.version"> · {{ server.serverInfo.version }}</span>
-                  </p>
-                  <p class="mcp-credential-note">
-                    {{ server.hasCredentials ? '认证信息已加密保存' : '无需认证' }}
-                  </p>
-                </details>
-              </div>
-              <button
-                class="button secondary small mcp-view-tools"
-                :disabled="!server.tools.length"
-                @click="openMcpTools(server)"
+        <div v-else-if="!visibleMcp.length" class="enterprise-empty">
+          <span class="enterprise-empty-symbol"><Icon name="search" :size="28" /></span>
+          <h2>没有匹配的 MCP 服务</h2>
+          <p>试试其他服务名称或地址，或清除关键词。</p>
+          <a-button @click="query = ''">清除搜索</a-button>
+        </div>
+        <CatalogGrid v-else>
+          <CatalogCard
+            v-for="server in visibleMcp"
+            :key="server.id"
+            :title="server.name"
+            icon="plug"
+            tone="code"
+            :description="mcpDescription(server)"
+            :status="mcpState(server).label"
+            :status-color="mcpState(server).color"
+          >
+            <template #sub>
+              <span>{{ transportLabel(server.transport) }}</span><span>{{ server.tools.length }} 项工具</span
+              ><span>{{ server.hasCredentials ? '认证信息已加密' : '无需认证' }}</span>
+            </template>
+            <template v-if="server.lastError || server.transport === 'sse'">
+              <a-alert v-if="server.lastError" type="error" :message="server.lastError" show-icon />
+              <a-alert
+                v-if="server.transport === 'sse'"
+                type="warning"
+                message="仅测试连接，暂不可在会话中运行。会话执行内核不支持旧版 SSE，请改用 Streamable HTTP 或 stdio。"
+                show-icon
+              />
+            </template>
+            <template #ops>
+              <label
+                class="mcp-enable-switch"
+                :title="
+                  server.transport === 'sse' && !server.enabled ? '旧版 SSE 暂不可在会话中运行' : undefined
+                "
               >
-                查看工具 <span>{{ server.tools.length }}</span><Icon name="arrow" :size="14" />
-              </button>
-            </div>
-            <p v-if="server.lastError" class="mcp-server-error">{{ server.lastError }}</p>
-            <p v-if="server.transport === 'sse'" class="mcp-server-note">
-              仅测试连接，暂不可在会话中运行。会话执行内核不支持旧版 SSE，请改用 Streamable HTTP 或 stdio。
-            </p>
-            <footer class="mcp-card-footer">
-              <div class="mcp-card-actions">
-                <button class="button text small" :disabled="mcpBusy" @click="testMcp(server)">
-                  测试连接
-                </button>
-                <button
-                  class="button secondary small"
+                <a-switch
+                  size="small"
+                  :checked="server.enabled"
+                  :loading="mcpToggling === server.id"
                   :disabled="server.status !== 'connected' || (server.transport === 'sse' && !server.enabled)"
-                  :title="
-                    server.transport === 'sse' && !server.enabled ? '旧版 SSE 暂不可在会话中运行' : undefined
-                  "
-                  @click="toggleMcp(server)"
-                >
-                  {{ server.enabled ? '停用' : '启用' }}
-                </button>
-                <button class="button text small danger-text" @click="deleteMcp(server)">移除</button>
-              </div>
-            </footer>
-          </article>
-        </div>
+                  :aria-label="`启用 ${server.name}`"
+                  @change="toggleMcp(server)"
+                /><span>{{ server.enabled ? '已启用' : '未启用' }}</span>
+              </label>
+            </template>
+            <template #footer>
+              <a-button
+                type="text"
+                size="small"
+                :loading="mcpTesting === server.id"
+                :disabled="mcpBusy"
+                @click="testMcp(server)"
+                >测试连接</a-button
+              >
+              <a-button size="small" :disabled="!server.tools.length" @click="openMcpTools(server)"
+                >查看工具 {{ server.tools.length }}</a-button
+              >
+              <a-dropdown :trigger="['click']" placement="bottomRight">
+                <a-button type="text" size="small" :aria-label="`更多操作 ${server.name}`" title="更多操作">
+                  <template #icon><Icon name="more" :size="16" /></template>
+                </a-button>
+                <template #overlay>
+                  <a-menu @click="(info: MenuInfo) => info.key === 'delete' && deleteMcp(server)">
+                    <a-menu-item key="delete" danger>移除服务</a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
+            </template>
+          </CatalogCard>
+        </CatalogGrid>
       </section>
-      <section v-else-if="tab === 'skills' && skills" class="mcp-directory skill-capability-directory">
-        <header v-if="skills.items.length" class="capability-list-heading capability-content-heading">
-          <div>
-            <h2>可复用技能</h2>
-            <span>查看状态，或将已发布版本配置到场景与会话。</span>
-          </div>
-          <span class="capability-content-count">{{ skills.items.length }} 项</span>
-        </header>
+      <section v-else-if="tab === 'skills' && skills" class="skill-capability-directory">
         <div v-if="!skills.items.length" class="enterprise-empty">
           <span class="enterprise-empty-symbol"><Icon name="book" :size="29" /></span>
           <h2>还没有技能</h2>
           <p>创建一项可复用的工作方法。</p>
-          <RouterLink to="/agent/skills/new" class="button primary"
-            ><Icon name="plus" :size="16" />新建技能</RouterLink
-          >
-        </div>
-        <div v-else class="capability-skill-grid">
-          <RouterLink
-            v-for="skill in skills.items"
-            :key="skill.id"
-            :to="`/agent/skills/${skill.id}`"
-            class="capability-skill-card"
-          >
-            <div class="capability-skill-card-top">
-              <span class="capability-skill-icon"><Icon name="book" :size="19" /></span
-              ><span :class="['tag', skill.status === 'published' ? 'success' : 'neutral']">{{
-                skill.status === 'published' ? `已发布 · v${skill.publishedVersion}` : '草稿'
-              }}</span>
-            </div>
-            <div>
-              <h3>{{ skill.name }}</h3>
-              <p>{{ skill.description || '尚未添加用途说明。' }}</p>
-            </div>
-            <footer>
-              <span class="skill-open-link">编辑 <Icon name="arrow" :size="14" /></span>
-            </footer>
+          <RouterLink v-slot="{ href, navigate }" to="/agent/skills/new" custom>
+            <a-button type="primary" :href="href" @click="navigate">
+              <template #icon><Icon name="plus" :size="16" /></template>新建技能
+            </a-button>
           </RouterLink>
         </div>
+        <div v-else-if="!visibleSkills.length" class="enterprise-empty">
+          <span class="enterprise-empty-symbol"><Icon name="search" :size="28" /></span>
+          <h2>没有匹配的技能</h2>
+          <p>试试其他技能名称或说明，或清除关键词。</p>
+          <a-button @click="query = ''">清除搜索</a-button>
+        </div>
+        <CatalogGrid v-else>
+          <CatalogCard
+            v-for="skill in visibleSkills"
+            :key="skill.id"
+            :title="skill.name"
+            icon="book"
+            tone="book"
+            :description="skill.description"
+            placeholder="尚未添加用途说明。"
+            :status="skill.status === 'published' ? `已发布 · v${skill.publishedVersion}` : '草稿'"
+            :status-color="skill.status === 'published' ? 'success' : undefined"
+          >
+            <template #footer>
+              <RouterLink v-slot="{ href, navigate }" :to="`/agent/skills/${skill.id}`" custom>
+                <a-button
+                  type="primary"
+                  size="small"
+                  :href="href"
+                  :aria-label="`编辑技能 ${skill.name}`"
+                  @click="navigate"
+                >
+                  <template #icon><Icon name="edit" :size="14" /></template>编辑
+                </a-button>
+              </RouterLink>
+            </template>
+          </CatalogCard>
+        </CatalogGrid>
       </section>
       <div v-if="tab === 'tools' || tab === 'plugins'" class="page-note">
         <Icon name="shield" :size="14" /><span>{{
@@ -788,6 +804,40 @@ onMounted(load);
         }}</span>
       </div>
     </div>
+    <a-drawer
+      :open="!!pluginTools"
+      :width="480"
+      class="drawer"
+      aria-label="插件工具与权限"
+      @close="pluginTools = null"
+    >
+      <template v-if="pluginTools" #title>
+        <div class="capability-drawer-title">
+          <h2>{{ pluginTools.displayName }}</h2>
+          <p>v{{ pluginTools.version }} · {{ pluginTools.tools.length }} 项已声明工具</p>
+        </div>
+      </template>
+      <a-list v-if="pluginTools" class="plugin-tool-list" :data-source="pluginTools.tools">
+        <template #renderItem="{ item }">
+          <a-list-item>
+            <a-list-item-meta :title="item.title" :description="item.description" />
+            <template #extra>
+              <a-tag :color="item.permission === 'approval' ? 'warning' : 'success'" :bordered="false">{{
+                item.permission === 'approval' ? '需审批' : '只读'
+              }}</a-tag>
+            </template>
+          </a-list-item>
+        </template>
+      </a-list>
+      <template #footer>
+        <div class="capability-drawer-footer">
+          <a-button @click="pluginTools = null">关闭</a-button>
+          <RouterLink v-slot="{ href, navigate }" to="/agent/scenarios" custom>
+            <a-button type="primary" :href="href" @click="navigate">场景授权</a-button>
+          </RouterLink>
+        </div>
+      </template>
+    </a-drawer>
     <DialogShell
       v-if="pluginUploadOpen"
       variant="modal"
@@ -1073,3 +1123,161 @@ onMounted(load);
     >
   </main>
 </template>
+
+<style scoped>
+/* 筛选、搜索、卡片、网格样式见 components/catalog/*（与企业场景页共用）；这里只放本页特有的布局 */
+
+/* ============ 页面节奏：页头 / 工具栏 / 内容统一间距（与企业场景页一致） ============ */
+.capabilities-page .capability-page-heading {
+  margin-bottom: 24px;
+}
+.capabilities-page .enterprise-collection-toolbar.capability-collection-toolbar {
+  min-height: 32px;
+  margin-bottom: 24px;
+}
+.capability-toolbar-actions {
+  gap: 8px;
+}
+/* icon 插槽里是 ForgeIcon 裸 <svg>，不是 .anticon，antd 不会补图标与文字的间距 */
+.capability-toolbar-actions :deep(.ant-btn),
+.enterprise-empty :deep(.ant-btn),
+.capability-drawer-footer :deep(.ant-btn) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.capability-load-error {
+  margin-bottom: 24px;
+}
+
+/* ============ 插件页：分区标题 + 底部折叠面板 ============ */
+.capability-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 16px;
+}
+.capability-section-head h2 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 24px;
+}
+.capability-section-head span {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+.capability-section-head p {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.capability-panels {
+  margin-top: 24px;
+}
+.capability-panels :deep(.ant-collapse-header) {
+  align-items: center;
+  padding-inline: 0;
+}
+.capability-panels :deep(.ant-collapse-content-box) {
+  padding-inline: 0;
+}
+.capability-panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.capability-panel-title :deep(.ant-tag) {
+  margin: 0;
+  font-weight: 500;
+}
+.capability-panel-title small {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.plugin-submission-list,
+.runtime-component-list {
+  padding: 0 16px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+}
+.plugin-submission-title {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.plugin-submission-title :deep(.ant-tag) {
+  margin: 0;
+}
+.plugin-submission-title small {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.plugin-submission-meta,
+.plugin-submission-note {
+  display: block;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.plugin-submission-note {
+  color: var(--color-text-secondary);
+}
+
+/* ============ MCP 卡片：底栏左侧的启用开关 ============ */
+.mcp-enable-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+/* ============ antd 抽屉插槽内容（插槽在本组件内编译，scoped 样式随 Teleport 一并生效） ============ */
+.capability-drawer-title h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 550;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.capability-drawer-title p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.7;
+}
+.capability-drawer-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.plugin-tool-list :deep(.ant-list-item-extra) {
+  margin-inline-start: 16px;
+}
+.plugin-tool-list :deep(.ant-tag) {
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .capability-toolbar-actions {
+    flex-wrap: wrap;
+  }
+}
+</style>
