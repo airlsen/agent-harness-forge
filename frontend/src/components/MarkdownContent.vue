@@ -11,7 +11,7 @@ import MermaidBlock from './MermaidBlock.vue';
 import ChartBlock from './ChartBlock.vue';
 
 const props = withDefaults(defineProps<{ text: string; live?: boolean }>(), { live: false });
-const blocks = computed(() => splitMarkdown(props.text));
+const blocks = computed(() => splitMarkdown(props.text, { live: props.live }));
 
 const CHART_LANGS = new Set(['vega', 'vega-lite', 'vegalite', 'chart']);
 const isChart = (lang: string) => CHART_LANGS.has(lang);

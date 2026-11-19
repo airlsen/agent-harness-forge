@@ -58,7 +58,7 @@ const blank = (): ScenarioPayload => ({
 const draft = reactive<ScenarioPayload>(blank());
 const base = computed(() => (maintenance.value ? app.scenarios : app.availableScenarios));
 const filters = computed(() => [
-  { id: 'all', label: '全部场景', count: base.value.length },
+  { id: 'all', label: '全部', count: base.value.length },
   { id: 'template', label: '平台预置', count: base.value.filter((s) => s.status === 'template').length },
   { id: 'published', label: '已发布', count: base.value.filter((s) => s.status === 'published').length },
   ...(maintenance.value
@@ -318,10 +318,9 @@ async function versions(scenario: Scenario) {
     <div class="enterprise-page-inner">
       <div class="page-heading">
         <div>
-          <h1>
-            企业场景<span class="heading-count">{{ app.availableScenarios.length }}</span>
-          </h1>
-          <p>把经过整理的工作方式，变成可以共同复用的起点。</p>
+          <h1>企业场景</h1>
+          <p v-if="!maintenance">按工作目标选择场景，进入对话直接开始。</p>
+          <p v-else>编辑场景，试运行通过后发布。</p>
         </div>
         <div class="page-heading-actions">
           <button class="button secondary" :aria-pressed="maintenance" @click="toggleMaintenance">
@@ -331,24 +330,6 @@ async function versions(scenario: Scenario) {
           ><button v-if="maintenance" class="button primary" @click="edit()">
             <Icon name="plus" :size="17" />新建场景
           </button>
-        </div>
-      </div>
-      <section v-if="!maintenance" class="enterprise-scenario-intro">
-        <div>
-          <span class="enterprise-shared-label"><Icon name="building" :size="14" />一份场景，共同复用</span>
-          <h2>选择工作方式，<span>带着专业能力开始。</span></h2>
-          <p>预先组合提示词、工具与执行边界。选好场景，直接描述这次要完成的目标。</p>
-        </div>
-        <div class="scenario-stack-art" aria-hidden="true">
-          <span><Icon name="file" :size="23" /></span><span><Icon name="sparkles" :size="31" /></span
-          ><span><Icon name="code" :size="23" /></span>
-        </div>
-      </section>
-      <div v-else class="maintenance-notice">
-        <Icon name="edit" :size="19" />
-        <div>
-          <strong>场景维护视图</strong>
-          <p>预置模板只读；可复制为维护草稿。草稿通过当前模型与策略下的试运行后，才能发布到使用目录。</p>
         </div>
       </div>
       <div class="collection-toolbar enterprise-collection-toolbar">
@@ -393,8 +374,8 @@ async function versions(scenario: Scenario) {
             filter = 'all';
           "
         >
-          查看全部场景</button
-        ><button v-else-if="maintenance" class="button primary" @click="edit()">新建场景</button>
+          查看全部场景
+        </button>
       </div>
       <div v-else class="scenario-grid enterprise-scenario-grid">
         <article
@@ -420,27 +401,25 @@ async function versions(scenario: Scenario) {
           </div>
           <h2>{{ scenario.payload.name }}</h2>
           <p>{{ scenario.payload.description || '还没有添加场景描述。' }}</p>
-          <div class="scenario-capabilities">
-            <span v-if="!cardLabels(scenario.payload).length"
-              ><Icon name="message" :size="12" />对话与文件</span
-            ><span v-for="item in cardLabels(scenario.payload).slice(0, 2)" :key="item.key"
+          <div v-if="cardLabels(scenario.payload).length" class="scenario-capabilities">
+            <span v-for="item in cardLabels(scenario.payload).slice(0, 2)" :key="item.key"
               ><Icon :name="item.icon" :size="12" />{{ item.label }}</span
             ><span v-if="cardLabels(scenario.payload).length > 2"
               >+{{ cardLabels(scenario.payload).length - 2 }}</span
             >
           </div>
-          <div class="scenario-card-meta">
+          <div v-if="maintenance" class="scenario-card-meta">
             <span>{{ scenarioSource(scenario) }}<i>·</i>v{{ scenario.current_version }}</span
-            ><span v-if="maintenance" :class="{ 'verified-text': scenario.tested }"
+            ><span :class="{ 'verified-text': scenario.tested }"
               ><Icon :name="scenario.tested ? 'check' : 'circle'" :size="12" />{{
                 scenario.tested ? '试运行通过' : '未试运行'
               }}</span
             >
           </div>
           <div class="scenario-card-actions">
-            <button class="button text small" @click="detail = scenario">查看详情</button
+            <button class="button text small" @click="detail = scenario">详情</button
             ><button class="scenario-use" @click="useScenario(scenario)">
-              {{ isAvailableScenario(scenario) ? '开始会话' : '预览草稿' }}<Icon name="arrow" :size="15" />
+              {{ isAvailableScenario(scenario) ? '开始' : '预览草稿' }}<Icon name="arrow" :size="15" />
             </button>
           </div>
           <div v-if="maintenance" class="scenario-maintenance-actions">
@@ -473,18 +452,14 @@ async function versions(scenario: Scenario) {
           </div>
         </article>
       </div>
-      <div class="page-note">
-        <Icon name="info" :size="14" /><span
-          >使用目录只展示预置模板与已发布场景；维护草稿不会出现在首页推荐中。预置模板不代表已通过你的业务验证，开始前仍需配置真实模型。</span
-        >
-      </div>
     </div>
     <DialogShell v-if="detail" label="场景详情" panel-class="scenario-detail" @close="detail = null"
       ><header>
         <div>
-          <div class="eyebrow">SCENARIO OVERVIEW</div>
           <h2>{{ detail.payload.name }}</h2>
-          <p>{{ scenarioSource(detail) }} · {{ scenarioState(detail) }} · v{{ detail.current_version }}</p>
+          <p v-if="maintenance">
+            {{ scenarioSource(detail) }} · {{ scenarioState(detail) }} · v{{ detail.current_version }}
+          </p>
         </div>
         <button class="icon-button" aria-label="关闭场景详情" @click="detail = null">
           <Icon name="close" :size="21" />
@@ -492,15 +467,14 @@ async function versions(scenario: Scenario) {
       </header>
       <div class="drawer-body">
         <div class="detail-block">
-          <h3>适合什么工作</h3>
-          <p>{{ detail.payload.description || '维护者尚未填写场景说明。' }}</p>
+          <h3>用途</h3>
+          <p>{{ detail.payload.description || '尚未添加用途说明。' }}</p>
         </div>
         <div class="detail-block">
           <h3>可用能力</h3>
-          <p>平台基础能力（时间、会话文件读写）始终开启。</p>
-          <p v-if="!extensionLabels(detail.payload).length">本场景未绑定 Skill、MCP 服务或联网搜索。</p>
+          <p v-if="!cardLabels(detail.payload).length">使用平台基础工具。</p>
           <RouterLink
-            v-for="item in extensionLabels(detail.payload)"
+            v-for="item in cardLabels(detail.payload)"
             :key="item.key"
             :to="{
               path: '/agent/capabilities',
@@ -513,11 +487,11 @@ async function versions(scenario: Scenario) {
             ><Icon name="arrow" :size="14"
           /></RouterLink>
         </div>
-        <div class="detail-block">
+        <div v-if="maintenance" class="detail-block">
           <h3>工作规范</h3>
           <pre class="scenario-prompt-preview">{{ detail.payload.prompt_template }}</pre>
         </div>
-        <div class="detail-block">
+        <div v-if="maintenance" class="detail-block">
           <h3>版本信息</h3>
           <dl class="resource-metadata">
             <div>
@@ -543,14 +517,18 @@ async function versions(scenario: Scenario) {
             查看版本记录 <Icon name="arrow" :size="14" />
           </button>
         </div>
-        <div class="editor-safety">
+        <div v-if="!maintenance && detail.space === 'official'" class="editor-safety">
+          <Icon name="info" :size="17" />
+          <p>预置场景供参考，正式使用前请按业务要求确认。</p>
+        </div>
+        <div v-else-if="maintenance" class="editor-safety">
           <Icon name="shield" :size="17" />
-          <p>新会话会记录本次场景、模型与策略快照。维护场景不会静默改写已有会话。</p>
+          <p>新会话会记录场景、模型与策略快照；维护场景不会改写已有会话。</p>
         </div>
       </div>
       <footer>
         <button class="button primary" @click="useScenario(detail)">
-          {{ isAvailableScenario(detail) ? '使用此场景' : '预览此草稿' }}<Icon name="arrow" :size="16" />
+          {{ isAvailableScenario(detail) ? '开始' : '预览草稿' }}<Icon name="arrow" :size="16" />
         </button></footer
     ></DialogShell>
     <DialogShell

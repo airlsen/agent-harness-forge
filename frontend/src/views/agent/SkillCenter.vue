@@ -51,25 +51,23 @@ onMounted(load);
     <div class="enterprise-page-inner skill-library-inner">
       <header class="page-heading skill-library-heading">
         <div>
-          <p class="eyebrow">企业能力中心</p>
-          <h1>Skill 库</h1>
-          <p>管理可复用的工作方法；草稿经确认后才会发布为正式版本。</p>
+          <h1>技能</h1>
+          <p>管理可复用的工作方法。</p>
         </div>
         <div class="page-heading-actions">
-          <span v-if="skills.length" class="heading-count">{{ skills.length }} 个 Skill</span>
           <RouterLink to="/agent/skills/new" class="button primary"
-            ><Icon name="plus" :size="16" />新建 Skill</RouterLink
+            ><Icon name="plus" :size="16" />新建技能</RouterLink
           >
         </div>
       </header>
 
       <section v-if="loading" class="skill-loading" aria-live="polite">
-        <span class="loader"></span>正在读取 Skill 库…
+        <span class="loader"></span>正在读取技能…
       </section>
       <section v-else-if="error" class="form-alert error skill-alert" role="alert">
         <Icon name="info" :size="18" />
         <div>
-          <strong>Skill 库未能读取</strong>
+          <strong>技能列表未能读取</strong>
           <p>{{ error }}</p>
         </div>
         <button class="button secondary small" @click="load">重试</button>
@@ -77,14 +75,11 @@ onMounted(load);
       <template v-else>
         <section v-if="!skills.length" class="enterprise-empty skill-library-empty">
           <span class="enterprise-empty-symbol"><Icon name="book" :size="29" /></span>
-          <h2>还没有 Skill</h2>
-          <p>从一项常用工作开始，定义目标、步骤和输出要求；创建后可以让助手协助完善草稿。</p>
-          <RouterLink to="/agent/skills/new" class="button primary"
-            ><Icon name="plus" :size="16" />创建第一个 Skill</RouterLink
-          >
+          <h2>还没有技能</h2>
+          <p>定义一套可重复使用的工作方法。</p>
         </section>
         <template v-else>
-          <section class="skill-library-toolbar" aria-label="Skill 筛选">
+          <section v-if="skills.length > 1" class="skill-library-toolbar" aria-label="技能筛选">
             <div class="skill-status-filters" role="group" aria-label="按状态筛选">
               <button :class="{ selected: status === 'all' }" @click="status = 'all'">
                 全部 <span>{{ skills.length }}</span>
@@ -99,17 +94,17 @@ onMounted(load);
             <label class="search-field skill-library-search"
               ><Icon name="search" :size="17" /><input
                 v-model="query"
-                placeholder="搜索名称或用途"
-                aria-label="搜索 Skill"
+                placeholder="搜索技能"
+                aria-label="搜索技能"
             /></label>
           </section>
-          <section v-if="visibleSkills.length" class="skill-library-grid" aria-label="Skill 列表">
+          <section v-if="visibleSkills.length" class="skill-library-grid" aria-label="技能列表">
             <RouterLink
               v-for="item in visibleSkills"
               :key="item.id"
               :to="`/agent/skills/${item.id}`"
               class="skill-library-card"
-              :aria-label="`编辑 Skill：${item.name}`"
+              :aria-label="`编辑技能：${item.name}`"
             >
               <div class="skill-library-card-top">
                 <span class="skill-library-icon"><Icon name="book" :size="19" /></span>
@@ -123,15 +118,15 @@ onMounted(load);
               </div>
               <footer>
                 <span>修订 r{{ item.revision ?? 1 }} · {{ formatUpdatedAt(item.updatedAt) }}</span
-                ><span class="skill-open-link">打开工作台 <Icon name="arrow" :size="14" /></span>
+                ><span class="skill-open-link">打开 <Icon name="arrow" :size="14" /></span>
               </footer>
             </RouterLink>
           </section>
           <section v-else class="inline-empty skill-filter-empty">
             <Icon name="search" :size="22" />
             <div>
-              <strong>没有匹配的 Skill</strong>
-              <p>试试更换状态筛选或清除搜索关键词。</p>
+              <strong>没有匹配的技能</strong>
+              <p>试试更换筛选条件。</p>
             </div>
             <button
               class="button secondary small"

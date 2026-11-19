@@ -36,16 +36,15 @@ async function createSkill() {
   <main class="page-content enterprise-page skill-create-page">
     <div class="enterprise-page-inner skill-create-inner">
       <nav class="skill-breadcrumb" aria-label="面包屑">
-        <RouterLink to="/agent/capabilities?tab=skills">企业能力中心</RouterLink
-        ><Icon name="chevron" :size="14" /><RouterLink to="/agent/skills">Skill 库</RouterLink
-        ><Icon name="chevron" :size="14" /><span aria-current="page">新建 Skill</span>
+        <RouterLink to="/agent/capabilities?tab=skills">能力管理</RouterLink
+        ><Icon name="chevron" :size="14" /><RouterLink to="/agent/skills">技能</RouterLink
+        ><Icon name="chevron" :size="14" /><span aria-current="page">新建技能</span>
       </nav>
       <header class="skill-create-page-heading">
         <span class="skill-create-page-icon"><Icon name="sparkles" :size="25" /></span>
         <div>
-          <p class="eyebrow">新建可复用能力</p>
-          <h1>创建 Skill</h1>
-          <p>先描述它要解决的工作；创建后始终先保存为草稿，你可以继续手动编写或让助手协助完善。</p>
+          <h1>新建技能</h1>
+          <p>创建后先保存为草稿，可手动编写或让助手协助完善。</p>
         </div>
       </header>
 

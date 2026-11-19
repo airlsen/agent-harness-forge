@@ -100,7 +100,7 @@ const tab = computed(() => {
 const tabs = computed(() => [
   { id: 'tools', label: '基础工具', icon: 'wrench', count: app.tools.length },
   { id: 'plugins', label: '插件', icon: 'blocks', count: components.value.length },
-  { id: 'skills', label: 'Skills 技能', icon: 'book', count: skills.value?.items.length },
+  { id: 'skills', label: '技能', icon: 'book', count: skills.value?.items.length },
   { id: 'mcp', label: 'MCP 服务', icon: 'plug', count: mcp.value?.items.length },
 ]);
 const visibleTools = computed(() =>
@@ -121,6 +121,9 @@ const visiblePluginSubmissions = computed(() =>
       .toLowerCase()
       .includes(query.value.trim().toLowerCase()),
   ),
+);
+const pendingPluginSubmissions = computed(() =>
+  visiblePluginSubmissions.value.filter((plugin) => plugin.auditStatus === 'pending'),
 );
 const related = computed(() =>
   app.availableScenarios.filter(
@@ -368,19 +371,10 @@ onMounted(load);
     <div class="enterprise-page-inner">
       <div class="page-heading">
         <div>
-          <h1>企业能力中心</h1>
-          <p>一处发现平台提供的工具、技能与连接，按需带入工作。</p>
+          <h1>能力管理</h1>
+          <p>查看工具、技能和 MCP 服务，按需配置到场景或会话。</p>
         </div>
-        <span class="enterprise-shared-label"><Icon name="building" :size="14" />公共能力目录</span>
       </div>
-      <section class="capabilities-intro">
-        <span class="capabilities-intro-icon"><Icon name="blocks" :size="27" /></span>
-        <div>
-          <h2>能力统一维护，场景按需引用。</h2>
-          <p>了解它能做什么，再从适用场景开始。不需要为每个账号重复安装。</p>
-        </div>
-        <RouterLink to="/agent/scenarios">浏览企业场景 <Icon name="arrow" :size="15" /></RouterLink>
-      </section>
       <div class="collection-toolbar enterprise-collection-toolbar">
         <div class="collection-tabs" aria-label="能力分类">
           <button
@@ -411,8 +405,8 @@ onMounted(load);
       </div>
       <template v-if="tab === 'tools'">
         <div class="capability-section-label">
-          <span><span class="availability-dot"></span>{{ app.tools.length }} 项平台基础工具</span>
-          <p>在每个会话中默认开启，具体可调用范围仍受平台策略约束。</p>
+          <span><span class="availability-dot"></span>基础工具 · {{ visibleTools.length }} 项</span>
+          <p>默认可用</p>
         </div>
         <div v-if="visibleTools.length" class="enterprise-tool-grid">
           <article v-for="tool in visibleTools" :key="tool.name" class="enterprise-tool-card">
@@ -427,15 +421,9 @@ onMounted(load);
             </div>
             <h2>{{ tool.title }}</h2>
             <p>{{ tool.description }}</p>
-            <div class="tool-use-example">
-              <Icon name="message" :size="14" /><span>{{
-                guidance[tool.name]?.example ?? '在允许使用此工具的场景中描述你的目标。'
-              }}</span>
-            </div>
             <footer>
-              <span>平台基础能力（默认开启）</span
-              ><button :aria-label="`查看${tool.title}详情`" @click="detail = tool">
-                查看详情 <Icon name="arrow" :size="15" />
+              <button :aria-label="`查看${tool.title}详情`" @click="detail = tool">
+                详情 <Icon name="arrow" :size="15" />
               </button>
             </footer>
           </article>
@@ -478,8 +466,7 @@ onMounted(load);
           </div>
           <section v-if="visiblePlugins.length" class="managed-plugin-section">
             <div class="capability-section-label">
-              <span><Icon name="shield" :size="15" />受管业务插件</span>
-              <p>版本、工具契约和可用状态均由平台控制</p>
+              <span><Icon name="shield" :size="15" />受管插件 · {{ visiblePlugins.length }}</span>
             </div>
             <div class="enterprise-tool-grid">
               <article
@@ -509,28 +496,34 @@ onMounted(load);
                     >演示数据</span
                   >
                 </div>
-                <ul class="managed-plugin-tools">
-                  <li v-for="tool in plugin.tools" :key="tool.name">
-                    <span
-                      ><b>{{ tool.title }}</b
-                      ><small>{{ tool.description }}</small></span
-                    ><em>{{ tool.permission === 'approval' ? '需审批' : '只读' }}</em>
-                  </li>
-                </ul>
+                <details class="managed-plugin-tools-details">
+                  <summary>查看工具与权限</summary>
+                  <ul class="managed-plugin-tools">
+                    <li v-for="tool in plugin.tools" :key="tool.name">
+                      <span
+                        ><b>{{ tool.title }}</b
+                        ><small>{{ tool.description }}</small></span
+                      ><em>{{ tool.permission === 'approval' ? '需审批' : '只读' }}</em>
+                    </li>
+                  </ul>
+                </details>
                 <footer>
-                  <span>Forge 受管运行时</span
-                  ><RouterLink to="/agent/scenarios"
-                    >前往场景授权 <Icon name="arrow" :size="15"
-                  /></RouterLink>
+                  <RouterLink to="/agent/scenarios">场景授权 <Icon name="arrow" :size="15" /></RouterLink>
                 </footer>
               </article>
             </div>
           </section>
-          <section v-if="visiblePluginSubmissions.length" class="plugin-review-section">
-            <div class="capability-section-label">
-              <span><Icon name="box" :size="15" />上传版本与审核队列</span>
-              <p>上传包只完成静态契约检查；不会在 Forge Runner 中安装或执行其中的 Node 代码。</p>
-            </div>
+          <details
+            v-if="visiblePluginSubmissions.length"
+            class="plugin-review-section"
+            :open="pendingPluginSubmissions.length > 0"
+          >
+            <summary class="capability-section-label">
+              <span
+                ><Icon name="box" :size="15" />上传版本与审核队列 ·
+                {{ pendingPluginSubmissions.length }} 项待处理</span
+              ><Icon class="plugin-review-toggle-icon" name="chevronDown" :size="15" />
+            </summary>
             <div class="plugin-submission-list">
               <article
                 v-for="plugin in visiblePluginSubmissions"
@@ -601,11 +594,11 @@ onMounted(load);
                 </footer>
               </article>
             </div>
-          </section>
+          </details>
           <details class="runtime-details">
             <summary>
-              <Icon name="box" :size="17" /><span>底层运行组件</span
-              ><small>供维护者查看，不作为业务插件安装</small><Icon name="chevronDown" :size="15" />
+              <Icon name="box" :size="17" /><span>平台运行组件</span><small>只读 · 非业务插件</small
+              ><Icon name="chevronDown" :size="15" />
             </summary>
             <div v-if="loading" class="loading-inline"><span class="loader small"></span>读取组件信息…</div>
             <div v-else class="runtime-component-list">
@@ -629,12 +622,8 @@ onMounted(load);
         <span class="loader"></span>正在读取接入状态…
       </div>
       <section v-else-if="tab === 'mcp' && mcp" class="mcp-directory">
-        <header class="capability-list-heading">
-          <div>
-            <h2>MCP 服务</h2>
-            <span>{{ mcp.items.length }} 个已添加</span>
-          </div>
-          <button v-if="mcp.items.length" class="button secondary small" @click="openMcpEditor">
+        <header v-if="mcp.items.length" class="capability-list-heading">
+          <button class="button secondary small" @click="openMcpEditor">
             <Icon name="plus" :size="15" />添加服务
           </button>
         </header>
@@ -642,8 +631,8 @@ onMounted(load);
         <div v-if="!mcp.items.length" class="enterprise-empty">
           <span class="enterprise-empty-symbol"><Icon name="plug" :size="29" /></span>
           <h2>还没有 MCP 服务</h2>
-          <p>添加远程服务，测试连接后即可查看它提供的工具。</p>
-          <button class="button primary" @click="openMcpEditor">导入 MCP 配置</button>
+          <p>连接外部工具服务，供场景或会话调用。</p>
+          <button class="button primary" @click="openMcpEditor">添加 MCP 服务</button>
         </div>
         <div v-else class="mcp-server-list">
           <article v-for="server in mcp.items" :key="server.id" class="mcp-server-card">
@@ -669,18 +658,24 @@ onMounted(load);
                           : '待测试'
                     }}</span
                   >
-                  <span class="mcp-transport-badge">{{
-                    server.transport === 'stdio'
-                      ? 'stdio'
-                      : server.transport === 'sse'
-                        ? '旧版 SSE'
-                        : 'Streamable HTTP'
-                  }}</span>
+                  <span
+                    v-if="server.transport === 'stdio' || server.transport === 'sse'"
+                    class="mcp-transport-badge"
+                    >{{ server.transport === 'stdio' ? '本机进程' : '旧版 SSE' }}</span
+                  >
                 </div>
-                <p class="mcp-card-description">
-                  {{ server.serverInfo?.name || (server.transport === 'stdio' ? '本机 MCP 进程' : server.url)
-                  }}<span v-if="server.serverInfo?.version"> · {{ server.serverInfo.version }}</span>
-                </p>
+                <details class="mcp-connection-details">
+                  <summary>连接详情</summary>
+                  <p class="mcp-card-description">
+                    {{
+                      server.serverInfo?.name ||
+                      (server.transport === 'stdio' ? '本机 MCP 进程' : server.url)
+                    }}<span v-if="server.serverInfo?.version"> · {{ server.serverInfo.version }}</span>
+                  </p>
+                  <p class="mcp-credential-note">
+                    {{ server.hasCredentials ? '认证信息已加密保存' : '无需认证' }}
+                  </p>
+                </details>
               </div>
               <button
                 class="button secondary small mcp-view-tools"
@@ -694,14 +689,7 @@ onMounted(load);
             <p v-if="server.transport === 'sse'" class="mcp-server-note">
               仅测试连接，暂不可在会话中运行。会话执行内核不支持旧版 SSE，请改用 Streamable HTTP 或 stdio。
             </p>
-            <p v-else-if="server.enabled && server.status === 'connected'" class="mcp-server-note">
-              可在场景中绑定，或在聊天「扩展能力」中临时选用。
-            </p>
             <footer class="mcp-card-footer">
-              <span v-if="server.hasCredentials" class="mcp-credential-note">认证信息已加密保存</span
-              ><span v-else class="mcp-credential-note">{{
-                server.transport === 'stdio' ? '本机进程' : '无需认证'
-              }}</span>
               <div class="mcp-card-actions">
                 <button class="button text small" :disabled="mcpBusy" @click="testMcp(server)">
                   测试连接
@@ -723,25 +711,21 @@ onMounted(load);
         </div>
       </section>
       <section v-else-if="tab === 'skills' && skills" class="mcp-directory skill-capability-directory">
-        <header class="capability-list-heading">
-          <div>
-            <h2>Skills 技能</h2>
-            <span>{{ skills.items.length }} 个可复用工作方法</span>
-          </div>
+        <header v-if="skills.items.length" class="capability-list-heading">
           <div class="skill-capability-actions">
-            <RouterLink v-if="skills.items.length" to="/agent/skills" class="button secondary small"
-              >管理全部 <Icon name="arrow" :size="14" /></RouterLink
+            <RouterLink to="/agent/skills" class="button secondary small"
+              >全部技能 <Icon name="arrow" :size="14" /></RouterLink
             ><RouterLink to="/agent/skills/new" class="button primary small"
-              ><Icon name="plus" :size="15" />新建 Skill</RouterLink
+              ><Icon name="plus" :size="15" />新建技能</RouterLink
             >
           </div>
         </header>
         <div v-if="!skills.items.length" class="enterprise-empty">
           <span class="enterprise-empty-symbol"><Icon name="book" :size="29" /></span>
-          <h2>还没有 Skill</h2>
-          <p>从一项常用工作开始，定义目标、步骤与输出要求；创建后可以由助手协助完善草稿。</p>
+          <h2>还没有技能</h2>
+          <p>创建一项可复用的工作方法。</p>
           <RouterLink to="/agent/skills/new" class="button primary"
-            ><Icon name="plus" :size="16" />创建第一个 Skill</RouterLink
+            ><Icon name="plus" :size="16" />新建技能</RouterLink
           >
         </div>
         <div v-else class="capability-skill-grid">
@@ -762,8 +746,7 @@ onMounted(load);
               <p>{{ skill.description || '尚未添加用途说明。' }}</p>
             </div>
             <footer>
-              <span>修订 r{{ skill.revision ?? 1 }}</span
-              ><span>打开工作台 <Icon name="arrow" :size="14" /></span>
+              <span class="skill-open-link">编辑 <Icon name="arrow" :size="14" /></span>
             </footer>
           </RouterLink>
         </div>
@@ -772,7 +755,7 @@ onMounted(load);
         <Icon name="shield" :size="14" /><span>{{
           tab === 'plugins'
             ? '插件包上传只做静态契约检查，不会执行包内代码；审核通过后才能由场景授权使用。'
-            : '能力可发现不等于无限制执行。基础工具的实际范围由平台策略约束。'
+            : '实际调用范围由场景授权和平台策略决定。'
         }}</span>
       </div>
     </div>
