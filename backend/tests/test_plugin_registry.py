@@ -17,7 +17,11 @@ from src.api.services.plugin_service import (
     import_archive,
     review_release,
 )
-from src.api.services.scenario_assembler import ScenarioAssembler
+from src.api.services.scenario_assembler import (
+    Bundle,
+    ScenarioAssembler,
+    apply_current_policy,
+)
 
 
 class ScalarRows:
@@ -149,7 +153,9 @@ def test_uploaded_archive_rejects_unsafe_paths_and_runner_native_runtime():
     with pytest.raises(HTTPException, match="forge-bridge"):
         _archive_manifest("legacy.zip", remote_archive(native))
     with pytest.raises(HTTPException, match="不安全路径"):
-        _archive_manifest("unsafe.zip", remote_archive({**native, "runtime": "dsh-native"}, extra={"../escape": "no"}))
+        _archive_manifest(
+            "unsafe.zip", remote_archive({**native, "runtime": "dsh-native"}, extra={"../escape": "no"})
+        )
 
 
 def test_builtin_manifests_are_static_versioned_contracts():
@@ -188,6 +194,54 @@ async def test_scenario_assembler_freezes_only_selected_approved_plugin_tools():
     binding = bundle.meta["pluginBindings"][0]
     assert binding["version"] == "0.1.0"
     assert binding["artifactHash"] == "sha256-test"
+
+
+def test_current_policy_restricts_frozen_bundle_tools():
+    bundle = Bundle(
+        profile_patch={},
+        plugin_mounts=["forge-runtime", "forge-plugin-bridge"],
+        skill_files={},
+        mcp=[],
+        model_route={},
+        policy_ref="previous-policy",
+        input_schema=None,
+        meta={
+            "builtin_tools": ["current_time", "workspace_write"],
+            "plugin_tools": ["crm_find_customer", "crm_add_customer_note"],
+            "pluginBindings": [
+                {
+                    "package": "forge-demo-crm",
+                    "tools": [
+                        {"name": "crm_find_customer"},
+                        {"name": "crm_add_customer_note"},
+                    ],
+                }
+            ],
+            "policy": {"allowedTools": ["current_time", "workspace_write"]},
+        },
+    )
+
+    apply_current_policy(
+        bundle,
+        {
+            "allowedTools": ["current_time"],
+            "allowedPluginTools": ["crm_find_customer"],
+        },
+    )
+
+    assert bundle.meta["builtin_tools"] == ["current_time"]
+    assert bundle.meta["plugin_tools"] == ["crm_find_customer"]
+    assert [tool["name"] for tool in bundle.meta["pluginBindings"][0]["tools"]] == ["crm_find_customer"]
+    assert bundle.plugin_mounts == ["forge-runtime", "forge-plugin-bridge"]
+    assert bundle.policy_ref != "previous-policy"
+
+    apply_current_policy(
+        bundle,
+        {"allowedTools": ["current_time"], "allowedPluginTools": []},
+    )
+    assert bundle.meta["plugin_tools"] == []
+    assert bundle.meta["pluginBindings"] == []
+    assert bundle.plugin_mounts == ["forge-runtime"]
 
 
 @pytest.mark.asyncio

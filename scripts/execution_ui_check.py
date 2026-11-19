@@ -113,19 +113,14 @@ async def check_execution_ui(
             )
             await page.get_by_label("任务输入").fill("WRITE artifact fixture")
             await page.get_by_role("button", name="发送任务", exact=True).click()
-            await expect(page.get_by_role("button", name="允许本次")).to_be_visible()
-            await page.locator(".approval-card summary").click()
-            await expect(page.locator(".approval-card pre")).to_contain_text(
-                "result.md"
-            )
-            await page.get_by_role("button", name="允许本次").click()
             await expect(page.locator(".message-row.tool")).to_have_count(1)
             await expect(
                 page.get_by_role("button", name="发送任务", exact=True)
             ).to_be_visible()
             await expect(page.locator(".message-row.tool")).to_contain_text("执行完成")
+            await expect(page.locator(".approval-card")).to_have_count(0)
             passed(
-                "real tool approval card controls actual workspace_write and persists the tool card"
+                "workspace_write persists its tool card directly in the restricted session workspace without an approval prompt"
             )
             await expect(page.locator(".context-panel")).to_have_count(0)
             await page.get_by_role("button", name="查看结果", exact=True).click()

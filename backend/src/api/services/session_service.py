@@ -16,7 +16,7 @@ from ..schemas.agent_scenario import ScenarioPayload
 from .file_service import file_service
 from .runner_client import runner_client
 from .scenario_service import scenario_service, iso
-from .scenario_assembler import Bundle
+from .scenario_assembler import Bundle, apply_current_policy
 from .plugin_service import ensure_bindings_available
 from . import capability_service
 from .capability_service import CapabilityChoice, selection_of
@@ -190,12 +190,15 @@ class SessionService:
             version = await scenario_service.version(db, scenario)
             payload = ScenarioPayload.model_validate(version.bundle_json["payload"])
             stored_bundle = version.bundle_json.get("bundle")
+            current_policy = await get_policy(db)
             if stored_bundle:
-                bundle = Bundle(**stored_bundle)
+                # Scenario versions freeze requested capabilities; current governance remains a ceiling
+                # for new sessions. Existing sessions keep their already-materialized Bundle snapshot.
+                bundle = apply_current_policy(Bundle(**stored_bundle), current_policy)
             else:
-                # 兼容早期版本；新场景发布后始终使用版本内的不可变装配快照。
+                # 兼容早期版本；新场景发布后始终使用版本内的不可变能力快照。
                 bundle = await scenario_service.assembler.compile(
-                    db, payload, tenant_policy=await get_policy(db), rendered_prompt=payload.prompt_template
+                    db, payload, tenant_policy=current_policy, rendered_prompt=payload.prompt_template
                 )
             await ensure_bindings_available(db, list(bundle.meta.get("pluginBindings", [])))
             bundle.meta.update(
