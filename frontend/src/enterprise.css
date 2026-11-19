@@ -6822,3 +6822,542 @@ textarea:focus-visible {
   margin-top: 8px;
   color: var(--accent-ink);
 }
+
+/* Modern workspace catalogs: deliberate surfaces, compact segmented navigation, no legacy tab rule. */
+.enterprise-view .page-content.capabilities-page,
+.enterprise-view .page-content.scenarios-page {
+  background:
+    radial-gradient(ellipse 42rem 23rem at 96% -10%, #f4dfd222, transparent 72%),
+    linear-gradient(180deg, #fbfaf9 0, #f8f9fb 480px, #f8f9fb 100%);
+}
+.enterprise-view .catalog-page-heading {
+  align-items: flex-end;
+  margin-bottom: 27px;
+}
+.catalog-heading-copy {
+  min-width: 0;
+}
+.catalog-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+  color: #8d6a5d;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.65px;
+  line-height: 1;
+}
+.catalog-kicker-mark {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  color: var(--accent-ink);
+  background: linear-gradient(145deg, #fff5ee, #f4dfd2);
+  border: 1px solid #f0ddd2;
+  border-radius: 8px;
+}
+.enterprise-view .catalog-page-heading .catalog-heading-copy h1 {
+  color: #252a33;
+  font-size: 31px;
+  font-weight: 650;
+  letter-spacing: -0.9px;
+  line-height: 1.25;
+}
+.enterprise-view .catalog-page-heading .catalog-heading-copy p {
+  margin-top: 9px;
+  color: #697281;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.catalog-page-heading .button {
+  min-height: 40px;
+  border-radius: 11px;
+  font-size: 12px;
+}
+.enterprise-view .enterprise-collection-toolbar.capability-collection-toolbar,
+.enterprise-view .enterprise-collection-toolbar.scenario-collection-toolbar {
+  align-items: center;
+  gap: 16px;
+  min-height: 54px;
+  margin-bottom: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.capability-category-switcher,
+.scenario-filter-switcher {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: 3px;
+  width: max-content;
+  max-width: 100%;
+  min-height: 52px;
+  padding: 5px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: #f0f2f5e8;
+  border: 1px solid #e7eaee;
+  border-radius: 16px;
+  box-shadow: inset 0 1px 1px #18223005;
+  scrollbar-width: none;
+}
+.enterprise-view .capabilities-page .capability-category-switcher,
+.enterprise-view .scenarios-page .scenario-filter-switcher {
+  gap: 3px;
+  width: max-content;
+}
+.capability-category-switcher::-webkit-scrollbar,
+.scenario-filter-switcher::-webkit-scrollbar {
+  display: none;
+}
+.enterprise-view .capabilities-page .capability-category-switcher > button,
+.enterprise-view .scenarios-page .scenario-filter-switcher > button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  border-radius: 11px;
+  color: #687282;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    color 150ms ease,
+    background 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+.enterprise-view .capabilities-page .capability-category-switcher > button:hover,
+.enterprise-view .scenarios-page .scenario-filter-switcher > button:hover {
+  color: #353c47;
+  background: #ffffffb8;
+}
+.enterprise-view .capabilities-page .capability-category-switcher > button.selected,
+.enterprise-view .scenarios-page .scenario-filter-switcher > button.selected {
+  color: #93472e;
+  background: linear-gradient(180deg, #fffefd, #fff9f5);
+  border-color: #efd6ca;
+  box-shadow: 0 2px 7px #4232260d;
+  font-weight: 650;
+}
+.capability-category-option > svg,
+.scenario-filter-option > svg {
+  flex: 0 0 auto;
+  color: #7c8795;
+  stroke-width: 1.8;
+}
+.capability-category-option.selected > svg,
+.scenario-filter-option.selected > svg {
+  color: var(--accent-ink);
+}
+.capability-category-label,
+.scenario-filter-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.enterprise-view .capabilities-page .capability-category-switcher .capability-category-count,
+.enterprise-view .scenarios-page .scenario-filter-switcher .scenario-filter-count {
+  display: inline-grid;
+  min-width: 22px;
+  height: 20px;
+  place-items: center;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  color: #737d8b;
+  background: #e7eaee;
+  font-family: inherit;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1;
+}
+.enterprise-view
+  .capabilities-page
+  .capability-category-switcher
+  > button.selected
+  .capability-category-count,
+.enterprise-view .scenarios-page .scenario-filter-switcher > button.selected .scenario-filter-count {
+  color: #994b31;
+  background: #f7e8df;
+}
+.capability-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+.enterprise-view .capability-toolbar-actions .search-field,
+.enterprise-view .scenario-collection-toolbar .search-field {
+  min-width: 220px;
+  min-height: 42px;
+  margin: 0;
+  padding: 0 13px;
+  border-color: #e5e8ed;
+  border-radius: 12px;
+  background: #ffffffd9;
+  box-shadow: 0 2px 6px #26334a05;
+}
+.enterprise-view .capability-toolbar-actions .search-field > input:not([type='checkbox']),
+.enterprise-view .scenario-collection-toolbar .search-field > input:not([type='checkbox']) {
+  min-height: 40px;
+  font-size: 12px;
+}
+.enterprise-view .capability-toolbar-actions .search-field:focus-within,
+.enterprise-view .scenario-collection-toolbar .search-field:focus-within {
+  border-color: var(--accent-focus);
+  background: #fff;
+  box-shadow: 0 0 0 3px var(--accent-focus-ring);
+}
+.enterprise-view .capability-toolbar-actions .skill-capability-actions {
+  gap: 9px;
+  margin-left: auto;
+}
+.enterprise-view .capability-toolbar-actions .skill-capability-actions .button {
+  min-height: 40px;
+  padding-inline: 13px;
+  border-radius: 11px;
+  font-size: 12px;
+}
+.capability-content-heading {
+  min-height: 54px;
+  margin: 2px 2px 16px;
+  padding: 0 2px;
+}
+.capability-content-heading > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.capability-content-heading h2 {
+  color: #303640;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+}
+.capability-content-heading > div > span {
+  color: #7b8491;
+  font-size: 11px;
+}
+.capability-content-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  color: #657080;
+  background: #ffffffb8;
+  border: 1px solid #e8ebef;
+  border-radius: 9px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.capabilities-page .capability-skill-grid,
+.capabilities-page .enterprise-tool-grid,
+.capabilities-page .mcp-server-list {
+  gap: 18px;
+}
+.capabilities-page .capability-skill-card,
+.capabilities-page .enterprise-tool-card,
+.capabilities-page .mcp-server-card {
+  border-color: #e7eaf0;
+  border-radius: 17px;
+  background: linear-gradient(160deg, #fff 0%, #fff 72%, #fffaf7 100%);
+  box-shadow: 0 3px 12px #27364a07;
+  transition:
+    transform 170ms ease,
+    border-color 170ms ease,
+    box-shadow 170ms ease;
+}
+.capabilities-page .capability-skill-card:hover,
+.capabilities-page .enterprise-tool-card:hover,
+.capabilities-page .mcp-server-card:hover {
+  transform: translateY(-3px);
+  border-color: #e8cabc;
+  box-shadow: 0 12px 28px #42322612;
+}
+.capabilities-page .capability-skill-card {
+  min-height: 202px;
+  padding: 22px;
+}
+.capabilities-page .capability-skill-icon {
+  width: 43px;
+  height: 43px;
+  color: #98482f;
+  background: linear-gradient(145deg, #fff2ea, #f4dfd4);
+  border: 1px solid #f0ded4;
+  border-radius: 13px;
+}
+.capabilities-page .capability-skill-card .tag,
+.enterprise-view .scenarios-page .enterprise-scenario-card .scenario-card-top > .tag {
+  border-radius: 999px;
+}
+.capabilities-page .capability-skill-card h3 {
+  margin-top: 19px;
+  color: #292f39;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+}
+.capabilities-page .capability-skill-card p {
+  color: #66707e;
+  font-size: 12px;
+  line-height: 1.75;
+}
+.capabilities-page .capability-skill-card footer {
+  padding-top: 19px;
+}
+.capabilities-page .skill-open-link {
+  gap: 6px;
+  padding: 7px 10px;
+  color: #96482f;
+  background: #fff3ec;
+  border: 1px solid #f2e1d8;
+  border-radius: 9px;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease;
+}
+.capabilities-page .capability-skill-card:hover .skill-open-link {
+  background: #fbe9df;
+  border-color: #edcdbd;
+}
+.capabilities-page .enterprise-tool-card {
+  padding: 22px 22px 0;
+}
+.capabilities-page .enterprise-tool-card .scene-icon {
+  border-radius: 13px;
+}
+.capabilities-page .mcp-server-card {
+  padding: 18px;
+}
+.capabilities-page .enterprise-empty,
+.scenarios-page .enterprise-empty {
+  border-color: #e4e8ee;
+  border-radius: 18px;
+  background: #ffffffb8;
+  box-shadow: 0 5px 18px #27364a05;
+}
+.enterprise-view .scenarios-page .scenario-page-heading .page-heading-actions {
+  align-items: center;
+  gap: 10px;
+}
+.enterprise-view .scenario-page-heading .page-heading-actions .button {
+  min-height: 40px;
+  padding-inline: 14px;
+  border-radius: 11px;
+  font-size: 12px;
+}
+.enterprise-view .scenario-page-heading .page-heading-actions .button.secondary {
+  background: #ffffffbf;
+  border-color: #e5e8ed;
+}
+.enterprise-view .scenario-page-heading .page-heading-actions .button.secondary[aria-pressed='true'] {
+  color: #93472e;
+  background: #fff4ed;
+  border-color: #efd6ca;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-grid {
+  gap: 18px;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-card {
+  position: relative;
+  min-height: 278px;
+  padding: 23px 23px 0;
+  overflow: hidden;
+  border-color: #e6e9ef;
+  border-radius: 18px;
+  background: linear-gradient(160deg, #fff 0%, #fff 73%, #fffaf7 100%);
+  box-shadow: 0 3px 12px #27364a07;
+  transition:
+    transform 170ms ease,
+    border-color 170ms ease,
+    box-shadow 170ms ease;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-card:hover {
+  transform: translateY(-3px);
+  border-color: #e8cabc;
+  box-shadow: 0 13px 30px #42322612;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-card .scenario-card-top {
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 19px;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-card .scene-icon {
+  width: 47px;
+  height: 47px;
+  border-radius: 14px;
+  box-shadow: inset 0 1px #ffffff9c;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-card .scenario-card-top > .tag {
+  margin-top: 0;
+  padding: 5px 9px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-card > h2 {
+  margin-bottom: 8px;
+  color: #292f39;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.35px;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-card > p {
+  min-height: 48px;
+  color: #66707e;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-card .scenario-capabilities {
+  min-height: 26px;
+  gap: 6px;
+  margin: 15px 0 17px;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-card .scenario-capabilities > span {
+  padding: 5px 8px;
+  color: #697381;
+  background: #f7f8fa;
+  border-color: #eceef2;
+  border-radius: 8px;
+  font-size: 10px;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-card .scenario-card-meta {
+  margin-bottom: 12px;
+  color: #838b97;
+  font-size: 10px;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-card .scenario-card-actions {
+  min-height: 59px;
+  padding: 10px 0;
+  border-top: 0;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-card .scenario-card-actions > .button {
+  color: #707987;
+  font-size: 11px;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-card .scenario-use {
+  gap: 7px;
+  margin-left: auto;
+  padding: 9px 12px;
+  color: #96482f;
+  background: #fff2eb;
+  border: 1px solid #f1dfd4;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 650;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+.enterprise-view .scenarios-page .enterprise-scenario-card .scenario-use:hover {
+  color: #843d29;
+  background: #fbe7dc;
+  border-color: #edcdbd;
+  transform: translateX(1px);
+}
+.enterprise-view .scenarios-page .scenario-maintenance-actions {
+  gap: 6px;
+  padding: 11px 0 14px;
+  border-top: 1px solid #edf0f3;
+}
+.enterprise-view .scenarios-page .scenario-maintenance-actions .button {
+  min-height: 31px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  font-size: 10px;
+}
+@media (max-width: 1000px) {
+  .capabilities-page .capability-skill-grid,
+  .capabilities-page .enterprise-tool-grid,
+  .capabilities-page .mcp-server-list,
+  .scenarios-page .enterprise-scenario-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 700px) {
+  .enterprise-view .catalog-page-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 17px;
+    margin-bottom: 22px;
+  }
+  .enterprise-view .catalog-page-heading .catalog-heading-copy h1 {
+    font-size: 27px;
+  }
+  .catalog-page-heading .capability-heading-actions,
+  .enterprise-view .scenario-page-heading .page-heading-actions {
+    width: 100%;
+  }
+  .capability-heading-actions > .button,
+  .scenario-page-heading .page-heading-actions > .button {
+    flex: 1;
+    justify-content: center;
+  }
+  .enterprise-view .enterprise-collection-toolbar.capability-collection-toolbar,
+  .enterprise-view .enterprise-collection-toolbar.scenario-collection-toolbar {
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 12px;
+    margin-bottom: 23px;
+  }
+  .enterprise-view .capabilities-page .capability-category-switcher,
+  .enterprise-view .scenarios-page .scenario-filter-switcher {
+    width: 100%;
+    max-width: 100%;
+    flex: 1 1 100%;
+  }
+  .enterprise-view .capabilities-page .capability-category-switcher > button,
+  .enterprise-view .scenarios-page .scenario-filter-switcher > button {
+    flex: 0 0 auto;
+    padding-inline: 11px;
+  }
+  .capability-toolbar-actions {
+    width: 100%;
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+  .enterprise-view .capability-toolbar-actions .search-field,
+  .enterprise-view .scenario-collection-toolbar .search-field {
+    width: 100%;
+    min-width: 0;
+  }
+  .enterprise-view .capability-toolbar-actions .skill-capability-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .capabilities-page .capability-skill-grid,
+  .capabilities-page .enterprise-tool-grid,
+  .capabilities-page .mcp-server-list,
+  .scenarios-page .enterprise-scenario-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .capability-content-heading {
+    align-items: flex-end;
+    gap: 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .capabilities-page .capability-skill-card,
+  .capabilities-page .enterprise-tool-card,
+  .capabilities-page .mcp-server-card,
+  .scenarios-page .enterprise-scenario-card,
+  .scenarios-page .scenario-use {
+    transition: none;
+  }
+}
