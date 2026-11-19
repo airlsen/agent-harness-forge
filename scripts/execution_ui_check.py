@@ -317,8 +317,9 @@ async def check_execution_ui(
                 "调用 1 个工具"
             )
             await page.get_by_role("button", name="查看结果", exact=True).click()
-            await expect(page.get_by_role("button", name="result.md")).to_be_visible()
-            await page.get_by_role("button", name="result.md").click()
+            result_file = page.locator(".file-card-main").filter(has_text="result.md")
+            await expect(result_file).to_be_visible()
+            await result_file.click()
             await expect(page.get_by_role("dialog", name="产物预览")).to_be_visible()
             await expect(page.locator(".file-preview>pre")).to_contain_text(
                 "# API integration fixture"
