@@ -205,7 +205,9 @@ onUnmounted(() => {
                 :class="{
                   'is-active':
                     route.path === item.path ||
-                    (item.path === '/agent/conversations' && route.path.startsWith('/agent/chat')),
+                    (item.path === '/agent/conversations' && route.path.startsWith('/agent/chat')) ||
+                    (item.path === '/agent/capabilities' &&
+                      route.path.startsWith('/agent/capabilities/')),
                 }"
               >
                 <Icon :name="item.icon" :size="19" /><span>{{ item.label }}</span>

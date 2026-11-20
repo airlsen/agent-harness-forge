@@ -13,6 +13,7 @@ import RuntimeStatus from './views/agent/admin/RuntimeStatus.vue';
 import AuditCenter from './views/agent/admin/AuditCenter.vue';
 import SkillCenter from './views/agent/capability/SkillCenter.vue';
 import SkillEditor from './views/agent/capability/SkillEditor.vue';
+import PublishedSkillView from './views/agent/capability/PublishedSkillView.vue';
 import TrajectoryView from './views/agent/session/TrajectoryView.vue';
 import './style.css';
 import './enterprise.css';
@@ -28,6 +29,7 @@ const router = createRouter({
     { path: '/agent/conversations', component: ConversationCenter, meta: { title: '我的会话' } },
     { path: '/agent/scenarios', component: ScenarioCenter, meta: { title: '企业场景' } },
     { path: '/agent/capabilities', component: CapabilityCenter, meta: { title: '技能管理' } },
+    { path: '/agent/capabilities/skills/:id', component: PublishedSkillView, meta: { title: '已发布技能' } },
     { path: '/agent/skills', component: SkillCenter, meta: { title: '我的技能' } },
     { path: '/agent/skills/new', component: SkillEditor, meta: { title: '新建 Skill' } },
     { path: '/agent/skills/:id', component: SkillEditor, meta: { title: 'Skill 工作台' } },

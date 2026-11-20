@@ -26,9 +26,26 @@ async def create_skill(payload: SkillCreate, db: AsyncSession = Depends(get_sess
     )
 
 
+@router.get("/published")
+async def list_published_skills(db: AsyncSession = Depends(get_session)):
+    return ResponseUtil.ok({"items": await skill_service.list_published_skills(db)})
+
+
 @router.get("/{skill_id}")
 async def get_skill(skill_id: int, db: AsyncSession = Depends(get_session)):
     return ResponseUtil.ok(await skill_service.skill_detail(db, skill_id))
+
+
+@router.get("/{skill_id}/published")
+async def get_published_skill(skill_id: int, db: AsyncSession = Depends(get_session)):
+    return ResponseUtil.ok(await skill_service.published_skill_detail(db, skill_id))
+
+
+@router.get("/{skill_id}/published/references/{reference_index}")
+async def get_published_reference(
+    skill_id: int, reference_index: int, db: AsyncSession = Depends(get_session)
+):
+    return ResponseUtil.ok(await skill_service.published_reference_content(db, skill_id, reference_index))
 
 
 @router.get("/{skill_id}/download")

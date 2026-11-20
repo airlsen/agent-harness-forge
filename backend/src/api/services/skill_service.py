@@ -148,7 +148,9 @@ def _published_metadata(revision: SkillRevision | None) -> dict:
 def _skill_view(
     row: Skill, revision: SkillRevision | None = None, published: SkillRevision | None = None
 ) -> dict:
-    published_revision = published or (revision if revision and revision.id == row.published_revision_id else None)
+    published_revision = published or (
+        revision if revision and revision.id == row.published_revision_id else None
+    )
     published_metadata = _published_metadata(published_revision)
     return {
         "id": row.id,
@@ -156,7 +158,8 @@ def _skill_view(
         "machineName": _machine_name(revision),
         "publishedMachineName": _machine_name(published_revision),
         "publishedName": published_metadata.get("title") or (row.name if published_revision else ""),
-        "publishedDescription": published_metadata.get("description") or (row.description if published_revision else ""),
+        "publishedDescription": published_metadata.get("description")
+        or (row.description if published_revision else ""),
         "publishedReferenceCount": len(published_revision.reference_files or []) if published_revision else 0,
         "description": row.description,
         "status": row.status,
@@ -191,7 +194,9 @@ async def list_skills(db: AsyncSession) -> list[dict]:
     result = []
     for row in rows:
         current = await _current_revision(db, row)
-        published = await db.get(SkillRevision, row.published_revision_id) if row.published_revision_id else None
+        published = (
+            await db.get(SkillRevision, row.published_revision_id) if row.published_revision_id else None
+        )
         result.append(_skill_view(row, current, published))
     return result
 
@@ -201,6 +206,76 @@ async def skill_detail(db: AsyncSession, skill_id: int) -> dict:
     revision = await _current_revision(db, row)
     published = await db.get(SkillRevision, row.published_revision_id) if row.published_revision_id else None
     return _skill_view(row, revision, published)
+
+
+async def list_published_skills(db: AsyncSession) -> list[dict]:
+    rows = (
+        await db.execute(
+            select(Skill, SkillRevision)
+            .join(SkillRevision, Skill.published_revision_id == SkillRevision.id)
+            .order_by(SkillRevision.created_at.desc(), SkillRevision.id.desc())
+        )
+    ).all()
+    items = []
+    for skill, revision in rows:
+        metadata = _published_metadata(revision)
+        items.append(
+            {
+                "id": skill.id,
+                "name": metadata.get("title") or _machine_name(revision) or f"skill-{skill.id}",
+                "machineName": _machine_name(revision),
+                "description": metadata.get("description") or "",
+                "version": revision.published_version,
+                "referenceCount": len(revision.reference_files or []),
+                "publishedAt": _iso(revision.created_at),
+            }
+        )
+    return items
+
+
+async def _published_revision(db: AsyncSession, skill_id: int) -> tuple[Skill, SkillRevision]:
+    skill = await get_skill(db, skill_id)
+    if not skill.published_revision_id:
+        raise HTTPException(404, "已发布技能不存在")
+    revision = await db.get(SkillRevision, skill.published_revision_id)
+    if not revision or revision.skill_id != skill.id:
+        raise HTTPException(404, "已发布技能不存在")
+    return skill, revision
+
+
+async def published_skill_detail(db: AsyncSession, skill_id: int) -> dict:
+    skill, revision = await _published_revision(db, skill_id)
+    metadata = _published_metadata(revision)
+    return {
+        "id": skill.id,
+        "name": metadata.get("title") or _machine_name(revision) or f"skill-{skill.id}",
+        "machineName": _machine_name(revision),
+        "description": metadata.get("description") or "",
+        "version": revision.published_version,
+        "content": revision.content,
+        "referenceFiles": [
+            {"filename": ref.get("filename", ""), "bytes": ref.get("bytes", 0)}
+            for ref in revision.reference_files or []
+        ],
+        "publishedAt": _iso(revision.created_at),
+    }
+
+
+async def published_reference_content(db: AsyncSession, skill_id: int, index: int) -> dict:
+    _, revision = await _published_revision(db, skill_id)
+    references = revision.reference_files or []
+    if index < 0 or index >= len(references):
+        raise HTTPException(404, "参考资料不存在")
+    reference = references[index]
+    root = (SKILL_ROOT / str(skill_id) / "references").resolve()
+    path = (settings.data_dir / str(reference.get("path", ""))).resolve()
+    if not path.is_relative_to(root):
+        raise HTTPException(404, "参考资料不存在")
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise HTTPException(404, "参考资料文件不可读取") from error
+    return {"filename": reference.get("filename", ""), "content": content}
 
 
 async def skill_archive(db: AsyncSession, skill_id: int, version: str = "current") -> tuple[bytes, str]:
@@ -247,12 +322,16 @@ async def delete_draft(db: AsyncSession, skill_id: int) -> None:
         raise HTTPException(404, "Skill 不存在")
     if skill.published_revision_id is not None or skill.status != "draft":
         raise HTTPException(409, "已发布的技能不能删除，请先处理归档")
-    sessions = (await db.scalars(select(SkillAuthoringSession).where(SkillAuthoringSession.skill_id == skill_id))).all()
+    sessions = (
+        await db.scalars(select(SkillAuthoringSession).where(SkillAuthoringSession.skill_id == skill_id))
+    ).all()
     if any(session.status == "running" for session in sessions):
         raise HTTPException(409, "技能助手正在修改，请等待完成后删除")
     session_ids = [session.id for session in sessions]
     if session_ids:
-        await db.execute(delete(SkillAuthoringMessage).where(SkillAuthoringMessage.authoring_session_id.in_(session_ids)))
+        await db.execute(
+            delete(SkillAuthoringMessage).where(SkillAuthoringMessage.authoring_session_id.in_(session_ids))
+        )
     await db.execute(delete(SkillAuthoringSession).where(SkillAuthoringSession.skill_id == skill_id))
     await db.execute(delete(SkillRevision).where(SkillRevision.skill_id == skill_id))
     await db.delete(skill)

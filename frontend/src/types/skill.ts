@@ -30,6 +30,21 @@ export type SkillSummary = {
 
 export type SkillDetail = SkillSummary;
 
+export type PublishedSkillSummary = {
+  id: number;
+  name: string;
+  machineName: string;
+  description: string;
+  version: number;
+  referenceCount: number;
+  publishedAt: string | null;
+};
+
+export type PublishedSkillDetail = Omit<PublishedSkillSummary, 'referenceCount'> & {
+  content: string;
+  referenceFiles: { filename: string; bytes: number }[];
+};
+
 export type SkillRevision = {
   id: number;
   revision: number;

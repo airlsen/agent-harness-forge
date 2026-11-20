@@ -77,6 +77,9 @@ async def test_archives_use_selected_revision_and_reference_snapshot(tmp_path, m
             created = await create_skill(db, '名称', '说明', content, 'tester')
             skill_id = created['id']
             await skill_service.add_reference(db, skill_id, 'readme.md', '发布的附件')
+            with pytest.raises(HTTPException) as unpublished:
+                await skill_service.published_skill_detail(db, skill_id)
+            assert unpublished.value.status_code == 404
             await publish_skill(db, skill_id, 'tester')
             await update_draft(
                 db, skill_id,
@@ -96,6 +99,22 @@ async def test_archives_use_selected_revision_and_reference_snapshot(tmp_path, m
             assert view['machineName'] == 'draft-name'
             assert view['publishedMachineName'] == 'published-name'
             assert view['publishedName'] == '已发布名称'
+            public = await skill_service.published_skill_detail(db, skill_id)
+            assert public['name'] == '已发布名称'
+            listed = await skill_service.list_published_skills(db)
+            assert len(listed) == 1
+            assert listed[0]['name'] == '已发布名称'
+            assert listed[0]['machineName'] == 'published-name'
+            assert 'content' not in listed[0]
+            assert public['machineName'] == 'published-name'
+            assert public['description'] == '稳定版本'
+            assert public['version'] == 1
+            assert 'draft-name' not in public['content']
+            assert public['referenceFiles'] == [{'filename': 'readme.md', 'bytes': len('发布的附件'.encode())}]
+            assert (await skill_service.published_reference_content(db, skill_id, 0))['content'] == '发布的附件'
+            with pytest.raises(HTTPException) as missing:
+                await skill_service.published_reference_content(db, skill_id, 1)
+            assert missing.value.status_code == 404
             with pytest.raises(HTTPException) as error:
                 await skill_service.delete_draft(db, skill_id)
             assert error.value.status_code == 409

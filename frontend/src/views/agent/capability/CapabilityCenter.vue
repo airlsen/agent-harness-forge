@@ -7,7 +7,7 @@ import { confirm } from '../../../utils/feedback';
 import { usePlatform } from '../../../stores/platform';
 import { useConversation } from '../../../stores/conversation';
 import type { Scenario, Tool } from '../../../types/platform';
-import type { SkillSummary, SkillRevision } from '../../../types/skill';
+import type { PublishedSkillSummary } from '../../../types/skill';
 import type { PluginPackage } from '../../../types/plugin';
 import { Empty } from 'ant-design-vue';
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
@@ -54,15 +54,15 @@ const pluginTools = ref<PluginPackage | null>(null);
 // 插件页底部折叠面板：有待审核版本时默认展开审核队列
 const pluginPanels = ref<string[]>([]);
 let pluginPanelsInitialized = false;
-const skills = ref<{ items: SkillSummary[] } | null>(null);
+const skills = ref<{ items: PublishedSkillSummary[] } | null>(null);
 const downloadingSkill = ref<number | null>(null);
-async function downloadPublishedSkill(skill: SkillSummary) {
+async function downloadPublishedSkill(skill: PublishedSkillSummary) {
   if (downloadingSkill.value !== null) return;
   downloadingSkill.value = skill.id;
   try {
     await downloadResponse(
       `/skills/${skill.id}/download?version=published`,
-      `${skill.publishedMachineName || `skill-${skill.id}`}.zip`,
+      `${skill.machineName || `skill-${skill.id}`}.zip`,
     );
   } catch (error) {
     app.toast((error as Error).message, 'error');
@@ -170,37 +170,12 @@ const search = computed(() => searchCopy[tab.value] ?? searchCopy.tools);
 function matches(text: string) {
   return text.toLowerCase().includes(query.value.trim().toLowerCase());
 }
-const publishedSkills = computed(() =>
-  (skills.value?.items ?? []).filter((skill) => skill.publishedRevisionId !== null),
-);
+const publishedSkills = computed(() => skills.value?.items ?? []);
 const visibleSkills = computed(() =>
   publishedSkills.value.filter((skill) =>
-    matches(`${skill.publishedName} ${skill.publishedMachineName} ${skill.publishedDescription}`),
+    matches(`${skill.name} ${skill.machineName} ${skill.description}`),
   ),
 );
-const viewedSkill = ref<SkillSummary | null>(null);
-const publishedContent = ref('');
-const publishedLoading = ref(false);
-const publishedError = ref('');
-let publishedRequest = 0;
-async function viewPublishedSkill(skill: SkillSummary) {
-  const request = ++publishedRequest;
-  viewedSkill.value = skill;
-  publishedContent.value = '';
-  publishedError.value = '';
-  publishedLoading.value = true;
-  try {
-    const result = await api<{ items: SkillRevision[] }>(`/skills/${skill.id}/revisions`);
-    if (request !== publishedRequest) return;
-    const published = result.items.find((revision) => revision.id === skill.publishedRevisionId);
-    if (!published) throw new Error('未找到已发布版本，请刷新列表后重试。');
-    publishedContent.value = published.content;
-  } catch (error) {
-    if (request === publishedRequest) publishedError.value = (error as Error).message;
-  } finally {
-    if (request === publishedRequest) publishedLoading.value = false;
-  }
-}
 const visibleMcp = computed(() =>
   (mcp.value?.items ?? []).filter((server) =>
     matches(`${server.name} ${server.url} ${server.serverInfo?.name ?? ''} ${server.transport}`),
@@ -279,7 +254,7 @@ async function load() {
   try {
     const [plugins, skillResult, mcpResult] = await Promise.all([
       api<{ items: RuntimeComponent[]; submissions: PluginPackage[] }>('/registry/plugins'),
-      api<{ items: SkillSummary[] }>('/skills'),
+      api<{ items: PublishedSkillSummary[] }>('/skills/published'),
       api<{ items: McpServer[]; available: boolean; reason: string }>('/registry/mcp-servers'),
     ]);
     components.value = plugins.items;
@@ -842,39 +817,45 @@ onMounted(load);
             v-for="skill in visibleSkills"
             :key="skill.id"
             class="skill-card"
-            :title="skill.publishedName"
+            :title="skill.name"
             icon="book"
             tone="book"
-            :description="skill.publishedDescription"
+            :description="skill.description"
             placeholder="尚未添加用途说明。"
             status="已发布"
             status-color="success"
           >
             <template #sub>
-              <span class="skill-capability-machine" :title="skill.publishedMachineName">{{
-                skill.publishedMachineName || `skill-${skill.id}`
+              <span class="skill-capability-machine" :title="skill.machineName">{{
+                skill.machineName || `skill-${skill.id}`
               }}</span>
             </template>
             <template #tags>
-              <span class="skill-capability-meta">版本 v{{ skill.publishedVersion }}</span>
+              <span class="skill-capability-meta">版本 v{{ skill.version }}</span>
               <span class="skill-capability-meta">{{
-                skill.publishedReferenceCount ? `${skill.publishedReferenceCount} 个参考文件` : 'SKILL.md'
+                skill.referenceCount ? `${skill.referenceCount} 个参考文件` : 'SKILL.md'
               }}</span>
             </template>
             <template #footer>
               <SkillCardActions
-                :name="skill.publishedName"
+                :name="skill.name"
                 :downloading="downloadingSkill === skill.id"
                 :disabled="downloadingSkill !== null"
                 @download="downloadPublishedSkill(skill)"
               >
-                <a-button
-                  type="primary"
-                  size="small"
-                  :aria-label="`查看技能 ${skill.publishedName}`"
-                  @click="viewPublishedSkill(skill)"
-                  >查看</a-button
+                <RouterLink
+                  v-slot="{ href, navigate }"
+                  :to="`/agent/capabilities/skills/${skill.id}`"
+                  custom
                 >
+                  <a-button
+                    size="small"
+                    :href="href"
+                    :aria-label="`查看已发布技能 ${skill.name}`"
+                    @click="navigate"
+                    >查看</a-button
+                  >
+                </RouterLink>
               </SkillCardActions>
             </template>
           </CatalogCard>
@@ -923,26 +904,6 @@ onMounted(load);
         </div>
       </template>
     </a-drawer>
-    <a-modal
-      :open="!!viewedSkill"
-      :width="760"
-      title="已发布技能"
-      :footer="null"
-      @cancel="viewedSkill = null"
-    >
-      <template v-if="viewedSkill">
-        <h2>
-          {{ viewedSkill.name }} <small>v{{ viewedSkill.publishedVersion }}</small>
-        </h2>
-        <p>{{ viewedSkill.description || '尚未添加用途说明。' }}</p>
-        <a-spin v-if="publishedLoading" />
-        <a-alert v-else-if="publishedError" type="error" :message="publishedError" show-icon />
-        <pre v-else class="published-skill-content">{{ publishedContent }}</pre>
-        <RouterLink v-slot="{ href, navigate }" :to="`/agent/skills/${viewedSkill.id}`" custom>
-          <a-button :href="href" @click="navigate">编辑技能</a-button>
-        </RouterLink>
-      </template>
-    </a-modal>
     <a-modal
       :open="pluginUploadOpen"
       :width="560"
@@ -1231,16 +1192,6 @@ onMounted(load);
   color: var(--color-text-tertiary);
   font-size: 12px;
 }
-.published-skill-content {
-  max-height: 55vh;
-  overflow: auto;
-  padding: 16px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  background: var(--surface-shell);
-  border-radius: 4px;
-}
-
 /* MCP 正常状态使用轻量圆点，避免实底标签抢占服务标题的视觉层级。 */
 .mcp-directory :deep(.catalog-card-status.ant-tag-success) {
   display: inline-flex;
