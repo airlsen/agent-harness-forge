@@ -704,7 +704,7 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </header>
-          <nav class="file-tree" aria-label="文件列表">
+          <nav class="skill-file-tree" aria-label="文件列表">
             <button
               :class="['file-row', { selected: selectedFile < 0 }]"
               :aria-current="selectedFile < 0 ? 'page' : undefined"
@@ -1159,9 +1159,12 @@ onBeforeUnmount(() => {
 .studio-files .icon-action:hover {
   background: var(--surface-content);
 }
-.file-tree {
+.skill-file-tree {
+  display: block;
   flex: 1;
+  min-height: 0;
   overflow: auto;
+  margin: 0;
   padding: 10px 6px;
 }
 .file-row {
@@ -1233,6 +1236,7 @@ onBeforeUnmount(() => {
   padding: 10px;
 }
 .files-footer {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
