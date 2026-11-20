@@ -13,6 +13,7 @@ import { Empty } from 'ant-design-vue';
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
 import Icon from '../../../components/ForgeIcon.vue';
 import CatalogCard from '../../../components/catalog/CatalogCard.vue';
+import ToolDescription from '../../../components/catalog/ToolDescription.vue';
 import CatalogFilter from '../../../components/catalog/CatalogFilter.vue';
 import CatalogGrid from '../../../components/catalog/CatalogGrid.vue';
 import CatalogSearch from '../../../components/catalog/CatalogSearch.vue';
@@ -120,10 +121,17 @@ const shownComponent = useRetained(() => componentDetail.value);
 const shownPluginTools = useRetained(() => pluginTools.value);
 const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE;
 const mcpTransportOptions = [
-  { value: 'streamable-http', label: 'Streamable HTTP（推荐）' },
-  { value: 'sse', label: 'SSE（旧版 HTTP，仅测试连接）' },
-  { value: 'stdio', label: 'stdio（本机进程）' },
+  { value: 'streamable-http', label: '远程 HTTP' },
+  { value: 'stdio', label: '本地 stdio' },
+  { value: 'sse', label: 'SSE（旧版）' },
 ];
+const mcpImportHint = computed(() => {
+  if (mcpTransport.value === 'stdio')
+    return '仅导入可信程序，将以 Forge 服务权限运行。认证信息与启动参数加密保存。';
+  if (mcpTransport.value === 'sse')
+    return '仅支持测试连接，暂不可用于会话。服务地址须使用 HTTPS，认证信息加密保存。';
+  return '服务地址须使用 HTTPS · 认证信息加密保存';
+});
 const tab = computed(() => {
   const requestedTab = String(route.query.tab ?? '');
   // Keep the legacy ?tab=tools deep link focused on the managed plugin directory.
@@ -744,7 +752,7 @@ onMounted(load);
                 @click="testMcp(server)"
                 >测试连接</a-button
               >
-              <a-button type="text" size="small" :disabled="!server.tools.length" @click="openMcpTools(server)"
+              <a-button type="primary" size="small" :disabled="!server.tools.length" @click="openMcpTools(server)"
                 >工具</a-button
               >
               <a-dropdown :trigger="['click']" placement="bottomRight">
@@ -934,7 +942,7 @@ onMounted(load);
       :width="600"
       centered
       destroy-on-close
-      ok-text="导入配置"
+      ok-text="导入"
       cancel-text="取消"
       :confirm-loading="mcpBusy"
       :ok-button-props="{ disabled: !mcpJson.trim() }"
@@ -945,21 +953,23 @@ onMounted(load);
       <template #title>
         <div class="capability-modal-title">
           <h2>导入 MCP 服务</h2>
-          <p>选择连接协议并粘贴 mcpServers JSON。远程服务须使用 HTTPS；旧版 SSE 仅可测试连接。</p>
         </div>
       </template>
       <a-form layout="vertical" class="mcp-import-form">
-        <a-form-item label="连接协议">
-          <a-select
+        <a-form-item label="连接方式">
+          <a-radio-group
             v-model:value="mcpTransport"
+            aria-label="连接方式"
             :options="mcpTransportOptions"
+            option-type="button"
+            :disabled="mcpBusy"
             @change="changeMcpTransport"
           />
         </a-form-item>
         <a-form-item
-          label="mcpServers 配置 JSON"
+          label="配置内容"
           html-for="mcp-import-json"
-          extra="凭据和 stdio 参数会加密保存在本机，不会在服务列表中显示。stdio 命令会以 Forge 服务进程权限启动，请只配置可信 MCP 程序；导入后需先测试连接。"
+          :extra="mcpImportHint"
         >
           <a-textarea
             id="mcp-import-json"
@@ -979,41 +989,39 @@ onMounted(load);
         :message="mcpImportError"
       />
     </a-modal>
-    <a-modal :open="!!selectedMcp" :width="600" centered :footer="null" @cancel="selectedMcp = null">
+    <a-modal :open="!!selectedMcp" :width="680" centered :footer="null" @cancel="selectedMcp = null">
       <template v-if="shownMcp" #title>
-        <div class="capability-modal-title">
-          <h2>{{ shownMcp.name }} 工具清单</h2>
-          <p>
-            {{ transportLabel(shownMcp.transport) }} · {{ shownMcp.tools.length }} 项工具 · 由 MCP 服务提供
-          </p>
+        <div class="capability-modal-title mcp-tools-title">
+          <h2>工具</h2>
+          <p>{{ shownMcp.name }} · {{ shownMcp.tools.length }} 项工具</p>
         </div>
       </template>
       <a-input
         v-model:value="mcpToolQuery"
         class="mcp-tools-search"
-        placeholder="搜索工具名称或用途"
-        aria-label="搜索 MCP 工具"
+        placeholder="搜索工具"
+        aria-label="搜索工具名称或用途"
         allow-clear
       >
         <template #prefix><Icon name="search" :size="15" /></template>
       </a-input>
-      <a-list v-if="visibleMcpTools.length" class="mcp-tools-list" :data-source="visibleMcpTools">
-        <template #renderItem="{ item }">
-          <a-list-item>
-            <a-list-item-meta :title="item.name" :description="item.description || '此工具未提供用途说明。'">
-              <template #avatar
-                ><span class="scene-icon code mcp-tool-symbol"><Icon name="wrench" :size="16" /></span
-              ></template>
-            </a-list-item-meta>
-          </a-list-item>
-        </template>
-      </a-list>
-      <a-empty
-        v-else
-        class="mcp-tools-empty"
-        :image="simpleEmptyImage"
-        :description="shownMcp?.tools.length ? '没有匹配的工具' : '服务尚未返回工具清单，请先测试连接。'"
-      />
+      <p class="mcp-tools-result" aria-live="polite">
+        <template v-if="mcpToolQuery.trim()">找到 {{ visibleMcpTools.length }} 项</template>
+      </p>
+      <div class="mcp-tools-scroll" tabindex="0" role="region" aria-label="工具列表">
+        <ul v-if="visibleMcpTools.length" class="mcp-tools-list">
+          <li v-for="tool in visibleMcpTools" :key="tool.name" class="mcp-tool-row">
+            <h3>{{ tool.name }}</h3>
+            <ToolDescription :text="tool.description" />
+          </li>
+        </ul>
+        <a-empty
+          v-else
+          class="mcp-tools-empty"
+          :image="simpleEmptyImage"
+          :description="shownMcp?.tools.length ? '没有匹配的工具' : '服务尚未返回工具清单，请先测试连接。'"
+        />
+      </div>
     </a-modal>
     <a-drawer
       :open="!!detail"
@@ -1432,15 +1440,43 @@ onMounted(load);
 .mcp-tools-search :deep(.ant-input) {
   min-height: 0; /* 中和 style.css 全局 :where(input){min-height:41px} */
 }
-.mcp-tools-list {
-  max-height: min(56vh, 480px);
-  overflow-y: auto;
-}
-.mcp-tools-list :deep(.ant-list-item-meta-title) {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+.mcp-tools-title p {
+  padding-right: 24px;
   overflow-wrap: anywhere;
 }
-.mcp-tool-symbol,
+.mcp-tools-result {
+  min-height: 20px;
+  margin: 0 0 4px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+}
+.mcp-tools-scroll {
+  height: min(50vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.mcp-tools-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mcp-tool-row {
+  padding: 14px 8px 14px 0;
+}
+.mcp-tool-row + .mcp-tool-row {
+  border-top: 1px solid var(--border-default);
+}
+.mcp-tool-row h3 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
 .related-scenario .scene-icon {
   width: 32px;
   height: 32px;
