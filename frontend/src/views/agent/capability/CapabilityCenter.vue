@@ -72,7 +72,8 @@ const mcpPlaceholder = JSON.stringify(
 // 含 command 即本机进程（stdio），仅此时提示运行权限
 const mcpHasStdio = computed(() => /"command"\s*:/.test(mcpJson.value));
 const mcpBusy = ref(false);
-const mcpTesting = ref<number | null>(null);
+// 按服务记录测试状态，支持不同卡片独立测试，避免全局置灰。
+const mcpTesting = ref(new Set<number>());
 const mcpToggling = ref<number | null>(null);
 // 仅用于导入弹窗内、需要用户修改输入的错误；操作结果统一走全局 toast。
 const mcpImportError = ref('');
@@ -141,7 +142,7 @@ function transportLabel(transport: string) {
   return 'Streamable HTTP';
 }
 function mcpState(server: McpServer) {
-  if (server.status === 'connected') return { label: '连接正常', color: 'success' };
+  if (server.status === 'connected') return { label: '正常', color: 'success' };
   if (server.status === 'error') return { label: '连接失败', color: 'error' };
   return { label: '待测试', color: undefined };
 }
@@ -353,8 +354,8 @@ async function refreshMcp() {
   mcp.value = { ...result, available: true, reason: '' };
 }
 async function testMcp(server: McpServer) {
-  mcpBusy.value = true;
-  mcpTesting.value = server.id;
+  if (mcpTesting.value.has(server.id)) return;
+  mcpTesting.value.add(server.id);
   try {
     await api(`/registry/mcp-servers/${server.id}/test`, { method: 'POST' });
     await refreshMcp();
@@ -364,8 +365,7 @@ async function testMcp(server: McpServer) {
     // 刷新卡片上的“连接失败”状态；刷新本身失败时已由 loadError 展示。
     await load();
   } finally {
-    mcpBusy.value = false;
-    mcpTesting.value = null;
+    mcpTesting.value.delete(server.id);
   }
 }
 async function toggleMcp(server: McpServer) {
@@ -708,13 +708,13 @@ onMounted(load);
               <a-button
                 type="text"
                 size="small"
-                :loading="mcpTesting === server.id"
-                :disabled="mcpBusy"
+                :loading="mcpTesting.has(server.id)"
+                :disabled="mcpTesting.has(server.id)"
                 @click="testMcp(server)"
                 >测试连接</a-button
               >
-              <a-button size="small" :disabled="!server.tools.length" @click="openMcpTools(server)"
-                >查看工具 {{ server.tools.length }}</a-button
+              <a-button type="text" size="small" :disabled="!server.tools.length" @click="openMcpTools(server)"
+                >工具</a-button
               >
               <a-dropdown :trigger="['click']" placement="bottomRight">
                 <a-button type="text" size="small" :aria-label="`更多操作 ${server.name}`" title="更多操作">
@@ -1070,6 +1070,25 @@ onMounted(load);
 </template>
 
 <style scoped>
+/* MCP 正常状态使用轻量圆点，避免实底标签抢占服务标题的视觉层级。 */
+.mcp-directory :deep(.catalog-card-status.ant-tag-success) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+}
+.mcp-directory :deep(.catalog-card-status.ant-tag-success::before) {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--color-success);
+  content: '';
+}
+
 /* 筛选、搜索、卡片、网格样式见 components/catalog/*（与企业场景页共用）；这里只放本页特有的布局 */
 
 /* ============ 页面节奏：页头 / 工具栏 / 内容统一间距（与企业场景页一致） ============ */

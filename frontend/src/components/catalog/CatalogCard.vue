@@ -84,6 +84,7 @@ defineProps<{
 .catalog-card-head .scene-icon {
   width: 36px;
   height: 36px;
+  border: 0;
   border-radius: 8px;
 }
 .catalog-card-heading {
