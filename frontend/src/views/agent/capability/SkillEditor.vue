@@ -624,17 +624,8 @@ async function applyInfo() {
     infoError.value = (err as Error).message;
   }
 }
-async function closeInfo() {
+function closeInfo() {
   if (saving.value) return;
-  const current = skill.value;
-  if (
-    current &&
-    (info.value.title !== (current.name || '未命名技能') ||
-      info.value.description !== current.description ||
-      info.value.name !== String(readSkillDocument(current.content).data.name))
-  ) {
-    if (!(await confirm({ title: '放弃尚未应用的技能信息？', okText: '放弃修改' }))) return;
-  }
   infoOpen.value = false;
 }
 async function selectFile(index: number) {
