@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue';
-import { isNavigationFailure, onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
+import {
+  isNavigationFailure,
+  onBeforeRouteLeave,
+  onBeforeRouteUpdate,
+  useRoute,
+  useRouter,
+} from 'vue-router';
 import { api, apiFetch, post, put } from '../../../api/client';
 import Icon from '../../../components/ForgeIcon.vue';
 import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
@@ -439,7 +445,13 @@ function isCreatingSkillNavigation(to: { path: string }) {
   return creatingSkillNavigationId !== null && to.path === `/agent/skills/${creatingSkillNavigationId}`;
 }
 onBeforeRouteUpdate((to) => {
-  if (isCreatingSkillNavigation(to)) return true;
+  if (
+    isCreatingSkillNavigation(to) ||
+    (skill.value &&
+      (Number(to.params.id) === skill.value.id || to.path === `/agent/skills/${skill.value.id}`))
+  ) {
+    return true;
+  }
   if ((saving.value || busy.value || uploadingReference.value) && Number(to.params.id) !== skill.value?.id) {
     app.toast('请等待当前操作完成后再离开。', 'info');
     return false;
@@ -448,7 +460,13 @@ onBeforeRouteUpdate((to) => {
   return confirm({ title: '当前草稿有未保存的修改，确定离开吗？', okText: '离开', cancelText: '留下' });
 });
 onBeforeRouteLeave((to) => {
-  if (isCreatingSkillNavigation(to)) return true;
+  if (
+    isCreatingSkillNavigation(to) ||
+    (skill.value &&
+      (Number(to.params.id) === skill.value.id || to.path === `/agent/skills/${skill.value.id}`))
+  ) {
+    return true;
+  }
   if (saving.value || busy.value || uploadingReference.value) {
     app.toast('请等待当前操作完成后再离开。', 'info');
     return false;
@@ -1017,10 +1035,13 @@ onBeforeUnmount(() => {
                   :disabled="!canSend"
                   aria-label="发送"
                   title="发送"
-                ><Icon name="arrow-up-line" :size="16" /></a-button>
+                  ><Icon name="arrow-up-line" :size="16"
+                /></a-button>
               </div>
             </div>
-            <p class="composer-hint">{{ busy ? '助手处理中，完成后可继续发送' : 'Enter 发送 · Shift+Enter 换行' }}</p>
+            <p class="composer-hint">
+              {{ busy ? '助手处理中，完成后可继续发送' : 'Enter 发送 · Shift+Enter 换行' }}
+            </p>
           </form>
         </aside>
       </div>
@@ -1587,7 +1608,9 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border-default);
   border-radius: 12px;
   background: var(--surface-content);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 .composer-box:focus-within {
   border-color: var(--color-brand-border);
