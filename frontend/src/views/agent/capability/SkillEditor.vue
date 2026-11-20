@@ -1395,7 +1395,7 @@ onBeforeUnmount(() => {
   display: none;
 }
 .panel-resizer {
-  background: #f0f1f3;
+  background: var(--border-light);
   position: relative;
   cursor: col-resize;
   touch-action: none;

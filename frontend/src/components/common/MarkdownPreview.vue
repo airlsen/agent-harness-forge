@@ -26,7 +26,7 @@ interface Props {
   showLineNumbers?: boolean;
   maxHeight?: string;
   theme?: 'light' | 'dark' | 'auto';
-  accent?: 'yellow' | 'indigo';
+  accent?: 'brand' | 'yellow' | 'indigo';
   compact?: boolean;
 }
 
@@ -37,7 +37,7 @@ const props = withDefaults(defineProps<Props>(), {
   showLineNumbers: false,
   maxHeight: '',
   theme: 'auto',
-  accent: 'yellow',
+  accent: 'brand',
   compact: false,
 });
 
@@ -524,17 +524,18 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
 
 <style scoped lang="scss">
 .markdown-renderer {
-  --md-primary: #eab308;
-  --md-primary-hover: #ca8a04;
-  --md-primary-active: #a16207;
-  --md-primary-soft: #fef9c3;
-  --md-primary-muted: #fefce8;
-  --md-primary-border: #fde68a;
-  --md-primary-ring: rgba(234, 179, 8, 0.32);
-  --md-heading-accent: #ca8a04;
-  --md-row-alt: #fffdf5;
-  --md-on-primary: #422006;
-  --md-quote-strong: #854d0e;
+  --md-primary: var(--brand-600);
+  --md-primary-hover: var(--brand-700);
+  --md-primary-active: var(--brand-700);
+  --md-primary-soft: var(--brand-100);
+  --md-primary-muted: var(--brand-50);
+  --md-primary-border: var(--brand-200);
+  --md-primary-ring: rgba(218, 114, 77, 0.28);
+  --md-heading-h1: var(--brand-800);
+  --md-heading-accent: var(--brand-700);
+  --md-row-alt: rgba(218, 114, 77, 0.035);
+  --md-on-primary: #ffffff;
+  --md-quote-strong: var(--brand-800);
   --md-fg: var(--color-text-primary);
   --md-fg-secondary: var(--color-text-secondary);
   --md-surface: var(--surface-card);
@@ -544,6 +545,21 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
   font-size: 13.5px;
   line-height: 1.8;
 
+  &.accent-yellow {
+    --md-primary: #eab308;
+    --md-primary-hover: #ca8a04;
+    --md-primary-active: #a16207;
+    --md-primary-soft: #fef9c3;
+    --md-primary-muted: #fefce8;
+    --md-primary-border: #fde68a;
+    --md-primary-ring: rgba(234, 179, 8, 0.32);
+    --md-heading-h1: #ca8a04;
+    --md-heading-accent: #ca8a04;
+    --md-row-alt: #fffdf5;
+    --md-on-primary: #422006;
+    --md-quote-strong: #854d0e;
+  }
+
   &.accent-indigo {
     --md-primary: #6366f1;
     --md-primary-hover: #4f46e5;
@@ -552,6 +568,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
     --md-primary-muted: #eef2ff;
     --md-primary-border: #c7d2fe;
     --md-primary-ring: rgba(99, 102, 241, 0.32);
+    --md-heading-h1: #4f46e5;
     --md-heading-accent: #4f46e5;
     --md-row-alt: #fafbff;
     --md-on-primary: #fff;
@@ -604,8 +621,8 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
     :deep(.md-h1) {
       font-size: 1.7em;
       padding-bottom: 0.35em;
-      color: var(--md-heading-accent);
-      border-bottom: 2px solid var(--md-primary);
+      color: var(--md-heading-h1, var(--md-heading-accent));
+      border-bottom: 2px solid var(--md-primary-border);
     }
     :deep(.md-h2) {
       font-size: 1.4em;
@@ -615,11 +632,11 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
     }
     :deep(.md-h3) {
       font-size: 1.18em;
-      color: var(--md-primary-active);
+      color: var(--md-heading-accent);
     }
     :deep(.md-h4) {
       font-size: 1.02em;
-      color: var(--md-fg-secondary);
+      color: var(--md-fg);
     }
     :deep(h5),
     :deep(h6) {
@@ -751,7 +768,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
       overflow: hidden;
       border: 1px solid var(--md-primary-border);
       box-shadow:
-        0 4px 16px rgba(234, 179, 8, 0.1),
+        0 4px 16px var(--md-primary-ring),
         0 1px 3px rgba(0, 0, 0, 0.06);
       background: var(--surface-card);
       transition:
@@ -760,7 +777,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
         transform 0.18s;
       &:hover {
         box-shadow:
-          0 8px 24px rgba(234, 179, 8, 0.16),
+          0 8px 24px var(--md-primary-ring),
           0 2px 6px rgba(0, 0, 0, 0.08);
         border-color: var(--md-primary);
         transform: translateY(-1px);
@@ -789,7 +806,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
           font-weight: 700;
           letter-spacing: 0.4px;
           text-transform: uppercase;
-          box-shadow: 0 1px 6px rgba(234, 179, 8, 0.35);
+          box-shadow: 0 1px 6px var(--md-primary-ring);
         }
         .md-code-stats {
           font-size: 11px;
@@ -931,7 +948,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
         th {
           background: var(--md-primary-muted);
           font-weight: 700;
-          color: var(--md-primary-active);
+          color: var(--md-quote-strong, var(--md-primary-active));
           position: sticky;
           top: 0;
         }
@@ -965,7 +982,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
         font-size: 0.9em;
       }
       &.is-external {
-        color: #a16207;
+        color: var(--md-primary-active);
       }
       &.is-email {
         color: #047857;
@@ -1149,16 +1166,32 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
   --md-fg-secondary: #aeb4c1;
   --md-surface: #222630;
   --md-border: #3b4250;
-  --md-primary-active: #facc15;
-  --md-heading-accent: #facc15;
-  --md-primary-soft: #473b16;
-  --md-primary-muted: #302a18;
-  --md-primary-border: #75621c;
+  --md-primary: var(--brand-400);
+  --md-primary-active: var(--brand-400);
+  --md-heading-h1: var(--brand-300);
+  --md-heading-accent: var(--brand-400);
+  --md-primary-soft: rgba(218, 114, 77, 0.18);
+  --md-primary-muted: rgba(218, 114, 77, 0.1);
+  --md-primary-border: rgba(218, 114, 77, 0.35);
   --md-row-alt: #272a31;
-  --md-quote-strong: #fde68a;
+  --md-quote-strong: var(--brand-200);
+
+  &.accent-yellow {
+    --md-primary: #facc15;
+    --md-primary-active: #facc15;
+    --md-heading-h1: #facc15;
+    --md-heading-accent: #facc15;
+    --md-primary-soft: #473b16;
+    --md-primary-muted: #302a18;
+    --md-primary-border: #75621c;
+    --md-row-alt: #272a31;
+    --md-quote-strong: #fde68a;
+  }
 
   &.accent-indigo {
+    --md-primary: #a5b4fc;
     --md-primary-active: #a5b4fc;
+    --md-heading-h1: #a5b4fc;
     --md-heading-accent: #a5b4fc;
     --md-primary-soft: #303663;
     --md-primary-muted: #252a48;
