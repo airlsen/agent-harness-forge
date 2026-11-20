@@ -14,7 +14,9 @@ const busy = ref<number | null>(null);
 const testTool = ref<Record<number, string>>({});
 const testArgs = ref<Record<number, string>>({});
 const testResults = ref<Record<number, string>>({});
-const current = computed(() => detail.value?.releases.find((item) => item.isDefault));
+const current = computed(() =>
+  detail.value?.releases.find((item) => item.isDefault && item.enabled && item.auditStatus === 'approved'),
+);
 
 async function load() {
   loading.value = true;
@@ -107,7 +109,7 @@ watch(() => route.params.id, load, { immediate: true });
         </div>
         <div class="plugin-heading-actions">
           <a-tag :color="current ? 'success' : 'warning'">{{
-            current ? `默认 v${current.version}` : '未设置默认版本'
+            current ? `默认 v${current.version}` : '暂无可用默认版本'
           }}</a-tag>
           <RouterLink v-if="current" v-slot="{ href, navigate }" to="/agent/scenarios" custom>
             <a-button size="small" :href="href" @click="navigate">前往场景授权</a-button>
@@ -238,9 +240,14 @@ watch(() => route.params.id, load, { immediate: true });
 
 <style scoped>
 .plugin-detail-page {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
   max-width: 1060px;
   margin: 0 auto;
   padding: 36px 44px 80px;
+  overflow: auto;
   color: var(--color-text-primary);
 }
 .plugin-back {
@@ -255,6 +262,11 @@ watch(() => route.params.id, load, { immediate: true });
   justify-content: space-between;
   gap: 24px;
   margin: 32px 0 42px;
+}
+.plugin-heading > div:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .plugin-heading small {
   color: var(--color-brand-active);
@@ -272,6 +284,7 @@ watch(() => route.params.id, load, { immediate: true });
 .plugin-heading-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 .plugin-section {
@@ -302,6 +315,15 @@ watch(() => route.params.id, load, { immediate: true });
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+.plugin-release-head,
+.plugin-actions {
+  flex-wrap: wrap;
+}
+.plugin-release-head > div:first-child,
+.plugin-scenario > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .plugin-release-head strong {
   margin-right: 10px;
@@ -339,6 +361,7 @@ watch(() => route.params.id, load, { immediate: true });
 }
 .plugin-tool-select {
   flex: 1;
+  min-width: 0;
 }
 .plugin-result {
   padding: 12px;
@@ -346,6 +369,7 @@ watch(() => route.params.id, load, { immediate: true });
   max-height: 240px;
   overflow: auto;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .plugin-error {
   color: var(--color-danger-text);
