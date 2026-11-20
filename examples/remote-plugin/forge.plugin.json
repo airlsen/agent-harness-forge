@@ -1,0 +1,36 @@
+{
+  "id": "acme-contacts",
+  "package": "@acme/contacts-worker",
+  "displayName": "企业联系人查询",
+  "description": "从企业 CRM 查询客户信息。",
+  "version": "1.0.0",
+  "runtime": "forge-remote-worker-v1",
+  "execution": {
+    "kind": "remote-worker",
+    "endpoint": "https://plugins.example.com/invoke",
+    "networkDomains": ["plugins.example.com"],
+    "timeoutSeconds": 20,
+    "authRef": "FORGE_PLUGIN_AUTH_ACME_CONTACTS"
+  },
+  "permissions": ["contacts:read"],
+  "tools": [
+    {
+      "name": "acme_find_contact",
+      "title": "查询联系人",
+      "description": "根据姓名查询企业联系人。",
+      "permission": "read",
+      "risk": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "query": { "type": "string", "minLength": 1, "maxLength": 120 } },
+        "required": ["query"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": { "contacts": { "type": "array" } },
+        "required": ["contacts"]
+      }
+    }
+  ]
+}

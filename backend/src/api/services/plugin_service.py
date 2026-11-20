@@ -11,6 +11,7 @@ import re
 import socket
 import zipfile
 from functools import lru_cache
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -21,6 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import ROOT, settings
 from ..models.registry import PluginRegistry
+from ..models.agent_scenario import AgentScenario, AgentScenarioVersion
+from ..models.agent_session import SessionEventIndex
 from .settings_service import TOOL_NAMES
 
 CATALOG_ROOT = ROOT / "plugins"
@@ -30,6 +33,7 @@ MAX_ARCHIVE_FILES = 64
 MAX_UNPACKED_BYTES = 12 * 1024 * 1024
 PLUGIN_ID = re.compile(r"^[a-z][a-z0-9-]{2,95}$")
 VERSION = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
+AUTH_REF = re.compile(r"^FORGE_PLUGIN_AUTH_[A-Z0-9_]{1,80}$")
 SUPPORTED_RUNTIMES = {"forge-bridge", "forge-remote-worker-v1", "dsh-native"}
 
 
@@ -87,11 +91,15 @@ def _validate_remote_execution(value: object) -> dict:
     timeout = value.get("timeoutSeconds", 20)
     if not isinstance(timeout, int) or not 3 <= timeout <= 60:
         raise HTTPException(422, "远程 Worker 超时必须在 3 到 60 秒之间")
+    auth_ref = value.get("authRef", "")
+    if not isinstance(auth_ref, str) or (auth_ref and not AUTH_REF.fullmatch(auth_ref)):
+        raise HTTPException(422, "认证引用必须是 FORGE_PLUGIN_AUTH_ 开头的环境变量名")
     return {
         "kind": "remote-worker",
         "endpoint": parsed.geturl(),
         "networkDomains": sorted(set(normalized)),
         "timeoutSeconds": timeout,
+        "authRef": auth_ref,
     }
 
 
@@ -155,6 +163,12 @@ def validate_manifest(value: object, *, uploaded: bool = False) -> dict:
             raise HTTPException(422, "插件工具审批与风险声明不一致")
         if not isinstance(tool["inputSchema"], dict) or not isinstance(tool["outputSchema"], dict):
             raise HTTPException(422, "插件工具 Schema 无效")
+    if (
+        uploaded
+        and runtime == "forge-remote-worker-v1"
+        and not any(tool["permission"] == "read" for tool in tools)
+    ):
+        raise HTTPException(422, "远程 Worker 至少需要一个只读工具用于发布前试运行")
     extension_points = value.get("extensionPoints", [])
     permissions = value.get("permissions", [])
     if (
@@ -223,6 +237,9 @@ def public_view(row: PluginRegistry) -> dict:
         "reviewNote": row.review_note,
         "execution": row.execution_json or {},
         "enabled": row.enabled,
+        "isDefault": row.is_default,
+        "lastTestedAt": row.last_tested_at.isoformat() if row.last_tested_at else None,
+        "lastTestError": row.last_test_error,
     }
 
 
@@ -321,8 +338,20 @@ async def review_release(db: AsyncSession, release_id: int, action: str, note: s
         raise HTTPException(422, "审核动作无效")
     if action == "approved" and row.runtime != "forge-remote-worker-v1":
         raise HTTPException(422, "DSH 原生插件只能由平台团队通过专用 Runner 镜像审核发布")
+    if action == "approved" and row.last_tested_at is None:
+        raise HTTPException(409, "请先试运行一个只读工具，再批准插件版本")
     row.audit_status = action
     row.enabled = action == "approved"
+    if action == "approved":
+        existing_default = await db.scalar(
+            select(PluginRegistry.id).where(
+                PluginRegistry.plugin_id == _row_plugin_id(row), PluginRegistry.is_default.is_(True)
+            )
+        )
+        if existing_default is None:
+            row.is_default = True
+    else:
+        row.is_default = False
     row.review_note = note.strip()[:1024]
     await db.commit()
     await db.refresh(row)
@@ -336,6 +365,32 @@ async def set_release_enabled(db: AsyncSession, release_id: int, enabled: bool) 
     if enabled and row.audit_status != "approved":
         raise HTTPException(409, "只有已批准的插件版本可以启用")
     row.enabled = enabled
+    if not enabled:
+        row.is_default = False
+    await db.commit()
+    await db.refresh(row)
+    return public_view(row)
+
+
+async def set_default_release(db: AsyncSession, release_id: int) -> dict:
+    row = await db.get(PluginRegistry, release_id)
+    if not row:
+        raise HTTPException(404, "插件版本不存在")
+    if row.audit_status != "approved" or not row.enabled or row.runtime == "dsh-native":
+        raise HTTPException(409, "只能将已批准且启用的业务插件设为默认版本")
+    releases = (
+        await db.scalars(select(PluginRegistry).where(PluginRegistry.plugin_id == _row_plugin_id(row)))
+    ).all()
+    for release in releases:
+        release.is_default = release.id == row.id
+    await db.commit()
+    await db.refresh(row)
+    return public_view(row)
+
+
+async def record_test(db: AsyncSession, row: PluginRegistry, error: str = "") -> dict:
+    row.last_tested_at = None if error else datetime.now(timezone.utc).replace(tzinfo=None)
+    row.last_test_error = error[:512]
     await db.commit()
     await db.refresh(row)
     return public_view(row)
@@ -377,6 +432,7 @@ async def seed_plugins(db: AsyncSession) -> None:
                 audit_status="approved",
                 scan_status="builtin",
                 enabled=True,
+                is_default=True,
             )
         )
         changed = True
@@ -390,9 +446,9 @@ def _current_available(rows: list[PluginRegistry]) -> list[PluginRegistry]:
         grouped.setdefault(_row_plugin_id(row), []).append(row)
     selected = []
     for releases in grouped.values():
-        ready = [row for row in releases if row.audit_status == "approved" and row.enabled]
+        ready = [row for row in releases if row.audit_status == "approved" and row.enabled and row.is_default]
         if ready:
-            selected.append(max(ready, key=lambda row: (_version_key(row.version), row.id)))
+            selected.append(ready[0])
     return sorted(selected, key=lambda row: (row.display_name or _row_plugin_id(row), _row_plugin_id(row)))
 
 
@@ -402,6 +458,64 @@ async def list_plugins(db: AsyncSession) -> tuple[list[dict], list[dict]]:
     return [public_view(row) for row in available], [
         public_view(row) for row in rows if row.source_ref.startswith("uploaded:")
     ]
+
+
+async def plugin_detail(db: AsyncSession, plugin_id: str) -> dict:
+    releases = (await db.scalars(select(PluginRegistry))).all()
+    versions = [row for row in releases if _row_plugin_id(row) == plugin_id]
+    if not versions:
+        raise HTTPException(404, "插件不存在")
+    scenarios = (await db.scalars(select(AgentScenario))).all()
+    linked = []
+    for scenario in scenarios:
+        version = await db.scalar(
+            select(AgentScenarioVersion).where(
+                AgentScenarioVersion.scenario_id == scenario.id,
+                AgentScenarioVersion.version == scenario.current_version,
+            )
+        )
+        for binding in (
+            version.bundle_json.get("bundle", {}).get("meta", {}).get("pluginBindings", []) if version else []
+        ):
+            if binding.get("package") == plugin_id:
+                linked.append(
+                    {
+                        "id": scenario.id,
+                        "name": scenario.name,
+                        "status": scenario.status,
+                        "version": binding.get("version"),
+                        "artifactHash": binding.get("artifactHash"),
+                    }
+                )
+    events = (
+        await db.scalars(
+            select(SessionEventIndex)
+            .where(SessionEventIndex.kind == "plugin_call")
+            .order_by(SessionEventIndex.id.desc())
+            .limit(200)
+        )
+    ).all()
+    calls = [
+        {
+            "sessionId": event.session_id,
+            "tool": event.attrs.get("tool"),
+            "version": event.attrs.get("version"),
+            "outcome": event.attrs.get("outcome"),
+            "elapsedMs": event.attrs.get("elapsedMs"),
+            "createdAt": event.created_at.isoformat() if event.created_at else None,
+        }
+        for event in events
+        if event.attrs.get("package") == plugin_id
+    ][:20]
+    return {
+        "id": plugin_id,
+        "releases": [
+            public_view(row)
+            for row in sorted(versions, key=lambda r: (_version_key(r.version), r.id), reverse=True)
+        ],
+        "scenarios": linked,
+        "recentCalls": calls,
+    }
 
 
 async def approved_bindings(
@@ -429,10 +543,11 @@ async def approved_bindings(
             if row.audit_status == "approved"
             and row.enabled
             and row.runtime in {"forge-bridge", "forge-remote-worker-v1"}
+            and row.is_default
         ]
         if not candidates:
             raise HTTPException(422, f"插件“{plugin_id}”尚未通过审核、已停用或运行时不受支持")
-        row = max(candidates, key=lambda item: (_version_key(item.version), item.id))
+        row = candidates[0]
         available = {str(tool.get("name")): tool for tool in (row.tools_json or [])}
         names = [name for name in dict.fromkeys(tool_map.get(plugin_id, [])) if name]
         if not names:

@@ -660,7 +660,13 @@ onMounted(load);
                 >
               </template>
               <template #footer>
-                <a-button type="text" size="small" @click="pluginTools = plugin">工具与权限</a-button>
+                <RouterLink
+                  v-slot="{ href, navigate }"
+                  :to="`/agent/capabilities/plugins/${encodeURIComponent(plugin.package)}`"
+                  custom
+                >
+                  <a-button type="text" size="small" :href="href" @click="navigate">详情与版本</a-button>
+                </RouterLink>
                 <RouterLink v-slot="{ href, navigate }" to="/agent/scenarios" custom>
                   <a-button type="primary" size="small" :href="href" @click="navigate">场景授权</a-button>
                 </RouterLink>
@@ -714,6 +720,13 @@ onMounted(load);
                       </template>
                     </a-list-item-meta>
                     <template #actions>
+                      <RouterLink
+                        v-slot="{ href, navigate }"
+                        :to="`/agent/capabilities/plugins/${encodeURIComponent(plugin.package)}`"
+                        custom
+                      >
+                        <a-button size="small" :href="href" @click="navigate">查看</a-button>
+                      </RouterLink>
                       <template v-if="plugin.auditStatus === 'pending'">
                         <a-button
                           size="small"
@@ -724,7 +737,12 @@ onMounted(load);
                         <a-button
                           type="primary"
                           size="small"
-                          :disabled="reviewingPlugin === plugin.id || plugin.runtime === 'dsh-native'"
+                          :disabled="
+                            reviewingPlugin === plugin.id ||
+                            plugin.runtime === 'dsh-native' ||
+                            !plugin.lastTestedAt
+                          "
+                          :title="!plugin.lastTestedAt ? '请先在详情页试运行只读工具' : undefined"
                           @click="reviewPlugin(plugin, 'approved')"
                           >批准并发布</a-button
                         >

@@ -27,7 +27,8 @@ acme-contacts-1.2.3.zip
     "kind": "remote-worker",
     "endpoint": "https://plugins.acme.example/invoke",
     "networkDomains": ["plugins.acme.example"],
-    "timeoutSeconds": 15
+    "timeoutSeconds": 15,
+    "authRef": "FORGE_PLUGIN_AUTH_ACME_CONTACTS"
   },
   "permissions": ["contacts:read"],
   "tools": [
@@ -83,13 +84,17 @@ Forge Plugin Worker 仅向 Manifest 固定的 HTTPS endpoint 发出 POST 请求�
 { "message": "联系人服务暂时不可用" }
 ```
 
-远程 Worker 的身份认证、业务侧凭据和数据域控制由企业 Worker/Gateway 管理；它们不会进入 DSH Runner 或场景 Bundle。
+远程 Worker 的业务系统凭据和数据域控制由企业 Worker/Gateway 管理；业务凭据不会进入 Forge Runner 或场景 Bundle。Forge 到 Worker 的服务身份密钥由 Runner 环境提供，仅传入独立插件 Worker 进程，不传入 DSH 子进程。
+
+`authRef` 可选，必须是 `FORGE_PLUGIN_AUTH_` 开头的环境变量名。若填写，管理员将同一随机长密钥配置到 Forge Runner 和 Worker；Runner 只将匹配前缀的变量交给独立的插件 Worker 进程，调用时发送 `Authorization: Bearer <密钥>`。Manifest、ZIP 和 DSH 会话配置中不得出现密钥值。内网业务服务应放在受控 HTTPS 网关后；当前 Worker 仍拒绝直连本机与内网地址。
 
 ## 发布流程
 
-上传后插件版本处于“待审核”，无法被场景引用。管理员必须检查工具 Schema、权限、风险、远程域名和业务 Worker 后再批准。批准的版本可被场景选择；场景发布和会话创建都会固定版本与 ZIP 的 SHA-256。
+上传后插件版本处于“待审核”，无法被场景引用。管理员在详情页填写只读工具参数并经 Runner 实际试运行，检查工具 Schema、权限、风险、远程域名和业务 Worker 后批准。每个远程插件必须声明至少一个只读工具用于试运行。首个批准的版本成为默认版本；后续批准的新版本需要管理员明确设为默认，才会用于新发布场景。场景发布和会话创建都会固定版本与 ZIP 的 SHA-256；已发布场景不会因切换默认版本而自动升级。
 
 停用或撤销版本会阻止新会话使用，但不会删除历史场景 Bundle、会话事件或审计记录。
+
+开发示例见 [`examples/remote-plugin`](../examples/remote-plugin/README.md)。插件详情展示最近调用、各版本试运行状态和当前引用它的场景。运行时并不从 ZIP 执行任何代码；需先独立部署 Worker，再上传声明其契约的 ZIP。
 
 ## 原生 DeepSeek Harness 包
 

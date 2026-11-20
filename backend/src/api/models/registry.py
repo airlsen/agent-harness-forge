@@ -37,6 +37,9 @@ class PluginRegistry(Base):
     signature: Mapped[str] = mapped_column(String(128), default="")
     audit_status: Mapped[str] = mapped_column(String(16), default="pending")  # pending/approved/rejected
     enabled: Mapped[bool] = mapped_column(default=False, index=True)
+    is_default: Mapped[bool] = mapped_column(default=False, index=True)
+    last_tested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_test_error: Mapped[str] = mapped_column(String(512), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 

@@ -16,6 +16,8 @@ from src.api.services.plugin_service import (
     builtin_catalog,
     import_archive,
     review_release,
+    record_test,
+    set_default_release,
 )
 from src.api.services.scenario_assembler import (
     Bundle,
@@ -51,6 +53,7 @@ def approved_row(package, tools):
         tools_json=tools,
         audit_status="approved",
         enabled=True,
+        is_default=True,
     )
 
 
@@ -118,8 +121,12 @@ async def test_uploaded_release_is_immutable_and_becomes_scene_bindable_after_re
         imported = await import_archive(db, "acme.zip", archive)
         assert imported["auditStatus"] == "pending"
         assert imported["enabled"] is False
+        with pytest.raises(HTTPException, match="试运行"):
+            await review_release(db, imported["id"], "approved")
+        await record_test(db, await db.get(PluginRegistry, imported["id"]))
         approved = await review_release(db, imported["id"], "approved", "Network domain checked")
         assert approved["enabled"] is True
+        assert approved["isDefault"] is True
         binding = await approved_bindings(
             db,
             ["acme-contacts"],
@@ -127,6 +134,30 @@ async def test_uploaded_release_is_immutable_and_becomes_scene_bindable_after_re
         )
         assert binding[0]["execution"]["kind"] == "remote-worker"
         assert binding[0]["artifactHash"] == imported["artifactHash"]
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_new_release_does_not_silently_replace_active_plugin(monkeypatch, tmp_path):
+    monkeypatch.setattr("socket.getaddrinfo", public_dns)
+    monkeypatch.setattr(plugin_service, "ARTIFACT_ROOT", tmp_path / "artifacts")
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    async with sessions() as db:
+        first = await import_archive(db, "v1.zip", remote_archive(remote_manifest()))
+        await record_test(db, await db.get(PluginRegistry, first["id"]))
+        await review_release(db, first["id"], "approved")
+        second_manifest = {**remote_manifest(), "version": "2.0.0"}
+        second = await import_archive(db, "v2.zip", remote_archive(second_manifest))
+        await record_test(db, await db.get(PluginRegistry, second["id"]))
+        await review_release(db, second["id"], "approved")
+        binding = await approved_bindings(db, ["acme-contacts"], {"acme-contacts": ["acme_find_contact"]})
+        assert binding[0]["version"] == "1.2.3"
+        await set_default_release(db, second["id"])
+        binding = await approved_bindings(db, ["acme-contacts"], {"acme-contacts": ["acme_find_contact"]})
+        assert binding[0]["version"] == "2.0.0"
     await engine.dispose()
 
 

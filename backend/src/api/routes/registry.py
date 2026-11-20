@@ -10,9 +10,14 @@ from ..services.plugin_service import (
     MAX_ARCHIVE_BYTES,
     import_archive,
     list_plugins,
+    plugin_detail,
     review_release,
+    record_test,
+    set_default_release,
     set_release_enabled,
 )
+from ..services.runner_client import runner_client
+from ..models.registry import PluginRegistry
 from ..services.settings_service import TOOLS, list_connections
 from ..utils.response import ResponseUtil
 
@@ -30,6 +35,11 @@ async def plugins(db: AsyncSession = Depends(get_session)):
     return ResponseUtil.ok({"items": items, "submissions": submissions})
 
 
+@router.get("/plugins/{plugin_id}")
+async def plugin_releases(plugin_id: str, db: AsyncSession = Depends(get_session)):
+    return ResponseUtil.ok(await plugin_detail(db, plugin_id))
+
+
 class PluginReview(BaseModel):
     action: str = Field(pattern="^(approved|rejected)$")
     note: str = Field(default="", max_length=1024)
@@ -37,6 +47,51 @@ class PluginReview(BaseModel):
 
 class PluginEnabled(BaseModel):
     enabled: bool
+
+
+class PluginTest(BaseModel):
+    tool: str
+    arguments: dict = Field(default_factory=dict)
+
+
+@router.post("/plugins/{release_id}/test")
+async def plugin_test(release_id: int, payload: PluginTest, db: AsyncSession = Depends(get_session)):
+    row = await db.get(PluginRegistry, release_id)
+    if not row:
+        raise HTTPException(404, "插件版本不存在")
+    if row.runtime != "forge-remote-worker-v1":
+        raise HTTPException(422, "只有远程 Worker 插件支持在线试运行")
+    tool = next((item for item in row.tools_json if item.get("name") == payload.tool), None)
+    if not tool or tool.get("permission") != "read":
+        raise HTTPException(422, "请选择已声明的只读工具试运行")
+    binding = {
+        "package": row.plugin_id,
+        "version": row.version,
+        "artifactHash": row.artifact_hash,
+        "runtime": row.runtime,
+        "execution": row.execution_json,
+        "tools": [tool],
+    }
+    try:
+        result = await runner_client.call(
+            "POST",
+            "/v1/plugins/test",
+            {
+                "binding": binding,
+                "tool": payload.tool,
+                "arguments": payload.arguments,
+            },
+        )
+    except HTTPException as error:
+        await record_test(db, row, str(error.detail))
+        raise
+    await record_test(db, row)
+    return ResponseUtil.ok(result)
+
+
+@router.post("/plugins/{release_id}/default")
+async def plugin_default(release_id: int, db: AsyncSession = Depends(get_session)):
+    return ResponseUtil.ok(await set_default_release(db, release_id))
 
 
 @router.post("/plugins/upload")

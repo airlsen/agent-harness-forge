@@ -67,6 +67,9 @@ async def init_db() -> None:
                 "artifact_hash": "VARCHAR(128) NOT NULL DEFAULT ''",
                 "tools_json": "JSON NOT NULL DEFAULT '[]'",
                 "enabled": "BOOLEAN NOT NULL DEFAULT " + ("FALSE" if postgres else "0"),
+                "is_default": "BOOLEAN NOT NULL DEFAULT " + ("FALSE" if postgres else "0"),
+                "last_tested_at": "TIMESTAMP NULL",
+                "last_test_error": "VARCHAR(512) NOT NULL DEFAULT ''",
                 "plugin_id": "VARCHAR(128) NOT NULL DEFAULT ''",
                 "artifact_name": "VARCHAR(256) NOT NULL DEFAULT ''",
                 "artifact_bytes": "BIGINT NOT NULL DEFAULT 0",
@@ -78,6 +81,32 @@ async def init_db() -> None:
             for name, ddl in additions.items():
                 if name not in existing:
                     sync_conn.execute(text(f"ALTER TABLE plugin_registry ADD COLUMN {name} {ddl}"))
+            if "is_default" not in existing:
+                # Preserve the previously active release for existing installations once.
+                from ..services.plugin_service import _version_key
+
+                rows = (
+                    sync_conn.execute(
+                        text("""
+                    SELECT id, COALESCE(NULLIF(plugin_id, ''), package) AS plugin_id, version
+                    FROM plugin_registry WHERE audit_status = 'approved' AND enabled = TRUE
+                """)
+                    )
+                    .mappings()
+                    .all()
+                )
+                selected = {}
+                for row in rows:
+                    previous = selected.get(row["plugin_id"])
+                    if previous is None or (_version_key(row["version"]), row["id"]) > (
+                        _version_key(previous["version"]),
+                        previous["id"],
+                    ):
+                        selected[row["plugin_id"]] = row
+                for row in selected.values():
+                    sync_conn.execute(
+                        text("UPDATE plugin_registry SET is_default = TRUE WHERE id = :id"), {"id": row["id"]}
+                    )
             # P0 rows used package as the stable ID. Keep them addressable after adding release keys.
             sync_conn.execute(text("UPDATE plugin_registry SET plugin_id = package WHERE plugin_id = ''"))
 

@@ -14,7 +14,7 @@ type LeaseBinding = {
   artifactHash?: string;
   runtime?: string;
   tools?: { name?: string }[];
-  execution?: { kind?: string; endpoint?: string; networkDomains?: string[]; timeoutSeconds?: number };
+  execution?: { kind?: string; endpoint?: string; networkDomains?: string[]; timeoutSeconds?: number; authRef?: string };
 };
 type Lease = { sessionId: string; expiresAt: number; bindings?: LeaseBinding[] };
 type InvokeBody = {
@@ -164,12 +164,21 @@ async function invokeRemote(
   args: Record<string, unknown>,
 ) {
   const { endpoint, timeout } = await remoteEndpoint(execution);
+  const authRef = execution?.authRef;
+  if (authRef && !/^FORGE_PLUGIN_AUTH_[A-Z0-9_]{1,80}$/.test(authRef))
+    throw new Error('远程 Worker 认证引用无效');
+  const credential = authRef ? process.env[authRef] : undefined;
+  if (authRef && !credential) throw new Error('远程 Worker 认证未配置');
   const signal = AbortSignal.timeout(timeout * 1000);
   let response: Response;
   try {
     response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        ...(credential ? { authorization: `Bearer ${credential}` } : {}),
+      },
       body: JSON.stringify({ tool, arguments: args }),
       signal,
       redirect: 'error',

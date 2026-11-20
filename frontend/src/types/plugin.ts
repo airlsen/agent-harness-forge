@@ -22,10 +22,33 @@ export type PluginPackage = {
   artifactBytes: number;
   scanStatus: string;
   reviewNote: string;
-  execution: { kind?: string; endpoint?: string; networkDomains?: string[]; timeoutSeconds?: number };
+  execution: {
+    kind?: string;
+    endpoint?: string;
+    networkDomains?: string[];
+    timeoutSeconds?: number;
+    authRef?: string;
+  };
   extensionPoints: string[];
   permissions: string[];
   tools: PluginTool[];
   auditStatus: 'pending' | 'approved' | 'rejected' | string;
   enabled: boolean;
+  isDefault: boolean;
+  lastTestedAt: string | null;
+  lastTestError: string;
+};
+
+export type PluginDetail = {
+  id: string;
+  releases: PluginPackage[];
+  scenarios: { id: number; name: string; status: string; version: string; artifactHash: string }[];
+  recentCalls: {
+    sessionId: number;
+    tool: string;
+    version: string;
+    outcome: string;
+    elapsedMs: number;
+    createdAt: string | null;
+  }[];
 };

@@ -19,6 +19,9 @@ export class PluginWorkerClient {
         PATH: process.env.PATH ?? '',
         NODE_PATH: process.env.NODE_PATH,
         FORGE_PLUGIN_WORKER_SECRET: secret,
+        ...Object.fromEntries(
+          Object.entries(process.env).filter(([key]) => /^FORGE_PLUGIN_AUTH_[A-Z0-9_]+$/.test(key)),
+        ),
       },
       stdio: ['ignore', 'pipe', 'inherit'],
     });
@@ -55,6 +58,27 @@ export class PluginWorkerClient {
     ).toString('base64url');
     const signature = createHmac('sha256', this.secret).update(encoded).digest('base64url');
     return `${encoded}.${signature}`;
+  }
+
+  async test(binding: Record<string, unknown>, tool: string, args: Record<string, unknown>): Promise<unknown> {
+    const response = await fetch(`${this.url}/v1/invoke`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        lease: this.issueLease('plugin-test', [binding]),
+        binding: {
+          package: binding.package,
+          version: binding.version,
+          artifactHash: binding.artifactHash,
+          runtime: binding.runtime,
+        },
+        tool,
+        arguments: args,
+      }),
+    });
+    const body = (await response.json()) as { result?: unknown; message?: string };
+    if (!response.ok) throw new Error(body.message ?? '插件试运行失败');
+    return body.result;
   }
 
   async dispose(): Promise<void> {
