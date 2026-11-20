@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue';
-import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
+import {
+  isNavigationFailure,
+  onBeforeRouteLeave,
+  onBeforeRouteUpdate,
+  useRoute,
+  useRouter,
+} from 'vue-router';
 import { api, apiFetch, post, put } from '../../../api/client';
 import Icon from '../../../components/ForgeIcon.vue';
 import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
@@ -25,6 +31,7 @@ const isNew = computed(() => !route.params.id);
 const app = usePlatform();
 const skill = ref<SkillDetail | null>(null);
 let loadRequest = 0;
+let creatingSkillNavigationId: number | null = null;
 const revisions = ref<SkillRevision[]>([]);
 const session = ref<SkillAuthoringSession | null>(null);
 const messages = ref<SkillAuthoringMessage[]>([]);
@@ -199,14 +206,23 @@ async function save() {
   saveError.value = '';
   try {
     if (isNew.value) {
-      const created = await post<SkillDetail>('/skills', {
-        name: skill.value.name.trim(),
-        description: skill.value.description.trim(),
-        content: skill.value.content,
-      });
+      // 创建成功但地址切换失败时，重试只切换地址，不能再次创建一份 Skill。
+      const created = skill.value.id
+        ? skill.value
+        : await post<SkillDetail>('/skills', {
+            name: skill.value.name.trim(),
+            description: skill.value.description.trim(),
+            content: skill.value.content,
+          });
       skill.value = created;
       dirty.value = false;
-      await router.replace(`/agent/skills/${created.id}`);
+      creatingSkillNavigationId = created.id;
+      try {
+        const failure = await router.replace(`/agent/skills/${created.id}`);
+        if (isNavigationFailure(failure)) throw new Error('草稿已创建，但页面切换失败，请重试保存。');
+      } finally {
+        creatingSkillNavigationId = null;
+      }
       await refreshRevisions().catch((err: Error) =>
         app.toast(`草稿已保存，但历史读取失败：${err.message}`, 'error'),
       );
@@ -334,16 +350,23 @@ function useStarterPrompt(text: string) {
   prompt.value = text;
   void nextTick(() => promptInput.value?.focus());
 }
+const canSend = computed(
+  () =>
+    !!prompt.value.trim() &&
+    !!skill.value &&
+    !busy.value &&
+    !saving.value &&
+    !publishing.value &&
+    !uploadingReference.value &&
+    !metadataError.value,
+);
+function onPromptKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+  event.preventDefault();
+  if (canSend.value) void send();
+}
 async function send() {
-  if (
-    !prompt.value.trim() ||
-    busy.value ||
-    saving.value ||
-    publishing.value ||
-    uploadingReference.value ||
-    !skill.value
-  )
-    return;
+  if (!canSend.value || !skill.value) return;
   if (isNew.value && skill.value.name === '') {
     const title = prompt.value.trim().split('\n')[0]!.slice(0, 40);
     skill.value.content = updateSkillMetadata(skill.value.content, title, title, 'my-skill');
@@ -418,10 +441,14 @@ watch(
 onMounted(() => {
   void loadSkill({ focusAssistant: route.query.start === 'generate' });
 });
+function isCreatingSkillNavigation(to: { path: string }) {
+  return creatingSkillNavigationId !== null && to.path === `/agent/skills/${creatingSkillNavigationId}`;
+}
 onBeforeRouteUpdate((to) => {
   if (
-    skill.value &&
-    (Number(to.params.id) === skill.value.id || to.path === `/agent/skills/${skill.value.id}`)
+    isCreatingSkillNavigation(to) ||
+    (skill.value &&
+      (Number(to.params.id) === skill.value.id || to.path === `/agent/skills/${skill.value.id}`))
   ) {
     return true;
   }
@@ -434,8 +461,9 @@ onBeforeRouteUpdate((to) => {
 });
 onBeforeRouteLeave((to) => {
   if (
-    skill.value &&
-    (Number(to.params.id) === skill.value.id || to.path === `/agent/skills/${skill.value.id}`)
+    isCreatingSkillNavigation(to) ||
+    (skill.value &&
+      (Number(to.params.id) === skill.value.id || to.path === `/agent/skills/${skill.value.id}`))
   ) {
     return true;
   }
@@ -969,29 +997,51 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <form class="chat-composer" @submit.prevent="send">
-            <a-textarea
-              ref="promptInput"
-              v-model:value="prompt"
-              :auto-size="{ minRows: 3, maxRows: 8 }"
-              :maxlength="8000"
-              placeholder="描述你想创建或修改的内容…"
-              aria-label="给 Skill 助手的要求"
-              @keydown.ctrl.enter.prevent="send"
-              @keydown.meta.enter.prevent="send"
-            />
-            <div>
-              <span>{{ busy ? '完成后可继续发送' : 'Ctrl / ⌘ + Enter 发送' }}</span><a-button
-                type="primary"
-                size="small"
-                html-type="submit"
-                :loading="busy"
-                :disabled="
-                  !prompt.trim() || busy || saving || publishing || uploadingReference || !!metadataError
-                "
-                aria-label="发送"
-                ><Icon name="arrow-up-line" :size="16"
-              /></a-button>
+            <div class="composer-box">
+              <a-textarea
+                ref="promptInput"
+                v-model:value="prompt"
+                :auto-size="{ minRows: 2, maxRows: 6 }"
+                :maxlength="8000"
+                placeholder="描述你想创建或修改的内容…"
+                aria-label="给 Skill 助手的要求"
+                @keydown="onPromptKeydown"
+              />
+              <div class="composer-actions">
+                <a-upload
+                  accept=".md,.txt"
+                  :file-list="[]"
+                  :show-upload-list="false"
+                  :disabled="isNew || busy || saving || publishing || uploadingReference"
+                  :before-upload="beforeReferenceUpload"
+                  @reject="rejectReferenceFiles"
+                >
+                  <button
+                    type="button"
+                    class="composer-attach"
+                    :disabled="isNew || busy || saving || publishing || uploadingReference"
+                    :title="isNew ? '创建技能后可添加参考资料' : '添加 Markdown 或文本参考资料'"
+                    aria-label="添加参考资料"
+                  >
+                    <Icon name="paperclip" :size="15" />附件
+                  </button>
+                </a-upload>
+                <a-button
+                  class="composer-send"
+                  type="primary"
+                  shape="circle"
+                  html-type="submit"
+                  :loading="busy"
+                  :disabled="!canSend"
+                  aria-label="发送"
+                  title="发送"
+                  ><Icon name="arrow-up-line" :size="16"
+                /></a-button>
+              </div>
             </div>
+            <p class="composer-hint">
+              {{ busy ? '助手处理中，完成后可继续发送' : 'Enter 发送 · Shift+Enter 换行' }}
+            </p>
           </form>
         </aside>
       </div>
@@ -1546,24 +1596,84 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 .chat-composer {
-  padding: 12px;
-  background: var(--surface-shell);
-  border-top: none;
-}
-.chat-composer :deep(textarea.ant-input) {
-  font-size: 13px;
-  resize: none;
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 10px 12px max(8px, env(safe-area-inset-bottom));
   background: var(--surface-content);
+  border-top: 1px solid var(--border-default);
 }
-.chat-composer > div {
+.composer-box {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--surface-content);
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.composer-box:focus-within {
+  border-color: var(--color-brand-border);
+  box-shadow: 0 0 0 2px var(--color-brand-muted);
+}
+.composer-box :deep(textarea.ant-input) {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 11px 12px 4px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: none;
+  background: transparent;
+}
+.composer-box :deep(textarea.ant-input:focus) {
+  box-shadow: none;
+}
+.composer-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 8px;
+  gap: 8px;
+  padding: 0 8px 8px;
 }
-.chat-composer > div > span {
+.composer-attach {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 6px;
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.composer-attach:hover:not(:disabled) {
+  color: var(--color-brand);
+  background: var(--color-brand-muted);
+}
+.composer-attach:disabled {
   color: var(--color-text-tertiary);
-  font-size: 10px;
+  cursor: not-allowed;
+}
+.composer-attach:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+.composer-send {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.composer-hint {
+  margin: 6px 4px 0;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.4;
 }
 .history-row {
   padding: 16px 0;
