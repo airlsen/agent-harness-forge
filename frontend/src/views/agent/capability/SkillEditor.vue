@@ -13,6 +13,7 @@ import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
 import Markdown from '../../../components/MarkdownContent.vue';
 import { MarkdownPreview } from '../../../components/common';
 import CodeBlock from '../../../components/CodeBlock.vue';
+import { useCopy } from '../../../utils/useCopy';
 import MonacoEditor from '../../../components/MonacoEditor.vue';
 import { loadMonaco } from '../../../utils/monaco';
 import { lexer } from 'marked';
@@ -49,6 +50,7 @@ const assistantChange = ref('');
 // 本轮排队等待并发额度的位次；0 表示未排队。
 const queuePosition = ref(0);
 const previewRevision = ref<SkillRevision | null>(null);
+const { copied: revisionCopied, copy: copyRevision } = useCopy();
 const promptInput = ref<{ focus: () => void } | null>(null);
 
 const skillId = computed(() => Number(route.params.id));
@@ -1141,12 +1143,29 @@ onBeforeUnmount(() => {
     </a-drawer>
     <a-modal
       :open="!!previewRevision"
-      title="修订内容"
-      :width="800"
+      :title="previewRevision ? `r${previewRevision.revision} · 版本内容` : '版本内容'"
+      :width="840"
       :footer="null"
+      class="history-preview-modal"
       @cancel="previewRevision = null"
-      ><CodeBlock v-if="previewRevision" :code="previewRevision.content" lang="markdown"
-    /></a-modal>
+    >
+      <div v-if="previewRevision" class="history-preview">
+        <div class="history-preview-header">
+          <div class="history-preview-info">
+            <span v-if="previewRevision.publishedVersion" class="history-tag history-tag-published">
+              发布 v{{ previewRevision.publishedVersion }}
+            </span>
+            <span>{{ revisionSource(previewRevision.source) }}</span>
+            <span>{{ formatDate(previewRevision.createdAt) }}</span>
+          </div>
+          <a-button type="text" size="small" @click="copyRevision(previewRevision.content)">
+            {{ revisionCopied ? '已复制' : '复制源码' }}
+          </a-button>
+        </div>
+        <p class="history-preview-summary">{{ previewRevision.changeSummary }}</p>
+        <pre class="history-preview-content"><code>{{ previewRevision.content }}</code></pre>
+      </div>
+    </a-modal>
     <a-drawer :open="changesOpen" title="本次修改 · SKILL.md" :width="760" @close="changesOpen = false"
       ><template v-if="lastChange"
         ><h3>修改前 · r{{ lastChange.before.revision }}</h3>
@@ -1857,6 +1876,53 @@ onBeforeUnmount(() => {
   text-align: center;
   color: var(--color-text-tertiary);
   font-size: 13px;
+}
+.history-preview {
+  min-width: 0;
+}
+.history-preview-header,
+.history-preview-info {
+  display: flex;
+  align-items: center;
+}
+.history-preview-header {
+  justify-content: space-between;
+  gap: 12px;
+}
+.history-preview-info {
+  gap: 10px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+.history-preview-header :deep(.ant-btn) {
+  flex-shrink: 0;
+  color: var(--color-brand);
+  font-size: 12px;
+}
+.history-preview-summary {
+  margin: 6px 0 16px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+.history-preview-content {
+  box-sizing: border-box;
+  max-height: min(65vh, 660px);
+  margin: 0;
+  padding: 20px 24px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--surface-shell);
+  color: var(--color-text-primary);
+  font-family: Consolas, 'SFMono-Regular', Menlo, monospace;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+}
+.history-preview-content code {
+  font: inherit;
 }
 @media (hover: none) {
   .history-restore {
