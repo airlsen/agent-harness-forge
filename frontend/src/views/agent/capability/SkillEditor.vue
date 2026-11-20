@@ -1107,33 +1107,38 @@ onBeforeUnmount(() => {
           ><a-input v-model:value="info.name" :maxlength="64" :disabled="saving" /></a-form-item></a-form
       ><a-alert v-if="infoError || saveError" type="error" :message="infoError || saveError" show-icon />
     </a-modal>
-    <a-drawer :open="historyOpen" title="版本历史" :width="480" @close="historyOpen = false"
-      ><div v-for="revision in revisions" :key="revision.id" class="history-row">
-        <strong
-          >r{{ revision.revision }}
-          {{ revision.publishedVersion ? `· v${revision.publishedVersion}` : '' }}</strong
-        >
-        <p>{{ revision.changeSummary }}</p>
-        <small>{{ revisionSource(revision.source) }} · {{ formatDate(revision.createdAt) }}</small>
-        <div>
-          <a-button type="text" size="small" @click="previewRevision = revision">查看</a-button
-          ><a-button
-            type="text"
-            size="small"
-            :disabled="
-              busy ||
-              saving ||
-              dirty ||
-              publishing ||
-              uploadingReference ||
-              revision.id === skill?.currentRevisionId
-            "
-            @click="requestRestore(revision)"
-            >恢复为草稿</a-button
-          >
+    <a-drawer :open="historyOpen" title="版本历史" :width="480" @close="historyOpen = false">
+      <div v-if="!revisions.length" class="history-empty">暂无版本记录</div>
+      <div v-else class="history-list">
+        <div v-for="revision in revisions" :key="revision.id" class="history-row">
+          <div class="history-heading">
+            <div class="history-identity">
+              <strong>r{{ revision.revision }}</strong>
+              <span v-if="revision.id === skill?.currentRevisionId" class="history-tag">当前</span>
+              <span v-if="revision.publishedVersion" class="history-tag history-tag-published">
+                发布 v{{ revision.publishedVersion }}
+              </span>
+            </div>
+            <time class="history-time">{{ formatDate(revision.createdAt) }}</time>
+          </div>
+          <p class="history-summary">{{ revision.changeSummary }}</p>
+          <div class="history-footer">
+            <span class="history-source">{{ revisionSource(revision.source) }}</span>
+            <div class="history-actions">
+              <a-button type="text" size="small" @click="previewRevision = revision">查看</a-button>
+              <a-button
+                v-if="revision.id !== skill?.currentRevisionId"
+                class="history-restore"
+                type="text"
+                size="small"
+                :disabled="busy || saving || dirty || publishing || uploadingReference"
+                @click="requestRestore(revision)"
+              >恢复为草稿</a-button>
+            </div>
+          </div>
         </div>
-      </div></a-drawer
-    >
+      </div>
+    </a-drawer>
     <a-modal
       :open="!!previewRevision"
       title="修订内容"
@@ -1764,19 +1769,100 @@ onBeforeUnmount(() => {
   font-size: 11px;
   line-height: 1.4;
 }
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: -8px;
+}
 .history-row {
-  padding: 16px 0;
-  border-bottom: 1px solid var(--border-default);
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--surface-content);
+  font-size: 13px;
+  transition: background-color 0.15s;
+}
+.history-row:hover,
+.history-row:focus-within {
+  background: var(--color-brand-subtle);
+}
+.history-heading,
+.history-identity,
+.history-footer,
+.history-actions {
+  display: flex;
+  align-items: center;
+}
+.history-heading,
+.history-footer {
+  justify-content: space-between;
+  gap: 12px;
+}
+.history-identity {
+  min-width: 0;
+  gap: 7px;
+}
+.history-identity strong {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.history-tag {
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  background: var(--surface-shell);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.history-tag-published {
+  color: var(--color-brand-active);
+  background: var(--color-brand-muted);
+}
+.history-time,
+.history-source {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.history-summary {
+  display: -webkit-box;
+  margin: 8px 0 4px;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.history-actions {
+  flex-shrink: 0;
+  gap: 2px;
+}
+.history-actions :deep(.ant-btn) {
+  padding-inline: 6px;
+  font-size: 12px;
+}
+.history-restore {
+  opacity: 0;
+  pointer-events: none;
+}
+.history-row:hover .history-restore,
+.history-row:focus-within .history-restore {
+  opacity: 1;
+  pointer-events: auto;
+}
+.history-empty {
+  padding: 32px 12px;
+  text-align: center;
+  color: var(--color-text-tertiary);
   font-size: 13px;
 }
-.history-row p {
-  margin: 6px 0;
-}
-.history-row small {
-  color: var(--color-text-tertiary);
-}
-.history-row > div {
-  margin-top: 8px;
+@media (hover: none) {
+  .history-restore {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 @media (max-width: 1150px) {
   .studio-workspace {
