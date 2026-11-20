@@ -740,7 +740,6 @@ onBeforeUnmount(() => {
           >
           <a-button
             type="primary"
-            size="small"
             :disabled="
               busy ||
               saving ||
@@ -752,7 +751,7 @@ onBeforeUnmount(() => {
             :loading="publishing"
             @click="requestPublish"
           >
-            <template #icon><Icon name="check" :size="14" /></template>
+            <template #icon><Icon name="bolt" :size="14" /></template>
             {{ skill.publishedVersion ? '发布新版本' : '发布' }}
           </a-button>
         </div>
@@ -1613,10 +1612,20 @@ onBeforeUnmount(() => {
 }
 .chat-message.user {
   margin-left: 20px;
-  padding: 12px 14px;
-  background: var(--surface-shell);
+  padding: 8px 12px;
+  background: var(--accent);
+  color: #fff;
   border-radius: 10px;
   border: none;
+}
+.chat-message.user :deep(.markdown-body),
+.chat-message.user :deep(.markdown-body h1),
+.chat-message.user :deep(.markdown-body h2),
+.chat-message.user :deep(.markdown-body h3) {
+  color: #fff;
+}
+.chat-message.user :deep(.markdown-body a) {
+  color: #fff;
 }
 .chat-message :deep(.markdown-body) {
   color: var(--color-text-primary);
