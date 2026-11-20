@@ -123,6 +123,11 @@ defineProps<{
   flex-shrink: 0;
   margin: 7px 0 0;
 }
+/* 技能发布状态使用项目语义色阶，不依赖 Ant Design 自动推色。 */
+.skill-card .catalog-card-status.ant-tag-success {
+  color: var(--color-success-text);
+  background: var(--color-success-bg);
+}
 .catalog-card-desc {
   /* 固定两行：描述长短不一时同一行卡片仍等高 */
   display: -webkit-box;
