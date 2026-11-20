@@ -679,8 +679,10 @@ onBeforeUnmount(() => {
             "
             :loading="publishing"
             @click="requestPublish"
-            >{{ skill.publishedVersion ? '发布新版本' : '发布' }}</a-button
           >
+            <template #icon><Icon name="check" :size="14" /></template>
+            {{ skill.publishedVersion ? '发布新版本' : '发布' }}
+          </a-button>
         </div>
       </header>
       <div v-if="saveError || metadataError" class="studio-error" role="alert">
@@ -1116,6 +1118,14 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   margin-left: auto;
+  flex-shrink: 0;
+}
+.topbar-actions :deep(.ant-btn) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.topbar-actions :deep(.ant-btn > svg) {
   flex-shrink: 0;
 }
 .studio-error {
