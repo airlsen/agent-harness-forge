@@ -221,10 +221,10 @@ const buildRenderer = () => {
           </div>
           <div class="md-code-actions">
             <button class="md-action-btn md-copy-btn" data-copy-id="${id}" title="复制代码" type="button">
-              <span class="md-icon copy-icon">⧉</span><span class="md-icon check-icon" style="display:none">✓</span>
+              <span class="md-icon copy-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></span><span class="md-icon check-icon" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
               <span class="md-btn-text">复制</span>
             </button>
-            <button class="md-action-btn md-expand-btn" data-expand-id="${id}" title="展开/收起" type="button">↕</button>
+            <button class="md-action-btn md-expand-btn" data-expand-id="${id}" title="展开/收起" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg></button>
           </div>
         </div>
         <div class="md-code-content" id="wrap-${id}">
@@ -284,14 +284,14 @@ const buildRenderer = () => {
     let attrs = '';
     if (isExternal) {
       cls += ' is-external';
-      icon = `<span class="md-link-icon">↗</span>`;
+      icon = `<span class="md-link-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>`;
       attrs = ' target="_blank" rel="noopener noreferrer" data-external="true"';
     } else if (isEmail) {
       cls += ' is-email';
-      icon = `<span class="md-link-icon">✉</span>`;
+      icon = `<span class="md-link-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg></span>`;
     } else if (isFile) {
       cls += ' is-file';
-      icon = `<span class="md-link-icon">⬇</span>`;
+      icon = `<span class="md-link-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></span>`;
       attrs = ' target="_blank" rel="noopener noreferrer"';
     }
     return `<a href="${escapeHtml(href)}"${titleAttr}${attrs} class="${cls}">${text}${icon}</a>`;
@@ -314,21 +314,26 @@ const buildRenderer = () => {
     let type = 'default';
     let icon = '';
     const lower = quote.toLowerCase();
-    if (quote.includes('📝') || lower.includes('note')) {
+    if (lower.includes('note') || lower.includes('[!note]')) {
       type = 'note';
-      icon = '<span class="md-quote-icon">📝</span>';
-    } else if (quote.includes('⚠️') || lower.includes('warning')) {
+      icon =
+        '<span class="md-quote-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></span>';
+    } else if (lower.includes('warning') || lower.includes('[!warning]')) {
       type = 'warning';
-      icon = '<span class="md-quote-icon">⚠️</span>';
-    } else if (quote.includes('💡') || lower.includes('tip')) {
+      icon =
+        '<span class="md-quote-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></span>';
+    } else if (lower.includes('tip') || lower.includes('[!tip]')) {
       type = 'tip';
-      icon = '<span class="md-quote-icon">💡</span>';
-    } else if (quote.includes('❌') || lower.includes('error')) {
+      icon =
+        '<span class="md-quote-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path><path d="M9 18h6"></path><path d="M10 22h4"></path></svg></span>';
+    } else if (lower.includes('error') || lower.includes('[!error]')) {
       type = 'error';
-      icon = '<span class="md-quote-icon">❌</span>';
-    } else if (quote.includes('ℹ️') || lower.includes('info')) {
+      icon =
+        '<span class="md-quote-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg></span>';
+    } else if (lower.includes('info') || lower.includes('[!info]')) {
       type = 'info';
-      icon = '<span class="md-quote-icon">ℹ️</span>';
+      icon =
+        '<span class="md-quote-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></span>';
     }
     return `<blockquote class="md-quote md-quote-${type}">${icon}<div class="md-quote-content">${quote}</div></blockquote>`;
   };
@@ -422,7 +427,7 @@ const updateRenderedContent = async () => {
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : '未知错误';
     const stack = error instanceof Error ? error.stack || '' : '';
-    renderedContent.value = `<div class="md-render-error"><div class="md-error-icon">⚠️</div><div class="md-error-body"><h4>渲染错误</h4><p>${escapeHtml(msg)}</p><details><summary>详细信息</summary><pre>${escapeHtml(stack)}</pre></details></div></div>`;
+    renderedContent.value = `<div class="md-render-error"><div class="md-error-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div><div class="md-error-body"><h4>渲染错误</h4><p>${escapeHtml(msg)}</p><details><summary>详细信息</summary><pre>${escapeHtml(stack)}</pre></details></div></div>`;
   }
 };
 
@@ -471,7 +476,9 @@ const bindInteractivity = () => {
       if (!wrap) return;
       wrap.classList.toggle('is-expanded');
       const expanded = wrap.classList.contains('is-expanded');
-      btn.textContent = expanded ? '收起' : '↕';
+      btn.innerHTML = expanded
+        ? '收起'
+        : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>';
       btn.title = expanded ? '收起' : '展开';
     };
   });

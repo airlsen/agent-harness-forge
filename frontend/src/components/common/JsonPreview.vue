@@ -5,16 +5,16 @@
  * 能力：折叠/展开、类型徽标、统计、搜索高亮、复制、全展/收起
  * 主题：黄色系 #eab308，与 MarkdownPreview 保持一致
  */
-import { ref, computed, watch, defineComponent, h } from 'vue'
-import { useCopy } from '../../utils/useCopy'
+import { ref, computed, watch, defineComponent, h } from 'vue';
+import { useCopy } from '../../utils/useCopy';
 
 interface Props {
-  data: unknown
-  rootName?: string
-  expanded?: boolean
-  showType?: boolean
-  maxHeight?: string
-  searchable?: boolean
+  data: unknown;
+  rootName?: string;
+  expanded?: boolean;
+  showType?: boolean;
+  maxHeight?: string;
+  searchable?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -23,71 +23,72 @@ const props = withDefaults(defineProps<Props>(), {
   showType: false,
   maxHeight: '',
   searchable: true,
-})
+});
 
-const expandedNodes = ref<Set<string>>(new Set())
-const search = ref('')
-const copiedPath = ref<string>('')
+const expandedNodes = ref<Set<string>>(new Set());
+const search = ref('');
+const copiedPath = ref<string>('');
 
-const { copied, copy } = useCopy()
+const { copied, copy } = useCopy();
 
 const jsonString = computed(() => {
   try {
-    return JSON.stringify(props.data, null, 2)
+    return JSON.stringify(props.data, null, 2);
   } catch {
-    return String(props.data)
+    return String(props.data);
   }
-})
+});
 const totalKeys = computed(() => {
-  if (props.data && typeof props.data === 'object') return Object.keys(props.data as Record<string, unknown>).length
-  return 0
-})
+  if (props.data && typeof props.data === 'object')
+    return Object.keys(props.data as Record<string, unknown>).length;
+  return 0;
+});
 const sizeLabel = computed(() => {
-  const bytes = new Blob([jsonString.value]).size
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-})
+  const bytes = new Blob([jsonString.value]).size;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+});
 
-if (props.expanded) expandedNodes.value.add('root')
+if (props.expanded) expandedNodes.value.add('root');
 
 watch(
   () => props.expanded,
   (v: boolean) => {
-    if (v) expandedNodes.value.add('root')
-    else expandedNodes.value.delete('root')
+    if (v) expandedNodes.value.add('root');
+    else expandedNodes.value.delete('root');
   },
-)
+);
 
 const handleToggle = (path: string) => {
-  if (expandedNodes.value.has(path)) expandedNodes.value.delete(path)
-  else expandedNodes.value.add(path)
-}
+  if (expandedNodes.value.has(path)) expandedNodes.value.delete(path);
+  else expandedNodes.value.add(path);
+};
 
 const expandAll = () => {
   const collect = (val: unknown, path: string) => {
     if (val !== null && typeof val === 'object') {
-      expandedNodes.value.add(path)
-      if (Array.isArray(val)) val.forEach((item, i) => collect(item, `${path}.${i}`))
-      else Object.entries(val as Record<string, unknown>).forEach(([k, v]) => collect(v, `${path}.${k}`))
+      expandedNodes.value.add(path);
+      if (Array.isArray(val)) val.forEach((item, i) => collect(item, `${path}.${i}`));
+      else Object.entries(val as Record<string, unknown>).forEach(([k, v]) => collect(v, `${path}.${k}`));
     }
-  }
-  collect(props.data, props.rootName)
-}
-const collapseAll = () => expandedNodes.value.clear()
+  };
+  collect(props.data, props.rootName);
+};
+const collapseAll = () => expandedNodes.value.clear();
 
 const copyJson = async () => {
-  await copy(jsonString.value)
-}
+  await copy(jsonString.value);
+};
 const copyNode = async (path: string, value: unknown) => {
   try {
-    await copy(JSON.stringify(value, null, 2))
-    copiedPath.value = path
-    setTimeout(() => (copiedPath.value = ''), 1400)
+    await copy(JSON.stringify(value, null, 2));
+    copiedPath.value = path;
+    setTimeout(() => (copiedPath.value = ''), 1400);
   } catch {
     // ignore
   }
-}
+};
 
 const themeStyle = {
   '--jp-primary': '#eab308',
@@ -96,7 +97,7 @@ const themeStyle = {
   '--jp-primary-muted': '#fefce8',
   '--jp-primary-border': '#fde68a',
   '--jp-primary-ring': 'rgba(234,179,8,0.32)',
-} as Record<string, string>
+} as Record<string, string>;
 
 // 递归子组件（局部定义，避免单文件双 script setup 冲突）
 const JsonNode = defineComponent({
@@ -112,20 +113,20 @@ const JsonNode = defineComponent({
   },
   emits: ['toggle', 'copy'],
   setup(p, { emit }) {
-    const nodePath = computed(() => (p.path ? `${p.path}.${p.name}` : p.name))
-    const isExpanded = computed(() => (p.expandedSet as Set<string>).has(nodePath.value))
+    const nodePath = computed(() => (p.path ? `${p.path}.${p.name}` : p.name));
+    const isExpanded = computed(() => (p.expandedSet as Set<string>).has(nodePath.value));
     const dataType = computed(() => {
-      if (p.data === null) return 'null'
-      if (Array.isArray(p.data)) return 'array'
-      return typeof p.data
-    })
-    const isExpandable = computed(() => dataType.value === 'object' || dataType.value === 'array')
+      if (p.data === null) return 'null';
+      if (Array.isArray(p.data)) return 'array';
+      return typeof p.data;
+    });
+    const isExpandable = computed(() => dataType.value === 'object' || dataType.value === 'array');
     const childCount = computed(() => {
-      const d = p.data as Record<string, unknown> & unknown[]
-      if (dataType.value === 'array') return (d as unknown[]).length
-      if (dataType.value === 'object') return Object.keys(d as Record<string, unknown>).length
-      return 0
-    })
+      const d = p.data as Record<string, unknown> & unknown[];
+      if (dataType.value === 'array') return (d as unknown[]).length;
+      if (dataType.value === 'object') return Object.keys(d as Record<string, unknown>).length;
+      return 0;
+    });
     const typeColor = (t: string) => {
       const m: Record<string, string> = {
         string: '#16a34a',
@@ -135,33 +136,43 @@ const JsonNode = defineComponent({
         undefined: '#6b7280',
         object: '#a16207',
         array: '#ca8a04',
-      }
-      return m[t] || '#6b7280'
-    }
+      };
+      return m[t] || '#6b7280';
+    };
     const displayValue = (v: unknown) => {
-      if (v === null) return 'null'
-      if (v === undefined) return 'undefined'
-      if (typeof v === 'string') return `"${v}"`
-      return String(v)
-    }
+      if (v === null) return 'null';
+      if (v === undefined) return 'undefined';
+      if (typeof v === 'string') return `"${v}"`;
+      return String(v);
+    };
     const highlightName = computed(() => {
-      if (!p.search) return p.name
-      const idx = p.name.toLowerCase().indexOf(p.search.toLowerCase())
-      if (idx === -1) return p.name
-      const before = p.name.slice(0, idx)
-      const hit = p.name.slice(idx, idx + p.search.length)
-      const after = p.name.slice(idx + p.search.length)
-      return `${before}<mark class="jp-hit">${hit}</mark>${after}`
-    })
+      if (!p.search) return p.name;
+      const idx = p.name.toLowerCase().indexOf(p.search.toLowerCase());
+      if (idx === -1) return p.name;
+      const before = p.name.slice(0, idx);
+      const hit = p.name.slice(idx, idx + p.search.length);
+      const after = p.name.slice(idx + p.search.length);
+      return `${before}<mark class="jp-hit">${hit}</mark>${after}`;
+    });
     const toggle = () => {
-      if (isExpandable.value) emit('toggle', nodePath.value)
-    }
-    return { nodePath, isExpanded, dataType, isExpandable, childCount, typeColor, displayValue, highlightName, toggle }
+      if (isExpandable.value) emit('toggle', nodePath.value);
+    };
+    return {
+      nodePath,
+      isExpanded,
+      dataType,
+      isExpandable,
+      childCount,
+      typeColor,
+      displayValue,
+      highlightName,
+      toggle,
+    };
   },
   template: `
     <div :class="['jp-node', 'jp-' + dataType]" :style="{ paddingLeft: level * 14 + 'px' }">
       <div class="jp-header" @click="toggle">
-        <span v-if="isExpandable" :class="['jp-arrow', { 'is-open': isExpanded }]">▶</span>
+        <span v-if="isExpandable" :class="['jp-arrow', { 'is-open': isExpanded }]"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
         <span v-else class="jp-arrow ph"></span>
         <span class="jp-name" v-html="highlightName"></span>
         <span v-if="showType" class="jp-type" :style="{ color: typeColor(dataType), borderColor: typeColor(dataType) + '33', background: typeColor(dataType) + '12' }">{{ dataType }}</span>
@@ -169,7 +180,7 @@ const JsonNode = defineComponent({
         <span v-if="!isExpandable" class="jp-value" :style="{ color: typeColor(dataType) }">{{ displayValue(data) }}</span>
         <span v-else-if="!isExpanded" class="jp-preview">{{ dataType === 'array' ? '[' + childCount + ']' : '{' + childCount + '}' }}</span>
         <span class="jp-actions" @click.stop>
-          <button class="jp-mini-btn" type="button" @click="$emit('copy', nodePath, data)" title="复制此节点">⧉</button>
+          <button class="jp-mini-btn" type="button" @click="$emit('copy', nodePath, data)" title="复制此节点"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
         </span>
       </div>
       <div v-if="isExpandable && isExpanded" class="jp-children">
@@ -206,7 +217,7 @@ const JsonNode = defineComponent({
       </div>
     </div>
   `,
-})
+});
 </script>
 
 <template>
@@ -215,7 +226,10 @@ const JsonNode = defineComponent({
       <div class="jp-title">
         <span class="jp-badge">{ }</span>
         <strong>{{ rootName }}</strong>
-        <span class="jp-meta">{{ Array.isArray(data) ? 'Array[' + totalKeys + ']' : 'Object{' + totalKeys + '}' }} · {{ sizeLabel }}</span>
+        <span class="jp-meta"
+          >{{ Array.isArray(data) ? 'Array[' + totalKeys + ']' : 'Object{' + totalKeys + '}' }} ·
+          {{ sizeLabel }}</span
+        >
       </div>
       <div class="jp-tools">
         <div v-if="searchable" class="jp-search">
