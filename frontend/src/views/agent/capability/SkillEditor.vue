@@ -14,6 +14,7 @@ import Markdown from '../../../components/MarkdownContent.vue';
 import { MarkdownPreview } from '../../../components/common';
 import CodeBlock from '../../../components/CodeBlock.vue';
 import MonacoEditor from '../../../components/MonacoEditor.vue';
+import { loadMonaco } from '../../../utils/monaco';
 import { lexer } from 'marked';
 import { readSkillDocument, updateSkillMetadata, initialSkillDocument } from '../../../utils/skillDocument';
 import { usePlatform } from '../../../stores/platform';
@@ -143,28 +144,44 @@ async function loadSkill(options: { focusAssistant?: boolean; quiet?: boolean } 
   if (!options.quiet) loading.value = true;
   error.value = '';
   try {
-    const [detail, revisionResult, latestSession] = await Promise.all([
-      api<SkillDetail>(`/skills/${id}`),
+    // 附属信息并行读取，技能正文先显示，不必等待历史会话接口。
+    const secondary = Promise.allSettled([
       api<{ items: SkillRevision[] }>(`/skills/${id}/revisions`),
       api<SkillAuthoringSession | null>(`/skills/${id}/authoring-session/latest`),
     ]);
+    const detail = await api<SkillDetail>(`/skills/${id}`);
     if (request !== loadRequest) return;
     skill.value = detail;
     saveError.value = '';
     metadataError.value = '';
-    revisions.value = revisionResult.items;
-    session.value = options.quiet ? latestSession : null;
-    const latestMessages = latestSession?.messages ?? [];
-    messages.value = options.quiet
-      ? [
-          ...messages.value.filter(
-            (message) =>
-              typeof message.id === 'number' && !latestMessages.some((latest) => latest.id === message.id),
-          ),
-          ...latestMessages,
-        ]
-      : latestMessages;
+    if (!options.quiet) {
+      revisions.value = [];
+      session.value = null;
+      messages.value = [];
+    }
     dirty.value = false;
+    void secondary.then(([revisionResult, sessionResult]) => {
+      if (request !== loadRequest || skill.value?.id !== id) return;
+      if (revisionResult.status === 'fulfilled') revisions.value = revisionResult.value.items;
+      if (sessionResult.status === 'fulfilled') {
+        const latestSession = sessionResult.value;
+        if (options.quiet) session.value = latestSession;
+        const latestMessages = latestSession?.messages ?? [];
+        messages.value =
+          options.quiet || messages.value.length > 0
+            ? [
+                ...messages.value.filter(
+                  (message) =>
+                    typeof message.id !== 'number' ||
+                    !latestMessages.some((latest) => latest.id === message.id),
+                ),
+                ...latestMessages,
+              ]
+            : latestMessages;
+      }
+      if (revisionResult.status === 'rejected' || sessionResult.status === 'rejected')
+        app.toast('修订记录或历史会话暂时未能读取', 'error');
+    });
     if (options.focusAssistant || isNew.value || route.query.start === 'generate') {
       await nextTick();
       promptInput.value?.focus();
@@ -439,6 +456,8 @@ watch(
   },
 );
 onMounted(() => {
+  // 与技能详情请求同时加载，编辑器挂载时复用同一加载任务。
+  void loadMonaco().catch(() => {});
   void loadSkill({ focusAssistant: route.query.start === 'generate' });
 });
 function isCreatingSkillNavigation(to: { path: string }) {
@@ -475,14 +494,11 @@ onBeforeRouteLeave((to) => {
   return confirm({ title: '当前草稿有未保存的修改，确定离开吗？', okText: '离开', cancelText: '留下' });
 });
 
-const mode = ref<'preview' | 'source'>('preview');
+const mode = ref<'preview' | 'source'>('source');
 const selectedFile = ref(-1);
-const sourceOpened = ref(false);
+const sourceOpened = ref(true);
 const previewPane = ref<HTMLElement>();
 const previewScroll = new Map<string, number>();
-watch(mode, (value) => {
-  if (value === 'source') sourceOpened.value = true;
-});
 const referenceContent = ref('');
 const referenceLoading = ref(false);
 const referenceError = ref('');
