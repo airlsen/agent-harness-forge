@@ -103,7 +103,7 @@ watch(
   <main class="page-content enterprise-page published-skill-page">
     <div class="published-skill-inner">
       <RouterLink class="published-back" to="/agent/capabilities?tab=skills">
-        <Icon name="arrow-left-line" :size="16" />技能管理
+        <Icon name="ri-arrow-go-back-fill" :size="16" />技能管理
       </RouterLink>
 
       <div v-if="loading" class="loading-inline" role="status">

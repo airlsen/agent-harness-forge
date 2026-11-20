@@ -710,7 +710,7 @@ onBeforeUnmount(() => {
     <template v-else-if="skill">
       <header class="studio-topbar">
         <RouterLink to="/agent/skills" class="studio-back"
-          ><Icon name="arrow-left-line" :size="16" /><span>我的技能</span></RouterLink
+          ><Icon name="ri-arrow-go-back-fill" :size="16" /><span>我的技能</span></RouterLink
         >
         <span class="topbar-divider">/</span>
         <button

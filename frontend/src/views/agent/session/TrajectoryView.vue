@@ -49,7 +49,7 @@ onMounted(load);
   <main class="page-content trajectory-page">
     <div class="enterprise-page-inner">
       <RouterLink to="/agent/audit" class="back-link"
-        ><Icon name="arrowLeft" :size="15" />返回审计中心</RouterLink
+        ><Icon name="ri-arrow-go-back-fill" :size="15" />返回审计中心</RouterLink
       >
       <div class="page-heading">
         <div>

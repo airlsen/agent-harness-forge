@@ -93,7 +93,9 @@ watch(() => route.params.id, load, { immediate: true });
 
 <template>
   <main class="plugin-detail-page">
-    <RouterLink class="plugin-back" to="/agent/capabilities?tab=plugins">← 插件管理</RouterLink>
+    <RouterLink class="plugin-back" to="/agent/capabilities?tab=plugins"
+      ><Icon name="ri-arrow-go-back-fill" :size="16" />插件管理</RouterLink
+    >
     <a-spin v-if="loading && !detail" />
     <a-alert v-else-if="error" type="error" :message="error" show-icon />
     <template v-if="detail">
@@ -242,6 +244,9 @@ watch(() => route.params.id, load, { immediate: true });
   color: var(--color-text-primary);
 }
 .plugin-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   color: var(--color-text-secondary);
 }
 .plugin-heading {
