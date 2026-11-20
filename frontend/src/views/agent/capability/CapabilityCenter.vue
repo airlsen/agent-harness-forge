@@ -627,7 +627,6 @@ onMounted(load);
           <header class="capability-section-head">
             <h2>业务插件</h2>
             <span>{{ pluginRows.length }} 个插件 · {{ pendingPluginCount }} 个待审核版本</span>
-            <p>先部署 Worker，再上传插件清单；在详情页试运行并发布版本。</p>
           </header>
           <div class="plugin-filters" role="group" aria-label="插件状态筛选">
             <button
