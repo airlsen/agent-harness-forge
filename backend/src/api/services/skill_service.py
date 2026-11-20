@@ -1,14 +1,17 @@
 """Skill lifecycle. Content is immutable per revision; AI may only update drafts."""
 
 import hashlib
+import io
 import re
 import secrets
+import shutil
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
@@ -118,10 +121,43 @@ def _revision_view(row: SkillRevision) -> dict:
     }
 
 
-def _skill_view(row: Skill, revision: SkillRevision | None = None) -> dict:
+def _machine_name(revision: SkillRevision | None) -> str:
+    if revision:
+        try:
+            name = parse_skill_document(revision.content)[0].get("name")
+            return name if isinstance(name, str) else ""
+        except ValueError:
+            pass
+    return ""
+
+
+def _published_metadata(revision: SkillRevision | None) -> dict:
+    if not revision:
+        return {}
+    try:
+        front, body = parse_skill_document(revision.content)
+        if not front.get("title"):
+            heading = re.search(r"^# (.+)$", body, re.M)
+            if heading:
+                front["title"] = heading.group(1).strip()
+        return front
+    except ValueError:
+        return {}
+
+
+def _skill_view(
+    row: Skill, revision: SkillRevision | None = None, published: SkillRevision | None = None
+) -> dict:
+    published_revision = published or (revision if revision and revision.id == row.published_revision_id else None)
+    published_metadata = _published_metadata(published_revision)
     return {
         "id": row.id,
         "name": row.name,
+        "machineName": _machine_name(revision),
+        "publishedMachineName": _machine_name(published_revision),
+        "publishedName": published_metadata.get("title") or (row.name if published_revision else ""),
+        "publishedDescription": published_metadata.get("description") or (row.description if published_revision else ""),
+        "publishedReferenceCount": len(published_revision.reference_files or []) if published_revision else 0,
         "description": row.description,
         "status": row.status,
         "tags": row.tags or [],
@@ -154,14 +190,74 @@ async def list_skills(db: AsyncSession) -> list[dict]:
     rows = (await db.scalars(select(Skill).order_by(Skill.updated_at.desc(), Skill.id.desc()))).all()
     result = []
     for row in rows:
-        result.append(_skill_view(row, await _current_revision(db, row)))
+        current = await _current_revision(db, row)
+        published = await db.get(SkillRevision, row.published_revision_id) if row.published_revision_id else None
+        result.append(_skill_view(row, current, published))
     return result
 
 
 async def skill_detail(db: AsyncSession, skill_id: int) -> dict:
     row = await get_skill(db, skill_id)
     revision = await _current_revision(db, row)
-    return _skill_view(row, revision)
+    published = await db.get(SkillRevision, row.published_revision_id) if row.published_revision_id else None
+    return _skill_view(row, revision, published)
+
+
+async def skill_archive(db: AsyncSession, skill_id: int, version: str = "current") -> tuple[bytes, str]:
+    skill = await get_skill(db, skill_id)
+    revision_id = skill.current_revision_id if version == "current" else skill.published_revision_id
+    if not revision_id:
+        raise HTTPException(404, "所选技能版本不存在")
+    revision = await db.get(SkillRevision, revision_id)
+    if not revision or revision.skill_id != skill_id:
+        raise HTTPException(404, "所选技能版本不存在")
+
+    references = []
+    reference_root = (SKILL_ROOT / str(skill_id) / "references").resolve()
+    used_names = {"SKILL.md"}
+    for index, reference in enumerate(revision.reference_files or []):
+        path = (settings.data_dir / str(reference.get("path", ""))).resolve()
+        if not path.is_relative_to(reference_root) or not path.is_file():
+            raise HTTPException(409, "参考资料缺失或路径无效，无法完整下载技能")
+        filename = Path(str(reference.get("filename", ""))).name
+        if not filename or filename in (".", ".."):
+            raise HTTPException(409, "参考资料文件名无效")
+        archive_name = f"references/{filename}"
+        suffix = index + 1
+        while archive_name in used_names:
+            archive_name = f"references/{suffix}-{filename}"
+            suffix += 1
+        used_names.add(archive_name)
+        try:
+            references.append((archive_name, path.read_bytes()))
+        except OSError as error:
+            raise HTTPException(409, "参考资料无法读取，无法完整下载技能") from error
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("SKILL.md", revision.content)
+        for archive_name, content in references:
+            archive.writestr(archive_name, content)
+    return buffer.getvalue(), _slug(_machine_name(revision) or f"skill-{skill_id}")
+
+
+async def delete_draft(db: AsyncSession, skill_id: int) -> None:
+    skill = await db.scalar(select(Skill).where(Skill.id == skill_id).with_for_update())
+    if not skill:
+        raise HTTPException(404, "Skill 不存在")
+    if skill.published_revision_id is not None or skill.status != "draft":
+        raise HTTPException(409, "已发布的技能不能删除，请先处理归档")
+    sessions = (await db.scalars(select(SkillAuthoringSession).where(SkillAuthoringSession.skill_id == skill_id))).all()
+    if any(session.status == "running" for session in sessions):
+        raise HTTPException(409, "技能助手正在修改，请等待完成后删除")
+    session_ids = [session.id for session in sessions]
+    if session_ids:
+        await db.execute(delete(SkillAuthoringMessage).where(SkillAuthoringMessage.authoring_session_id.in_(session_ids)))
+    await db.execute(delete(SkillAuthoringSession).where(SkillAuthoringSession.skill_id == skill_id))
+    await db.execute(delete(SkillRevision).where(SkillRevision.skill_id == skill_id))
+    await db.delete(skill)
+    await db.commit()
+    shutil.rmtree(SKILL_ROOT / str(skill_id), ignore_errors=True)
 
 
 async def revisions(db: AsyncSession, skill_id: int) -> list[dict]:
