@@ -4923,3 +4923,20 @@ textarea:focus-visible {
     margin-left: 0;
   }
 }
+/* 目录页空态垂直居中：inner 撑满滚动区可视高度，空态吃掉工具栏下方的剩余空间，
+   不再贴着工具栏下沿。直接子元素均只用 margin-bottom，改 flex 列后间距不变。 */
+.capabilities-page .enterprise-page-inner,
+.scenarios-page .enterprise-page-inner,
+.skill-library-page .enterprise-page-inner {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+/* 能力中心各分类的空态包在 section 里，由 section 接力传递剩余高度。 */
+.capabilities-page .plugin-directory,
+.capabilities-page .skill-capability-directory,
+.capabilities-page .mcp-directory {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
