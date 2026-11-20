@@ -1427,10 +1427,6 @@ onBeforeUnmount(() => {
   text-align: center;
   color: var(--color-text-tertiary);
   gap: 12px;
-  background: var(--surface-shell);
-  border-radius: 12px;
-  border: 1px dashed var(--border-default);
-  margin: 24px;
   padding: 32px;
 }
 .document-empty h2 {
