@@ -583,8 +583,7 @@ onMounted(load);
         <section v-else class="plugin-directory">
           <header class="capability-section-head">
             <h2>受管插件</h2>
-            <span>{{ components.length }} 个当前可用版本 · {{ pluginSubmissions.length }} 个上传版本</span>
-            <p>上传的 ZIP 会先经过契约检查并进入审核；批准后，维护者可以在企业场景中绑定具体插件和工具。</p>
+            <span>{{ components.length }} 个可用 · {{ pluginSubmissions.length }} 个上传</span>
           </header>
           <CatalogEmpty
             v-if="!visiblePlugins.length"

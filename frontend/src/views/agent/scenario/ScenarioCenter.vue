@@ -363,7 +363,12 @@ async function versions(scenario: Scenario) {
           <p v-if="!maintenance">按工作目标选择场景，进入对话直接开始。</p>
           <p v-else>编辑场景，试运行通过后发布。</p>
         </div>
-        <div class="page-heading-actions">
+      </div>
+      <div class="collection-toolbar enterprise-collection-toolbar scenario-collection-toolbar">
+        <CatalogFilter v-model:value="filter" aria-label="场景筛选" :options="filterOptions" />
+        <!-- 搜索与维护操作同在右侧，和能力管理页一致：维护场景/新建场景紧贴搜索框右边 -->
+        <div class="scenario-toolbar-actions">
+          <CatalogSearch v-model:value="query" placeholder="搜索场景名称或描述" aria-label="搜索场景" />
           <!-- 使用目录：「维护场景」为主按钮；维护模式下让位给「新建场景」，避免两个主按钮并排 -->
           <a-button
             :type="maintenance ? 'default' : 'primary'"
@@ -377,10 +382,6 @@ async function versions(scenario: Scenario) {
             <template #icon><Icon name="plus" :size="16" /></template>新建场景
           </a-button>
         </div>
-      </div>
-      <div class="collection-toolbar enterprise-collection-toolbar scenario-collection-toolbar">
-        <CatalogFilter v-model:value="filter" aria-label="场景筛选" :options="filterOptions" />
-        <CatalogSearch v-model:value="query" placeholder="搜索场景名称或描述" aria-label="搜索场景" />
       </div>
       <div v-if="app.loading" class="loading-inline" role="status"><a-spin size="small" />正在读取场景…</div>
       <CatalogEmpty
@@ -911,23 +912,23 @@ async function versions(scenario: Scenario) {
   gap: 16px;
   margin-bottom: 24px;
 }
-.scenarios-page .page-heading.scenario-page-heading .page-heading-actions {
-  gap: 8px;
-}
 .scenarios-page .enterprise-collection-toolbar.scenario-collection-toolbar {
   min-height: 32px;
   margin-bottom: 24px;
 }
+.scenario-toolbar-actions {
+  gap: 8px;
+}
 
-/* ============ 页头动作按钮 ============ */
+/* ============ 工具栏操作按钮 ============ */
 /* 尺寸、圆角、配色全部沿用 antd 默认；只补图标间距：
    icon 插槽里是 ForgeIcon 裸 <svg>，不是 .anticon，antd 不会给它和文字之间留空 */
-.page-heading-actions :deep(.ant-btn) {
+.scenario-toolbar-actions :deep(.ant-btn) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-.page-heading-actions :deep(.ant-btn > svg) {
+.scenario-toolbar-actions :deep(.ant-btn > svg) {
   flex-shrink: 0;
 }
 
@@ -942,11 +943,8 @@ async function versions(scenario: Scenario) {
 }
 
 @media (max-width: 700px) {
-  .scenarios-page .scenario-page-heading .page-heading-actions {
+  .scenario-toolbar-actions {
     flex-wrap: wrap;
-  }
-  .page-heading-actions :deep(.ant-btn) {
-    flex: 1 1 0;
   }
 }
 

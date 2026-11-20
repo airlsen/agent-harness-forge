@@ -7,10 +7,12 @@ const app = usePlatform();
 const refreshing = ref(false);
 const runnerOnline = computed(() => app.runtime?.runner.status === 'online');
 const capacity = computed(() => app.runtime?.runner.capacity ?? 0);
-const activeSessions = computed(() => app.runtime?.runner.sessions ?? 0);
+// 容量按「正在执行」的会话数计（并发占用量），而不是存活会话总数。
+const activeSessions = computed(() => app.runtime?.runner.active ?? 0);
+const queuedSessions = computed(() => app.runtime?.runner.queued ?? 0);
 const capacityLabel = computed(() => {
   if (!capacity.value) return '容量未知';
-  return `${activeSessions.value} / ${capacity.value} 执行中`;
+  return `${activeSessions.value} / ${capacity.value} 执行中${queuedSessions.value ? ` · ${queuedSessions.value} 个排队` : ''}`;
 });
 const capacityPercent = computed(() => {
   if (!capacity.value) return 0;
@@ -64,7 +66,7 @@ async function refresh() {
           </div>
         </div>
         <div class="runtime-capacity">
-          <strong>{{ activeSessions }}</strong><span>活动会话</span>
+          <strong>{{ activeSessions }}</strong><span>正在执行</span>
           <div class="runtime-capacity-track" aria-label="执行容量">
             <i :style="{ width: `${capacityPercent}%` }"></i>
           </div>

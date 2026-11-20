@@ -664,6 +664,9 @@ async function copyMessage(text: string) {
           <div v-if="chat.connectionWarning" class="form-alert" role="status">
             <Icon name="info" :size="16" />{{ chat.connectionWarning }}
           </div>
+          <div v-if="chat.queue" class="form-alert" role="status">
+            <Icon name="clock" :size="16" />排队中 · 第 {{ chat.queue.position }} 位，等待执行额度释放…
+          </div>
         </div>
       </div>
       <div v-if="!loadError && !welcome && !chat.loading" class="composer-area enterprise-composer-area">

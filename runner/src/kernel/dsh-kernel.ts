@@ -162,6 +162,10 @@ export function modelFingerprint(model: RuntimeModel) {
 
 export class DshKernel implements AgentKernel {
   private sessions = new Map<string, Entry>();
+  /** 正在执行（busy）的会话数：容量按它计，而不是按存活会话总数。 */
+  private activeTurns = 0;
+  /** 排队等待并发额度的回合；先进先出，容量释放后依次放行。 */
+  private turnQueue: Array<{ id: string; resolve: () => void; reject: (error: Error) => void }> = [];
   constructor(private readonly pluginWorker?: PluginWorkerClient) {}
   get size() {
     return this.sessions.size;
@@ -169,11 +173,22 @@ export class DshKernel implements AgentKernel {
   get capacity() {
     return Math.max(1, Number(process.env.RUNNER_MAX_SESSIONS ?? 4));
   }
+  /** 当前正在执行的会话数（并发占用量） */
+  get active() {
+    return this.activeTurns;
+  }
+  /** 正在排队等待执行的回合数 */
+  get queued() {
+    return this.turnQueue.length;
+  }
   has(id: string) {
     return this.sessions.has(id);
   }
   isBusy(id: string) {
     return this.entry(id).busy;
+  }
+  isQueued(id: string) {
+    return this.turnQueue.some((turn) => turn.id === id);
   }
   private entry(id: string) {
     const entry = this.sessions.get(id);
@@ -204,7 +219,6 @@ export class DshKernel implements AgentKernel {
     if (!validModel(model)) throw failure('请先在模型中心配置真实模型网关', 422);
     const code = resolveCodeProjects(codeProjects);
     const caps = resolveCapabilities(capabilities);
-    if (this.size >= this.capacity) throw failure('Runner 会话容量已满，请归档暂不使用的会话', 429);
     const approvedPlugins = new Set(['forge-runtime', 'skill-authoring', 'forge-plugin-bridge']);
     if (!Array.isArray(bundle.plugin_mounts) || bundle.plugin_mounts.some((p) => !approvedPlugins.has(p)))
       throw failure('包含未审核的插件', 422);
@@ -668,11 +682,23 @@ export class DshKernel implements AgentKernel {
   ) {
     const entry = this.entry(id);
     if (entry.busy) throw failure('会话正在执行，请等待或中止', 409);
+    if (this.isQueued(id)) throw failure('会话正在排队等待执行，请稍候', 409);
     if (model !== undefined && !validModel(model)) throw failure('本轮模型配置无效', 422);
     // 不传表示沿用当前关联；传入则必须全部存在（与模型配置一样在执行前校验）
     const code = codeProjects === undefined ? entry.code : resolveCodeProjects(codeProjects);
     // 扩展能力同理：不传沿用，传入即本轮生效的完整集合
     const caps = capabilities === undefined ? entry.caps : resolveCapabilities(capabilities);
+    // 并发额度：超出容量时排队等待，而不是直接拒绝；等待期间被中止会抛出并给出 error + done。
+    try {
+      await this.acquireTurn(id, entry);
+    } catch (error) {
+      if (!entry.error) {
+        entry.error = error instanceof Error ? error.message : '排队已取消';
+        this.emit(entry, 'error', { message: entry.error });
+      }
+      this.emit(entry, 'done', { status: 'error' });
+      throw error;
+    }
     entry.busy = true;
     entry.error = null;
     try {
@@ -720,8 +746,54 @@ export class DshKernel implements AgentKernel {
     } finally {
       this.cancelApprovals(entry);
       entry.busy = false;
+      this.releaseTurn();
       this.emit(entry, 'done', { status: entry.error ? 'error' : 'idle' });
     }
+  }
+  /**
+   * 抢占一个并发额度；满员时把回合入队等待。队列先进先出，靠 releaseTurn 在上一回合结束后放行。
+   * 排队期间若会话被中止或归档，drainQueue 会以 409 拒绝该等待。
+   */
+  private async acquireTurn(id: string, entry: Entry): Promise<void> {
+    if (this.activeTurns < this.capacity) {
+      this.activeTurns++;
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      this.turnQueue.push({ id, resolve, reject });
+      this.emit(entry, 'queued', {
+        position: this.turnQueue.length,
+        capacity: this.capacity,
+        active: this.activeTurns,
+      });
+    });
+    // 额度已由 drainQueue 放行时同步占用（activeTurns 自增），此处不再自增。
+  }
+  /** 回合结束释放一个额度，并依次放行队列中等待的回合。 */
+  private releaseTurn(): void {
+    this.activeTurns--;
+    this.drainQueue();
+  }
+  private drainQueue(): void {
+    while (this.activeTurns < this.capacity && this.turnQueue.length) {
+      const next = this.turnQueue.shift()!;
+      // 等待期间会话已被归档/移除：拒绝该等待，不再占用额度。
+      if (!this.sessions.has(next.id)) {
+        next.reject(failure('会话已归档，排队已取消', 409));
+        continue;
+      }
+      this.activeTurns++;
+      this.emit(this.entry(next.id), 'dequeued', { capacity: this.capacity, active: this.activeTurns });
+      next.resolve();
+    }
+  }
+  /** 取消仍在排队等待执行的回合（中止 / 归档时调用）；返回是否存在并已取消。 */
+  private cancelQueuedTurn(id: string): boolean {
+    const index = this.turnQueue.findIndex((turn) => turn.id === id);
+    if (index === -1) return false;
+    const [turn] = this.turnQueue.splice(index, 1);
+    turn.reject(failure('任务已由用户中止', 409));
+    return true;
   }
   onEvent(id: string, listener: (event: KernelEvent) => void) {
     const entry = this.entry(id);
@@ -732,6 +804,8 @@ export class DshKernel implements AgentKernel {
   }
   async interrupt(id: string) {
     const entry = this.entry(id);
+    // 仍在排队等待执行的回合：直接取消等待，不再进入执行。
+    if (this.cancelQueuedTurn(id)) return;
     if (entry.busy && !entry.error) {
       entry.error = '任务已由用户中止';
       this.emit(entry, 'error', { message: entry.error });

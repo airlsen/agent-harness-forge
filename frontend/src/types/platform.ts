@@ -223,7 +223,17 @@ export interface ModelOption {
 }
 export interface RuntimeStatus {
   controlPlane: string;
-  runner: { status: string; node?: string; dshVersion?: string; sessions?: number; capacity?: number };
+  runner: {
+    status: string;
+    node?: string;
+    dshVersion?: string;
+    sessions?: number;
+    capacity?: number;
+    /** 正在执行的会话数（并发占用量） */
+    active?: number;
+    /** 排队等待执行的回合数 */
+    queued?: number;
+  };
   model: { configured: boolean; name?: string; connectionName?: string };
   storage: string;
   authMode: string;

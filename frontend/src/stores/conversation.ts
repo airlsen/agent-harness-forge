@@ -150,6 +150,8 @@ export const useConversation = defineStore('conversation', {
     loading: false,
     runError: '',
     connectionWarning: '',
+    /** 本轮正在排队等待并发额度；null 表示未排队 */
+    queue: null as null | { position: number; capacity: number },
     panel: 'files' as 'context' | 'trajectory' | 'files',
     panelOpen: false,
   }),
@@ -226,6 +228,7 @@ export const useConversation = defineStore('conversation', {
       this.liveReasoning = '';
       this.runError = '';
       this.connectionWarning = '';
+      this.queue = null;
       this.sending = false;
       this.loading = false;
       this.input = '';
@@ -595,6 +598,8 @@ export const useConversation = defineStore('conversation', {
           else if (event.kind === 'approval_resolved')
             this.approvals = this.approvals.filter((approval) => approval.ticketId !== data.ticketId);
           else if (event.kind === 'error') this.runError = data.message;
+          else if (event.kind === 'queued') this.queue = { position: data.position, capacity: data.capacity };
+          else if (event.kind === 'dequeued' || event.kind === 'done') this.queue = null;
           else if (event.kind === 'model_switched') {
             this.applyModel({ ...data.to, contextWindow: data.contextWindow });
             this.selectedModelId = this.sessionModel(this.selectedModelId);
@@ -638,6 +643,7 @@ export const useConversation = defineStore('conversation', {
         this.approvals = detail.pendingApprovals;
         this.liveText = '';
         this.liveReasoning = '';
+        this.queue = null;
         await usePlatform().refreshSessions();
         await this.refreshFiles();
       } catch (error) {

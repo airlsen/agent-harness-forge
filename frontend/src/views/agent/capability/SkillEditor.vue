@@ -46,6 +46,8 @@ const error = ref('');
 const prompt = ref('');
 const streamingText = ref('');
 const assistantChange = ref('');
+// 本轮排队等待并发额度的位次；0 表示未排队。
+const queuePosition = ref(0);
 const previewRevision = ref<SkillRevision | null>(null);
 const promptInput = ref<{ focus: () => void } | null>(null);
 
@@ -394,6 +396,7 @@ async function send() {
   busy.value = true;
   assistantChange.value = '';
   streamingText.value = '';
+  queuePosition.value = 0;
   const text = prompt.value;
   const previousRevision = skill.value.revision;
   const before = revisions.value.find((revision) => revision.id === skill.value?.currentRevisionId);
@@ -427,8 +430,14 @@ async function send() {
         const line = block.split('\n').find((item) => item.startsWith('data: '));
         if (!line) continue;
         const event = JSON.parse(line.slice(6));
-        if (event.kind === 'message_delta') streamingText.value += String(event.payload?.text ?? '');
-        else if (event.kind === 'error') throw new Error(event.payload?.message ?? 'Skill 助手执行失败');
+        if (event.kind === 'message_delta') {
+          queuePosition.value = 0;
+          streamingText.value += String(event.payload?.text ?? '');
+        } else if (event.kind === 'queued') {
+          queuePosition.value = Number(event.payload?.position ?? 0);
+        } else if (event.kind === 'dequeued') {
+          queuePosition.value = 0;
+        } else if (event.kind === 'error') throw new Error(event.payload?.message ?? 'Skill 助手执行失败');
       }
     }
     await loadSkill({ quiet: true });
@@ -444,6 +453,7 @@ async function send() {
     app.toast(message, 'error');
   } finally {
     streamingText.value = '';
+    queuePosition.value = 0;
     busy.value = false;
   }
 }
@@ -827,12 +837,10 @@ onBeforeUnmount(() => {
               >
                 <Icon name="file" :size="14" /><span>{{ file.filename }}</span>
               </button>
-              <p v-if="!skill.referenceFiles.length" class="tree-empty">上传规范或素材，供助手参考</p>
             </template>
           </nav>
           <div class="files-footer">
-            <span class="files-count">共 {{ totalFiles }} 个文件</span
-            ><span class="files-note-inline">主文档可对话修改 · 参考资料只读</span>
+            <span class="files-count">共 {{ totalFiles }} 个文件</span>
           </div>
           <p class="files-note">主文档支持对话修改<br />参考资料只读</p>
         </aside>
@@ -878,7 +886,7 @@ onBeforeUnmount(() => {
                   :aria-pressed="mode === 'source'"
                   @click="mode = 'source'"
                 >
-                  源码
+                  编辑
                 </button>
               </div>
               <button
@@ -917,7 +925,7 @@ onBeforeUnmount(() => {
               <Icon name="file" :size="28" />
               <h2>从一个想法开始</h2>
               <p>在右侧描述需求，助手会完善这份 Skill。</p>
-              <button @click="mode = 'source'">直接编写 Markdown →</button>
+              <button @click="mode = 'source'">直接编辑 →</button>
             </div>
             <template v-else>
               <MarkdownPreview :content="previewContent" />
@@ -940,7 +948,7 @@ onBeforeUnmount(() => {
               :active="mode === 'source' && !referenceLoading && !referenceError"
               :loading="selectedFile >= 0 && (referenceLoading || !!referenceError)"
               :read-only="selectedFile >= 0 || busy || saving || publishing || uploadingReference"
-              aria-label="Skill Markdown 源码"
+              aria-label="Skill 文档编辑"
               @shortcut-save="save"
               @update:model-value="selectedFile < 0 && $event !== skill.content && updateContent($event)"
             />
@@ -1004,7 +1012,9 @@ onBeforeUnmount(() => {
                 <span class="assistant-icon"><Icon name="sparkles" :size="14" /></span>助手
               </div>
               <Markdown v-if="streamingText" :text="streamingText" live /><span v-else class="thinking"
-                ><a-spin size="small" />正在处理当前草稿…</span
+                ><a-spin size="small" />{{
+                  queuePosition ? `排队中 · 第 ${queuePosition} 位，等待执行额度…` : '正在处理当前草稿…'
+                }}</span
               >
             </article>
             <div v-if="assistantChange && !busy" class="change-summary">
@@ -1062,7 +1072,13 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <p class="composer-hint">
-              {{ busy ? '助手处理中，完成后可继续发送' : 'Enter 发送 · Shift+Enter 换行' }}
+              {{
+                busy
+                  ? queuePosition
+                    ? `排队中 · 第 ${queuePosition} 位，完成后可继续发送`
+                    : '助手处理中，完成后可继续发送'
+                  : 'Enter 发送 · Shift+Enter 换行'
+              }}
             </p>
           </form>
         </aside>
@@ -1540,7 +1556,8 @@ onBeforeUnmount(() => {
   padding: 20px 18px;
 }
 .chat-empty {
-  padding-top: clamp(20px, 12vh, 120px);
+  text-align: center;
+  padding-top: clamp(80px, 30vh, 260px);
 }
 .chat-empty h2 {
   font-size: 16px;
@@ -1655,7 +1672,6 @@ onBeforeUnmount(() => {
   min-width: 0;
   padding: 10px 12px max(8px, env(safe-area-inset-bottom));
   background: var(--surface-content);
-  border-top: 1px solid var(--border-default);
 }
 .composer-box {
   min-width: 0;
@@ -1723,6 +1739,15 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border-radius: 50% !important;
+}
+/* 禁用态保留主题色倾向（主题色 + 灰），而非 antd 默认的纯灰 */
+.composer-send:disabled,
+.composer-send:disabled:hover {
+  background: color-mix(in srgb, var(--color-brand) 30%, var(--neutral-300)) !important;
+  border-color: color-mix(in srgb, var(--color-brand) 30%, var(--neutral-300)) !important;
+  color: var(--color-text-inverse) !important;
+  cursor: not-allowed;
 }
 .composer-hint {
   margin: 6px 4px 0;

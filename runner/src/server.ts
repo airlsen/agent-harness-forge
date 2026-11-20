@@ -32,6 +32,8 @@ app.get('/v1/runtime', async () => ({
   dshVersion: '0.2.2-rc.1',
   sessions: kernel.size,
   capacity: kernel.capacity,
+  active: kernel.active,
+  queued: kernel.queued,
   mode: 'real-model-only',
   capabilities: {
     stream: true,
@@ -46,8 +48,6 @@ app.get('/v1/runtime', async () => ({
   },
 }));
 app.post('/v1/sessions', async (req, reply) => {
-  if (kernel.size >= kernel.capacity)
-    return reply.code(429).send({ message: '会话容量已满，请关闭暂不使用的会话' });
   const body = req.body as {
     bundle: Bundle;
     userCtx: UserCtx;
@@ -79,6 +79,7 @@ app.post<{
   const id = req.params.id;
   if (!kernel.has(id)) return reply.code(404).send({ message: '执行会话不存在，请新建会话' });
   if (kernel.isBusy(id)) return reply.code(409).send({ message: '会话正在执行' });
+  if (kernel.isQueued(id)) return reply.code(409).send({ message: '会话正在排队等待执行，请稍候' });
   if (!req.body?.message || req.body.message.length > 64000)
     return reply.code(422).send({ message: 'message is required (<=64000 chars)' });
   // 必须在接管响应流之前校验，否则错误无法以 422 返回给控制面。

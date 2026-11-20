@@ -4883,17 +4883,14 @@ textarea:focus-visible {
   background: transparent;
   box-shadow: none;
 }
-.capability-toolbar-actions {
+.capability-toolbar-actions,
+.scenario-toolbar-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   flex: 1 1 auto;
   min-width: 0;
   margin-left: auto;
-}
-.enterprise-view .scenarios-page .scenario-page-heading .page-heading-actions {
-  align-items: center;
-  gap: 10px;
 }
 @media (max-width: 700px) {
   .enterprise-view .catalog-page-heading {
@@ -4917,7 +4914,8 @@ textarea:focus-visible {
     max-width: 100%;
     flex: 1 1 100%;
   }
-  .capability-toolbar-actions {
+  .capability-toolbar-actions,
+  .scenario-toolbar-actions {
     width: 100%;
     flex: 1 1 100%;
     margin-left: 0;
