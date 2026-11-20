@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.database import get_session
 from ..models.registry import McpServer
-from ..services.mcp_service import import_servers, public_view, test_server
+from ..services.mcp_service import editable_view, import_servers, public_view, test_server, update_server
 from ..services.plugin_service import (
     MAX_ARCHIVE_BYTES,
     import_archive,
@@ -67,6 +67,11 @@ class McpEnable(BaseModel):
     enabled: bool
 
 
+class McpUpdate(BaseModel):
+    config: dict
+    credential_action: str = Field(pattern="^(keep|replace|clear)$")
+
+
 @router.get("/mcp-servers")
 async def mcp_servers(db: AsyncSession = Depends(get_session)):
     rows = (await db.scalars(select(McpServer).order_by(McpServer.name))).all()
@@ -77,6 +82,22 @@ async def mcp_servers(db: AsyncSession = Depends(get_session)):
 async def mcp_import(payload: McpImport, db: AsyncSession = Depends(get_session)):
     rows = await import_servers(db, payload.config)
     return ResponseUtil.ok({"items": [public_view(row) for row in rows]})
+
+
+@router.get("/mcp-servers/{server_id}/edit")
+async def mcp_edit_config(server_id: int, db: AsyncSession = Depends(get_session)):
+    row = await db.get(McpServer, server_id)
+    if not row:
+        raise HTTPException(404, "MCP 服务不存在")
+    return ResponseUtil.ok(editable_view(row))
+
+
+@router.put("/mcp-servers/{server_id}")
+async def mcp_update(server_id: int, payload: McpUpdate, db: AsyncSession = Depends(get_session)):
+    row = await db.get(McpServer, server_id)
+    if not row:
+        raise HTTPException(404, "MCP 服务不存在")
+    return ResponseUtil.ok(await update_server(db, row, payload.config, payload.credential_action))
 
 
 @router.post("/mcp-servers/{server_id}/test")

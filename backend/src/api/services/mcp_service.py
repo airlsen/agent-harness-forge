@@ -438,6 +438,64 @@ async def import_servers(db: AsyncSession, raw: dict) -> list[dict]:
     return result
 
 
+def editable_view(row: McpServer) -> dict:
+    """Show connection settings for editing without exposing stored headers or env values."""
+    entry: dict = {"type": row.transport}
+    if row.transport == "stdio":
+        private = json.loads(decrypt(row.headers_encrypted)) if row.headers_encrypted else {}
+        entry.update({"command": private.get("command", ""), "args": private.get("args", [])})
+    else:
+        entry["url"] = row.url
+    return {"config": {"mcpServers": {row.name: entry}}, "hasCredentials": public_view(row)["hasCredentials"]}
+
+
+async def update_server(db: AsyncSession, row: McpServer, raw: dict, credential_action: str) -> dict:
+    """Update one server by ID; secrets remain untouched unless explicitly replaced or cleared."""
+    if credential_action not in {"keep", "replace", "clear"}:
+        raise HTTPException(422, "认证信息操作无效")
+    entries = parse_import_config(raw)
+    if len(entries) != 1:
+        raise HTTPException(422, "每次只能编辑一个 MCP 服务")
+    entry = entries[0]
+    if entry["name"] != row.name:
+        duplicate = await db.scalar(select(McpServer.id).where(McpServer.name == entry["name"]))
+        if duplicate is not None:
+            raise HTTPException(409, "MCP 服务名称已存在")
+    transport_changed = entry["transport"] != row.transport
+    if transport_changed and credential_action == "keep":
+        raise HTTPException(422, "切换连接方式时请选择替换或清除认证信息")
+    if credential_action != "replace" and (entry.get("headers") or entry.get("env")):
+        raise HTTPException(422, "若要修改认证信息，请选择替换")
+    private_config = (
+        {"headers": {}, "command": entry["command"], "args": entry["args"], "env": entry["env"]}
+        if entry["transport"] == "stdio"
+        else entry["headers"]
+    )
+    old_private = json.loads(decrypt(row.headers_encrypted)) if row.headers_encrypted else {}
+    if entry["transport"] == "stdio" and credential_action == "keep":
+        private_config["env"] = old_private.get("env", {})
+    elif entry["transport"] != "stdio" and credential_action == "keep":
+        private_config = old_private
+    new_url = "stdio://local-process" if entry["transport"] == "stdio" else entry["url"]
+    connection_changed = new_url != row.url or transport_changed or private_config != old_private
+    row.name = entry["name"]
+    row.url = new_url
+    row.transport = entry["transport"]
+    if private_config != old_private:
+        row.headers_encrypted = (
+            encrypt(json.dumps(private_config, ensure_ascii=False)) if private_config else ""
+        )
+    if connection_changed:
+        row.enabled = False
+        row.status = "unverified"
+        row.tools_json = []
+        row.server_info = {}
+        row.last_error = ""
+    await db.commit()
+    await db.refresh(row)
+    return public_view(row)
+
+
 def public_view(row: McpServer) -> dict:
     has_credentials = bool(row.headers_encrypted)
     if row.transport == "stdio" and row.headers_encrypted:

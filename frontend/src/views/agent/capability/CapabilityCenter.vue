@@ -100,6 +100,19 @@ const mcpExample = computed(() =>
 );
 const mcpTemplate = ref('');
 function changeMcpTransport() {
+  if (mcpEditing.value) {
+    let name = mcpEditing.value.name;
+    try {
+      const previous = JSON.parse(mcpJson.value) as { mcpServers: Record<string, unknown> };
+      name = Object.keys(previous.mcpServers)[0] || name;
+    } catch {
+      /* Invalid JSON is replaced with the selected transport's template. */
+    }
+    const example = JSON.parse(mcpExample.value) as { mcpServers: Record<string, unknown> };
+    mcpJson.value = JSON.stringify({ mcpServers: { [name]: example.mcpServers['my-service'] } }, null, 2);
+    mcpCredentials.value = 'clear';
+    return;
+  }
   if (mcpJson.value === mcpTemplate.value) mcpJson.value = mcpExample.value;
   mcpTemplate.value = mcpExample.value;
 }
@@ -117,6 +130,8 @@ watch(
   },
 );
 const mcpEditorOpen = ref(false);
+const mcpEditing = ref<McpServer | null>(null);
+const mcpCredentials = ref<'keep' | 'replace' | 'clear'>('keep');
 const selectedMcp = ref<McpServer | null>(null);
 const mcpToolQuery = ref('');
 const shownMcp = useRetained(() => selectedMcp.value);
@@ -365,11 +380,27 @@ async function togglePlugin(plugin: PluginPackage) {
   }
 }
 function openMcpEditor() {
+  mcpEditing.value = null;
   mcpImportError.value = '';
   mcpTransport.value = 'streamable-http';
   mcpJson.value = mcpExample.value;
   mcpTemplate.value = mcpExample.value;
   mcpEditorOpen.value = true;
+}
+async function editMcp(server: McpServer) {
+  try {
+    const result = await api<{ config: { mcpServers: Record<string, { type: string }> } }>(
+      `/registry/mcp-servers/${server.id}/edit`,
+    );
+    mcpEditing.value = server;
+    mcpTransport.value = result.config.mcpServers[server.name].type as typeof mcpTransport.value;
+    mcpJson.value = JSON.stringify(result.config, null, 2);
+    mcpCredentials.value = 'keep';
+    mcpImportError.value = '';
+    mcpEditorOpen.value = true;
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  }
 }
 async function importMcpJson() {
   mcpImportError.value = '';
@@ -387,16 +418,54 @@ async function importMcpJson() {
     config.mcpServers &&
     typeof config.mcpServers === 'object'
   ) {
+    if (mcpEditing.value && Object.keys(config.mcpServers as object).length !== 1) {
+      mcpImportError.value = '编辑时只能填写一个 MCP 服务。';
+      return;
+    }
     for (const entry of Object.values(config.mcpServers as Record<string, Record<string, unknown>>)) {
       entry.type = mcpTransport.value;
     }
   }
+  if (
+    mcpEditing.value &&
+    config &&
+    typeof config === 'object' &&
+    'mcpServers' in config &&
+    config.mcpServers &&
+    typeof config.mcpServers === 'object' &&
+    mcpCredentials.value !== 'replace'
+  ) {
+    const entry = Object.values(config.mcpServers as Record<string, Record<string, unknown>>)[0];
+    if (
+      (entry?.headers && Object.keys(entry.headers as object).length) ||
+      (entry?.env && Object.keys(entry.env as object).length)
+    ) {
+      mcpImportError.value = '填写认证信息时请选择“替换”。';
+      return;
+    }
+  }
   mcpBusy.value = true;
   try {
-    await api('/registry/mcp-servers/import', { method: 'POST', body: JSON.stringify({ config }) });
+    let needsTest = false;
+    if (mcpEditing.value) {
+      const updated = await api<McpServer>(`/registry/mcp-servers/${mcpEditing.value.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ config, credential_action: mcpCredentials.value }),
+      });
+      needsTest = updated.status === 'unverified';
+    } else {
+      await api('/registry/mcp-servers/import', { method: 'POST', body: JSON.stringify({ config }) });
+    }
     mcpJson.value = '';
     mcpEditorOpen.value = false;
-    app.toast('MCP 服务已添加，请测试连接以读取工具清单。');
+    app.toast(
+      mcpEditing.value
+        ? needsTest
+          ? '修改已保存，请测试连接。'
+          : '修改已保存。'
+        : 'MCP 服务已添加，请测试连接以读取工具清单。',
+    );
+    mcpEditing.value = null;
     await refreshMcp();
   } catch (error) {
     // 弹窗保持打开，错误留在输入框下方，方便对照修改。
@@ -780,8 +849,14 @@ onMounted(load);
                   <template #icon><Icon name="more" :size="16" /></template>
                 </a-button>
                 <template #overlay>
-                  <a-menu @click="(info: MenuInfo) => info.key === 'delete' && deleteMcp(server)">
-                    <a-menu-item key="delete" danger>移除服务</a-menu-item>
+                  <a-menu
+                    @click="
+                      (info: MenuInfo) =>
+                        info.key === 'edit' ? editMcp(server) : info.key === 'delete' && deleteMcp(server)
+                    "
+                  >
+                    <a-menu-item key="edit">编辑</a-menu-item>
+                    <a-menu-item key="delete" danger>移除</a-menu-item>
                   </a-menu>
                 </template>
               </a-dropdown>
@@ -980,7 +1055,7 @@ onMounted(load);
       :width="600"
       centered
       destroy-on-close
-      ok-text="导入"
+      :ok-text="mcpEditing ? '保存修改' : '导入'"
       cancel-text="取消"
       :confirm-loading="mcpBusy"
       :ok-button-props="{ disabled: !mcpJson.trim() }"
@@ -990,7 +1065,7 @@ onMounted(load);
     >
       <template #title>
         <div class="capability-modal-title">
-          <h2>导入 MCP 服务</h2>
+          <h2>{{ mcpEditing ? '编辑 MCP 服务' : '导入 MCP 服务' }}</h2>
         </div>
       </template>
       <a-form layout="vertical" class="mcp-import-form">
@@ -1012,6 +1087,20 @@ onMounted(load);
             :rows="10"
             spellcheck="false"
             :placeholder="mcpExample"
+          />
+        </a-form-item>
+        <a-form-item
+          v-if="mcpEditing"
+          label="认证信息"
+          extra="已有密钥不会显示。保留时不要在 JSON 中填写 headers 或 env；替换时在 JSON 中填写新值。"
+        >
+          <a-radio-group
+            v-model:value="mcpCredentials"
+            :options="[
+              { label: '保留', value: 'keep' },
+              { label: '替换', value: 'replace' },
+              { label: '清除', value: 'clear' },
+            ]"
           />
         </a-form-item>
       </a-form>
