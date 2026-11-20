@@ -3275,6 +3275,161 @@ textarea:focus-visible {
   border-top-color: var(--line);
 }
 
+/* 统一 Ant 与原生弹窗的扁平外观。弹窗宽度仍由各业务场景决定。 */
+.ant-modal-mask,
+.modal-backdrop {
+  background: rgba(16, 24, 40, 0.38);
+  backdrop-filter: none;
+}
+.ant-modal .ant-modal-content,
+.modal {
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
+}
+.ant-modal .ant-modal-content {
+  padding: 0;
+  overflow: hidden;
+}
+.ant-modal .ant-modal-header {
+  margin: 0;
+  padding: 20px 24px 0;
+  background: transparent;
+}
+.ant-modal .ant-modal-title {
+  color: var(--color-text-primary);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+.ant-modal .ant-modal-close {
+  top: 16px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  color: var(--color-text-tertiary);
+  border-radius: 4px;
+}
+.ant-modal .ant-modal-close:hover {
+  color: var(--color-text-primary);
+  background: var(--surface-hover);
+}
+.ant-modal .ant-modal-body {
+  padding: 20px 24px 0;
+  color: var(--color-text-primary);
+}
+.ant-modal .ant-modal-footer {
+  margin: 0;
+  padding: 20px 24px 24px;
+  border: 0;
+}
+.ant-modal .ant-form-item {
+  margin-bottom: 16px;
+}
+.ant-modal .ant-form-item:last-child {
+  margin-bottom: 0;
+}
+.ant-modal .ant-form-item-label {
+  padding-bottom: 6px;
+}
+.ant-modal .ant-form-item-label > label {
+  height: auto;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+.ant-modal .ant-form-item-extra {
+  margin-top: 4px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ant-modal .ant-input,
+.ant-modal .ant-input-affix-wrapper,
+.ant-modal .ant-input-number {
+  min-height: 38px;
+  padding: 7px 11px;
+  border-radius: 4px;
+  background: var(--surface-content);
+  font-size: 13px;
+  box-shadow: none;
+}
+.ant-modal textarea.ant-input {
+  min-height: 0;
+  line-height: 1.6;
+}
+.ant-modal .ant-btn:not(.ant-btn-circle) {
+  min-width: 72px;
+  height: 36px;
+  padding-inline: 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: none;
+}
+.ant-modal .ant-btn-text:not(.ant-btn-circle) {
+  min-width: 0;
+}
+/* Modal.confirm 的内容没有常规 header/body/footer 节点，单独对齐相同的密度。 */
+.ant-modal-confirm .ant-modal-content {
+  padding: 24px;
+}
+.ant-modal-confirm .ant-modal-confirm-title {
+  color: var(--color-text-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+.ant-modal-confirm .ant-modal-confirm-content {
+  margin-top: 8px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ant-modal-confirm .ant-modal-confirm-btns {
+  margin-top: 24px;
+}
+.modal.confirm-modal {
+  padding: 24px;
+}
+.modal.confirm-modal .confirm-icon {
+  width: 36px;
+  height: 36px;
+  margin-bottom: 16px;
+  border-radius: 6px;
+}
+.modal.confirm-modal h2 {
+  font-size: 16px;
+  line-height: 1.5;
+}
+.modal.confirm-modal > p {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.modal.confirm-modal > footer {
+  margin-top: 0;
+  padding-top: 24px;
+}
+.modal.confirm-modal .button.primary {
+  box-shadow: none;
+}
+@media (max-width: 600px) {
+  .ant-modal .ant-modal-header {
+    padding: 18px 18px 0;
+  }
+  .ant-modal .ant-modal-body {
+    padding: 18px 18px 0;
+  }
+  .ant-modal .ant-modal-footer {
+    padding: 18px;
+  }
+  .ant-modal-confirm .ant-modal-content {
+    padding: 20px;
+  }
+}
+
 .spinning {
   animation: spin 1s linear infinite;
 }
