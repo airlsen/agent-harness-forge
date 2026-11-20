@@ -262,7 +262,6 @@ onUnmounted(() => {
                   class="enterprise-management-popover"
                   aria-label="平台管理页面"
                 >
-                  <span class="enterprise-management-popover-title">平台管理</span>
                   <RouterLink
                     v-for="item in management"
                     :key="item.path"
