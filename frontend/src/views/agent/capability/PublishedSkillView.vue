@@ -23,18 +23,14 @@ let loadRequest = 0;
 let referenceRequest = 0;
 
 const documentBody = computed(() =>
-  (skill.value?.content ?? '')
-    .replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '')
-    .trim(),
+  (skill.value?.content ?? '').replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '').trim(),
 );
 
 function formatDate(value: string | null) {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }).format(
-    date,
-  );
+  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }).format(date);
 }
 
 async function load() {
@@ -72,9 +68,7 @@ async function selectReference(index: number) {
   referenceLoading.value = true;
   const request = ++referenceRequest;
   try {
-    const result = await api<{ content: string }>(
-      `/skills/${skill.value.id}/published/references/${index}`,
-    );
+    const result = await api<{ content: string }>(`/skills/${skill.value.id}/published/references/${index}`);
     if (request === referenceRequest) referenceContent.value = result.content;
   } catch (reason) {
     if (request === referenceRequest) referenceError.value = (reason as Error).message;
@@ -98,7 +92,11 @@ async function download() {
   }
 }
 
-watch(() => route.params.id, () => void load(), { immediate: true });
+watch(
+  () => route.params.id,
+  () => void load(),
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -165,12 +163,7 @@ watch(() => route.params.id, () => void load(), { immediate: true });
               </button>
               <div v-if="selectedReference === index" class="published-reference-body">
                 <a-spin v-if="referenceLoading" size="small" />
-                <a-alert
-                  v-else-if="referenceError"
-                  type="error"
-                  :message="referenceError"
-                  show-icon
-                />
+                <a-alert v-else-if="referenceError" type="error" :message="referenceError" show-icon />
                 <Markdown
                   v-else-if="/\.md$/i.test(file.filename)"
                   :text="referenceContent"

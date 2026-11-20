@@ -1128,7 +1128,8 @@ onBeforeUnmount(() => {
                 size="small"
                 :disabled="busy || saving || dirty || publishing || uploadingReference"
                 @click="requestRestore(revision)"
-              >恢复为草稿</a-button>
+                >恢复为草稿</a-button
+              >
             </div>
           </div>
         </div>
@@ -1324,9 +1325,11 @@ onBeforeUnmount(() => {
 .studio-files .pane-header {
   background: var(--surface-shell);
 }
-.studio-files .pane-header strong,
-.studio-chat .pane-header strong {
+.studio-files .pane-header strong {
   color: var(--color-text-secondary);
+}
+.studio-chat .pane-header strong {
+  color: var(--color-text-primary);
 }
 .icon-action {
   display: inline-flex;
@@ -1468,7 +1471,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
 }
 .readonly-label {
   font-size: 10px;

@@ -48,7 +48,7 @@ async def test_skill_lifecycle_keeps_publications_immutable():
 def test_skill_markdown_validation():
     good = '---\nname: customer-support\ndescription: "A useful support workflow"\n---\n\n# Steps\n\nDo the work.'
     assert validate_content(good) == []
-    assert "有效的 name" in " ".join(validate_content('---\nname: Bad Name\ndescription: x\n---\n\nBody'))
+    assert "有效的英文 name" in " ".join(validate_content('---\nname: Bad Name\ndescription: x\n---\n\nBody'))
     assert validate_content('not markdown')
     assert validate_content('---\nname: ok\ndescription: valid\n---\n')
 

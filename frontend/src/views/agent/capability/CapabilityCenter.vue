@@ -172,9 +172,7 @@ function matches(text: string) {
 }
 const publishedSkills = computed(() => skills.value?.items ?? []);
 const visibleSkills = computed(() =>
-  publishedSkills.value.filter((skill) =>
-    matches(`${skill.name} ${skill.machineName} ${skill.description}`),
-  ),
+  publishedSkills.value.filter((skill) => matches(`${skill.name} ${skill.machineName} ${skill.description}`)),
 );
 const visibleMcp = computed(() =>
   (mcp.value?.items ?? []).filter((server) =>
@@ -843,11 +841,7 @@ onMounted(load);
                 :disabled="downloadingSkill !== null"
                 @download="downloadPublishedSkill(skill)"
               >
-                <RouterLink
-                  v-slot="{ href, navigate }"
-                  :to="`/agent/capabilities/skills/${skill.id}`"
-                  custom
-                >
+                <RouterLink v-slot="{ href, navigate }" :to="`/agent/capabilities/skills/${skill.id}`" custom>
                   <a-button
                     size="small"
                     :href="href"
