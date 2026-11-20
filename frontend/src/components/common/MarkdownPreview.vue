@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * MarkdownPreview — 公共 Markdown 漂亮渲染组件（黄色主题）
- * 特性：GFM/换行/代码高亮/表格/引用/任务列表/链接/图片/数学占位/Mermaid/Vega/流式光标/行号
- * 主题色：黄色系 #eab308，与 Forge 设计令牌兼容
+ * MarkdownPreview — 公共 Markdown 漂亮渲染组件（黄色主题 · highlight.js 版）
+ * 按你的要求：引入 highlight.js 做代码高亮，保持黄色主题
+ * 特性：GFM/换行/代码高亮(hl.js)/表格/引用/任务列表/链接/图片/数学占位/Mermaid/Vega/流式光标/行号
  * 放置：frontend/src/components/common，与 JsonPreview 同级公共组件
  *
  * 用法：
@@ -12,7 +12,9 @@
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { marked, type Token, type Tokens } from 'marked'
 import DOMPurify from 'dompurify'
-import { highlightCode, normalizeLang } from '../../utils/highlight'
+import hljs from 'highlight.js'
+import 'highlight.js/styles/atom-one-dark.css'
+import { markedHighlight } from 'marked-highlight'
 import CodeBlock from '../CodeBlock.vue'
 import MermaidBlock from '../MermaidBlock.vue'
 import ChartBlock from '../ChartBlock.vue'
@@ -55,6 +57,29 @@ const themeVars = computed(() => ({
   '--md-primary-border': '#fde68a',
   '--md-primary-ring': 'rgba(234, 179, 8, 0.32)',
 }))
+
+// 配置 marked + highlight.js 集成（按你提供的模板，保持黄色主题）
+marked.use(
+  markedHighlight({
+    langPrefix: 'hljs language-',
+    highlight(code: string, lang?: string) {
+      if (lang && hljs.getLanguage(lang)) {
+        try {
+          return hljs.highlight(code, { language: lang }).value
+        } catch (err) {
+          console.error('代码高亮失败:', err)
+        }
+      }
+      return hljs.highlightAuto(code).value
+    },
+  }),
+)
+
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+  pedantic: false,
+})
 
 const langDisplayName = (lang: string) => {
   const map: Record<string, string> = {
@@ -103,6 +128,26 @@ const generateLineNumbers = (code: string) =>
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
+/** 判断语言是否被 hljs 支持（用于归一化） */
+const normalizeHljsLang = (raw: string): string => {
+  const key = raw.trim().toLowerCase()
+  if (!key) return ''
+  // 别名归一
+  const aliases: Record<string, string> = {
+    js: 'javascript',
+    ts: 'typescript',
+    py: 'python',
+    sh: 'bash',
+    shell: 'bash',
+    yml: 'yaml',
+    md: 'markdown',
+    vue: 'vue',
+    html: 'xml',
+  }
+  const mapped = aliases[key] ?? key
+  return hljs.getLanguage(mapped) ? mapped : ''
+}
+
 const processMath = (content: string) => {
   if (!props.enableMath) return content
   content = content.replace(/\$\$([\s\S]+?)\$\$/g, (_m: string, expr: string) => {
@@ -122,27 +167,40 @@ const ensureCompleteCodeBlocks = (content: string) =>
     return match
   })
 
-const highlightAll = async (html: string) => {
+/**
+ * highlight.js 渲染后处理：
+ * 代码块已由 marked-highlight 在 marked 阶段完成高亮（输出带 hljs 的 <code>），
+ * 此处不再做二次高亮，只保留 DOMPurify 后对极少数未闭合/异常块的兜底
+ */
+const postProcessHljs = (html: string) => {
   const temp = document.createElement('div')
   temp.innerHTML = html
-  const blocks = Array.from(temp.querySelectorAll<HTMLPreElement>('pre[data-code]'))
-  for (const pre of blocks) {
-    const code = pre.getAttribute('data-code') || ''
-    const langRaw = pre.getAttribute('data-lang') || ''
-    const lang = normalizeLang(langRaw)
-    try {
-      if (lang) {
-        const highlighted = await highlightCode(code, lang)
-        const inner = document.createElement('div')
-        inner.innerHTML = highlighted
-        const shikiPre = inner.querySelector('pre')
-        if (shikiPre) pre.innerHTML = shikiPre.innerHTML
-        pre.classList.add('shiki')
-      } else {
-        pre.textContent = code
+  // 为所有由自定义 renderer 生成的占位 pre 补充 hljs 类（若 marked-highlight 未覆盖）
+  for (const pre of Array.from(temp.querySelectorAll<HTMLPreElement>('pre.md-code-pre'))) {
+    if (!pre.querySelector('code.hljs')) {
+      const codeEl = pre.querySelector('code')
+      const raw = pre.getAttribute('data-code') || codeEl?.textContent || ''
+      const langRaw = pre.getAttribute('data-lang') || ''
+      const lang = normalizeHljsLang(langRaw)
+      let highlighted = ''
+      if (lang && hljs.getLanguage(lang)) {
+        try {
+          highlighted = hljs.highlight(raw, { language: lang }).value
+        } catch {
+          highlighted = escapeHtml(raw)
+        }
+      } else if (raw) {
+        try {
+          highlighted = hljs.highlightAuto(raw).value
+        } catch {
+          highlighted = escapeHtml(raw)
+        }
       }
-    } catch {
-      // fallback plain
+      if (codeEl) {
+        codeEl.innerHTML = highlighted
+        codeEl.classList.add('hljs')
+        if (lang) codeEl.classList.add(`language-${lang}`)
+      }
     }
   }
   return temp.innerHTML
@@ -151,17 +209,35 @@ const highlightAll = async (html: string) => {
 const buildRenderer = () => {
   const renderer = new marked.Renderer()
 
-  // code: marked v15 token object
+  // code: marked v15 token object — 用 highlight.js 高亮
   renderer.code = (token: Tokens.Code) => {
     const code = token.text || ''
     const langRaw = token.lang || ''
-    const validLang = normalizeLang(langRaw) || (langRaw ? langRaw.toLowerCase() : 'text')
+    const hlLang = normalizeHljsLang(langRaw)
+    const validLang = hlLang || (langRaw ? langRaw.toLowerCase() : 'text')
     const display = langDisplayName(validLang)
     const stats = codeStats(code)
     const id = `md-code-${Math.random().toString(36).slice(2, 8)}`
     const lineNums = props.showLineNumbers
       ? `<div class="line-numbers">${escapeHtml(generateLineNumbers(code))}</div>`
       : ''
+
+    // 直接用 hljs 高亮（与 markedHighlight 配置保持一致，黄色主题外壳）
+    let highlighted = ''
+    if (hlLang && hljs.getLanguage(hlLang)) {
+      try {
+        highlighted = hljs.highlight(code, { language: hlLang }).value
+      } catch {
+        highlighted = escapeHtml(code)
+      }
+    } else {
+      try {
+        highlighted = hljs.highlightAuto(code).value
+      } catch {
+        highlighted = escapeHtml(code)
+      }
+    }
+
     return `
       <div class="md-code-block" data-language="${escapeHtml(validLang)}" data-block-id="${id}">
         <div class="md-code-header">
@@ -179,14 +255,13 @@ const buildRenderer = () => {
         </div>
         <div class="md-code-content" id="wrap-${id}">
           ${lineNums}
-          <pre class="md-code-pre" id="${id}" data-code="${escapeHtml(code)}" data-lang="${escapeHtml(validLang)}"><code class="hljs language-${escapeHtml(validLang)}">${escapeHtml(code)}</code></pre>
+          <pre class="md-code-pre hljs-pre" id="${id}" data-code="${escapeHtml(code)}" data-lang="${escapeHtml(validLang)}"><code class="hljs language-${escapeHtml(validLang)}">${highlighted}</code></pre>
         </div>
       </div>
     `
   }
 
   renderer.table = (token: Tokens.Table) => {
-    // 使用 marked 原生表格再包黄色外壳
     const fallback = new marked.Renderer().table(token as unknown as string)
     const id = `md-table-${Math.random().toString(36).slice(2, 6)}`
     const tableHtml = (fallback as string).replace('<table>', '<table class="md-table">')
@@ -305,7 +380,7 @@ const renderMarkdown = async (raw: string) => {
   })
 
   html = DOMPurify.sanitize(html, {
-    ADD_TAGS: ['iframe', 'video', 'audio', 'source'],
+    ADD_TAGS: ['iframe', 'video', 'audio', 'source', 'span'],
     ADD_ATTR: [
       'allow',
       'allowfullscreen',
@@ -325,10 +400,12 @@ const renderMarkdown = async (raw: string) => {
       'data-vega',
       'loading',
       'referrerpolicy',
+      'class',
     ],
   })
 
-  html = await highlightAll(html)
+  // hljs 已在 renderer.code 阶段完成，此处仅做兜底
+  html = postProcessHljs(html)
   return { html, mermaidStore, vegaStore }
 }
 
@@ -731,20 +808,20 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
         max-height: 520px;
         overflow: hidden;
         position: relative;
-        background: #0a0a0a;
+        background: #282c34; // atom-one-dark 底色，与 hljs 主题一致
         transition: max-height 0.28s ease;
         &.is-expanded {
           max-height: none;
         }
         .line-numbers {
-          background: #141414;
+          background: #21252b;
           color: #6b7280;
           padding: 16px 10px;
           font-family: 'SFMono-Regular', Menlo, monospace;
           font-size: 12px;
           line-height: 1.75;
           text-align: right;
-          border-right: 1px solid #262626;
+          border-right: 1px solid #2c313c;
           user-select: none;
           white-space: pre;
           min-width: 44px;
@@ -757,13 +834,17 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
           background: transparent;
           font-size: 12.8px;
           line-height: 1.75;
-          color: #e5e7eb;
+          color: #abb2bf;
           &::-webkit-scrollbar {
             height: 8px;
           }
           &::-webkit-scrollbar-thumb {
-            background: #2a2a2a;
+            background: #3e4451;
             border-radius: 4px;
+          }
+          code.hljs {
+            background: transparent;
+            padding: 0;
           }
         }
       }
@@ -979,6 +1060,15 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
         margin-top: 8px;
       }
     }
+
+    // highlight.js 在暗底上的微调（覆盖 atom-one-dark 的 pre 背景，保持与外壳一致）
+    :deep(.hljs) {
+      background: transparent !important;
+      color: #abb2bf;
+    }
+    :deep(.hljs-pre) {
+      background: transparent;
+    }
   }
 
   .md-stream-hint {
@@ -1030,7 +1120,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
 
 :global(.dark) .markdown-renderer {
   .markdown-content :deep(.md-code-block) .md-code-content {
-    background: #0a0a0a;
+    background: #282c34;
   }
   .markdown-content :deep(.md-quote) {
     background: var(--surface-card);
