@@ -605,13 +605,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="skill-studio">
+  <main class="skill-studio" :style="skill ? { '--tree-width': `${treeWidth}px`, '--chat-width': `${chatWidth}px` } : {}">
     <div v-if="loading" class="studio-loading"><a-spin size="small" />正在打开工作台…</div>
     <CatalogEmpty v-else-if="error && !skill" icon="book" title="无法打开技能" :description="error">
       <RouterLink to="/agent/skills">返回我的技能</RouterLink>
     </CatalogEmpty>
     <template v-else-if="skill">
-      <div class="studio-shell" :style="{ '--tree-width': `${treeWidth}px`, '--chat-width': `${chatWidth}px` }">
       <header class="studio-topbar">
         <RouterLink to="/agent/skills" class="studio-back"
           ><Icon name="arrow-left-line" :size="16" /><span>我的技能</span></RouterLink
@@ -922,7 +921,6 @@ onBeforeUnmount(() => {
           </form>
         </aside>
       </div>
-      </div>
     </template>
     <a-modal
       :open="infoOpen"
@@ -994,7 +992,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* A: 约束宽度 — 外层留白 + 内层卡片居中，解决全贴边 */
 .skill-studio {
   flex: 1;
   min-height: 0;
@@ -1004,23 +1001,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   overflow: hidden;
   color: var(--color-text-primary);
-  background: var(--surface-shell);
-  padding: 16px 20px 20px;
-}
-.studio-shell {
-  max-width: var(--page-max-width);
-  width: 100%;
-  margin: 0 auto;
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
   background: var(--surface-content);
-  border: 1px solid var(--border-default);
-  border-radius: 12px;
-  box-shadow: var(--shadow-sm);
 }
 .studio-mobile-switch {
   display: none;
@@ -1038,9 +1019,9 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 12px;
   padding: 8px 20px;
-  border-bottom: 1px solid var(--border-default);
   background: var(--surface-content);
-  box-shadow: 0 1px 0 rgba(16, 24, 40, 0.04);
+  border-bottom: none;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
   position: relative;
   z-index: 1;
 }
@@ -1097,6 +1078,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   display: grid;
   grid-template-columns: var(--tree-width) 1px minmax(280px, 1fr) 1px var(--chat-width);
+  background: var(--surface-content);
 }
 .studio-workspace.tree-hidden {
   grid-template-columns: minmax(280px, 1fr) 1px var(--chat-width);
@@ -1130,7 +1112,6 @@ onBeforeUnmount(() => {
   flex-direction: column;
   overflow: hidden;
   background: var(--surface-content);
-  border-left: 1px solid transparent;
 }
 .pane-header {
   min-height: 44px;
@@ -1139,9 +1120,9 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  border-bottom: 1px solid var(--border-default);
+  border-bottom: none;
   font-size: 12px;
-  background: var(--surface-content);
+  background: transparent;
 }
 .pane-header > div {
   display: flex;
@@ -1157,6 +1138,10 @@ onBeforeUnmount(() => {
 .studio-files .pane-header {
   background: var(--surface-shell);
 }
+.studio-files .pane-header strong,
+.studio-chat .pane-header strong {
+  color: var(--color-text-secondary);
+}
 .icon-action {
   display: inline-flex;
   align-items: center;
@@ -1165,11 +1150,14 @@ onBeforeUnmount(() => {
   height: 26px;
   padding: 0;
   color: var(--color-text-secondary);
-  border-radius: 4px;
+  border-radius: 6px;
 }
 .icon-action:hover {
-  background: var(--surface-shell);
+  background: var(--surface-content);
   color: var(--color-brand);
+}
+.studio-files .icon-action:hover {
+  background: var(--surface-content);
 }
 .file-tree {
   flex: 1;
@@ -1184,7 +1172,7 @@ onBeforeUnmount(() => {
   min-height: 34px;
   padding: 6px 10px;
   text-align: left;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 12px;
 }
 .file-row > span {
@@ -1204,7 +1192,10 @@ onBeforeUnmount(() => {
   color: var(--color-brand);
 }
 .file-row:hover:not(.selected) {
-  background: var(--surface-shell);
+  background: var(--surface-content);
+}
+.studio-files .file-row:hover:not(.selected) {
+  background: var(--surface-content);
 }
 .file-row small {
   margin-left: auto;
@@ -1224,17 +1215,18 @@ onBeforeUnmount(() => {
 }
 .folder-count {
   background: var(--surface-content);
-  border: 1px solid var(--border-default);
+  border: none;
   border-radius: 999px;
-  padding: 1px 6px;
-  min-width: 18px;
+  padding: 2px 7px;
+  min-width: 20px;
   text-align: center;
+  font-size: 10px;
+  color: var(--color-text-secondary);
 }
 .reference-row {
   padding-left: 28px;
 }
-.tree-empty,
-.files-note {
+.tree-empty {
   color: var(--color-text-tertiary);
   font-size: 11px;
   line-height: 1.8;
@@ -1246,10 +1238,10 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 8px;
   padding: 8px 12px;
-  border-top: 1px solid var(--border-default);
   background: var(--surface-shell);
   font-size: 11px;
   color: var(--color-text-tertiary);
+  border-top: none;
 }
 .files-count {
   font-weight: 600;
@@ -1263,11 +1255,10 @@ onBeforeUnmount(() => {
   text-align: right;
 }
 .files-note {
-  padding: 12px 16px;
-  border-top: 1px solid var(--border-default);
+  display: none;
 }
 .panel-resizer {
-  background: var(--border-default);
+  background: #f0f1f3;
   position: relative;
   cursor: col-resize;
   touch-action: none;
@@ -1287,62 +1278,79 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--color-text-secondary);
 }
 .readonly-label {
   font-size: 10px;
   color: var(--color-text-tertiary);
   flex-shrink: 0;
+  background: var(--surface-shell);
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 .document-toolbar {
-  min-height: 38px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border-default);
+  padding: 0 4px;
+  margin: 12px 16px 0;
+  background: var(--surface-shell);
+  border-radius: 8px;
+  border: none;
   gap: 8px;
 }
 .view-switch {
   display: flex;
   align-self: stretch;
-  gap: 18px;
+  gap: 4px;
+  padding: 3px;
 }
 .view-switch button {
-  padding: 0 2px;
+  padding: 4px 12px;
   font-size: 12px;
   color: var(--color-text-secondary);
-  border-bottom: 2px solid transparent;
+  border-bottom: none;
+  border-radius: 6px;
+  background: transparent;
 }
 .view-switch button.active {
-  color: var(--color-brand);
-  border-bottom-color: var(--color-brand);
+  color: var(--color-text-primary);
+  background: var(--surface-content);
+  border-bottom-color: transparent;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
 }
 .document-hint {
   font-size: 11px;
   color: var(--color-text-tertiary);
+  padding-right: 12px;
 }
 .document-preview {
   flex: 1;
   overflow: auto;
   min-height: 0;
   padding: 32px 48px;
-  max-width: 820px;
+  max-width: 720px;
   width: 100%;
   margin: 0 auto;
 }
 .document-metadata {
-  margin-bottom: 28px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--border-default);
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: none;
+  background: var(--surface-shell);
+  border-radius: 10px;
+  padding: 16px 20px;
 }
 .document-metadata h1 {
-  font-size: 24px;
-  margin: 0 0 10px;
+  font-size: 22px;
+  margin: 0 0 8px;
 }
 .document-metadata p {
   color: var(--color-text-secondary);
   font-size: 13px;
   line-height: 1.8;
+  margin: 0;
 }
 .document-empty {
   display: flex;
@@ -1353,6 +1361,11 @@ onBeforeUnmount(() => {
   text-align: center;
   color: var(--color-text-tertiary);
   gap: 12px;
+  background: var(--surface-shell);
+  border-radius: 12px;
+  border: 1px dashed var(--border-default);
+  margin: 24px;
+  padding: 32px;
 }
 .document-empty h2 {
   color: var(--color-text-primary);
@@ -1401,13 +1414,18 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 1.8;
   color: var(--color-text-secondary);
-  border-top: 1px solid var(--border-default);
+  border-top: none;
+  background: var(--surface-shell);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
 }
 .chat-empty > button:hover {
   color: var(--color-brand);
+  background: var(--color-brand-subtle);
 }
 .chat-message {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   overflow-wrap: anywhere;
   font-size: 13px;
 }
@@ -1421,7 +1439,8 @@ onBeforeUnmount(() => {
   margin-left: 20px;
   padding: 12px 14px;
   background: var(--surface-shell);
-  border-radius: 6px;
+  border-radius: 10px;
+  border: none;
 }
 .chat-message :deep(.markdown-body) {
   font-size: 13px;
@@ -1435,8 +1454,10 @@ onBeforeUnmount(() => {
 }
 .change-summary {
   border-left: 2px solid var(--color-brand);
-  padding: 4px 0 4px 12px;
+  padding: 8px 0 8px 12px;
   font-size: 12px;
+  background: var(--surface-shell);
+  border-radius: 0 8px 8px 0;
 }
 .change-summary p {
   margin-bottom: 8px;
@@ -1452,11 +1473,13 @@ onBeforeUnmount(() => {
 }
 .chat-composer {
   padding: 12px;
-  border-top: 1px solid var(--border-default);
+  background: var(--surface-shell);
+  border-top: none;
 }
 .chat-composer :deep(textarea.ant-input) {
   font-size: 13px;
   resize: none;
+  background: var(--surface-content);
 }
 .chat-composer > div {
   display: flex;
@@ -1494,23 +1517,7 @@ onBeforeUnmount(() => {
     display: none;
   }
 }
-@media (max-width: 1200px) {
-  .skill-studio {
-    padding: 12px;
-  }
-  .studio-shell {
-    border-radius: 10px;
-  }
-}
 @media (max-width: 900px) {
-  .skill-studio {
-    padding: 0;
-  }
-  .studio-shell {
-    border-radius: 0;
-    border-left: 0;
-    border-right: 0;
-  }
   .studio-workspace {
     display: flex;
     flex-direction: column;
@@ -1520,7 +1527,8 @@ onBeforeUnmount(() => {
     display: flex;
     gap: 16px;
     padding: 0 16px;
-    border-bottom: 1px solid var(--border-default);
+    background: var(--surface-shell);
+    border-bottom: none;
   }
   .studio-mobile-switch button {
     padding: 10px 0;
@@ -1534,9 +1542,7 @@ onBeforeUnmount(() => {
   .studio-files {
     max-height: 170px;
     flex-shrink: 0;
-    border-bottom: 1px solid var(--border-default);
   }
-  .files-note,
   .panel-resizer {
     display: none;
   }
@@ -1550,7 +1556,6 @@ onBeforeUnmount(() => {
     flex: 1;
     height: auto;
     min-height: 0;
-    border-top: 1px solid var(--border-default);
   }
   .mobile-chat .studio-files,
   .mobile-chat .studio-document {
@@ -1570,5 +1575,9 @@ onBeforeUnmount(() => {
   .document-hint {
     display: none;
   }
+  .document-preview {
+    padding: 20px 16px;
+  }
 }
 </style>
+
