@@ -454,6 +454,12 @@ const lastChange = ref<{ before: SkillRevision; after: string; afterId: number |
 const chatLog = ref<HTMLElement>();
 const treeWidth = ref(210);
 const chatWidth = ref(380);
+const referenceCount = computed(() => {
+  const list = skill.value?.referenceFiles;
+  return Array.isArray(list) ? list.length : 0;
+});
+const totalFiles = computed(() => 1 + referenceCount.value);
+const folderCountLabel = computed(() => (referenceCount.value > 0 ? String(referenceCount.value) : ''));
 const currentPath = computed(() =>
   selectedFile.value < 0
     ? 'SKILL.md'
@@ -599,12 +605,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="skill-studio" :style="{ '--tree-width': `${treeWidth}px`, '--chat-width': `${chatWidth}px` }">
+  <main class="skill-studio">
     <div v-if="loading" class="studio-loading"><a-spin size="small" />正在打开工作台…</div>
     <CatalogEmpty v-else-if="error && !skill" icon="book" title="无法打开技能" :description="error">
       <RouterLink to="/agent/skills">返回我的技能</RouterLink>
     </CatalogEmpty>
     <template v-else-if="skill">
+      <div class="studio-shell" :style="{ '--tree-width': `${treeWidth}px`, '--chat-width': `${chatWidth}px` }">
       <header class="studio-topbar">
         <RouterLink to="/agent/skills" class="studio-back"
           ><Icon name="arrow-left-line" :size="16" /><span>我的技能</span></RouterLink
@@ -711,9 +718,9 @@ onBeforeUnmount(() => {
               :aria-expanded="referencesOpen"
               @click="referencesOpen = !referencesOpen"
             >
-              <span>{{ referencesOpen ? '⌄' : '›' }}</span><Icon name="folder-line" :size="15" /><span
+              <span class="folder-caret">{{ referencesOpen ? '⌄' : '›' }}</span><Icon name="folder-line" :size="15" /><span
                 >references</span
-              ><small>{{ skill.referenceFiles.length }}</small>
+              ><small v-if="folderCountLabel" class="folder-count">{{ folderCountLabel }}</small>
             </button>
             <template v-if="referencesOpen">
               <button
@@ -728,6 +735,9 @@ onBeforeUnmount(() => {
               <p v-if="!skill.referenceFiles.length" class="tree-empty">上传规范或素材，供助手参考</p>
             </template>
           </nav>
+          <div class="files-footer">
+            <span class="files-count">共 {{ totalFiles }} 个文件</span><span class="files-note-inline">主文档可对话修改 · 参考资料只读</span>
+          </div>
           <p class="files-note">主文档支持对话修改<br />参考资料只读</p>
         </aside>
         <div
@@ -912,6 +922,7 @@ onBeforeUnmount(() => {
           </form>
         </aside>
       </div>
+      </div>
     </template>
     <a-modal
       :open="infoOpen"
@@ -983,6 +994,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* A: 约束宽度 — 外层留白 + 内层卡片居中，解决全贴边 */
 .skill-studio {
   flex: 1;
   min-height: 0;
@@ -992,7 +1004,23 @@ onBeforeUnmount(() => {
   flex-direction: column;
   overflow: hidden;
   color: var(--color-text-primary);
+  background: var(--surface-shell);
+  padding: 16px 20px 20px;
+}
+.studio-shell {
+  max-width: var(--page-max-width);
+  width: 100%;
+  margin: 0 auto;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--surface-content);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
 }
 .studio-mobile-switch {
   display: none;
@@ -1011,6 +1039,10 @@ onBeforeUnmount(() => {
   gap: 12px;
   padding: 8px 20px;
   border-bottom: 1px solid var(--border-default);
+  background: var(--surface-content);
+  box-shadow: 0 1px 0 rgba(16, 24, 40, 0.04);
+  position: relative;
+  z-index: 1;
 }
 .studio-back {
   display: inline-flex;
@@ -1075,14 +1107,30 @@ onBeforeUnmount(() => {
 .studio-workspace.tree-hidden.chat-hidden {
   grid-template-columns: minmax(0, 1fr);
 }
-.studio-files,
-.studio-document,
+.studio-files {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-shell);
+}
+.studio-document {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-content);
+}
 .studio-chat {
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--surface-content);
+  border-left: 1px solid transparent;
 }
 .pane-header {
   min-height: 44px;
@@ -1093,6 +1141,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   border-bottom: 1px solid var(--border-default);
   font-size: 12px;
+  background: var(--surface-content);
 }
 .pane-header > div {
   display: flex;
@@ -1102,6 +1151,11 @@ onBeforeUnmount(() => {
 }
 .pane-header strong {
   font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.studio-files .pane-header {
+  background: var(--surface-shell);
 }
 .icon-action {
   display: inline-flex;
@@ -1155,8 +1209,26 @@ onBeforeUnmount(() => {
 .file-row small {
   margin-left: auto;
   flex-shrink: 0;
+  min-width: 20px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
   color: var(--color-text-tertiary);
   font-size: 10px;
+}
+.folder-caret {
+  width: 12px;
+  text-align: center;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.folder-count {
+  background: var(--surface-content);
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  padding: 1px 6px;
+  min-width: 18px;
+  text-align: center;
 }
 .reference-row {
   padding-left: 28px;
@@ -1167,6 +1239,28 @@ onBeforeUnmount(() => {
   font-size: 11px;
   line-height: 1.8;
   padding: 10px;
+}
+.files-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-default);
+  background: var(--surface-shell);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+.files-count {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+.files-note-inline {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
 }
 .files-note {
   padding: 12px 16px;
@@ -1231,7 +1325,10 @@ onBeforeUnmount(() => {
   flex: 1;
   overflow: auto;
   min-height: 0;
-  padding: 32px clamp(20px, 4vw, 64px);
+  padding: 32px 48px;
+  max-width: 820px;
+  width: 100%;
+  margin: 0 auto;
 }
 .document-metadata {
   margin-bottom: 28px;
@@ -1397,7 +1494,23 @@ onBeforeUnmount(() => {
     display: none;
   }
 }
+@media (max-width: 1200px) {
+  .skill-studio {
+    padding: 12px;
+  }
+  .studio-shell {
+    border-radius: 10px;
+  }
+}
 @media (max-width: 900px) {
+  .skill-studio {
+    padding: 0;
+  }
+  .studio-shell {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
   .studio-workspace {
     display: flex;
     flex-direction: column;
