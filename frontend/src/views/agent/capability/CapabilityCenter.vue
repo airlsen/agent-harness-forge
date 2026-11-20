@@ -55,37 +55,22 @@ let pluginPanelsInitialized = false;
 const skills = ref<{ items: SkillSummary[] } | null>(null);
 const mcp = ref<{ items: McpServer[]; available: boolean; reason: string } | null>(null);
 const mcpJson = ref('');
-const mcpTransport = ref<'streamable-http' | 'sse' | 'stdio'>('streamable-http');
-const mcpExample = computed(() =>
-  JSON.stringify(
-    {
-      mcpServers: {
-        'my-service':
-          mcpTransport.value === 'stdio'
-            ? {
-                command: 'npx',
-                args: ['-y', '@modelcontextprotocol/server-filesystem', '/path/to/allowed-folder'],
-                env: {},
-              }
-            : {
-                type: mcpTransport.value,
-                url:
-                  mcpTransport.value === 'sse'
-                    ? 'https://mcp.example.com/sse'
-                    : 'https://mcp.example.com/mcp',
-                headers: { Authorization: 'Bearer <token>' },
-              },
+// 占位示例：协议由 JSON 自身决定（type / command），与后端 parse_import_config 一致
+const mcpPlaceholder = JSON.stringify(
+  {
+    mcpServers: {
+      'my-service': {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        headers: { Authorization: 'Bearer <token>' },
       },
     },
-    null,
-    2,
-  ),
+  },
+  null,
+  2,
 );
-const mcpTemplate = ref('');
-function changeMcpTransport() {
-  if (mcpJson.value === mcpTemplate.value) mcpJson.value = mcpExample.value;
-  mcpTemplate.value = mcpExample.value;
-}
+// 含 command 即本机进程（stdio），仅此时提示运行权限
+const mcpHasStdio = computed(() => /"command"\s*:/.test(mcpJson.value));
 const mcpBusy = ref(false);
 const mcpTesting = ref<number | null>(null);
 const mcpToggling = ref<number | null>(null);
@@ -102,6 +87,8 @@ const mcpEditorOpen = ref(false);
 const selectedMcp = ref<McpServer | null>(null);
 const mcpToolQuery = ref('');
 const shownMcp = useRetained(() => selectedMcp.value);
+// 工具较少时一屏可见，不显示搜索
+const mcpToolSearchable = computed(() => (shownMcp.value?.tools.length ?? 0) > 8);
 const visibleMcpTools = computed(() =>
   (shownMcp.value?.tools ?? []).filter((tool) =>
     `${tool.name} ${tool.description}`.toLowerCase().includes(mcpToolQuery.value.trim().toLowerCase()),
@@ -118,11 +105,6 @@ const shownTool = useRetained(() => detail.value);
 const shownComponent = useRetained(() => componentDetail.value);
 const shownPluginTools = useRetained(() => pluginTools.value);
 const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE;
-const mcpTransportOptions = [
-  { value: 'streamable-http', label: 'Streamable HTTP（推荐）' },
-  { value: 'sse', label: 'SSE（旧版 HTTP，仅测试连接）' },
-  { value: 'stdio', label: 'stdio（本机进程）' },
-];
 const tab = computed(() => {
   const requestedTab = String(route.query.tab ?? '');
   // Keep the legacy ?tab=tools deep link focused on the managed plugin directory.
@@ -340,9 +322,7 @@ async function togglePlugin(plugin: PluginPackage) {
 }
 function openMcpEditor() {
   mcpImportError.value = '';
-  mcpTransport.value = 'streamable-http';
-  mcpJson.value = mcpExample.value;
-  mcpTemplate.value = mcpExample.value;
+  mcpJson.value = '';
   mcpEditorOpen.value = true;
 }
 async function importMcpJson() {
@@ -351,19 +331,8 @@ async function importMcpJson() {
   try {
     config = JSON.parse(mcpJson.value);
   } catch {
-    mcpImportError.value = 'JSON 格式不正确，请检查括号和引号。';
+    mcpImportError.value = 'JSON 格式有误，请检查括号和引号';
     return;
-  }
-  if (
-    config &&
-    typeof config === 'object' &&
-    'mcpServers' in config &&
-    config.mcpServers &&
-    typeof config.mcpServers === 'object'
-  ) {
-    for (const entry of Object.values(config.mcpServers as Record<string, Record<string, unknown>>)) {
-      entry.type = mcpTransport.value;
-    }
   }
   mcpBusy.value = true;
   try {
@@ -853,9 +822,11 @@ onMounted(load);
         </div>
       </template>
     </a-drawer>
+    <!-- 弹窗统一扁平写法：antd 默认标题、横向表单（每项保留标题），说明尽量收进占位文字，只有出错时用红色 -->
     <a-modal
       :open="pluginUploadOpen"
-      :width="560"
+      title="上传插件包"
+      :width="520"
       centered
       destroy-on-close
       wrap-class-name="plugin-upload-modal"
@@ -864,77 +835,59 @@ onMounted(load);
       :keyboard="!pluginUploadBusy"
       @cancel="pluginUploadOpen = false"
     >
-      <template #title>
-        <div class="capability-modal-title">
-          <h2>上传插件包</h2>
-          <p>先检查插件契约，再进入平台审核流程。</p>
-        </div>
-      </template>
-      <div class="plugin-upload-content">
-        <a-upload-dragger
-          class="plugin-upload-dropzone"
-          name="plugin"
-          accept=".zip,application/zip,application/x-zip-compressed"
-          :file-list="[]"
-          :multiple="false"
-          :show-upload-list="false"
-          :disabled="pluginUploadBusy"
-          :before-upload="beforePluginUpload"
-          @reject="rejectPluginFiles"
-        >
-          <span class="plugin-upload-dropzone-icon"><Icon name="arrow-up-line" :size="22" /></span>
-          <p class="plugin-upload-dropzone-title">
-            {{ pluginArchive ? '插件包已就绪，可重新选择' : '点击选择或拖放 ZIP 插件包到这里' }}
-          </p>
-          <p class="plugin-upload-dropzone-hint">
-            仅支持 .zip · 单个文件不超过 5 MB · forge.plugin.json 需位于包根目录
-          </p>
-        </a-upload-dragger>
-        <div v-if="pluginArchive" class="plugin-selected-file">
-          <Icon name="box" :size="16" />
-          <span class="plugin-selected-file-name" :title="pluginArchive.name">{{ pluginArchive.name }}</span>
-          <small>{{ formatBytes(pluginArchive.size) }}</small>
-          <a-button type="text" size="small" :disabled="pluginUploadBusy" @click="clearPluginArchive"
-            >移除</a-button
+      <a-form class="plugin-upload-content overlay-form" :label-col="{ flex: '0 0 72px' }" :colon="false">
+        <a-form-item label="插件包" :validate-status="pluginUploadMessage ? 'error' : undefined">
+          <a-upload-dragger
+            class="plugin-upload-dropzone"
+            name="plugin"
+            accept=".zip,application/zip,application/x-zip-compressed"
+            :file-list="[]"
+            :multiple="false"
+            :show-upload-list="false"
+            :disabled="pluginUploadBusy"
+            :before-upload="beforePluginUpload"
+            @reject="rejectPluginFiles"
           >
-        </div>
-        <a-alert
-          v-if="pluginUploadMessage"
-          class="plugin-upload-alert"
-          type="error"
-          show-icon
-          :message="pluginUploadMessage"
-        />
-        <a-alert type="info" show-icon>
-          <template #message>
-            上传只校验 Manifest 与制品，不安装依赖或执行包内代码。可进入审核流程的 Worker 包需使用
-            <code>forge-remote-worker-v1</code>；原生 DSH 包只登记为候选。
+            <span class="plugin-upload-dropzone-icon"><Icon name="arrow-up-line" :size="20" /></span>
+            <p class="plugin-upload-dropzone-title">
+              {{ pluginArchive ? '重新选择文件' : '点击或拖放 ZIP 文件' }}
+            </p>
+            <p class="plugin-upload-dropzone-hint">.zip，不超过 5 MB</p>
+          </a-upload-dragger>
+          <div v-if="pluginArchive" class="plugin-selected-file">
+            <span class="plugin-selected-file-name" :title="pluginArchive.name">{{
+              pluginArchive.name
+            }}</span>
+            <small>{{ formatBytes(pluginArchive.size) }}</small>
+            <a-button type="link" size="small" :disabled="pluginUploadBusy" @click="clearPluginArchive"
+              >移除</a-button
+            >
+          </div>
+          <template v-if="pluginUploadMessage" #help>
+            <span class="plugin-upload-alert" role="alert">{{ pluginUploadMessage }}</span>
           </template>
-        </a-alert>
-      </div>
+        </a-form-item>
+      </a-form>
       <template #footer>
         <div class="plugin-upload-footer">
-          <span>审核通过后，才可在场景中授权使用。</span>
-          <div>
-            <a-button :disabled="pluginUploadBusy" @click="pluginUploadOpen = false">取消</a-button>
-            <a-button
-              type="primary"
-              :loading="pluginUploadBusy"
-              :disabled="!pluginArchive"
-              @click="uploadPluginArchive"
-            >
-              {{ pluginUploadBusy ? '正在校验…' : '上传并校验' }}
-            </a-button>
-          </div>
+          <a-button :disabled="pluginUploadBusy" @click="pluginUploadOpen = false">取消</a-button>
+          <a-button
+            type="primary"
+            :loading="pluginUploadBusy"
+            :disabled="!pluginArchive"
+            @click="uploadPluginArchive"
+            >上传</a-button
+          >
         </div>
       </template>
     </a-modal>
     <a-modal
       :open="mcpEditorOpen"
-      :width="600"
+      title="添加 MCP 服务"
+      :width="560"
       centered
       destroy-on-close
-      ok-text="导入配置"
+      ok-text="确定"
       cancel-text="取消"
       :confirm-loading="mcpBusy"
       :ok-button-props="{ disabled: !mcpJson.trim() }"
@@ -942,68 +895,52 @@ onMounted(load);
       @ok="importMcpJson"
       @cancel="mcpEditorOpen = false"
     >
-      <template #title>
-        <div class="capability-modal-title">
-          <h2>导入 MCP 服务</h2>
-          <p>选择连接协议并粘贴 mcpServers JSON。远程服务须使用 HTTPS；旧版 SSE 仅可测试连接。</p>
-        </div>
-      </template>
-      <a-form layout="vertical" class="mcp-import-form">
-        <a-form-item label="连接协议">
-          <a-select
-            v-model:value="mcpTransport"
-            :options="mcpTransportOptions"
-            @change="changeMcpTransport"
-          />
-        </a-form-item>
+      <a-form class="mcp-import-form overlay-form" :label-col="{ flex: '0 0 72px' }" :colon="false">
         <a-form-item
-          label="mcpServers 配置 JSON"
+          label="服务配置"
           html-for="mcp-import-json"
-          extra="凭据和 stdio 参数会加密保存在本机，不会在服务列表中显示。stdio 命令会以 Forge 服务进程权限启动，请只配置可信 MCP 程序；导入后需先测试连接。"
+          :validate-status="mcpImportError ? 'error' : undefined"
+          :extra="!mcpImportError && mcpHasStdio ? '本机程序将以服务权限运行，请确认来源可信' : undefined"
         >
           <a-textarea
             id="mcp-import-json"
             v-model:value="mcpJson"
             class="mcp-json-input"
-            :rows="10"
+            :rows="12"
             spellcheck="false"
-            :placeholder="mcpExample"
+            :placeholder="mcpPlaceholder"
           />
+          <template v-if="mcpImportError" #help>
+            <span class="mcp-import-error" role="alert">{{ mcpImportError }}</span>
+          </template>
         </a-form-item>
       </a-form>
-      <a-alert
-        v-if="mcpImportError"
-        class="mcp-import-error"
-        type="error"
-        show-icon
-        :message="mcpImportError"
-      />
     </a-modal>
-    <a-modal :open="!!selectedMcp" :width="600" centered :footer="null" @cancel="selectedMcp = null">
-      <template v-if="shownMcp" #title>
-        <div class="capability-modal-title">
-          <h2>{{ shownMcp.name }} 工具清单</h2>
-          <p>
-            {{ transportLabel(shownMcp.transport) }} · {{ shownMcp.tools.length }} 项工具 · 由 MCP 服务提供
-          </p>
-        </div>
-      </template>
+    <a-modal
+      :open="!!selectedMcp"
+      :title="shownMcp?.name"
+      :width="560"
+      centered
+      :footer="null"
+      @cancel="selectedMcp = null"
+    >
       <a-input
+        v-if="mcpToolSearchable"
         v-model:value="mcpToolQuery"
         class="mcp-tools-search"
-        placeholder="搜索工具名称或用途"
+        :placeholder="`搜索 ${shownMcp?.tools.length ?? 0} 个工具`"
         aria-label="搜索 MCP 工具"
         allow-clear
       >
-        <template #prefix><Icon name="search" :size="15" /></template>
+        <template #prefix><Icon name="search" :size="14" /></template>
       </a-input>
       <a-list v-if="visibleMcpTools.length" class="mcp-tools-list" :data-source="visibleMcpTools">
         <template #renderItem="{ item }">
           <a-list-item>
-            <a-list-item-meta :title="item.name" :description="item.description || '此工具未提供用途说明。'">
-              <template #avatar
-                ><span class="scene-icon code mcp-tool-symbol"><Icon name="wrench" :size="16" /></span
-              ></template>
+            <a-list-item-meta :description="item.description || undefined">
+              <template #title
+                ><code>{{ item.name }}</code></template
+              >
             </a-list-item-meta>
           </a-list-item>
         </template>
@@ -1012,7 +949,7 @@ onMounted(load);
         v-else
         class="mcp-tools-empty"
         :image="simpleEmptyImage"
-        :description="shownMcp?.tools.length ? '没有匹配的工具' : '服务尚未返回工具清单，请先测试连接。'"
+        :description="shownMcp?.tools.length ? '没有匹配的工具' : '暂无工具，请先测试连接'"
       />
     </a-modal>
     <a-drawer
@@ -1255,8 +1192,7 @@ onMounted(load);
 }
 
 /* ============ antd 抽屉 / 对话框插槽内容（插槽在本组件内编译，scoped 样式随 Teleport 一并生效） ============ */
-.capability-drawer-title,
-.capability-modal-title {
+.capability-drawer-title {
   min-width: 0;
 }
 .capability-drawer-title .eyebrow {
@@ -1267,8 +1203,7 @@ onMounted(load);
   font-weight: 500;
   letter-spacing: 1.5px;
 }
-.capability-drawer-title h2,
-.capability-modal-title h2 {
+.capability-drawer-title h2 {
   margin: 0;
   color: var(--ink);
   font-size: 18px;
@@ -1276,11 +1211,7 @@ onMounted(load);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.capability-modal-title h2 {
-  font-size: 16px;
-}
-.capability-drawer-title p,
-.capability-modal-title p {
+.capability-drawer-title p {
   margin: 4px 0 0;
   color: var(--text-secondary);
   font-size: 12px;
@@ -1306,54 +1237,56 @@ onMounted(load);
   margin: 0;
 }
 
+/* 弹窗内横向表单：每项「标题 + 控件」，标题左对齐；小屏改为上下排列 */
+.overlay-form :deep(.ant-form-item) {
+  margin-bottom: 0;
+}
+.overlay-form :deep(.ant-form-item-label) {
+  text-align: start;
+}
+.overlay-form :deep(.ant-form-item-label > label) {
+  margin: 0; /* 中和 style.css 全局 label { margin: 20px 0 8px } */
+  color: var(--color-text-primary);
+}
+.overlay-form :deep(.ant-form-item-explain),
+.overlay-form :deep(.ant-form-item-extra) {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
 /* 上传插件包：内容区自身滚动，整个对话框始终留在视口内（含 320px 宽的小屏） */
 .plugin-upload-content {
-  display: grid;
-  gap: 12px;
   max-height: calc(100vh - 240px);
   max-height: calc(100dvh - 240px);
-  min-height: 120px;
   overflow: hidden auto;
   overscroll-behavior: contain;
   overflow-wrap: anywhere;
 }
-.plugin-upload-content :deep(.ant-upload-drag) {
-  border-radius: 8px;
-}
 .plugin-upload-content :deep(.ant-upload-btn) {
-  padding: 20px 16px;
+  padding: 16px;
 }
 .plugin-upload-dropzone-icon {
-  display: inline-grid;
-  width: 40px;
-  height: 40px;
-  margin-bottom: 8px;
-  place-items: center;
-  border-radius: 50%;
-  color: var(--color-brand-active);
-  background: var(--color-brand-muted);
+  display: inline-flex;
+  margin-bottom: 4px;
+  color: var(--color-text-tertiary);
 }
 .plugin-upload-dropzone-title {
-  margin: 0 0 4px;
+  margin: 0 0 2px;
   color: var(--color-text-primary);
   font-size: 14px;
-  font-weight: 500;
 }
 .plugin-upload-dropzone-hint {
   margin: 0;
   color: var(--color-text-tertiary);
   font-size: 12px;
-  line-height: 1.6;
 }
 .plugin-selected-file {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 4px 4px 4px 12px;
-  border: 1px solid var(--border-default);
-  border-radius: 8px;
-  color: var(--color-text-secondary);
+  margin-top: 8px;
+  color: var(--color-text-tertiary);
 }
 .plugin-selected-file-name {
   flex: 1;
@@ -1368,25 +1301,9 @@ onMounted(load);
   flex-shrink: 0;
   font-size: 12px;
 }
-.plugin-upload-content code {
-  overflow-wrap: anywhere;
-}
 .plugin-upload-footer {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  text-align: start;
-}
-.plugin-upload-footer > span {
-  min-width: 0;
-  color: var(--color-text-tertiary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.plugin-upload-footer > div {
-  display: flex;
-  flex-shrink: 0;
+  justify-content: flex-end;
   gap: 8px;
 }
 /* antd 默认会给相邻按钮加 margin-inline-start，这里统一用 gap */
@@ -1394,19 +1311,14 @@ onMounted(load);
   margin-inline-start: 0;
 }
 
-/* 导入 MCP 服务 */
-.mcp-import-form :deep(.ant-form-item:last-child) {
-  margin-bottom: 0;
-}
+/* 添加 MCP 服务 */
 .mcp-json-input {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 12px;
-}
-.mcp-import-error {
-  margin-top: 12px;
+  line-height: 1.7;
 }
 
-/* MCP 工具清单 */
+/* MCP 工具清单：白底列表，行间细线分隔 */
 .mcp-tools-search {
   margin-bottom: 8px;
 }
@@ -1414,14 +1326,25 @@ onMounted(load);
   min-height: 0; /* 中和 style.css 全局 :where(input){min-height:41px} */
 }
 .mcp-tools-list {
-  max-height: min(56vh, 480px);
+  max-height: min(60vh, 520px);
   overflow-y: auto;
 }
+.mcp-tools-list :deep(.ant-list-item) {
+  padding: 10px 0;
+}
 .mcp-tools-list :deep(.ant-list-item-meta-title) {
+  margin-bottom: 2px;
+  font-size: 13px;
+}
+.mcp-tools-list code {
+  color: var(--color-text-primary);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   overflow-wrap: anywhere;
 }
-.mcp-tool-symbol,
+.mcp-tools-list :deep(.ant-list-item-meta-description) {
+  font-size: 12px;
+  line-height: 1.6;
+}
 .related-scenario .scene-icon {
   width: 32px;
   height: 32px;
@@ -1461,9 +1384,12 @@ onMounted(load);
     flex-direction: column;
     align-items: stretch;
   }
-  .plugin-upload-footer > div > * {
-    flex: 1;
-    justify-content: center;
+  .overlay-form :deep(.ant-form-item-row) {
+    flex-direction: column;
+  }
+  .overlay-form :deep(.ant-form-item-label) {
+    flex: none !important;
+    padding-bottom: 4px;
   }
 }
 
