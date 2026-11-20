@@ -9,7 +9,6 @@ import { useConversation } from '../../../stores/conversation';
 import type { Scenario, Tool } from '../../../types/platform';
 import type { SkillSummary } from '../../../types/skill';
 import type { PluginPackage } from '../../../types/plugin';
-import { Empty } from 'ant-design-vue';
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
 import Icon from '../../../components/ForgeIcon.vue';
 import CatalogCard from '../../../components/catalog/CatalogCard.vue';
@@ -18,20 +17,12 @@ import CatalogGrid from '../../../components/catalog/CatalogGrid.vue';
 import CatalogSearch from '../../../components/catalog/CatalogSearch.vue';
 import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
 import { drawerA11y, useRetained } from '../../../utils/overlay';
+import McpImportModal from '../../../components/mcp/McpImportModal.vue';
+import McpToolsDrawer from '../../../components/mcp/McpToolsDrawer.vue';
+import type { McpServer } from '../../../types/mcp';
+import { mcpDescription, mcpState, transportLabel } from '../../../utils/mcp';
 
 type RuntimeComponent = PluginPackage;
-type McpServer = {
-  id: number;
-  name: string;
-  url: string;
-  transport: string;
-  enabled: boolean;
-  status: string;
-  lastError: string;
-  tools: { name: string; description: string; inputSchema?: Record<string, any> }[];
-  serverInfo: Record<string, unknown>;
-  hasCredentials: boolean;
-};
 const app = usePlatform();
 const chat = useConversation();
 const route = useRoute();
@@ -54,62 +45,18 @@ const pluginPanels = ref<string[]>([]);
 let pluginPanelsInitialized = false;
 const skills = ref<{ items: SkillSummary[] } | null>(null);
 const mcp = ref<{ items: McpServer[]; available: boolean; reason: string } | null>(null);
-const mcpJson = ref('');
-const mcpTransport = ref<'streamable-http' | 'sse' | 'stdio'>('streamable-http');
-const mcpExample = computed(() =>
-  JSON.stringify(
-    {
-      mcpServers: {
-        'my-service':
-          mcpTransport.value === 'stdio'
-            ? {
-                command: 'npx',
-                args: ['-y', '@modelcontextprotocol/server-filesystem', '/path/to/allowed-folder'],
-                env: {},
-              }
-            : {
-                type: mcpTransport.value,
-                url:
-                  mcpTransport.value === 'sse'
-                    ? 'https://mcp.example.com/sse'
-                    : 'https://mcp.example.com/mcp',
-                headers: { Authorization: 'Bearer <token>' },
-              },
-      },
-    },
-    null,
-    2,
-  ),
-);
-const mcpTemplate = ref('');
-function changeMcpTransport() {
-  if (mcpJson.value === mcpTemplate.value) mcpJson.value = mcpExample.value;
-  mcpTemplate.value = mcpExample.value;
-}
 const mcpBusy = ref(false);
 const mcpTesting = ref<number | null>(null);
 const mcpToggling = ref<number | null>(null);
-// 仅用于导入弹窗内、需要用户修改输入的错误；操作结果统一走全局 toast。
-const mcpImportError = ref('');
-// 修改 JSON 后清掉上一次的格式错误
-watch(
-  () => mcpJson.value,
-  () => {
-    mcpImportError.value = '';
-  },
-);
 const mcpEditorOpen = ref(false);
-const selectedMcp = ref<McpServer | null>(null);
-const mcpToolQuery = ref('');
-const shownMcp = useRetained(() => selectedMcp.value);
-const visibleMcpTools = computed(() =>
-  (shownMcp.value?.tools ?? []).filter((tool) =>
-    `${tool.name} ${tool.description}`.toLowerCase().includes(mcpToolQuery.value.trim().toLowerCase()),
-  ),
+const mcpToolsId = ref<number | null>(null);
+// 按 id 取最新数据：抽屉里测试连接刷新目录后，工具清单随之更新
+const mcpToolsServer = computed(
+  () => mcp.value?.items.find((server) => server.id === mcpToolsId.value) ?? null,
 );
+const mcpNames = computed(() => (mcp.value?.items ?? []).map((server) => server.name));
 function openMcpTools(server: McpServer) {
-  selectedMcp.value = server;
-  mcpToolQuery.value = '';
+  mcpToolsId.value = server.id;
 }
 const detail = ref<Tool | null>(null);
 const componentDetail = ref<RuntimeComponent | null>(null);
@@ -117,12 +64,6 @@ const componentDetail = ref<RuntimeComponent | null>(null);
 const shownTool = useRetained(() => detail.value);
 const shownComponent = useRetained(() => componentDetail.value);
 const shownPluginTools = useRetained(() => pluginTools.value);
-const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE;
-const mcpTransportOptions = [
-  { value: 'streamable-http', label: 'Streamable HTTP（推荐）' },
-  { value: 'sse', label: 'SSE（旧版 HTTP，仅测试连接）' },
-  { value: 'stdio', label: 'stdio（本机进程）' },
-];
 const tab = computed(() => {
   const requestedTab = String(route.query.tab ?? '');
   // Keep the legacy ?tab=tools deep link focused on the managed plugin directory.
@@ -153,22 +94,6 @@ const visibleMcp = computed(() =>
     matches(`${server.name} ${server.url} ${server.serverInfo?.name ?? ''} ${server.transport}`),
   ),
 );
-function transportLabel(transport: string) {
-  if (transport === 'stdio') return '本机进程';
-  if (transport === 'sse') return '旧版 SSE';
-  return 'Streamable HTTP';
-}
-function mcpState(server: McpServer) {
-  if (server.status === 'connected') return { label: '连接正常', color: 'success' };
-  if (server.status === 'error') return { label: '连接失败', color: 'error' };
-  return { label: '待测试', color: undefined };
-}
-function mcpDescription(server: McpServer) {
-  const name = String(
-    server.serverInfo?.name || (server.transport === 'stdio' ? '本机 MCP 进程' : server.url),
-  );
-  return server.serverInfo?.version ? `${name} · ${String(server.serverInfo.version)}` : name;
-}
 function submissionState(plugin: PluginPackage) {
   if (plugin.auditStatus === 'approved')
     return plugin.enabled ? { label: '已批准', color: 'success' } : { label: '已停用', color: undefined };
@@ -339,45 +264,20 @@ async function togglePlugin(plugin: PluginPackage) {
   }
 }
 function openMcpEditor() {
-  mcpImportError.value = '';
-  mcpTransport.value = 'streamable-http';
-  mcpJson.value = mcpExample.value;
-  mcpTemplate.value = mcpExample.value;
   mcpEditorOpen.value = true;
 }
-async function importMcpJson() {
-  mcpImportError.value = '';
-  let config: unknown;
+async function onMcpImported(items: McpServer[], testAfterImport: boolean) {
   try {
-    config = JSON.parse(mcpJson.value);
-  } catch {
-    mcpImportError.value = 'JSON 格式不正确，请检查括号和引号。';
-    return;
-  }
-  if (
-    config &&
-    typeof config === 'object' &&
-    'mcpServers' in config &&
-    config.mcpServers &&
-    typeof config.mcpServers === 'object'
-  ) {
-    for (const entry of Object.values(config.mcpServers as Record<string, Record<string, unknown>>)) {
-      entry.type = mcpTransport.value;
-    }
-  }
-  mcpBusy.value = true;
-  try {
-    await api('/registry/mcp-servers/import', { method: 'POST', body: JSON.stringify({ config }) });
-    mcpJson.value = '';
-    mcpEditorOpen.value = false;
-    app.toast('MCP 服务已添加，请测试连接以读取工具清单。');
     await refreshMcp();
   } catch (error) {
-    // 弹窗保持打开，错误留在输入框下方，方便对照修改。
-    mcpImportError.value = (error as Error).message;
-  } finally {
-    mcpBusy.value = false;
+    app.toast((error as Error).message, 'error');
+    return;
   }
+  if (!testAfterImport || !items.length) {
+    app.toast('MCP 服务已添加，请测试连接以读取工具清单。');
+    return;
+  }
+  for (const item of items) await testMcp(item);
 }
 async function refreshMcp() {
   const result = await api<{ items: McpServer[] }>('/registry/mcp-servers');
@@ -744,7 +644,7 @@ onMounted(load);
                 @click="testMcp(server)"
                 >测试连接</a-button
               >
-              <a-button size="small" :disabled="!server.tools.length" @click="openMcpTools(server)"
+              <a-button size="small" @click="openMcpTools(server)"
                 >查看工具 {{ server.tools.length }}</a-button
               >
               <a-dropdown :trigger="['click']" placement="bottomRight">
@@ -929,92 +829,13 @@ onMounted(load);
         </div>
       </template>
     </a-modal>
-    <a-modal
-      :open="mcpEditorOpen"
-      :width="600"
-      centered
-      destroy-on-close
-      ok-text="导入配置"
-      cancel-text="取消"
-      :confirm-loading="mcpBusy"
-      :ok-button-props="{ disabled: !mcpJson.trim() }"
-      :cancel-button-props="{ disabled: mcpBusy }"
-      @ok="importMcpJson"
-      @cancel="mcpEditorOpen = false"
-    >
-      <template #title>
-        <div class="capability-modal-title">
-          <h2>导入 MCP 服务</h2>
-          <p>选择连接协议并粘贴 mcpServers JSON。远程服务须使用 HTTPS；旧版 SSE 仅可测试连接。</p>
-        </div>
-      </template>
-      <a-form layout="vertical" class="mcp-import-form">
-        <a-form-item label="连接协议">
-          <a-select
-            v-model:value="mcpTransport"
-            :options="mcpTransportOptions"
-            @change="changeMcpTransport"
-          />
-        </a-form-item>
-        <a-form-item
-          label="mcpServers 配置 JSON"
-          html-for="mcp-import-json"
-          extra="凭据和 stdio 参数会加密保存在本机，不会在服务列表中显示。stdio 命令会以 Forge 服务进程权限启动，请只配置可信 MCP 程序；导入后需先测试连接。"
-        >
-          <a-textarea
-            id="mcp-import-json"
-            v-model:value="mcpJson"
-            class="mcp-json-input"
-            :rows="10"
-            spellcheck="false"
-            :placeholder="mcpExample"
-          />
-        </a-form-item>
-      </a-form>
-      <a-alert
-        v-if="mcpImportError"
-        class="mcp-import-error"
-        type="error"
-        show-icon
-        :message="mcpImportError"
-      />
-    </a-modal>
-    <a-modal :open="!!selectedMcp" :width="600" centered :footer="null" @cancel="selectedMcp = null">
-      <template v-if="shownMcp" #title>
-        <div class="capability-modal-title">
-          <h2>{{ shownMcp.name }} 工具清单</h2>
-          <p>
-            {{ transportLabel(shownMcp.transport) }} · {{ shownMcp.tools.length }} 项工具 · 由 MCP 服务提供
-          </p>
-        </div>
-      </template>
-      <a-input
-        v-model:value="mcpToolQuery"
-        class="mcp-tools-search"
-        placeholder="搜索工具名称或用途"
-        aria-label="搜索 MCP 工具"
-        allow-clear
-      >
-        <template #prefix><Icon name="search" :size="15" /></template>
-      </a-input>
-      <a-list v-if="visibleMcpTools.length" class="mcp-tools-list" :data-source="visibleMcpTools">
-        <template #renderItem="{ item }">
-          <a-list-item>
-            <a-list-item-meta :title="item.name" :description="item.description || '此工具未提供用途说明。'">
-              <template #avatar
-                ><span class="scene-icon code mcp-tool-symbol"><Icon name="wrench" :size="16" /></span
-              ></template>
-            </a-list-item-meta>
-          </a-list-item>
-        </template>
-      </a-list>
-      <a-empty
-        v-else
-        class="mcp-tools-empty"
-        :image="simpleEmptyImage"
-        :description="shownMcp?.tools.length ? '没有匹配的工具' : '服务尚未返回工具清单，请先测试连接。'"
-      />
-    </a-modal>
+    <McpImportModal v-model:open="mcpEditorOpen" :existing-names="mcpNames" @imported="onMcpImported" />
+    <McpToolsDrawer
+      :server="mcpToolsServer"
+      :testing="!!mcpToolsServer && mcpTesting === mcpToolsServer.id"
+      @close="mcpToolsId = null"
+      @test="testMcp"
+    />
     <a-drawer
       :open="!!detail"
       :width="520"
@@ -1394,41 +1215,10 @@ onMounted(load);
   margin-inline-start: 0;
 }
 
-/* 导入 MCP 服务 */
-.mcp-import-form :deep(.ant-form-item:last-child) {
-  margin-bottom: 0;
-}
-.mcp-json-input {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 12px;
-}
-.mcp-import-error {
-  margin-top: 12px;
-}
-
-/* MCP 工具清单 */
-.mcp-tools-search {
-  margin-bottom: 8px;
-}
-.mcp-tools-search :deep(.ant-input) {
-  min-height: 0; /* 中和 style.css 全局 :where(input){min-height:41px} */
-}
-.mcp-tools-list {
-  max-height: min(56vh, 480px);
-  overflow-y: auto;
-}
-.mcp-tools-list :deep(.ant-list-item-meta-title) {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  overflow-wrap: anywhere;
-}
-.mcp-tool-symbol,
 .related-scenario .scene-icon {
   width: 32px;
   height: 32px;
   border-radius: 8px;
-}
-.mcp-tools-empty {
-  margin: 24px 0;
 }
 
 /* 工具详情 / 组件详情 */
