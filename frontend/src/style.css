@@ -3085,15 +3085,6 @@ table td > .tag {
   flex-direction: column;
   box-shadow: -5px 0 35px #1b335619;
 }
-/* antd Drawer 外层已有阴影，这里不再叠加旧版自定义抽屉的大阴影 */
-.ant-drawer-content.drawer {
-  box-shadow: none;
-}
-/* 弹层扁平化：弹窗 / 抽屉内的按钮、输入框、上传区与弹窗容器同为 4px 圆角 */
-.ant-modal :is(.ant-btn, .ant-input, .ant-input-affix-wrapper, .ant-select-selector, .ant-upload-drag),
-.ant-drawer :is(.ant-btn, .ant-input, .ant-input-affix-wrapper, .ant-select-selector, .ant-upload-drag) {
-  border-radius: 4px;
-}
 .drawer > header {
   display: flex;
   align-items: flex-start;
