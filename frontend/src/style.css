@@ -47,6 +47,18 @@ button:disabled {
 .ant-btn {
   border-radius: 4px !important;
 }
+/* 统一 Ant Design 输入框圆角，包含前后缀输入框、密码框与多行输入框。 */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-input-number-affix-wrapper {
+  border-radius: 4px !important;
+}
+/* 组合输入框内部不重复加圆角，避免前后缀或附加内容的接缝露底。 */
+.ant-input-affix-wrapper > .ant-input,
+.ant-input-number-affix-wrapper > .ant-input-number {
+  border-radius: 0 !important;
+}
 a {
   color: inherit;
   text-decoration: none;
@@ -170,6 +182,20 @@ button:disabled:hover {
   border-radius: 5px;
 }
 ::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* 多行输入框的滚动条避开圆角，防止 hover / focus 时遮住主题色边框。 */
+textarea {
+  background-clip: padding-box;
+}
+textarea::-webkit-scrollbar {
+  background: transparent;
+  border-radius: inherit;
+}
+textarea::-webkit-scrollbar-track {
+  margin-block: 8px;
+}
+textarea::-webkit-scrollbar-corner {
   background: transparent;
 }
 .button {

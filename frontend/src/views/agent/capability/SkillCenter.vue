@@ -107,6 +107,7 @@ onMounted(load);
             <CatalogCard
               v-for="item in visibleSkills"
               :key="item.id"
+              class="skill-card"
               :title="item.name"
               icon="book"
               tone="book"
