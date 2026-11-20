@@ -12,11 +12,14 @@ function measure() {
   if (!element || expanded.value) return;
   overflowing.value = element.scrollHeight > element.clientHeight + 1;
 }
-watch(() => props.text, async () => {
-  expanded.value = false;
-  await nextTick();
-  measure();
-});
+watch(
+  () => props.text,
+  async () => {
+    expanded.value = false;
+    await nextTick();
+    measure();
+  },
+);
 onMounted(() => {
   measure();
   observer = new ResizeObserver(measure);
