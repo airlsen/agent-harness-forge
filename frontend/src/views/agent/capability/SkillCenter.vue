@@ -150,9 +150,6 @@ onMounted(load);
 </template>
 
 <style scoped>
-.skill-library-inner {
-  max-width: 1340px;
-}
 /* 页面节奏与企业场景 / 技能管理一致：页头、工具栏、内容间距 24px */
 .skill-library-page .skill-library-heading {
   gap: 16px;
