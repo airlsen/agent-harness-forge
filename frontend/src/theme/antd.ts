@@ -20,6 +20,11 @@ const shape = {
   borderRadius: 8,
 };
 
+// 弹层扁平化：弹窗容器不跟随全局圆角放大（全局 8 时 antd 会推导出 10），统一 4px
+const components = {
+  Modal: { borderRadiusLG: 4, borderRadiusSM: 4 },
+};
+
 export const forgeLightTheme: ThemeConfig = {
   algorithm: antdTheme.defaultAlgorithm,
   token: {
@@ -37,6 +42,7 @@ export const forgeLightTheme: ThemeConfig = {
     colorBorderSecondary: '#e5e7eb',
     fontFamily,
   },
+  components,
 };
 
 export const forgeDarkTheme: ThemeConfig = {
@@ -56,4 +62,5 @@ export const forgeDarkTheme: ThemeConfig = {
     colorBorderSecondary: '#232933',
     fontFamily,
   },
+  components,
 };

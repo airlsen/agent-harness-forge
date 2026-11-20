@@ -582,7 +582,7 @@ async def main():
             await expect(upload_footer).to_have_css("align-items", "stretch")
             await screenshot("plugin-upload-mobile.png")
             file_input = page.locator(".plugin-upload-content input[type=file]")
-            submit_upload = page.get_by_role("button", name="上传并校验", exact=True)
+            submit_upload = upload_dialog.get_by_role("button", name="上传", exact=True)
             await file_input.set_input_files(
                 {
                     "name": "not-a-plugin.txt",
@@ -691,12 +691,12 @@ async def main():
                 "还没有 MCP 服务"
             )
             await page.get_by_role("button", name="添加 MCP 服务").click()
-            mcp_dialog = page.get_by_role("dialog", name="导入 MCP 服务")
+            mcp_dialog = page.get_by_role("dialog", name="添加 MCP 服务")
             await expect(mcp_dialog).to_be_visible()
             await page.locator("#mcp-import-json").fill("{")
-            await mcp_dialog.get_by_role("button", name="导入配置").click()
+            await mcp_dialog.get_by_role("button", name="确定").click()
             await expect(mcp_dialog.locator(".mcp-import-error")).to_contain_text(
-                "JSON 格式不正确"
+                "JSON 格式有误"
             )
             await page.locator("#mcp-import-json").fill("{ ")
             await expect(mcp_dialog.locator(".mcp-import-error")).to_have_count(0)
