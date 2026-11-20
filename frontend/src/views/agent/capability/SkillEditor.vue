@@ -94,11 +94,6 @@ function formatDate(value: string | null) {
     minute: '2-digit',
   }).format(date);
 }
-function roleLabel(role: string) {
-  if (role === 'user') return '你';
-  if (role === 'assistant') return '助手';
-  return '记录';
-}
 async function loadSkill(options: { focusAssistant?: boolean; quiet?: boolean } = {}) {
   const request = ++loadRequest;
   if (isNew.value) {
@@ -975,13 +970,19 @@ onBeforeUnmount(() => {
               </button>
             </div>
             <article v-for="message in messages" :key="message.id" :class="['chat-message', message.role]">
-              <span class="message-role">{{ roleLabel(message.role) }}</span><Markdown
-                :text="message.content"
-              />
+              <div v-if="message.role === 'assistant'" class="assistant-label">
+                <span class="assistant-icon"><Icon name="sparkles" :size="14" /></span>助手
+              </div>
+              <div v-if="message.role === 'tool'" class="tool-note">
+                <Icon name="file" :size="13" />{{ message.content }}
+              </div>
+              <Markdown v-else :text="message.content" />
             </article>
             <article v-if="busy" class="chat-message assistant">
-              <span class="message-role">助手</span
-              ><Markdown v-if="streamingText" :text="streamingText" live /><span v-else class="thinking"
+              <div class="assistant-label">
+                <span class="assistant-icon"><Icon name="sparkles" :size="14" /></span>助手
+              </div>
+              <Markdown v-if="streamingText" :text="streamingText" live /><span v-else class="thinking"
                 ><a-spin size="small" />正在处理当前草稿…</span
               >
             </article>
@@ -1551,13 +1552,26 @@ onBeforeUnmount(() => {
 .chat-message {
   margin-bottom: 20px;
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: 14px;
 }
-.message-role {
-  display: block;
-  color: var(--color-text-tertiary);
-  font-size: 11px;
-  margin-bottom: 8px;
+.assistant-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 9px;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.assistant-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  color: var(--color-brand);
+  background: var(--color-brand-muted);
 }
 .chat-message.user {
   margin-left: 20px;
@@ -1567,7 +1581,27 @@ onBeforeUnmount(() => {
   border: none;
 }
 .chat-message :deep(.markdown-body) {
-  font-size: 13px;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  line-height: 1.75;
+}
+.chat-message :deep(.markdown-body h1),
+.chat-message :deep(.markdown-body h2),
+.chat-message :deep(.markdown-body h3) {
+  color: var(--color-text-primary);
+}
+.chat-message :deep(.markdown-body a) {
+  color: var(--color-brand-active);
+}
+.tool-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.tool-note svg {
+  color: var(--color-brand);
 }
 .thinking {
   display: inline-flex;
