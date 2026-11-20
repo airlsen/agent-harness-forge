@@ -7,7 +7,7 @@ import { confirm } from '../../../utils/feedback';
 import { usePlatform } from '../../../stores/platform';
 import { useConversation } from '../../../stores/conversation';
 import type { Scenario, Tool } from '../../../types/platform';
-import type { SkillSummary } from '../../../types/skill';
+import type { SkillSummary, SkillRevision } from '../../../types/skill';
 import type { PluginPackage } from '../../../types/plugin';
 import { Empty } from 'ant-design-vue';
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
@@ -141,7 +141,7 @@ const tab = computed(() => {
 const tabs = computed(() => [
   { value: 'tools', label: '基础工具', count: app.tools.length },
   { value: 'plugins', label: '插件', count: components.value.length },
-  { value: 'skills', label: '技能', count: skills.value?.items.length },
+  { value: 'skills', label: '技能', count: publishedSkills.value.length },
   { value: 'mcp', label: 'MCP 服务', count: mcp.value?.items.length },
 ]);
 const searchCopy: Record<string, { placeholder: string; label: string }> = {
@@ -154,9 +154,35 @@ const search = computed(() => searchCopy[tab.value] ?? searchCopy.tools);
 function matches(text: string) {
   return text.toLowerCase().includes(query.value.trim().toLowerCase());
 }
-const visibleSkills = computed(() =>
-  (skills.value?.items ?? []).filter((skill) => matches(`${skill.name} ${skill.description}`)),
+const publishedSkills = computed(() =>
+  (skills.value?.items ?? []).filter((skill) => skill.publishedRevisionId !== null),
 );
+const visibleSkills = computed(() =>
+  publishedSkills.value.filter((skill) => matches(`${skill.name} ${skill.description}`)),
+);
+const viewedSkill = ref<SkillSummary | null>(null);
+const publishedContent = ref('');
+const publishedLoading = ref(false);
+const publishedError = ref('');
+let publishedRequest = 0;
+async function viewPublishedSkill(skill: SkillSummary) {
+  const request = ++publishedRequest;
+  viewedSkill.value = skill;
+  publishedContent.value = '';
+  publishedError.value = '';
+  publishedLoading.value = true;
+  try {
+    const result = await api<{ items: SkillRevision[] }>(`/skills/${skill.id}/revisions`);
+    if (request !== publishedRequest) return;
+    const published = result.items.find((revision) => revision.id === skill.publishedRevisionId);
+    if (!published) throw new Error('未找到已发布版本，请刷新列表后重试。');
+    publishedContent.value = published.content;
+  } catch (error) {
+    if (request === publishedRequest) publishedError.value = (error as Error).message;
+  } finally {
+    if (request === publishedRequest) publishedLoading.value = false;
+  }
+}
 const visibleMcp = computed(() =>
   (mcp.value?.items ?? []).filter((server) =>
     matches(`${server.name} ${server.url} ${server.serverInfo?.name ?? ''} ${server.transport}`),
@@ -479,9 +505,9 @@ onMounted(load);
           <a-button v-if="tab === 'plugins'" type="primary" @click="openPluginUpload">
             <template #icon><Icon name="arrow-up-line" :size="16" /></template>上传插件包
           </a-button>
-          <template v-else-if="tab === 'skills' && skills?.items.length">
+          <template v-else-if="tab === 'skills'">
             <RouterLink v-slot="{ href, navigate }" to="/agent/skills" custom>
-              <a-button :href="href" @click="navigate">全部技能</a-button>
+              <a-button :href="href" @click="navigate">我的技能</a-button>
             </RouterLink>
             <RouterLink v-slot="{ href, navigate }" to="/agent/skills/new" custom>
               <a-button type="primary" :href="href" @click="navigate">
@@ -752,7 +778,11 @@ onMounted(load);
                 @click="testMcp(server)"
                 >测试连接</a-button
               >
-              <a-button type="primary" size="small" :disabled="!server.tools.length" @click="openMcpTools(server)"
+              <a-button
+                type="primary"
+                size="small"
+                :disabled="!server.tools.length"
+                @click="openMcpTools(server)"
                 >工具</a-button
               >
               <a-dropdown :trigger="['click']" placement="bottomRight">
@@ -771,10 +801,10 @@ onMounted(load);
       </section>
       <section v-else-if="tab === 'skills' && skills" class="skill-capability-directory">
         <CatalogEmpty
-          v-if="!skills.items.length"
+          v-if="!publishedSkills.length"
           icon="book"
-          title="还没有技能"
-          description="创建一项可复用的工作方法。"
+          title="还没有已发布的技能"
+          description="在我的技能中创建并发布后，即可在这里查看。"
         >
           <RouterLink v-slot="{ href, navigate }" to="/agent/skills/new" custom>
             <a-button type="primary" :href="href" @click="navigate">
@@ -800,21 +830,18 @@ onMounted(load);
             tone="book"
             :description="skill.description"
             placeholder="尚未添加用途说明。"
-            :status="skill.status === 'published' ? `已发布 · v${skill.publishedVersion}` : '草稿'"
-            :status-color="skill.status === 'published' ? 'success' : undefined"
+            :status="`已发布 · v${skill.publishedVersion}`"
+            status-color="success"
           >
             <template #footer>
-              <RouterLink v-slot="{ href, navigate }" :to="`/agent/skills/${skill.id}`" custom>
-                <a-button
-                  type="primary"
-                  size="small"
-                  :href="href"
-                  :aria-label="`编辑技能 ${skill.name}`"
-                  @click="navigate"
-                >
-                  <template #icon><Icon name="edit" :size="14" /></template>编辑
-                </a-button>
-              </RouterLink>
+              <a-button
+                type="primary"
+                size="small"
+                :aria-label="`查看技能 ${skill.name}`"
+                @click="viewPublishedSkill(skill)"
+              >
+                查看
+              </a-button>
             </template>
           </CatalogCard>
         </CatalogGrid>
@@ -862,6 +889,26 @@ onMounted(load);
         </div>
       </template>
     </a-drawer>
+    <a-modal
+      :open="!!viewedSkill"
+      :width="760"
+      title="已发布技能"
+      :footer="null"
+      @cancel="viewedSkill = null"
+    >
+      <template v-if="viewedSkill">
+        <h2>
+          {{ viewedSkill.name }} <small>v{{ viewedSkill.publishedVersion }}</small>
+        </h2>
+        <p>{{ viewedSkill.description || '尚未添加用途说明。' }}</p>
+        <a-spin v-if="publishedLoading" />
+        <a-alert v-else-if="publishedError" type="error" :message="publishedError" show-icon />
+        <pre v-else class="published-skill-content">{{ publishedContent }}</pre>
+        <RouterLink v-slot="{ href, navigate }" :to="`/agent/skills/${viewedSkill.id}`" custom>
+          <a-button :href="href" @click="navigate">编辑技能</a-button>
+        </RouterLink>
+      </template>
+    </a-modal>
     <a-modal
       :open="pluginUploadOpen"
       :width="560"
@@ -967,11 +1014,7 @@ onMounted(load);
             @change="changeMcpTransport"
           />
         </a-form-item>
-        <a-form-item
-          label="配置内容"
-          html-for="mcp-import-json"
-          :extra="mcpImportHint"
-        >
+        <a-form-item label="配置内容" html-for="mcp-import-json" :extra="mcpImportHint">
           <a-textarea
             id="mcp-import-json"
             v-model:value="mcpJson"
@@ -1142,6 +1185,16 @@ onMounted(load);
 </template>
 
 <style scoped>
+.published-skill-content {
+  max-height: 55vh;
+  overflow: auto;
+  padding: 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--surface-shell);
+  border-radius: 4px;
+}
+
 /* MCP 正常状态使用轻量圆点，避免实底标签抢占服务标题的视觉层级。 */
 .mcp-directory :deep(.catalog-card-status.ant-tag-success) {
   display: inline-flex;

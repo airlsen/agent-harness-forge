@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { onBeforeRouteLeave, useRoute } from 'vue-router';
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
 import { api, apiFetch, post, put } from '../../../api/client';
 import Icon from '../../../components/ForgeIcon.vue';
 import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
@@ -16,8 +16,11 @@ import type {
 
 type Panel = 'content' | 'references' | 'history';
 const route = useRoute();
+const router = useRouter();
+const isNew = computed(() => !route.params.id);
 const app = usePlatform();
 const skill = ref<SkillDetail | null>(null);
+let loadRequest = 0;
 const revisions = ref<SkillRevision[]>([]);
 const session = ref<SkillAuthoringSession | null>(null);
 const messages = ref<SkillAuthoringMessage[]>([]);
@@ -37,18 +40,31 @@ const promptInput = ref<{ focus: () => void } | null>(null);
 
 const skillId = computed(() => Number(route.params.id));
 const canPublish = computed(() =>
-  Boolean(skill.value && skill.value.status === 'draft' && !dirty.value && !saving.value),
+  Boolean(
+    !isNew.value &&
+    skill.value &&
+    skill.value.status === 'draft' &&
+    !dirty.value &&
+    !saving.value &&
+    !busy.value &&
+    !publishing.value,
+  ),
 );
 const saveState = computed(() => {
   if (saving.value) return '正在保存…';
+  if (isNew.value) return '尚未保存';
   if (dirty.value) return '有未保存修改';
   return skill.value?.updatedAt ? `已保存 · ${formatDate(skill.value.updatedAt)}` : '草稿已保存';
 });
-const panelOptions = computed(() => [
-  { value: 'content' as const, label: '内容' },
-  { value: 'references' as const, label: '参考资料', count: skill.value?.referenceFiles?.length ?? 0 },
-  { value: 'history' as const, label: '版本历史', count: revisions.value.length },
-]);
+const panelOptions = computed(() =>
+  isNew.value
+    ? [{ value: 'content' as const, label: '内容' }]
+    : [
+        { value: 'content' as const, label: '内容' },
+        { value: 'references' as const, label: '参考资料', count: skill.value?.referenceFiles?.length ?? 0 },
+        { value: 'history' as const, label: '版本历史', count: revisions.value.length },
+      ],
+);
 const referenceKey = (file: { path: string }) => file.path;
 const revisionKey = (revision: SkillRevision) => revision.id;
 function revisionSource(source: string) {
@@ -84,6 +100,34 @@ function roleLabel(role: string) {
   return '记录';
 }
 async function loadSkill(options: { focusAssistant?: boolean } = {}) {
+  const request = ++loadRequest;
+  if (isNew.value) {
+    skill.value = {
+      id: 0,
+      name: '',
+      description: '',
+      status: 'draft',
+      tags: [],
+      currentRevisionId: null,
+      publishedRevisionId: null,
+      publishedVersion: null,
+      revision: null,
+      content:
+        '---\nname: my-skill\ndescription: "请补充技能用途"\n---\n\n## 目标\n\n## 工作步骤\n\n## 输出要求\n',
+      changeSummary: '',
+      referenceFiles: [],
+      createdAt: null,
+      updatedAt: null,
+    };
+    revisions.value = [];
+    session.value = null;
+    messages.value = [];
+    activePanel.value = 'content';
+    dirty.value = false;
+    error.value = '';
+    loading.value = false;
+    return;
+  }
   const id = skillId.value;
   if (!Number.isInteger(id) || id < 1) {
     skill.value = null;
@@ -99,6 +143,7 @@ async function loadSkill(options: { focusAssistant?: boolean } = {}) {
       api<{ items: SkillRevision[] }>(`/skills/${id}/revisions`),
       api<SkillAuthoringSession | null>(`/skills/${id}/authoring-session/latest`),
     ]);
+    if (request !== loadRequest) return;
     skill.value = detail;
     revisions.value = revisionResult.items;
     session.value = latestSession;
@@ -109,6 +154,7 @@ async function loadSkill(options: { focusAssistant?: boolean } = {}) {
       promptInput.value?.focus();
     }
   } catch (err) {
+    if (request !== loadRequest) return;
     // 已打开的 Skill 刷新失败只提示一次，保留当前内容；首次打开失败才进入整页错误态。
     if (skill.value?.id === id) app.toast((err as Error).message, 'error');
     else {
@@ -116,7 +162,7 @@ async function loadSkill(options: { focusAssistant?: boolean } = {}) {
       error.value = (err as Error).message;
     }
   } finally {
-    loading.value = false;
+    if (request === loadRequest) loading.value = false;
   }
 }
 async function refreshRevisions() {
@@ -124,9 +170,25 @@ async function refreshRevisions() {
   revisions.value = (await api<{ items: SkillRevision[] }>(`/skills/${skill.value.id}/revisions`)).items;
 }
 async function save() {
-  if (!skill.value || !dirty.value || saving.value) return;
+  if (!skill.value || (!dirty.value && !isNew.value) || saving.value) return;
+  if (isNew.value && !skill.value.name.trim()) {
+    app.toast('请填写技能名称。', 'info');
+    return;
+  }
   saving.value = true;
   try {
+    if (isNew.value) {
+      const created = await post<SkillDetail>('/skills', {
+        name: skill.value.name.trim(),
+        description: skill.value.description.trim(),
+        content: skill.value.content,
+      });
+      skill.value = created;
+      dirty.value = false;
+      await router.replace(`/agent/skills/${created.id}`);
+      await refreshRevisions();
+      return;
+    }
     skill.value = await put<SkillDetail>(`/skills/${skill.value.id}/draft`, {
       content: skill.value.content,
       change_summary: '手动编辑草稿',
@@ -233,6 +295,10 @@ function useStarterPrompt(text: string) {
 }
 async function send() {
   if (!prompt.value.trim() || busy.value || !skill.value) return;
+  if (isNew.value) {
+    await save();
+    if (isNew.value) return;
+  }
   if (dirty.value) {
     app.toast('请先保存当前草稿，再让助手基于最新内容继续修改。', 'info');
     return;
@@ -288,13 +354,26 @@ async function send() {
 watch(
   () => route.params.id,
   () => {
+    if (skill.value?.id === skillId.value && !isNew.value) return;
     void loadSkill();
   },
 );
 onMounted(() => {
   void loadSkill({ focusAssistant: route.query.start === 'generate' });
 });
+onBeforeRouteUpdate((to) => {
+  if ((saving.value || busy.value) && Number(to.params.id) !== skill.value?.id) {
+    app.toast('请等待当前操作完成后再离开。', 'info');
+    return false;
+  }
+  if (!dirty.value || Number(to.params.id) === skill.value?.id) return true;
+  return confirm({ title: '当前草稿有未保存的修改，确定离开吗？', okText: '离开', cancelText: '留下' });
+});
 onBeforeRouteLeave(() => {
+  if (saving.value || busy.value) {
+    app.toast('请等待当前操作完成后再离开。', 'info');
+    return false;
+  }
   if (!dirty.value) return true;
   return confirm({ title: '当前草稿有未保存的修改，确定离开吗？', okText: '离开', cancelText: '留下' });
 });
@@ -308,33 +387,35 @@ onBeforeRouteLeave(() => {
       </div>
       <CatalogEmpty v-else-if="error && !skill" icon="book" title="无法打开这个 Skill" :description="error">
         <RouterLink v-slot="{ href, navigate }" to="/agent/skills" custom>
-          <a-button :href="href" @click="navigate">返回技能库</a-button>
+          <a-button :href="href" @click="navigate">返回我的技能</a-button>
         </RouterLink>
       </CatalogEmpty>
       <template v-else-if="skill">
-        <a-breadcrumb class="skill-breadcrumb">
-          <a-breadcrumb-item
-            ><RouterLink to="/agent/capabilities?tab=skills">技能管理</RouterLink></a-breadcrumb-item
-          >
-          <a-breadcrumb-item><RouterLink to="/agent/skills">技能</RouterLink></a-breadcrumb-item>
-          <a-breadcrumb-item>{{ skill.name }}</a-breadcrumb-item>
-        </a-breadcrumb>
+        <RouterLink to="/agent/skills" class="skill-back-link">
+          <Icon name="arrow-left-line" :size="16" />我的技能
+        </RouterLink>
         <header class="skill-editor-heading">
           <div class="skill-editor-title">
             <span class="scene-icon book skill-editor-symbol"><Icon name="book" :size="20" /></span>
             <div class="skill-editor-copy">
               <div class="skill-editor-name">
-                <h1>{{ skill.name }}</h1>
-                <a-tag :bordered="false" :color="skill.status === 'published' ? 'success' : undefined">{{
-                  skill.status === 'published' ? `已发布 · v${skill.publishedVersion}` : '草稿'
+                <h1>{{ isNew ? '新建技能' : skill.name }}</h1>
+                <a-tag :bordered="false" :color="skill.publishedVersion ? 'success' : undefined">{{
+                  skill.publishedVersion ? `已发布 · v${skill.publishedVersion}` : '草稿'
                 }}</a-tag>
+                <a-tag
+                  v-if="skill.publishedVersion && (skill.status === 'draft' || dirty)"
+                  :bordered="false"
+                  color="warning"
+                  >有未发布修改</a-tag
+                >
               </div>
               <p>{{ skill.description || '尚未添加用途说明。' }}</p>
             </div>
           </div>
           <div class="skill-editor-actions">
             <span :class="['skill-save-state', { dirty }]">{{ saveState }}</span>
-            <a-button :disabled="!dirty" :loading="saving" @click="save">
+            <a-button :disabled="(!dirty && !isNew) || busy" :loading="saving" @click="save">
               <template #icon><Icon name="save" :size="16" /></template>保存草稿
             </a-button>
             <a-button
@@ -348,12 +429,36 @@ onBeforeRouteLeave(() => {
             </a-button>
           </div>
         </header>
+        <a-form v-if="isNew" layout="vertical" class="skill-new-fields">
+          <a-form-item label="技能名称" required>
+            <a-input
+              v-model:value="skill.name"
+              :disabled="saving || busy"
+              :maxlength="120"
+              placeholder="例如：客户工单总结"
+              @update:value="dirty = true"
+            />
+          </a-form-item>
+          <a-form-item label="用途说明">
+            <a-input
+              v-model:value="skill.description"
+              :disabled="saving || busy"
+              :maxlength="512"
+              placeholder="描述适用任务和目标"
+              @update:value="dirty = true"
+            />
+          </a-form-item>
+        </a-form>
         <a-alert
           v-if="dirty"
           class="skill-unsaved-note"
           type="warning"
           show-icon
-          message="草稿有未保存修改；保存后才能让助手继续处理或发布新版本。"
+          :message="
+            isNew
+              ? '首次保存将创建技能草稿；也可以发送需求，由助手继续完善。'
+              : '草稿有未保存修改；保存后才能让助手继续处理或发布新版本。'
+          "
         />
 
         <div class="skill-editor-layout">
@@ -365,22 +470,21 @@ onBeforeRouteLeave(() => {
             <section v-if="activePanel === 'content'" class="skill-panel skill-content-panel">
               <header class="skill-panel-heading">
                 <div>
-                  <h2>草稿内容</h2>
+                  <h2>技能内容</h2>
                   <p>使用 YAML front matter 定义名称和说明，再补充可执行的工作步骤与输出要求。</p>
                 </div>
                 <a-tag :bordered="false" class="skill-format-tag">Markdown</a-tag>
               </header>
               <a-textarea
                 :value="skill.content"
+                :disabled="saving || busy || publishing"
                 class="skill-content-editor"
                 spellcheck="false"
                 aria-label="Skill 草稿内容"
                 @update:value="updateContent"
               />
               <footer class="skill-content-footer">
-                <span
-                  ><Icon name="shield" :size="14" />发布后的版本保持不可变；后续编辑会形成新的草稿修订。</span
-                >
+                <span><Icon name="shield" :size="14" />正在编辑草稿，不影响已发布版本。</span>
                 <a-button v-if="dirty" type="link" size="small" :loading="saving" @click="save"
                   >保存修改</a-button
                 >
@@ -546,7 +650,7 @@ onBeforeRouteLeave(() => {
               <a-textarea
                 ref="promptInput"
                 v-model:value="prompt"
-                :disabled="busy"
+                :disabled="busy || saving"
                 :auto-size="{ minRows: 3, maxRows: 6 }"
                 placeholder="例如：增加输入检查步骤，并让输出更适合发给客户"
                 aria-label="向 Skill 助手描述修改需求"
@@ -559,7 +663,7 @@ onBeforeRouteLeave(() => {
                   type="primary"
                   html-type="submit"
                   :loading="busy"
-                  :disabled="dirty || !prompt.trim()"
+                  :disabled="(!isNew && dirty) || saving || !prompt.trim()"
                 >
                   <template #icon><Icon name="arrow" :size="16" /></template>发送
                 </a-button>
@@ -573,11 +677,32 @@ onBeforeRouteLeave(() => {
 </template>
 
 <style scoped>
+.skill-new-fields {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 16px;
+  margin: 20px 0;
+}
+@media (max-width: 760px) {
+  .skill-new-fields {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
 .skill-editor-inner {
   max-width: 1340px;
 }
-.skill-breadcrumb {
+.skill-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin-bottom: 16px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+.skill-back-link:hover {
+  color: var(--color-brand);
 }
 /* icon 插槽里是 ForgeIcon 裸 <svg>，不是 .anticon，需要手动补图标与文字的间距 */
 .skill-editor-page :deep(.ant-btn) {
