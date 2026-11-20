@@ -8,7 +8,7 @@
     "build": "vue-tsc -b && vite build",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "format:check": "prettier --check src scripts vite.config.ts",
-    "test": "node scripts/check-conversation-drafts.mjs && node scripts/check-turns.mjs && node scripts/check-markdown-blocks.mjs && node scripts/check-files.mjs && node scripts/check-skill-document.mjs",
+    "test": "node scripts/check-conversation-drafts.mjs && node scripts/check-turns.mjs && node scripts/check-markdown-blocks.mjs && node scripts/check-files.mjs && node scripts/check-skill-document.mjs && node scripts/check-monaco-editor.mjs",
     "check:icons": "node ../scripts/check-ui-icons.mjs",
     "check:colors": "node ../scripts/check-ui-colors.mjs",
     "check:antd-tokens": "node ../scripts/check-antd-tokens.mjs"
@@ -29,6 +29,7 @@
     "marked": "^15.0.12",
     "marked-highlight": "^2.2.3",
     "mermaid": "^12.3.0",
+    "monaco-editor": "0.57.0",
     "pinia": "^2.3.0",
     "shiki": "^4.6.0",
     "vega-embed": "^7.3.0",

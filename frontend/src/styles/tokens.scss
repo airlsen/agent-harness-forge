@@ -29,6 +29,10 @@
   --color-brand-muted: var(--brand-50);
   --color-brand-border: var(--brand-200);
 
+  /* 源码编辑器固定深色，与 Monaco vs-dark 保持一致。 */
+  --source-editor-bg: #1e1e1e;
+  --source-editor-text: #d4d4d4;
+
   /* Text and surfaces */
   --color-text-primary: var(--neutral-800);
   --color-text-secondary: var(--neutral-500);

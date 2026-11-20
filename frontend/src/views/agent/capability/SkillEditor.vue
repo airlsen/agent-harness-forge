@@ -6,7 +6,8 @@ import Icon from '../../../components/ForgeIcon.vue';
 import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
 import Markdown from '../../../components/MarkdownContent.vue';
 import CodeBlock from '../../../components/CodeBlock.vue';
-import SkillSourceEditor from '../../../components/SkillSourceEditor.vue';
+import MonacoEditor from '../../../components/MonacoEditor.vue';
+import { lexer } from 'marked';
 import { readSkillDocument, updateSkillMetadata, initialSkillDocument } from '../../../utils/skillDocument';
 import { usePlatform } from '../../../stores/platform';
 import { confirm } from '../../../utils/feedback';
@@ -435,6 +436,12 @@ onBeforeRouteLeave(() => {
 
 const mode = ref<'preview' | 'source'>('preview');
 const selectedFile = ref(-1);
+const sourceOpened = ref(false);
+const previewPane = ref<HTMLElement>();
+const previewScroll = new Map<string, number>();
+watch(mode, (value) => {
+  if (value === 'source') sourceOpened.value = true;
+});
 const referenceContent = ref('');
 const referenceLoading = ref(false);
 const referenceError = ref('');
@@ -476,6 +483,23 @@ const documentBody = computed(() => {
     return currentContent.value;
   }
 });
+const needsDocumentTitle = computed(
+  () =>
+    selectedFile.value < 0 &&
+    !lexer(documentBody.value).some((token) => token.type === 'heading' && token.depth === 1),
+);
+watch(
+  [currentPath, mode, referenceLoading],
+  async ([path, view, loading], [previousPath, previousView, wasLoading]) => {
+    if (previewPane.value && previousView === 'preview' && !wasLoading) {
+      previewScroll.set(previousPath, previewPane.value.scrollTop);
+    }
+    await nextTick();
+    if (previewPane.value && view === 'preview' && !loading) {
+      previewPane.value.scrollTop = previewScroll.get(path) ?? 0;
+    }
+  },
+);
 const undoAvailable = computed(
   () =>
     lastChange.value &&
@@ -544,7 +568,10 @@ async function selectFile(index: number) {
   const request = ++referenceRequest;
   referenceError.value = '';
   referenceContent.value = '';
-  if (index < 0 || !skill.value) return;
+  if (index < 0 || !skill.value) {
+    referenceLoading.value = false;
+    return;
+  }
   referenceLoading.value = true;
   try {
     const result = await api<{ content: string }>(
@@ -605,7 +632,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="skill-studio" :style="skill ? { '--tree-width': `${treeWidth}px`, '--chat-width': `${chatWidth}px` } : {}">
+  <main
+    class="skill-studio"
+    :style="skill ? { '--tree-width': `${treeWidth}px`, '--chat-width': `${chatWidth}px` } : {}"
+  >
     <div v-if="loading" class="studio-loading"><a-spin size="small" />正在打开工作台…</div>
     <CatalogEmpty v-else-if="error && !skill" icon="book" title="无法打开技能" :description="error">
       <RouterLink to="/agent/skills">返回我的技能</RouterLink>
@@ -717,8 +747,10 @@ onBeforeUnmount(() => {
               :aria-expanded="referencesOpen"
               @click="referencesOpen = !referencesOpen"
             >
-              <span class="folder-caret">{{ referencesOpen ? '⌄' : '›' }}</span><Icon name="folder-line" :size="15" /><span
-                >references</span
+              <span class="folder-caret">{{ referencesOpen ? '⌄' : '›' }}</span><Icon
+                name="folder-line"
+                :size="15"
+              /><span>references</span
               ><small v-if="folderCountLabel" class="folder-count">{{ folderCountLabel }}</small>
             </button>
             <template v-if="referencesOpen">
@@ -735,7 +767,8 @@ onBeforeUnmount(() => {
             </template>
           </nav>
           <div class="files-footer">
-            <span class="files-count">共 {{ totalFiles }} 个文件</span><span class="files-note-inline">主文档可对话修改 · 参考资料只读</span>
+            <span class="files-count">共 {{ totalFiles }} 个文件</span
+            ><span class="files-note-inline">主文档可对话修改 · 参考资料只读</span>
           </div>
           <p class="files-note">主文档支持对话修改<br />参考资料只读</p>
         </aside>
@@ -764,39 +797,40 @@ onBeforeUnmount(() => {
               ><span class="file-path">{{ currentPath }}</span
               ><span v-if="selectedFile >= 0" class="readonly-label">只读</span>
             </div>
-            <button
-              v-if="!chatOpen"
-              class="icon-action"
-              title="展开助手"
-              aria-label="展开助手"
-              @click="
-                chatOpen = true;
-                mobilePanel = 'chat';
-              "
-            >
-              <Icon name="sparkles" :size="16" />
-            </button>
-          </header>
-          <div class="document-toolbar">
-            <div class="view-switch" aria-label="内容展示方式">
+            <div class="document-actions">
+              <span v-if="busy" class="readonly-label">助手正在修改</span>
+              <div class="view-switch" role="group" aria-label="内容展示方式">
+                <button
+                  type="button"
+                  :class="{ active: mode === 'preview' }"
+                  :aria-pressed="mode === 'preview'"
+                  @click="mode = 'preview'"
+                >
+                  预览
+                </button>
+                <button
+                  type="button"
+                  :class="{ active: mode === 'source' }"
+                  :aria-pressed="mode === 'source'"
+                  @click="mode = 'source'"
+                >
+                  源码
+                </button>
+              </div>
               <button
-                :class="{ active: mode === 'preview' }"
-                :aria-pressed="mode === 'preview'"
-                @click="mode = 'preview'"
+                v-if="!chatOpen"
+                class="icon-action"
+                title="展开助手"
+                aria-label="展开助手"
+                @click="
+                  chatOpen = true;
+                  mobilePanel = 'chat';
+                "
               >
-                预览
-              </button>
-              <button
-                :class="{ active: mode === 'source' }"
-                :aria-pressed="mode === 'source'"
-                @click="mode = 'source'"
-              >
-                源码
+                <Icon name="sparkles" :size="16" />
               </button>
             </div>
-            <span v-if="busy" class="document-hint">助手正在处理，主文档暂时只读</span
-            ><span v-else-if="dirty" class="document-hint">等待自动保存…</span>
-          </div>
+          </header>
           <div v-if="referenceLoading && selectedFile >= 0" class="studio-loading">
             <a-spin size="small" />读取文件…
           </div>
@@ -806,27 +840,48 @@ onBeforeUnmount(() => {
             :message="referenceError"
             show-icon
           />
-          <div v-else-if="mode === 'preview'" class="document-preview">
+          <div
+            v-show="
+              mode === 'preview' &&
+              !(referenceLoading && selectedFile >= 0) &&
+              !(referenceError && selectedFile >= 0)
+            "
+            ref="previewPane"
+            class="document-preview"
+          >
             <div v-if="isNew && !dirty" class="document-empty">
               <Icon name="file" :size="28" />
               <h2>从一个想法开始</h2>
               <p>在右侧描述需求，助手会完善这份 Skill。</p>
               <button @click="mode = 'source'">直接编写 Markdown →</button>
             </div>
-            <template v-else
-              ><div v-if="selectedFile < 0" class="document-metadata">
-                <h1>{{ skill.name || '未命名技能' }}</h1>
-                <p>{{ skill.description }}</p>
-              </div>
-              <Markdown :text="documentBody"
-            /></template>
+            <template v-else>
+              <h1 v-if="needsDocumentTitle" class="document-title">{{ skill.name || '未命名技能' }}</h1>
+              <Markdown :text="documentBody" variant="document" />
+            </template>
           </div>
-          <SkillSourceEditor
-            v-else
-            :model-value="currentContent"
-            :readonly="selectedFile >= 0 || busy || saving || publishing || uploadingReference"
-            @update:model-value="selectedFile < 0 && $event !== skill.content && updateContent($event)"
-          />
+          <div
+            v-if="sourceOpened"
+            v-show="
+              mode === 'source' &&
+              !(referenceLoading && selectedFile >= 0) &&
+              !(referenceError && selectedFile >= 0)
+            "
+            class="document-source"
+          >
+            <MonacoEditor
+              :model-value="currentContent"
+              :model-key="currentPath"
+              :language="currentPath.endsWith('.txt') ? 'plaintext' : 'markdown'"
+              theme="vs-dark"
+              :active="mode === 'source' && !referenceLoading && !referenceError"
+              :loading="selectedFile >= 0 && (referenceLoading || !!referenceError)"
+              :read-only="selectedFile >= 0 || busy || saving || publishing || uploadingReference"
+              aria-label="Skill Markdown 源码"
+              @shortcut-save="save"
+              @update:model-value="selectedFile < 0 && $event !== skill.content && updateContent($event)"
+            />
+          </div>
         </section>
         <div
           v-if="chatOpen"
@@ -1292,69 +1347,68 @@ onBeforeUnmount(() => {
   padding: 2px 6px;
   border-radius: 4px;
 }
-.document-toolbar {
-  min-height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 4px;
-  margin: 12px 16px 0;
-  background: var(--surface-shell);
-  border-radius: 8px;
-  border: none;
-  gap: 8px;
+.document-header {
+  flex: 0 0 44px;
+  border-bottom: 1px solid var(--border-light);
+}
+.document-header > div:first-child {
+  flex: 1;
+  overflow: hidden;
+}
+.document-actions {
+  flex-shrink: 0;
 }
 .view-switch {
-  display: flex;
-  align-self: stretch;
-  gap: 4px;
-  padding: 3px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-content);
 }
 .view-switch button {
-  padding: 4px 12px;
+  padding: 3px 12px;
+  line-height: 20px;
   font-size: 12px;
   color: var(--color-text-secondary);
-  border-bottom: none;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
 }
 .view-switch button.active {
-  color: var(--color-text-primary);
-  background: var(--surface-content);
-  border-bottom-color: transparent;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
+  color: var(--color-brand-active);
+  background: var(--color-brand-muted);
+  font-weight: 600;
 }
-.document-hint {
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-  padding-right: 12px;
+.view-switch button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
 }
 .document-preview {
   flex: 1;
   overflow: auto;
   min-height: 0;
-  padding: 32px 48px;
-  max-width: 720px;
+  min-width: 0;
+  padding: 28px 32px 48px;
   width: 100%;
-  margin: 0 auto;
 }
-.document-metadata {
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: none;
-  background: var(--surface-shell);
-  border-radius: 10px;
-  padding: 16px 20px;
+.document-preview > .markdown-body,
+.document-title {
+  max-width: 820px;
+  margin-left: auto;
+  margin-right: auto;
 }
-.document-metadata h1 {
-  font-size: 22px;
-  margin: 0 0 8px;
+.document-title {
+  font-size: 24px;
+  line-height: 1.4;
+  color: var(--color-text-primary);
+  margin-top: 0;
+  margin-bottom: 20px;
 }
-.document-metadata p {
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  line-height: 1.8;
-  margin: 0;
+.document-source {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 .document-empty {
   display: flex;
@@ -1584,4 +1638,3 @@ onBeforeUnmount(() => {
   }
 }
 </style>
-
