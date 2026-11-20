@@ -262,7 +262,7 @@ const buildRenderer = () => {
   }
 
   renderer.table = (token: Tokens.Table) => {
-    const fallback = new marked.Renderer().table(token as unknown as string)
+    const fallback = new marked.Renderer().table(token)
     const id = `md-table-${Math.random().toString(36).slice(2, 6)}`
     const tableHtml = (fallback as string).replace('<table>', '<table class="md-table">')
     return `
