@@ -13,6 +13,7 @@ import { Empty } from 'ant-design-vue';
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
 import Icon from '../../../components/ForgeIcon.vue';
 import CatalogCard from '../../../components/catalog/CatalogCard.vue';
+import SkillCardActions from '../../../components/catalog/SkillCardActions.vue';
 import ToolDescription from '../../../components/catalog/ToolDescription.vue';
 import CatalogFilter from '../../../components/catalog/CatalogFilter.vue';
 import CatalogGrid from '../../../components/catalog/CatalogGrid.vue';
@@ -861,25 +862,21 @@ onMounted(load);
                 skill.publishedReferenceCount ? `${skill.publishedReferenceCount} 个参考文件` : 'SKILL.md'
               }}</span>
             </template>
-            <template #ops>
-              <a-button
-                type="text"
-                size="small"
-                :loading="downloadingSkill === skill.id"
-                :disabled="downloadingSkill !== null"
-                @click="downloadPublishedSkill(skill)"
-                >下载 ZIP</a-button
-              >
-            </template>
             <template #footer>
-              <a-button
-                type="primary"
-                size="small"
-                :aria-label="`查看技能 ${skill.publishedName}`"
-                @click="viewPublishedSkill(skill)"
+              <SkillCardActions
+                :name="skill.publishedName"
+                :downloading="downloadingSkill === skill.id"
+                :disabled="downloadingSkill !== null"
+                @download="downloadPublishedSkill(skill)"
               >
-                查看
-              </a-button>
+                <a-button
+                  type="primary"
+                  size="small"
+                  :aria-label="`查看技能 ${skill.publishedName}`"
+                  @click="viewPublishedSkill(skill)"
+                  >查看</a-button
+                >
+              </SkillCardActions>
             </template>
           </CatalogCard>
         </CatalogGrid>
