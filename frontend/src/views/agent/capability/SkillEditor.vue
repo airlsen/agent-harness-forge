@@ -164,28 +164,27 @@ async function loadSkill(options: { focusAssistant?: boolean; quiet?: boolean } 
       messages.value = [];
     }
     dirty.value = false;
-    void secondary.then(([revisionResult, sessionResult]) => {
+    const updateSecondary = async () => {
+      const [revisionResult, sessionResult] = await secondary;
       if (request !== loadRequest || skill.value?.id !== id) return;
       if (revisionResult.status === 'fulfilled') revisions.value = revisionResult.value.items;
       if (sessionResult.status === 'fulfilled') {
         const latestSession = sessionResult.value;
-        if (options.quiet) session.value = latestSession;
-        const latestMessages = latestSession?.messages ?? [];
-        messages.value =
-          options.quiet || messages.value.length > 0
-            ? [
-                ...messages.value.filter(
-                  (message) =>
-                    typeof message.id !== 'number' ||
-                    !latestMessages.some((latest) => latest.id === message.id),
-                ),
-                ...latestMessages,
-              ]
-            : latestMessages;
+        if (options.quiet) {
+          // 服务端已分配正式消息 ID，直接替换本轮的临时消息。
+          session.value = latestSession;
+          messages.value = latestSession?.messages ?? [];
+        } else if (!busy.value && !session.value) {
+          // 首次打开时恢复会话；发送过程中不让旧请求覆盖刚创建的新会话。
+          session.value = latestSession;
+          messages.value = latestSession?.messages ?? [];
+        }
       }
       if (revisionResult.status === 'rejected' || sessionResult.status === 'rejected')
         app.toast('修订记录或历史会话暂时未能读取', 'error');
-    });
+    };
+    if (options.quiet) await updateSecondary();
+    else void updateSecondary();
     if (options.focusAssistant || isNew.value || route.query.start === 'generate') {
       await nextTick();
       promptInput.value?.focus();
@@ -358,11 +357,11 @@ function updateContent(value: string) {
   }
   scheduleSave();
 }
-async function startSession(preserveMessages = false) {
+async function startSession() {
   if (!skill.value) return;
   try {
     session.value = await post<SkillAuthoringSession>(`/skills/${skill.value.id}/authoring-sessions`);
-    if (!preserveMessages) messages.value = session.value.messages ?? [];
+    messages.value = session.value.messages ?? [];
   } catch (err) {
     app.toast((err as Error).message, 'error');
   }
@@ -400,16 +399,17 @@ async function send() {
   streamingText.value = '';
   queuePosition.value = 0;
   const text = prompt.value;
+  const pendingId = `pending-${Date.now()}`;
   const previousRevision = skill.value.revision;
   const before = revisions.value.find((revision) => revision.id === skill.value?.currentRevisionId);
   prompt.value = '';
   try {
-    if (!session.value) await startSession(true);
+    if (!session.value) await startSession();
     if (!session.value || !skill.value) {
       if (!prompt.value) prompt.value = text;
       return;
     }
-    messages.value.push({ id: `pending-${Date.now()}`, role: 'user', content: text });
+    messages.value.push({ id: pendingId, role: 'user', content: text });
     const response = await apiFetch(
       `/api/skills/${skill.value.id}/authoring-sessions/${session.value.id}/turns`,
       {
@@ -454,6 +454,8 @@ async function send() {
     if (!prompt.value) prompt.value = text;
     app.toast(message, 'error');
   } finally {
+    // 请求失败或历史读取失败时也不能把临时消息永远留在列表里。
+    messages.value = messages.value.filter((message) => message.id !== pendingId);
     streamingText.value = '';
     queuePosition.value = 0;
     busy.value = false;
