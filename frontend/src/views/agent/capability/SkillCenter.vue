@@ -3,9 +3,9 @@ import { computed, onMounted, ref } from 'vue';
 import { api, downloadResponse, remove } from '../../../api/client';
 import { confirm } from '../../../utils/feedback';
 import { usePlatform } from '../../../stores/platform';
-import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
 import Icon from '../../../components/ForgeIcon.vue';
 import CatalogCard from '../../../components/catalog/CatalogCard.vue';
+import SkillCardActions from '../../../components/catalog/SkillCardActions.vue';
 import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
 import CatalogFilter from '../../../components/catalog/CatalogFilter.vue';
 import CatalogGrid from '../../../components/catalog/CatalogGrid.vue';
@@ -87,9 +87,6 @@ async function deleteSkill(item: SkillSummary) {
   } finally {
     deleting.value = null;
   }
-}
-function onCardMenu(info: MenuInfo, item: SkillSummary) {
-  if (info.key === 'delete') void deleteSkill(item);
 }
 async function load() {
   loading.value = true;
@@ -183,48 +180,27 @@ onMounted(load);
                   >{{ item.referenceFiles.length }} 个参考文件</span
                 >
               </template>
-              <template #ops>
-                <a-button
-                  type="text"
-                  size="small"
-                  :loading="downloading === item.id"
-                  :disabled="downloading !== null || deleting !== null"
-                  @click="downloadSkill(item)"
-                  >下载 ZIP</a-button
-                >
-              </template>
               <template #footer>
-                <RouterLink v-slot="{ href, navigate }" :to="`/agent/skills/${item.id}`" custom>
-                  <a-button
-                    type="primary"
-                    size="small"
-                    :href="href"
-                    :aria-label="`编辑技能：${item.name}`"
-                    @click="navigate"
-                  >
-                    <template #icon><Icon name="edit" :size="14" /></template>编辑
-                  </a-button>
-                </RouterLink>
-                <a-dropdown
-                  v-if="item.publishedRevisionId === null"
-                  :trigger="['click']"
-                  placement="bottomRight"
+                <SkillCardActions
+                  :name="item.name"
+                  :can-delete="item.publishedRevisionId === null"
+                  :downloading="downloading === item.id"
+                  :disabled="downloading !== null || deleting !== null"
+                  @download="downloadSkill(item)"
+                  @delete="deleteSkill(item)"
                 >
-                  <a-button
-                    type="text"
-                    size="small"
-                    :aria-label="`更多操作 ${item.name}`"
-                    title="更多操作"
-                    :disabled="deleting !== null"
-                  >
-                    <template #icon><Icon name="more" :size="16" /></template>
-                  </a-button>
-                  <template #overlay>
-                    <a-menu @click="(info: MenuInfo) => onCardMenu(info, item)">
-                      <a-menu-item key="delete" danger>删除草稿</a-menu-item>
-                    </a-menu>
-                  </template>
-                </a-dropdown>
+                  <RouterLink v-slot="{ href, navigate }" :to="`/agent/skills/${item.id}`" custom>
+                    <a-button
+                      type="primary"
+                      size="small"
+                      :href="href"
+                      :aria-label="`编辑技能：${item.name}`"
+                      @click="navigate"
+                    >
+                      <template #icon><Icon name="edit" :size="14" /></template>编辑
+                    </a-button>
+                  </RouterLink>
+                </SkillCardActions>
               </template>
             </CatalogCard>
           </CatalogGrid>
