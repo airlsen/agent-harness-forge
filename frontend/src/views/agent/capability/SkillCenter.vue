@@ -68,15 +68,8 @@ onMounted(load);
           <span class="catalog-kicker"
             ><span class="catalog-kicker-mark"><Icon name="book" :size="12" /></span>SKILL LIBRARY</span
           >
-          <h1>技能</h1>
+          <h1>我的技能</h1>
           <p>管理可复用的工作方法。</p>
-        </div>
-        <div class="page-heading-actions">
-          <RouterLink v-slot="{ href, navigate }" to="/agent/skills/new" custom>
-            <a-button type="primary" :href="href" @click="navigate">
-              <template #icon><Icon name="plus" :size="16" /></template>新建技能
-            </a-button>
-          </RouterLink>
         </div>
       </div>
 
@@ -92,6 +85,17 @@ onMounted(load);
         <template #action><a-button size="small" @click="load">重试</a-button></template>
       </a-alert>
       <template v-else>
+        <div class="collection-toolbar enterprise-collection-toolbar skill-library-toolbar">
+          <CatalogFilter v-model:value="status" :options="statusOptions" aria-label="按状态筛选" />
+          <div class="skill-library-actions">
+            <CatalogSearch v-model:value="query" placeholder="搜索技能名称或说明" aria-label="搜索技能" />
+            <RouterLink v-slot="{ href, navigate }" to="/agent/skills/new" custom>
+              <a-button type="primary" :href="href" @click="navigate">
+                <template #icon><Icon name="plus" :size="16" /></template>新建技能
+              </a-button>
+            </RouterLink>
+          </div>
+        </div>
         <CatalogEmpty
           v-if="!skills.length"
           icon="book"
@@ -99,10 +103,6 @@ onMounted(load);
           description="定义一套可重复使用的工作方法。"
         />
         <template v-else>
-          <div class="collection-toolbar enterprise-collection-toolbar skill-library-toolbar">
-            <CatalogFilter v-model:value="status" :options="statusOptions" aria-label="按状态筛选" />
-            <CatalogSearch v-model:value="query" placeholder="搜索技能名称或说明" aria-label="搜索技能" />
-          </div>
           <CatalogGrid v-if="visibleSkills.length" aria-label="技能列表">
             <CatalogCard
               v-for="item in visibleSkills"
@@ -158,7 +158,7 @@ onMounted(load);
   gap: 16px;
   margin-bottom: 24px;
 }
-.page-heading-actions :deep(.ant-btn) {
+.skill-library-actions :deep(.ant-btn) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -169,10 +169,24 @@ onMounted(load);
   padding: 0;
   border: 0;
 }
+.skill-library-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+}
+.skill-library-actions > .ant-btn {
+  flex-shrink: 0;
+}
 .skill-alert {
   margin-bottom: 24px;
 }
 @media (max-width: 700px) {
+  .skill-library-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
   .skill-library-page .enterprise-collection-toolbar.skill-library-toolbar {
     flex-wrap: wrap;
     align-items: stretch;
