@@ -22,10 +22,9 @@ const loggingOut = ref(false);
 const managementOpen = ref(false);
 const managementMenu = ref<HTMLElement | null>(null);
 const adminRoutes = ['/agent/models', '/agent/governance', '/agent/runtime', '/agent/audit'];
-// 主题外观：跟随系统 / 浅色 / 深色，三态循环，持久化到本地存储。
+// 主题外观：跟随系统 / 浅色 / 深色，持久化到本地存储。
 type ThemePreference = 'system' | 'light' | 'dark';
 const THEME_STORAGE_KEY = 'forge-theme';
-const themeOrder: ThemePreference[] = ['system', 'light', 'dark'];
 const theme = ref<ThemePreference>(readStoredTheme());
 function readStoredTheme(): ThemePreference {
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -36,11 +35,8 @@ function applyTheme() {
   else document.documentElement.dataset.theme = theme.value;
   localStorage.setItem(THEME_STORAGE_KEY, theme.value);
 }
-const themeLabel = computed(() => ({ system: '跟随系统', light: '浅色', dark: '深色' })[theme.value]);
-const themeIcon = computed(() => ({ system: 'panel', light: 'sun', dark: 'moon' })[theme.value]);
-function cycleTheme() {
-  const index = themeOrder.indexOf(theme.value);
-  theme.value = themeOrder[(index + 1) % themeOrder.length];
+function setTheme(preference: ThemePreference) {
+  theme.value = preference;
   applyTheme();
 }
 applyTheme(); // 首帧渲染前落地，避免浅色闪烁。
@@ -274,26 +270,14 @@ onUnmounted(() => {
                 </nav>
               </Transition>
             </section>
-            <button
-              class="enterprise-theme-link"
-              type="button"
-              aria-label="切换主题"
-              :title="`主题：${themeLabel}`"
-              @click="cycleTheme"
-            >
-              <Icon :name="themeIcon" :size="18" /><span>主题</span
-              ><span class="theme-state">{{ themeLabel }}</span>
-            </button>
-            <button
-              class="enterprise-help-link"
-              aria-label="使用帮助"
-              aria-haspopup="dialog"
-              :aria-expanded="help"
-              @click="help = true"
-            >
-              <Icon name="book" :size="18" /><span>帮助</span>
-            </button>
-            <AccountMenu :username="app.user?.username ?? ''" :busy="loggingOut" @logout="logout" />
+            <AccountMenu
+              :username="app.user?.username ?? ''"
+              :busy="loggingOut"
+              :theme="theme"
+              @change-theme="setTheme"
+              @help="help = true"
+              @logout="logout"
+            />
           </div>
         </aside>
         <div class="app-body enterprise-body">

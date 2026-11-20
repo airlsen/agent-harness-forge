@@ -2,25 +2,38 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-const props = withDefaults(defineProps<{ username: string; busy?: boolean }>(), { busy: false });
-const emit = defineEmits<{ logout: [] }>();
+import Icon from './ForgeIcon.vue';
+
+type ThemePreference = 'system' | 'light' | 'dark';
+const themeOptions: { value: ThemePreference; label: string; icon: string }[] = [
+  { value: 'system', label: '跟随系统', icon: 'panel' },
+  { value: 'light', label: '浅色', icon: 'sun' },
+  { value: 'dark', label: '深色', icon: 'moon' },
+];
+const props = withDefaults(defineProps<{ username: string; theme: ThemePreference; busy?: boolean }>(), {
+  busy: false,
+});
+const emit = defineEmits<{ 'change-theme': [value: ThemePreference]; help: []; logout: [] }>();
 const route = useRoute();
 const root = ref<HTMLElement | null>(null);
 const trigger = ref<HTMLButtonElement | null>(null);
-const logoutItem = ref<HTMLButtonElement | null>(null);
 const open = ref(false);
 const pinned = ref(false);
 const avatar = computed(() => props.username.slice(0, 1).toUpperCase() || 'A');
 let enterTimer: ReturnType<typeof setTimeout> | null = null;
 let leaveTimer: ReturnType<typeof setTimeout> | null = null;
-let tabTimer: ReturnType<typeof setTimeout> | null = null;
 let active = true;
+function menuItems() {
+  return Array.from(
+    root.value?.querySelectorAll<HTMLButtonElement>('.enterprise-account-menu button[role^="menuitem"]') ??
+      [],
+  );
+}
 
 function cancelTimers() {
   if (enterTimer) clearTimeout(enterTimer);
   if (leaveTimer) clearTimeout(leaveTimer);
-  if (tabTimer) clearTimeout(tabTimer);
-  enterTimer = leaveTimer = tabTimer = null;
+  enterTimer = leaveTimer = null;
 }
 function close(restoreFocus = false) {
   cancelTimers();
@@ -34,7 +47,7 @@ async function showWithFocus() {
   open.value = true;
   pinned.value = true;
   await nextTick();
-  if (active && open.value) logoutItem.value?.focus();
+  if (active && open.value) menuItems()[0]?.focus();
 }
 function toggle() {
   // Clicking an already-hovered avatar pins its menu, rather than hiding it.
@@ -82,11 +95,27 @@ function escape(event: KeyboardEvent) {
 function menuKeyboard(event: KeyboardEvent) {
   if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
     event.preventDefault();
-    logoutItem.value?.focus();
-  } else if (event.key === 'Tab') {
-    // Keep native Tab movement; this is a menu, not a modal or a keyboard trap.
-    tabTimer = setTimeout(() => close(), 0);
+    const items = menuItems().filter((item) => !item.disabled);
+    if (!items.length) return;
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? items.length - 1
+          : event.key === 'ArrowDown'
+            ? (index + 1) % items.length
+            : (index - 1 + items.length) % items.length;
+    items[next]?.focus();
   }
+}
+function selectTheme(value: ThemePreference) {
+  close(true);
+  emit('change-theme', value);
+}
+function showHelp() {
+  close(false);
+  emit('help');
 }
 function signOut() {
   if (props.busy) return;
@@ -138,8 +167,27 @@ onBeforeUnmount(() => {
       aria-label="账号操作"
       @keydown="menuKeyboard"
     >
-      <button ref="logoutItem" type="button" role="menuitem" tabindex="-1" :disabled="busy" @click="signOut">
-        退出登录
+      <span class="enterprise-account-menu-label">外观</span>
+      <div role="group" aria-label="外观">
+        <button
+          v-for="option in themeOptions"
+          :key="option.value"
+          type="button"
+          role="menuitemradio"
+          :aria-checked="theme === option.value"
+          tabindex="-1"
+          @click="selectTheme(option.value)"
+        >
+          <Icon :name="option.icon" :size="16" /><span>{{ option.label }}</span>
+          <Icon v-if="theme === option.value" name="check" :size="16" class="enterprise-account-check" />
+        </button>
+      </div>
+      <div class="enterprise-account-menu-divider"></div>
+      <button type="button" role="menuitem" tabindex="-1" @click="showHelp">
+        <Icon name="book" :size="16" /><span>使用帮助</span>
+      </button>
+      <button type="button" role="menuitem" tabindex="-1" :disabled="busy" @click="signOut">
+        <Icon name="logout" :size="16" /><span>退出登录</span>
       </button>
     </div>
   </div>
