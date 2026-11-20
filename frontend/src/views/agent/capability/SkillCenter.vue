@@ -111,7 +111,17 @@ onMounted(load);
           <span class="catalog-kicker"
             ><span class="catalog-kicker-mark"><Icon name="book" :size="12" /></span>SKILL LIBRARY</span
           >
-          <h1>我的技能</h1>
+          <h1>
+            <RouterLink
+              class="skill-library-back"
+              to="/agent/capabilities?tab=skills"
+              aria-label="返回技能管理"
+              title="返回技能管理"
+            >
+              <Icon name="arrow-left-line" :size="20" />
+            </RouterLink>
+            我的技能
+          </h1>
           <p>管理可复用的工作方法。</p>
         </div>
       </div>
@@ -223,6 +233,24 @@ onMounted(load);
 .skill-library-page .skill-library-heading {
   gap: 16px;
   margin-bottom: 24px;
+}
+.skill-library-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+}
+.skill-library-back:hover {
+  color: var(--color-text-primary);
+  background: var(--surface-hover);
+}
+.skill-library-back:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
 }
 .skill-library-actions :deep(.ant-btn) {
   display: inline-flex;
