@@ -26,7 +26,10 @@ defineProps<{ icon: string; title: string; description?: string }>();
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
+  /* flex 列布局的页面里撑满工具栏下方的剩余高度，空态文案垂直居中；
+     非 flex 父级下退化为自然高度，min-height 兜底。 */
+  flex: 1 0 auto;
   min-height: 240px;
   margin: 0;
   padding: 40px 24px;
