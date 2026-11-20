@@ -5,6 +5,7 @@ import { api, apiFetch, post, put } from '../../../api/client';
 import Icon from '../../../components/ForgeIcon.vue';
 import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
 import Markdown from '../../../components/MarkdownContent.vue';
+import { MarkdownPreview } from '../../../components/common';
 import CodeBlock from '../../../components/CodeBlock.vue';
 import MonacoEditor from '../../../components/MonacoEditor.vue';
 import { lexer } from 'marked';
@@ -488,6 +489,11 @@ const needsDocumentTitle = computed(
     selectedFile.value < 0 &&
     !lexer(documentBody.value).some((token) => token.type === 'heading' && token.depth === 1),
 );
+const previewContent = computed(() =>
+  needsDocumentTitle.value
+    ? `# ${skill.value?.name || '未命名技能'}\n\n${documentBody.value}`
+    : documentBody.value,
+);
 watch(
   [currentPath, mode, referenceLoading],
   async ([path, view, loading], [previousPath, previousView, wasLoading]) => {
@@ -856,8 +862,7 @@ onBeforeUnmount(() => {
               <button @click="mode = 'source'">直接编写 Markdown →</button>
             </div>
             <template v-else>
-              <h1 v-if="needsDocumentTitle" class="document-title">{{ skill.name || '未命名技能' }}</h1>
-              <Markdown :text="documentBody" variant="document" />
+              <MarkdownPreview :content="previewContent" />
             </template>
           </div>
           <div
@@ -1391,18 +1396,11 @@ onBeforeUnmount(() => {
   padding: 28px 32px 48px;
   width: 100%;
 }
-.document-preview > .markdown-body,
-.document-title {
+.document-preview > .markdown-renderer {
   max-width: 820px;
   margin-left: auto;
   margin-right: auto;
-}
-.document-title {
-  font-size: 24px;
-  line-height: 1.4;
-  color: var(--color-text-primary);
-  margin-top: 0;
-  margin-bottom: 20px;
+  font-size: 15px;
 }
 .document-source {
   flex: 1;

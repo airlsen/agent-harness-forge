@@ -1,20 +1,18 @@
 <script setup lang="ts">
 /**
- * MarkdownPreview — 公共 Markdown 漂亮渲染组件（黄色主题 · highlight.js 版）
- * 按你的要求：引入 highlight.js 做代码高亮，保持黄色主题
+ * MarkdownPreview — 公共 Markdown 文档预览（默认黄色主题 · highlight.js 版）
  * 特性：GFM/换行/代码高亮(hl.js)/表格/引用/任务列表/链接/图片/数学占位/Mermaid/Vega/流式光标/行号
  * 放置：frontend/src/components/common，与 JsonPreview 同级公共组件
  *
  * 用法：
  * <MarkdownPreview :content="md" streaming show-line-numbers enable-mermaid />
- * <MarkdownPreview :content="md" :max-height="'420px'" compact />
+ * <MarkdownPreview :content="md" accent="indigo" theme="dark" />
  */
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { marked, type Token, type Tokens } from 'marked'
+import { Marked, Renderer, type Token, type Tokens } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/atom-one-dark.css'
-import { markedHighlight } from 'marked-highlight'
 import CodeBlock from '../CodeBlock.vue'
 import MermaidBlock from '../MermaidBlock.vue'
 import ChartBlock from '../ChartBlock.vue'
@@ -28,6 +26,7 @@ interface Props {
   showLineNumbers?: boolean
   maxHeight?: string
   theme?: 'light' | 'dark' | 'auto'
+  accent?: 'yellow' | 'indigo'
   compact?: boolean
 }
 
@@ -38,6 +37,7 @@ const props = withDefaults(defineProps<Props>(), {
   showLineNumbers: false,
   maxHeight: '',
   theme: 'auto',
+  accent: 'yellow',
   compact: false,
 })
 
@@ -48,34 +48,9 @@ const vegaCodes = ref<string[]>([])
 
 const { copy: copyText } = useCopy()
 
-const themeVars = computed(() => ({
-  '--md-primary': '#eab308',
-  '--md-primary-hover': '#ca8a04',
-  '--md-primary-active': '#a16207',
-  '--md-primary-soft': '#fef9c3',
-  '--md-primary-muted': '#fefce8',
-  '--md-primary-border': '#fde68a',
-  '--md-primary-ring': 'rgba(234, 179, 8, 0.32)',
-}))
-
-// 配置 marked + highlight.js 集成（按你提供的模板，保持黄色主题）
-marked.use(
-  markedHighlight({
-    langPrefix: 'hljs language-',
-    highlight(code: string, lang?: string) {
-      if (lang && hljs.getLanguage(lang)) {
-        try {
-          return hljs.highlight(code, { language: lang }).value
-        } catch (err) {
-          console.error('代码高亮失败:', err)
-        }
-      }
-      return hljs.highlightAuto(code).value
-    },
-  }),
-)
-
-marked.setOptions({
+// 解析配置仅作用于当前预览，不污染聊天等其他 Markdown 渲染器。
+// 代码高亮由下方自定义 renderer.code 负责。
+const markdownParser = new Marked({
   breaks: true,
   gfm: true,
   pedantic: false,
@@ -169,13 +144,12 @@ const ensureCompleteCodeBlocks = (content: string) =>
 
 /**
  * highlight.js 渲染后处理：
- * 代码块已由 marked-highlight 在 marked 阶段完成高亮（输出带 hljs 的 <code>），
- * 此处不再做二次高亮，只保留 DOMPurify 后对极少数未闭合/异常块的兜底
+ * 代码块已由自定义 renderer 高亮；这里只处理极少数未闭合/异常块。
  */
 const postProcessHljs = (html: string) => {
   const temp = document.createElement('div')
   temp.innerHTML = html
-  // 为所有由自定义 renderer 生成的占位 pre 补充 hljs 类（若 marked-highlight 未覆盖）
+  // 为异常块补充 hljs 类。
   for (const pre of Array.from(temp.querySelectorAll<HTMLPreElement>('pre.md-code-pre'))) {
     if (!pre.querySelector('code.hljs')) {
       const codeEl = pre.querySelector('code')
@@ -207,7 +181,7 @@ const postProcessHljs = (html: string) => {
 }
 
 const buildRenderer = () => {
-  const renderer = new marked.Renderer()
+  const renderer = new Renderer()
 
   // code: marked v15 token object — 用 highlight.js 高亮
   renderer.code = (token: Tokens.Code) => {
@@ -262,7 +236,7 @@ const buildRenderer = () => {
   }
 
   renderer.table = (token: Tokens.Table) => {
-    const fallback = new marked.Renderer().table(token)
+    const fallback = new Renderer().table(token)
     const id = `md-table-${Math.random().toString(36).slice(2, 6)}`
     const tableHtml = (fallback as string).replace('<table>', '<table class="md-table">')
     return `
@@ -307,15 +281,15 @@ const buildRenderer = () => {
     if (t.task) {
       const checked = t.checked ? 'checked' : ''
       const cls = t.checked ? 'checked' : ''
-      const text = t.text || marked.parser(t.tokens as Token[])
+      const text = t.text || markdownParser.parser(t.tokens as Token[])
       return `<li class="md-list-item md-task-item ${cls}"><input type="checkbox" ${checked} disabled class="md-task-checkbox"><span class="md-task-text">${text}</span></li>`
     }
-    const text = (t as unknown as { text: string }).text || marked.parser(t.tokens as Token[])
+    const text = (t as unknown as { text: string }).text || markdownParser.parser(t.tokens as Token[])
     return `<li class="md-list-item">${text}</li>`
   }
 
   renderer.blockquote = (token: Tokens.Blockquote) => {
-    const quote = marked.parser(token.tokens as Token[])
+    const quote = markdownParser.parser(token.tokens as Token[])
     let type = 'default'
     let icon = ''
     const lower = quote.toLowerCase()
@@ -340,7 +314,7 @@ const buildRenderer = () => {
 
   renderer.heading = (token: Tokens.Heading) => {
     const depth = token.depth
-    const text = token.text || marked.parser(token.tokens as Token[])
+    const text = token.text || markdownParser.parser(token.tokens as Token[])
     const id = text
       .toLowerCase()
       .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
@@ -368,7 +342,7 @@ const renderMarkdown = async (raw: string) => {
   })
 
   const renderer = buildRenderer()
-  let html = marked(content, { breaks: true, gfm: true, renderer }) as string
+  let html = markdownParser.parse(content, { renderer }) as string
 
   html = html.replace(/<!--mermaid:(\d+):mermaid-->/g, (_m: string, idx: string) => {
     const code = escapeHtml(mermaidStore[Number(idx)] ?? '')
@@ -498,8 +472,8 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
 <template>
   <div
     class="markdown-renderer"
-    :class="[{ streaming, compact, 'math-enabled': enableMath }]"
-    :style="[themeVars as any, maxHeight ? { maxHeight, overflowY: 'auto' } : {}]"
+    :class="[{ streaming, compact, 'math-enabled': enableMath }, `accent-${accent}`, `theme-${theme}`]"
+    :style="maxHeight ? { maxHeight, overflowY: 'auto' } : undefined"
   >
     <template v-if="hasMermaid || hasVega">
       <div ref="contentRef" :class="['markdown-content', { streaming }]" v-html="renderedContent" />
@@ -531,10 +505,32 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
   --md-primary-muted: #fefce8;
   --md-primary-border: #fde68a;
   --md-primary-ring: rgba(234, 179, 8, 0.32);
+  --md-heading-accent: #ca8a04;
+  --md-row-alt: #fffdf5;
+  --md-on-primary: #422006;
+  --md-quote-strong: #854d0e;
+  --md-fg: var(--color-text-primary);
+  --md-fg-secondary: var(--color-text-secondary);
+  --md-surface: var(--surface-card);
+  --md-border: var(--border-light);
   width: 100%;
-  color: var(--color-text-primary);
+  color: var(--md-fg);
   font-size: 13.5px;
   line-height: 1.8;
+
+  &.accent-indigo {
+    --md-primary: #6366f1;
+    --md-primary-hover: #4f46e5;
+    --md-primary-active: #4338ca;
+    --md-primary-soft: #e0e7ff;
+    --md-primary-muted: #eef2ff;
+    --md-primary-border: #c7d2fe;
+    --md-primary-ring: rgba(99, 102, 241, 0.32);
+    --md-heading-accent: #4f46e5;
+    --md-row-alt: #fafbff;
+    --md-on-primary: #fff;
+    --md-quote-strong: #4338ca;
+  }
 
   &.compact {
     font-size: 12.5px;
@@ -543,7 +539,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
 
   .markdown-content {
     line-height: 1.85;
-    color: var(--color-text-primary);
+    color: var(--md-fg);
     overflow-wrap: anywhere;
 
     &.streaming {
@@ -561,7 +557,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
       margin: 1.4em 0 0.6em;
       font-weight: 700;
       line-height: 1.35;
-      color: var(--color-text-primary);
+      color: var(--md-fg);
       position: relative;
       letter-spacing: -0.2px;
       &:first-child {
@@ -582,20 +578,22 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
     :deep(.md-h1) {
       font-size: 1.7em;
       padding-bottom: 0.35em;
-      border-bottom: 2px solid var(--md-primary-border);
+      color: var(--md-heading-accent);
+      border-bottom: 2px solid var(--md-primary);
     }
     :deep(.md-h2) {
       font-size: 1.4em;
       padding-bottom: 0.3em;
-      border-bottom: 1px solid var(--border-light);
+      color: var(--md-heading-accent);
+      border-bottom: 1px solid var(--md-primary-border);
     }
     :deep(.md-h3) {
       font-size: 1.18em;
-      color: var(--color-text-primary);
+      color: var(--md-primary-active);
     }
     :deep(.md-h4) {
       font-size: 1.02em;
-      color: var(--color-text-secondary);
+      color: var(--md-fg-secondary);
     }
     :deep(h5),
     :deep(h6) {
@@ -658,7 +656,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
       padding: 0.15em 0.4em;
       border-radius: 6px;
       font-size: 0.88em;
-      color: #854d0e;
+      color: var(--md-quote-strong);
     }
     :deep(pre) code {
       background: transparent;
@@ -677,7 +675,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
       align-items: flex-start;
       border: 1px solid var(--border-light);
       box-shadow: var(--shadow-xs);
-      background: var(--surface-card);
+      background: var(--md-surface);
       .md-quote-icon {
         font-size: 1.15em;
         flex-shrink: 0;
@@ -696,7 +694,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
         }
       }
       &.md-quote-note {
-        background: linear-gradient(135deg, #fefce8, #fef9c3);
+        background: linear-gradient(135deg, var(--md-primary-muted), var(--md-primary-soft));
         border-left: 4px solid var(--md-primary);
       }
       &.md-quote-warning {
@@ -758,7 +756,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
         }
         .md-lang-tag {
           background: var(--md-primary);
-          color: #422006;
+          color: var(--md-on-primary);
           padding: 3px 9px;
           border-radius: 999px;
           font-size: 11px;
@@ -793,7 +791,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
           transition: all 0.15s;
           &:hover {
             background: var(--md-primary);
-            color: #422006;
+            color: var(--md-on-primary);
             border-color: var(--md-primary);
             transform: translateY(-1px);
           }
@@ -856,7 +854,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
       overflow: hidden;
       border: 1px solid var(--md-primary-border);
       box-shadow: var(--shadow-sm);
-      background: var(--surface-card);
+      background: var(--md-surface);
       .md-table-header {
         display: flex;
         align-items: center;
@@ -870,14 +868,14 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
           gap: 8px;
           font-weight: 700;
           font-size: 12px;
-          color: #713f12;
+          color: var(--md-primary-active);
           .md-table-icon {
             color: var(--md-primary);
           }
         }
         .md-action-btn {
           border: 1px solid var(--md-primary-border);
-          background: #fff;
+          background: var(--md-surface);
           color: var(--md-primary-active);
           border-radius: 8px;
           padding: 4px 8px;
@@ -885,7 +883,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
           cursor: pointer;
           &:hover {
             background: var(--md-primary);
-            color: #422006;
+            color: var(--md-on-primary);
           }
         }
       }
@@ -896,18 +894,18 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
         width: 100%;
         border-collapse: collapse;
         font-size: 12.5px;
-        background: var(--surface-card);
+        background: var(--md-surface);
         th,
         td {
           padding: 10px 14px;
-          border-bottom: 1px solid var(--border-light);
+          border-bottom: 1px solid var(--md-border);
           text-align: left;
           white-space: nowrap;
         }
         th {
           background: var(--md-primary-muted);
           font-weight: 700;
-          color: #713f12;
+          color: var(--md-primary-active);
           position: sticky;
           top: 0;
         }
@@ -915,7 +913,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
           border-bottom: none;
         }
         tbody tr:nth-child(even) {
-          background: #fffbeb0d;
+          background: var(--md-row-alt);
         }
         tbody tr:hover {
           background: var(--md-primary-muted);
@@ -933,7 +931,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
       &:hover {
         background: var(--md-primary-muted);
         border-bottom-color: var(--md-primary);
-        color: #713f12;
+        color: var(--md-primary-active);
       }
       .md-link-icon {
         margin-left: 4px;
@@ -1014,7 +1012,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
       font-family: 'KaTeX_Main', 'Times New Roman', serif;
       background: var(--md-primary-muted);
       border: 1px solid var(--md-primary-border);
-      color: #854d0e;
+      color: var(--md-quote-strong);
       padding: 1px 6px;
       border-radius: 6px;
       font-size: 1.06em;
@@ -1029,7 +1027,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
       overflow-x: auto;
       font-family: 'KaTeX_Main', serif;
       font-size: 1.15em;
-      color: #422006;
+      color: var(--md-quote-strong);
     }
 
     :deep(.md-render-error) {
@@ -1118,12 +1116,55 @@ const hasVega = computed(() => vegaCodes.value.length > 0)
   }
 }
 
-:global(.dark) .markdown-renderer {
-  .markdown-content :deep(.md-code-block) .md-code-content {
-    background: #282c34;
+// auto 跟随站点暗色模式；显式 light/dark 可在任意页面单独使用。
+@mixin dark-preview {
+  color-scheme: dark;
+  --md-fg: #e5e7eb;
+  --md-fg-secondary: #aeb4c1;
+  --md-surface: #222630;
+  --md-border: #3b4250;
+  --md-primary-active: #facc15;
+  --md-heading-accent: #facc15;
+  --md-primary-soft: #473b16;
+  --md-primary-muted: #302a18;
+  --md-primary-border: #75621c;
+  --md-row-alt: #272a31;
+  --md-quote-strong: #fde68a;
+
+  &.accent-indigo {
+    --md-primary-active: #a5b4fc;
+    --md-heading-accent: #a5b4fc;
+    --md-primary-soft: #303663;
+    --md-primary-muted: #252a48;
+    --md-primary-border: #565e9d;
+    --md-row-alt: #292c3a;
+    --md-quote-strong: #c7d2fe;
   }
+
   .markdown-content :deep(.md-quote) {
-    background: var(--surface-card);
+    background: var(--md-surface);
+  }
+}
+
+.markdown-renderer.theme-light {
+  color-scheme: light;
+  --md-fg: #1f2937;
+  --md-fg-secondary: #64748b;
+  --md-surface: #fff;
+  --md-border: #e5e7eb;
+}
+
+.markdown-renderer.theme-dark {
+  @include dark-preview;
+}
+
+:global(:root[data-theme='dark']) .markdown-renderer.theme-auto {
+  @include dark-preview;
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme='light'])) .markdown-renderer.theme-auto {
+    @include dark-preview;
   }
 }
 
