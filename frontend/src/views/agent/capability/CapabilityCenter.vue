@@ -843,6 +843,7 @@ onMounted(load);
               >
                 <RouterLink v-slot="{ href, navigate }" :to="`/agent/capabilities/skills/${skill.id}`" custom>
                   <a-button
+                    type="primary"
                     size="small"
                     :href="href"
                     :aria-label="`查看已发布技能 ${skill.name}`"
