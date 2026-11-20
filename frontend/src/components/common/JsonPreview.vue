@@ -215,7 +215,7 @@ const JsonNode = defineComponent({
       <div class="jp-title">
         <span class="jp-badge">{ }</span>
         <strong>{{ rootName }}</strong>
-        <span class="jp-meta">{{ Array.isArray(data) ? `Array[${totalKeys}]` : `Object{${totalKeys}}` }} · {{ sizeLabel }}</span>
+        <span class="jp-meta">{{ Array.isArray(data) ? 'Array[' + totalKeys + ']' : 'Object{' + totalKeys + '}' }} · {{ sizeLabel }}</span>
       </div>
       <div class="jp-tools">
         <div v-if="searchable" class="jp-search">
