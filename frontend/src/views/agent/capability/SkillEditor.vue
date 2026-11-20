@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue';
-import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
+import { isNavigationFailure, onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
 import { api, apiFetch, post, put } from '../../../api/client';
 import Icon from '../../../components/ForgeIcon.vue';
 import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
@@ -25,6 +25,7 @@ const isNew = computed(() => !route.params.id);
 const app = usePlatform();
 const skill = ref<SkillDetail | null>(null);
 let loadRequest = 0;
+let creatingSkillNavigationId: number | null = null;
 const revisions = ref<SkillRevision[]>([]);
 const session = ref<SkillAuthoringSession | null>(null);
 const messages = ref<SkillAuthoringMessage[]>([]);
@@ -199,14 +200,23 @@ async function save() {
   saveError.value = '';
   try {
     if (isNew.value) {
-      const created = await post<SkillDetail>('/skills', {
-        name: skill.value.name.trim(),
-        description: skill.value.description.trim(),
-        content: skill.value.content,
-      });
+      // 创建成功但地址切换失败时，重试只切换地址，不能再次创建一份 Skill。
+      const created = skill.value.id
+        ? skill.value
+        : await post<SkillDetail>('/skills', {
+            name: skill.value.name.trim(),
+            description: skill.value.description.trim(),
+            content: skill.value.content,
+          });
       skill.value = created;
       dirty.value = false;
-      await router.replace(`/agent/skills/${created.id}`);
+      creatingSkillNavigationId = created.id;
+      try {
+        const failure = await router.replace(`/agent/skills/${created.id}`);
+        if (isNavigationFailure(failure)) throw new Error('草稿已创建，但页面切换失败，请重试保存。');
+      } finally {
+        creatingSkillNavigationId = null;
+      }
       await refreshRevisions().catch((err: Error) =>
         app.toast(`草稿已保存，但历史读取失败：${err.message}`, 'error'),
       );
@@ -425,7 +435,11 @@ watch(
 onMounted(() => {
   void loadSkill({ focusAssistant: route.query.start === 'generate' });
 });
+function isCreatingSkillNavigation(to: { path: string }) {
+  return creatingSkillNavigationId !== null && to.path === `/agent/skills/${creatingSkillNavigationId}`;
+}
 onBeforeRouteUpdate((to) => {
+  if (isCreatingSkillNavigation(to)) return true;
   if ((saving.value || busy.value || uploadingReference.value) && Number(to.params.id) !== skill.value?.id) {
     app.toast('请等待当前操作完成后再离开。', 'info');
     return false;
@@ -433,7 +447,8 @@ onBeforeRouteUpdate((to) => {
   if (!dirty.value || Number(to.params.id) === skill.value?.id) return true;
   return confirm({ title: '当前草稿有未保存的修改，确定离开吗？', okText: '离开', cancelText: '留下' });
 });
-onBeforeRouteLeave(() => {
+onBeforeRouteLeave((to) => {
+  if (isCreatingSkillNavigation(to)) return true;
   if (saving.value || busy.value || uploadingReference.value) {
     app.toast('请等待当前操作完成后再离开。', 'info');
     return false;
