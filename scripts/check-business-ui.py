@@ -691,22 +691,15 @@ async def main():
                 "还没有 MCP 服务"
             )
             await page.get_by_role("button", name="添加 MCP 服务").click()
-            mcp_dialog = page.get_by_role("dialog", name="添加 MCP 服务")
+            mcp_dialog = page.get_by_role("dialog", name="导入 MCP 服务")
             await expect(mcp_dialog).to_be_visible()
-            # 输入即识别：格式错误实时显示在识别结果行，确定按钮不可点
             await page.locator("#mcp-import-json").fill("{")
+            await mcp_dialog.get_by_role("button", name="导入配置").click()
             await expect(mcp_dialog.locator(".mcp-import-error")).to_contain_text(
-                "JSON 格式有误"
+                "JSON 格式不正确"
             )
-            await expect(mcp_dialog.get_by_role("button", name="确定")).to_be_disabled()
-            await page.locator("#mcp-import-json").fill(
-                '{"mcpServers": {"demo": {"command": "npx", "args": []}}}'
-            )
+            await page.locator("#mcp-import-json").fill("{ ")
             await expect(mcp_dialog.locator(".mcp-import-error")).to_have_count(0)
-            await expect(mcp_dialog.locator(".mcp-import-entry")).to_contain_text(
-                "demo · 本机进程"
-            )
-            await expect(mcp_dialog.get_by_role("button", name="确定")).to_be_enabled()
             await page.keyboard.press("Escape")
             await expect(mcp_dialog).to_have_count(0)
             # 操作结果走全局 toast，页面内不再堆叠常驻提示条。
