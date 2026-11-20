@@ -1056,10 +1056,10 @@ onBeforeUnmount(() => {
                   shape="circle"
                   html-type="submit"
                   :loading="busy"
-                  :disabled="!canSend"
-                  aria-label="发送"
-                  title="发送"
-                  ><Icon name="arrow-up-line" :size="16"
+                  :disabled="!canSend && !busy"
+                  :aria-label="busy ? '助手处理中' : '发送'"
+                  :title="busy ? '助手处理中' : '发送'"
+                  ><Icon v-if="!busy" name="arrow-up-line" :size="16"
                 /></a-button>
               </div>
             </div>
@@ -1764,6 +1764,11 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   border-radius: 50% !important;
+}
+.composer-send :deep(.ant-btn-loading-icon) {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
 }
 /* 禁用态保留主题色倾向（主题色 + 灰），而非 antd 默认的纯灰 */
 .composer-send:disabled,
