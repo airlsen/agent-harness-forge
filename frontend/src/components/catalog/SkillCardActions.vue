@@ -32,7 +32,7 @@ function onMenuClick(info: MenuInfo) {
         :disabled="disabled"
         :loading="downloading"
       >
-        <Icon v-if="!downloading" name="more" :size="18" />
+        <Icon v-if="!downloading" name="more" :size="20" />
       </a-button>
       <template #overlay>
         <a-menu @click="onMenuClick">
@@ -51,7 +51,7 @@ function onMenuClick(info: MenuInfo) {
 .skill-card-actions {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
 }
 .skill-card-actions :deep(.ant-btn) {
@@ -62,15 +62,16 @@ function onMenuClick(info: MenuInfo) {
   gap: 4px;
 }
 .skill-card-more {
-  width: 32px;
+  width: 34px;
   padding: 0;
-  color: var(--color-text-secondary);
-  background: var(--surface-card);
-  border: 1px solid var(--border-default);
+  color: var(--color-brand-active);
+  background: var(--color-brand-muted);
+  border: 1px solid var(--color-brand-border);
 }
 .skill-card-more:not(:disabled):hover,
 .skill-card-more:not(:disabled):focus-visible {
-  color: var(--color-brand);
+  color: var(--color-brand-active);
+  background: var(--color-brand-subtle);
   border-color: var(--color-brand);
 }
 .ant-dropdown-menu-item svg {
