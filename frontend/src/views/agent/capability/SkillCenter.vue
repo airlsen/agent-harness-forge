@@ -118,7 +118,7 @@ onMounted(load);
               aria-label="返回技能管理"
               title="返回技能管理"
             >
-              <Icon name="arrow-left-line" :size="20" />
+              <Icon name="ri-arrow-go-back-fill" :size="20" />
             </RouterLink>
             我的技能
           </h1>
