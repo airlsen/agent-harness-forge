@@ -43,17 +43,19 @@ const loading = ref(true);
 const loadError = ref('');
 const components = ref<RuntimeComponent[]>([]);
 const pluginSubmissions = ref<PluginPackage[]>([]);
+const pluginUsageCounts = ref<Record<string, number>>({});
+const pluginFilter = ref<'all' | 'pending' | 'error' | 'disabled'>('all');
+function selectPluginFilter(value: string) {
+  pluginFilter.value = value as typeof pluginFilter.value;
+}
+function pluginPath(pluginId: string) {
+  return `/agent/capabilities/plugins/${encodeURIComponent(pluginId)}`;
+}
 const pluginUploadOpen = ref(false);
 const pluginArchive = ref<File | null>(null);
 const pluginUploadBusy = ref(false);
 const pluginUploadMessage = ref('');
 const MAX_PLUGIN_ARCHIVE_BYTES = 5 * 1024 * 1024;
-const reviewingPlugin = ref<number | null>(null);
-// 卡片「工具与权限」抽屉当前展示的插件
-const pluginTools = ref<PluginPackage | null>(null);
-// 插件页底部折叠面板：有待审核版本时默认展开审核队列
-const pluginPanels = ref<string[]>([]);
-let pluginPanelsInitialized = false;
 const skills = ref<{ items: PublishedSkillSummary[] } | null>(null);
 const downloadingSkill = ref<number | null>(null);
 async function downloadPublishedSkill(skill: PublishedSkillSummary) {
@@ -145,11 +147,8 @@ function openMcpTools(server: McpServer) {
   mcpToolQuery.value = '';
 }
 const detail = ref<Tool | null>(null);
-const componentDetail = ref<RuntimeComponent | null>(null);
 // 关闭动画期间沿用上一次的内容
 const shownTool = useRetained(() => detail.value);
-const shownComponent = useRetained(() => componentDetail.value);
-const shownPluginTools = useRetained(() => pluginTools.value);
 const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE;
 const mcpTransportOptions = [
   { value: 'streamable-http', label: '远程 HTTP' },
@@ -171,7 +170,7 @@ const tab = computed(() => {
 });
 const tabs = computed(() => [
   { value: 'tools', label: '基础工具', count: app.tools.length },
-  { value: 'plugins', label: '插件', count: components.value.length },
+  { value: 'plugins', label: '插件', count: pluginRows.value.length },
   { value: 'skills', label: '技能', count: publishedSkills.value.length },
   { value: 'mcp', label: 'MCP 服务', count: mcp.value?.items.length },
 ]);
@@ -210,34 +209,74 @@ function mcpDescription(server: McpServer) {
   );
   return server.serverInfo?.version ? `${name} · ${String(server.serverInfo.version)}` : name;
 }
-function submissionState(plugin: PluginPackage) {
-  if (plugin.auditStatus === 'approved')
-    return plugin.enabled ? { label: '已批准', color: 'success' } : { label: '已停用', color: undefined };
-  if (plugin.auditStatus === 'rejected') return { label: '已拒绝', color: 'error' };
-  return { label: '待审核', color: 'warning' };
-}
 const visibleTools = computed(() =>
   app.tools.filter((tool) =>
     `${tool.name} ${tool.title} ${tool.description}`.toLowerCase().includes(query.value.trim().toLowerCase()),
   ),
 );
+type PluginRow = {
+  plugin: PluginPackage;
+  pending: PluginPackage | null;
+  source: string;
+  state: string;
+  tone: string;
+};
+const pluginRows = computed<PluginRow[]>(() => {
+  const byId = new Map<string, { active?: PluginPackage; releases: PluginPackage[] }>();
+  for (const plugin of components.value) byId.set(plugin.package, { active: plugin, releases: [] });
+  for (const plugin of pluginSubmissions.value) {
+    const group = byId.get(plugin.package) ?? { releases: [] };
+    group.releases.push(plugin);
+    byId.set(plugin.package, group);
+  }
+  return [...byId.entries()].map(([, group]) => {
+    const pending = group.releases.find((release) => release.auditStatus === 'pending') ?? null;
+    const plugin = (group.active ?? group.releases[0])!;
+    const source = plugin.source.startsWith('builtin:')
+      ? plugin.source.includes('demo')
+        ? '平台演示'
+        : '平台内置'
+      : '企业接入';
+    let state = '已批准';
+    let tone = 'success';
+    if (!group.active) {
+      state = pending
+        ? pending.lastTestError
+          ? '试运行失败'
+          : pending.lastTestedAt
+            ? '待审核'
+            : '待试运行'
+        : group.releases.some((release) => release.auditStatus === 'approved')
+          ? '已停用'
+          : '已拒绝';
+      tone = state === '试运行失败' || state === '已拒绝' ? 'error' : state === '已停用' ? '' : 'warning';
+    } else if (group.active.lastTestError) {
+      state = '试运行失败';
+      tone = 'error';
+    }
+    return { plugin, pending, source, state, tone };
+  });
+});
 const visiblePlugins = computed(() =>
-  components.value.filter((plugin) =>
-    `${plugin.displayName} ${plugin.package} ${plugin.description} ${plugin.tools.map((tool) => `${tool.title} ${tool.description}`).join(' ')}`
-      .toLowerCase()
-      .includes(query.value.trim().toLowerCase()),
-  ),
+  pluginRows.value.filter((row) => {
+    const searchable = [
+      row.plugin.displayName,
+      row.plugin.package,
+      row.plugin.description,
+      ...row.plugin.tools.map((tool) => `${tool.title} ${tool.description}`),
+      ...pluginSubmissions.value
+        .filter((item) => item.package === row.plugin.package)
+        .map((item) => item.version),
+    ].join(' ');
+    if (!matches(searchable)) return false;
+    if (pluginFilter.value === 'pending') return Boolean(row.pending);
+    if (pluginFilter.value === 'error')
+      return row.state === '试运行失败' || Boolean(row.pending?.lastTestError);
+    if (pluginFilter.value === 'disabled') return row.state === '已停用';
+    return true;
+  }),
 );
-const visiblePluginSubmissions = computed(() =>
-  pluginSubmissions.value.filter((plugin) =>
-    `${plugin.displayName} ${plugin.package} ${plugin.version} ${plugin.artifactName} ${plugin.reviewNote}`
-      .toLowerCase()
-      .includes(query.value.trim().toLowerCase()),
-  ),
-);
-const pendingPluginSubmissions = computed(() =>
-  visiblePluginSubmissions.value.filter((plugin) => plugin.auditStatus === 'pending'),
-);
+const pendingPluginCount = computed(() => pluginRows.value.filter((row) => row.pending).length);
 const related = computed(() =>
   app.availableScenarios.filter(
     (s) => shownTool.value && s.payload.capabilities.builtin_tool_names.includes(shownTool.value.name),
@@ -266,18 +305,15 @@ async function load() {
   loadError.value = '';
   try {
     const [plugins, skillResult, mcpResult] = await Promise.all([
-      api<{ items: RuntimeComponent[]; submissions: PluginPackage[] }>('/registry/plugins'),
+      api<{ items: RuntimeComponent[]; submissions: PluginPackage[]; usageCounts: Record<string, number> }>(
+        '/registry/plugins',
+      ),
       api<{ items: PublishedSkillSummary[] }>('/skills/published'),
       api<{ items: McpServer[]; available: boolean; reason: string }>('/registry/mcp-servers'),
     ]);
     components.value = plugins.items;
     pluginSubmissions.value = plugins.submissions;
-    // 只在首次读取时决定是否展开审核队列，之后尊重用户的展开 / 收起操作
-    if (!pluginPanelsInitialized) {
-      pluginPanelsInitialized = true;
-      if (plugins.submissions.some((plugin) => plugin.auditStatus === 'pending'))
-        pluginPanels.value = ['review'];
-    }
+    pluginUsageCounts.value = plugins.usageCounts ?? {};
     skills.value = skillResult;
     mcp.value = mcpResult;
   } catch (error) {
@@ -343,40 +379,6 @@ async function uploadPluginArchive() {
     pluginUploadMessage.value = (error as Error).message;
   } finally {
     pluginUploadBusy.value = false;
-  }
-}
-async function reviewPlugin(plugin: PluginPackage, action: 'approved' | 'rejected') {
-  const verb = action === 'approved' ? '批准' : '拒绝';
-  if (
-    !(await confirm({
-      title: `确定${verb}插件版本“${plugin.displayName}” v${plugin.version} 吗？`,
-      okText: verb,
-    }))
-  )
-    return;
-  reviewingPlugin.value = plugin.id;
-  try {
-    await api(`/registry/plugins/${plugin.id}/review`, { method: 'POST', body: JSON.stringify({ action }) });
-    app.toast(action === 'approved' ? '插件版本已批准，可在场景中授权使用。' : '插件版本已拒绝。');
-    await load();
-  } catch (error) {
-    app.toast((error as Error).message, 'error');
-  } finally {
-    reviewingPlugin.value = null;
-  }
-}
-async function togglePlugin(plugin: PluginPackage) {
-  reviewingPlugin.value = plugin.id;
-  try {
-    await api(`/registry/plugins/${plugin.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ enabled: !plugin.enabled }),
-    });
-    await load();
-  } catch (error) {
-    app.toast((error as Error).message, 'error');
-  } finally {
-    reviewingPlugin.value = null;
   }
 }
 function openMcpEditor() {
@@ -522,7 +524,6 @@ async function deleteMcp(server: McpServer) {
 function selectTab(id: string) {
   query.value = '';
   detail.value = null;
-  pluginTools.value = null;
   const routeTab = id === 'tools' ? 'base-tools' : id;
   void router.replace({ query: { ...route.query, tab: routeTab, tool: undefined } });
 }
@@ -563,7 +564,7 @@ onMounted(load);
         <div class="capability-toolbar-actions">
           <CatalogSearch v-model:value="query" :placeholder="search.placeholder" :aria-label="search.label" />
           <a-button v-if="tab === 'plugins'" type="primary" @click="openPluginUpload">
-            <template #icon><Icon name="arrow-up-line" :size="16" /></template>上传插件包
+            <template #icon><Icon name="plus" :size="16" /></template>接入插件
           </a-button>
           <template v-else-if="tab === 'skills'">
             <RouterLink v-slot="{ href, navigate }" to="/agent/skills" custom>
@@ -624,163 +625,78 @@ onMounted(load);
         </div>
         <section v-else class="plugin-directory">
           <header class="capability-section-head">
-            <h2>受管插件</h2>
-            <span>{{ components.length }} 个可用 · {{ pluginSubmissions.length }} 个上传</span>
+            <h2>业务插件</h2>
+            <span>{{ pluginRows.length }} 个插件 · {{ pendingPluginCount }} 个待审核版本</span>
+            <p>先部署 Worker，再上传插件清单；在详情页试运行并发布版本。</p>
           </header>
+          <div class="plugin-filters" role="group" aria-label="插件状态筛选">
+            <button
+              v-for="option in [
+                { value: 'all', label: '全部' },
+                { value: 'pending', label: '待审核' },
+                { value: 'error', label: '运行异常' },
+                { value: 'disabled', label: '已停用' },
+              ]"
+              :key="option.value"
+              type="button"
+              :class="{ active: pluginFilter === option.value }"
+              :aria-pressed="pluginFilter === option.value"
+              @click="selectPluginFilter(option.value)"
+            >
+              {{ option.label
+              }}<span v-if="option.value === 'pending' && pendingPluginCount">{{ pendingPluginCount }}</span>
+            </button>
+          </div>
           <CatalogEmpty
             v-if="!visiblePlugins.length"
             icon="blocks"
-            :title="query.trim() ? '没有匹配的插件' : '还没有可用的受管插件'"
-            :description="
+            :title="
               query.trim()
-                ? '试试其他插件名称、工具名称或说明。'
-                : '上传 Forge 插件包后会先进入审核；审核通过并启用后，才可在场景中授权使用。'
+                ? '没有匹配的插件'
+                : pluginFilter === 'all'
+                  ? '还没有业务插件'
+                  : '当前没有此状态的插件'
+            "
+            :description="
+              query.trim() ? '试试其他插件名称或工具名称。' : '接入新插件后，可在这里维护版本与使用情况。'
             "
           >
             <a-button v-if="query.trim()" @click="query = ''">清除搜索</a-button>
+            <a-button v-else-if="pluginFilter !== 'all'" @click="pluginFilter = 'all'">查看全部</a-button>
           </CatalogEmpty>
-          <CatalogGrid v-else>
-            <CatalogCard
-              v-for="plugin in visiblePlugins"
-              :key="plugin.package"
-              :title="plugin.displayName"
-              icon="blocks"
-              tone="shield"
-              :description="plugin.description"
-              :status="plugin.auditStatus === 'approved' && plugin.enabled ? '已批准' : '不可用'"
-              :status-color="plugin.auditStatus === 'approved' && plugin.enabled ? 'success' : undefined"
-            >
-              <template #sub>
-                <span>v{{ plugin.version }}</span
-                ><span>{{ plugin.tools.length }} 项工具</span>
-              </template>
-              <template v-if="plugin.source.includes('demo')" #tags>
-                <a-tag color="warning" :bordered="false" title="仅返回模拟数据，不连接真实系统"
-                  >演示数据</a-tag
-                >
-              </template>
-              <template #footer>
-                <RouterLink
-                  v-slot="{ href, navigate }"
-                  :to="`/agent/capabilities/plugins/${encodeURIComponent(plugin.package)}`"
-                  custom
-                >
-                  <a-button type="text" size="small" :href="href" @click="navigate">详情与版本</a-button>
-                </RouterLink>
-                <RouterLink v-slot="{ href, navigate }" to="/agent/scenarios" custom>
-                  <a-button type="primary" size="small" :href="href" @click="navigate">场景授权</a-button>
-                </RouterLink>
-              </template>
-            </CatalogCard>
-          </CatalogGrid>
-          <!-- 审核队列与平台运行组件属于次要信息，收进折叠面板 -->
-          <a-collapse v-model:activeKey="pluginPanels" class="capability-panels" ghost>
-            <a-collapse-panel
-              v-if="visiblePluginSubmissions.length"
-              key="review"
-              class="plugin-review-section"
-            >
-              <template #header>
-                <span class="capability-panel-title"
-                  >上传版本与审核队列<a-tag
-                    :color="pendingPluginSubmissions.length ? 'warning' : undefined"
+          <div v-else class="plugin-maintenance-list">
+            <article v-for="row in visiblePlugins" :key="row.plugin.package" class="plugin-maintenance-item">
+              <span class="plugin-maintenance-icon"><Icon name="blocks" :size="20" /></span>
+              <div class="plugin-maintenance-body">
+                <div class="plugin-maintenance-heading">
+                  <strong>{{ row.plugin.displayName }}</strong>
+                  <a-tag class="plugin-maintenance-status" :color="row.tone || undefined" :bordered="false">{{
+                    row.state
+                  }}</a-tag>
+                  <a-tag
+                    v-if="row.pending && row.state === '已批准'"
+                    :color="row.pending.lastTestError ? 'error' : 'warning'"
                     :bordered="false"
-                    >{{ pendingPluginSubmissions.length }} 项待处理</a-tag
-                  ></span
-                >
-              </template>
-              <a-list class="plugin-submission-list" :data-source="visiblePluginSubmissions">
-                <template #renderItem="{ item: plugin }">
-                  <a-list-item class="plugin-submission-item">
-                    <a-list-item-meta>
-                      <template #title>
-                        <span class="plugin-submission-title"
-                          >{{ plugin.displayName
-                          }}<a-tag :color="submissionState(plugin).color" :bordered="false">{{
-                            submissionState(plugin).label
-                          }}</a-tag></span
-                        >
-                      </template>
-                      <template #description>
-                        <span class="plugin-submission-meta"
-                          >{{ plugin.package }} · v{{ plugin.version }} ·
-                          {{ plugin.artifactName || '已登记制品' }} ·
-                          <code>{{ plugin.artifactHash.slice(0, 12) }}</code></span
-                        >
-                        <span class="plugin-submission-note">{{
-                          plugin.runtime === 'dsh-native'
-                            ? '原生 DSH 插件候选：只能由平台团队通过专用 Runner 镜像审核。'
-                            : plugin.reviewNote ||
-                              'Manifest 已校验，等待管理员审核远程 Worker、工具权限与网络域名。'
-                        }}</span>
-                        <span v-if="plugin.execution?.networkDomains?.length" class="plugin-submission-meta"
-                          >网络白名单：{{ plugin.execution.networkDomains.join('、') }} ·
-                          {{ plugin.execution.timeoutSeconds ?? 20 }} 秒超时</span
-                        >
-                      </template>
-                    </a-list-item-meta>
-                    <template #actions>
-                      <RouterLink
-                        v-slot="{ href, navigate }"
-                        :to="`/agent/capabilities/plugins/${encodeURIComponent(plugin.package)}`"
-                        custom
-                      >
-                        <a-button size="small" :href="href" @click="navigate">查看</a-button>
-                      </RouterLink>
-                      <template v-if="plugin.auditStatus === 'pending'">
-                        <a-button
-                          size="small"
-                          :disabled="reviewingPlugin === plugin.id"
-                          @click="reviewPlugin(plugin, 'rejected')"
-                          >拒绝</a-button
-                        >
-                        <a-button
-                          type="primary"
-                          size="small"
-                          :disabled="
-                            reviewingPlugin === plugin.id ||
-                            plugin.runtime === 'dsh-native' ||
-                            !plugin.lastTestedAt
-                          "
-                          :title="!plugin.lastTestedAt ? '请先在详情页试运行只读工具' : undefined"
-                          @click="reviewPlugin(plugin, 'approved')"
-                          >批准并发布</a-button
-                        >
-                      </template>
-                      <a-button
-                        v-else-if="plugin.auditStatus === 'approved'"
-                        size="small"
-                        :loading="reviewingPlugin === plugin.id"
-                        @click="togglePlugin(plugin)"
-                        >{{ plugin.enabled ? '停用版本' : '启用版本' }}</a-button
-                      >
-                    </template>
-                  </a-list-item>
-                </template>
-              </a-list>
-            </a-collapse-panel>
-            <a-collapse-panel key="runtime" class="runtime-details">
-              <template #header>
-                <span class="capability-panel-title">平台运行组件<small>只读 · 非业务插件</small></span>
-              </template>
-              <a-list class="runtime-component-list" :data-source="components">
-                <template #renderItem="{ item }">
-                  <a-list-item>
-                    <a-list-item-meta :description="`${item.package} · ${item.runtime}`">
-                      <template #title>
-                        <span class="plugin-submission-title"
-                          >{{ item.displayName }}<small>v{{ item.version }}</small></span
-                        >
-                      </template>
-                    </a-list-item-meta>
-                    <template #actions>
-                      <a-button type="text" size="small" @click="componentDetail = item">组件详情</a-button>
-                    </template>
-                  </a-list-item>
-                </template>
-              </a-list>
-            </a-collapse-panel>
-          </a-collapse>
+                    >{{ row.pending.lastTestError ? '新版本试运行失败' : '新版本待审核' }}</a-tag
+                  >
+                  <a-tag v-if="row.source === '平台演示'" color="warning" :bordered="false">演示数据</a-tag>
+                </div>
+                <p class="plugin-maintenance-description">{{ row.plugin.description }}</p>
+                <div class="plugin-maintenance-meta">
+                  <span>{{ row.source }}</span>
+                  <span>{{ row.plugin.isDefault ? '默认版本' : '最新版本' }} v{{ row.plugin.version }}</span>
+                  <span>{{ row.plugin.tools.length }} 项工具</span>
+                  <span>{{ pluginUsageCounts[row.plugin.package] ?? 0 }} 个场景引用</span>
+                </div>
+              </div>
+              <RouterLink v-slot="{ href, navigate }" :to="pluginPath(row.plugin.package)" custom>
+                <a-button type="primary" size="small" :href="href" @click="navigate">查看</a-button>
+              </RouterLink>
+            </article>
+          </div>
+          <RouterLink class="plugin-runtime-link" to="/agent/runtime"
+            >平台运行组件由 Runner 管理 · 查看运行状态 →</RouterLink
+          >
         </section>
       </template>
       <div v-else-if="loading" class="loading-inline" role="status">
@@ -958,40 +874,6 @@ onMounted(load);
       </div>
     </div>
     <!-- 弹层统一用 antd Drawer / Modal；class="drawer" 落在 .ant-drawer-content 上，复用全局 .drawer 下的正文排版 -->
-    <a-drawer
-      :open="!!pluginTools"
-      :width="480"
-      class="drawer"
-      v-bind="drawerA11y('插件工具与权限', !!pluginTools)"
-      @close="pluginTools = null"
-    >
-      <template v-if="shownPluginTools" #title>
-        <div class="capability-drawer-title">
-          <h2>{{ shownPluginTools.displayName }}</h2>
-          <p>v{{ shownPluginTools.version }} · {{ shownPluginTools.tools.length }} 项已声明工具</p>
-        </div>
-      </template>
-      <a-list v-if="shownPluginTools" class="plugin-tool-list" :data-source="shownPluginTools.tools">
-        <template #renderItem="{ item }">
-          <a-list-item>
-            <a-list-item-meta :title="item.title" :description="item.description" />
-            <template #extra>
-              <a-tag :color="item.permission === 'approval' ? 'warning' : 'success'" :bordered="false">{{
-                item.permission === 'approval' ? '需审批' : '只读'
-              }}</a-tag>
-            </template>
-          </a-list-item>
-        </template>
-      </a-list>
-      <template #footer>
-        <div class="capability-drawer-footer">
-          <a-button @click="pluginTools = null">关闭</a-button>
-          <RouterLink v-slot="{ href, navigate }" to="/agent/scenarios" custom>
-            <a-button type="primary" :href="href" @click="navigate">场景授权</a-button>
-          </RouterLink>
-        </div>
-      </template>
-    </a-drawer>
     <a-modal
       :open="pluginUploadOpen"
       :width="560"
@@ -1231,53 +1113,6 @@ onMounted(load);
         </div>
       </template>
     </a-drawer>
-    <a-drawer
-      :open="!!componentDetail"
-      :width="480"
-      class="drawer"
-      v-bind="drawerA11y('组件详情', !!componentDetail)"
-      @close="componentDetail = null"
-    >
-      <template v-if="shownComponent" #title>
-        <div class="capability-drawer-title">
-          <h2>{{ shownComponent.displayName }}</h2>
-          <p>{{ shownComponent.package }}</p>
-        </div>
-      </template>
-      <template v-if="shownComponent">
-        <a-descriptions class="component-descriptions" :column="1" size="small" bordered>
-          <a-descriptions-item label="组件说明">{{ shownComponent.description }}</a-descriptions-item>
-          <a-descriptions-item label="版本"
-            ><code>{{ shownComponent.version }}</code></a-descriptions-item
-          >
-          <a-descriptions-item label="运行时">{{ shownComponent.runtime }}</a-descriptions-item>
-          <a-descriptions-item label="扩展点">
-            <span class="component-tags">
-              <a-tag v-for="point in shownComponent.extensionPoints" :key="point" :bordered="false">{{
-                point
-              }}</a-tag>
-            </span>
-          </a-descriptions-item>
-          <a-descriptions-item label="权限范围">
-            <span class="component-tags">
-              <a-tag
-                v-for="point in shownComponent.permissions"
-                :key="point"
-                color="warning"
-                :bordered="false"
-                >{{ point }}</a-tag
-              >
-            </span>
-          </a-descriptions-item>
-        </a-descriptions>
-        <a-alert
-          class="component-boundary"
-          type="info"
-          show-icon
-          message="仅可由平台审核、固定版本并通过场景授权；不支持自由安装 npm、GitHub 或本地插件。"
-        />
-      </template>
-    </a-drawer>
   </main>
 </template>
 
@@ -1338,6 +1173,121 @@ onMounted(load);
 }
 
 /* ============ 插件页：分区标题 + 底部折叠面板 ============ */
+.plugin-maintenance-list {
+  display: grid;
+  gap: 10px;
+  max-width: 1120px;
+}
+.plugin-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+}
+.plugin-filters button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.plugin-filters button.active {
+  color: var(--color-text-primary);
+  background: var(--surface-muted);
+  font-weight: 600;
+}
+.plugin-filters button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+.plugin-filters button span {
+  color: var(--color-warning-text);
+  font-size: 12px;
+}
+.plugin-maintenance-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 112px;
+  padding: 18px 20px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-card);
+}
+.plugin-maintenance-item:hover,
+.plugin-maintenance-item:has(:focus-visible) {
+  border-color: var(--color-brand);
+}
+.plugin-maintenance-icon {
+  display: grid;
+  flex: 0 0 36px;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  color: var(--color-success-text);
+  background: var(--color-success-bg);
+}
+.plugin-maintenance-body {
+  flex: 1;
+  min-width: 0;
+}
+.plugin-maintenance-heading,
+.plugin-maintenance-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.plugin-maintenance-heading strong {
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+.plugin-maintenance-heading :deep(.ant-tag) {
+  margin: 0;
+}
+/* 与技能卡片「已发布」使用同一套语义色，不再依赖 Ant Design 自动推色。 */
+.plugin-maintenance-heading :deep(.plugin-maintenance-status.ant-tag-success) {
+  color: var(--color-success-text);
+  background: var(--color-success-bg);
+}
+.plugin-maintenance-description {
+  margin: 8px 0;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plugin-maintenance-meta {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+.plugin-runtime-link {
+  display: inline-block;
+  margin-top: 22px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+@media (max-width: 620px) {
+  .plugin-maintenance-item {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .plugin-maintenance-item > :last-child {
+    margin-left: 50px;
+  }
+  .plugin-maintenance-description {
+    white-space: normal;
+  }
+}
 .capability-section-head {
   display: flex;
   flex-wrap: wrap;

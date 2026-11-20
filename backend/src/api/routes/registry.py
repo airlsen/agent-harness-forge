@@ -11,6 +11,7 @@ from ..services.plugin_service import (
     import_archive,
     list_plugins,
     plugin_detail,
+    plugin_usage_counts,
     review_release,
     record_test,
     set_default_release,
@@ -32,7 +33,9 @@ async def tools():
 @router.get("/plugins")
 async def plugins(db: AsyncSession = Depends(get_session)):
     items, submissions = await list_plugins(db)
-    return ResponseUtil.ok({"items": items, "submissions": submissions})
+    return ResponseUtil.ok(
+        {"items": items, "submissions": submissions, "usageCounts": await plugin_usage_counts(db)}
+    )
 
 
 @router.get("/plugins/{plugin_id}")

@@ -460,6 +460,28 @@ async def list_plugins(db: AsyncSession) -> tuple[list[dict], list[dict]]:
     ]
 
 
+async def plugin_usage_counts(db: AsyncSession) -> dict[str, int]:
+    scenarios = (await db.scalars(select(AgentScenario))).all()
+    if not scenarios:
+        return {}
+    versions = (
+        await db.scalars(
+            select(AgentScenarioVersion).where(
+                AgentScenarioVersion.scenario_id.in_([scenario.id for scenario in scenarios])
+            )
+        )
+    ).all()
+    current = {scenario.id: scenario.current_version for scenario in scenarios}
+    counts: dict[str, int] = {}
+    for version in versions:
+        if current.get(version.scenario_id) != version.version:
+            continue
+        bindings = version.bundle_json.get("bundle", {}).get("meta", {}).get("pluginBindings", [])
+        for plugin_id in {binding.get("package") for binding in bindings if binding.get("package")}:
+            counts[plugin_id] = counts.get(plugin_id, 0) + 1
+    return counts
+
+
 async def plugin_detail(db: AsyncSession, plugin_id: str) -> dict:
     releases = (await db.scalars(select(PluginRegistry))).all()
     versions = [row for row in releases if _row_plugin_id(row) == plugin_id]

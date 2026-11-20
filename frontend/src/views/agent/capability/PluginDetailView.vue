@@ -103,9 +103,14 @@ watch(() => route.params.id, load, { immediate: true });
           <h1>{{ current?.displayName ?? detail.releases[0]?.displayName }}</h1>
           <p>{{ current?.description ?? detail.releases[0]?.description }}</p>
         </div>
-        <a-tag :color="current ? 'success' : 'warning'">{{
-          current ? `默认 v${current.version}` : '未设置默认版本'
-        }}</a-tag>
+        <div class="plugin-heading-actions">
+          <a-tag :color="current ? 'success' : 'warning'">{{
+            current ? `默认 v${current.version}` : '未设置默认版本'
+          }}</a-tag>
+          <RouterLink v-if="current" v-slot="{ href, navigate }" to="/agent/scenarios" custom>
+            <a-button size="small" :href="href" @click="navigate">前往场景授权</a-button>
+          </RouterLink>
+        </div>
       </header>
 
       <section class="plugin-section">
@@ -258,6 +263,11 @@ watch(() => route.params.id, load, { immediate: true });
 .muted,
 .plugin-meta {
   color: var(--color-text-secondary);
+}
+.plugin-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .plugin-section {
   margin-top: 30px;
