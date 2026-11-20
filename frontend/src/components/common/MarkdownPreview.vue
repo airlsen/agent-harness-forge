@@ -26,7 +26,7 @@ interface Props {
   showLineNumbers?: boolean;
   maxHeight?: string;
   theme?: 'light' | 'dark' | 'auto';
-  accent?: 'yellow' | 'indigo';
+  accent?: 'brand' | 'yellow' | 'indigo';
   compact?: boolean;
 }
 
@@ -37,7 +37,7 @@ const props = withDefaults(defineProps<Props>(), {
   showLineNumbers: false,
   maxHeight: '',
   theme: 'auto',
-  accent: 'yellow',
+  accent: 'brand',
   compact: false,
 });
 
@@ -221,10 +221,10 @@ const buildRenderer = () => {
           </div>
           <div class="md-code-actions">
             <button class="md-action-btn md-copy-btn" data-copy-id="${id}" title="复制代码" type="button">
-              <span class="md-icon copy-icon">⧉</span><span class="md-icon check-icon" style="display:none">✓</span>
+              <span class="md-icon copy-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></span><span class="md-icon check-icon" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
               <span class="md-btn-text">复制</span>
             </button>
-            <button class="md-action-btn md-expand-btn" data-expand-id="${id}" title="展开/收起" type="button">↕</button>
+            <button class="md-action-btn md-expand-btn" data-expand-id="${id}" title="展开/收起" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg></button>
           </div>
         </div>
         <div class="md-code-content" id="wrap-${id}">
@@ -284,14 +284,14 @@ const buildRenderer = () => {
     let attrs = '';
     if (isExternal) {
       cls += ' is-external';
-      icon = `<span class="md-link-icon">↗</span>`;
+      icon = `<span class="md-link-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>`;
       attrs = ' target="_blank" rel="noopener noreferrer" data-external="true"';
     } else if (isEmail) {
       cls += ' is-email';
-      icon = `<span class="md-link-icon">✉</span>`;
+      icon = `<span class="md-link-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg></span>`;
     } else if (isFile) {
       cls += ' is-file';
-      icon = `<span class="md-link-icon">⬇</span>`;
+      icon = `<span class="md-link-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></span>`;
       attrs = ' target="_blank" rel="noopener noreferrer"';
     }
     return `<a href="${escapeHtml(href)}"${titleAttr}${attrs} class="${cls}">${text}${icon}</a>`;
@@ -314,21 +314,26 @@ const buildRenderer = () => {
     let type = 'default';
     let icon = '';
     const lower = quote.toLowerCase();
-    if (quote.includes('📝') || lower.includes('note')) {
+    if (lower.includes('note') || lower.includes('[!note]')) {
       type = 'note';
-      icon = '<span class="md-quote-icon">📝</span>';
-    } else if (quote.includes('⚠️') || lower.includes('warning')) {
+      icon =
+        '<span class="md-quote-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></span>';
+    } else if (lower.includes('warning') || lower.includes('[!warning]')) {
       type = 'warning';
-      icon = '<span class="md-quote-icon">⚠️</span>';
-    } else if (quote.includes('💡') || lower.includes('tip')) {
+      icon =
+        '<span class="md-quote-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></span>';
+    } else if (lower.includes('tip') || lower.includes('[!tip]')) {
       type = 'tip';
-      icon = '<span class="md-quote-icon">💡</span>';
-    } else if (quote.includes('❌') || lower.includes('error')) {
+      icon =
+        '<span class="md-quote-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path><path d="M9 18h6"></path><path d="M10 22h4"></path></svg></span>';
+    } else if (lower.includes('error') || lower.includes('[!error]')) {
       type = 'error';
-      icon = '<span class="md-quote-icon">❌</span>';
-    } else if (quote.includes('ℹ️') || lower.includes('info')) {
+      icon =
+        '<span class="md-quote-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg></span>';
+    } else if (lower.includes('info') || lower.includes('[!info]')) {
       type = 'info';
-      icon = '<span class="md-quote-icon">ℹ️</span>';
+      icon =
+        '<span class="md-quote-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></span>';
     }
     return `<blockquote class="md-quote md-quote-${type}">${icon}<div class="md-quote-content">${quote}</div></blockquote>`;
   };
@@ -422,7 +427,7 @@ const updateRenderedContent = async () => {
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : '未知错误';
     const stack = error instanceof Error ? error.stack || '' : '';
-    renderedContent.value = `<div class="md-render-error"><div class="md-error-icon">⚠️</div><div class="md-error-body"><h4>渲染错误</h4><p>${escapeHtml(msg)}</p><details><summary>详细信息</summary><pre>${escapeHtml(stack)}</pre></details></div></div>`;
+    renderedContent.value = `<div class="md-render-error"><div class="md-error-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div><div class="md-error-body"><h4>渲染错误</h4><p>${escapeHtml(msg)}</p><details><summary>详细信息</summary><pre>${escapeHtml(stack)}</pre></details></div></div>`;
   }
 };
 
@@ -471,7 +476,9 @@ const bindInteractivity = () => {
       if (!wrap) return;
       wrap.classList.toggle('is-expanded');
       const expanded = wrap.classList.contains('is-expanded');
-      btn.textContent = expanded ? '收起' : '↕';
+      btn.innerHTML = expanded
+        ? '收起'
+        : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>';
       btn.title = expanded ? '收起' : '展开';
     };
   });
@@ -524,17 +531,18 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
 
 <style scoped lang="scss">
 .markdown-renderer {
-  --md-primary: #eab308;
-  --md-primary-hover: #ca8a04;
-  --md-primary-active: #a16207;
-  --md-primary-soft: #fef9c3;
-  --md-primary-muted: #fefce8;
-  --md-primary-border: #fde68a;
-  --md-primary-ring: rgba(234, 179, 8, 0.32);
-  --md-heading-accent: #ca8a04;
-  --md-row-alt: #fffdf5;
-  --md-on-primary: #422006;
-  --md-quote-strong: #854d0e;
+  --md-primary: var(--brand-600);
+  --md-primary-hover: var(--brand-700);
+  --md-primary-active: var(--brand-700);
+  --md-primary-soft: var(--brand-100);
+  --md-primary-muted: var(--brand-50);
+  --md-primary-border: var(--brand-200);
+  --md-primary-ring: rgba(218, 114, 77, 0.28);
+  --md-heading-h1: var(--brand-800);
+  --md-heading-accent: var(--brand-700);
+  --md-row-alt: rgba(218, 114, 77, 0.035);
+  --md-on-primary: #ffffff;
+  --md-quote-strong: var(--brand-800);
   --md-fg: var(--color-text-primary);
   --md-fg-secondary: var(--color-text-secondary);
   --md-surface: var(--surface-card);
@@ -544,6 +552,21 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
   font-size: 13.5px;
   line-height: 1.8;
 
+  &.accent-yellow {
+    --md-primary: #eab308;
+    --md-primary-hover: #ca8a04;
+    --md-primary-active: #a16207;
+    --md-primary-soft: #fef9c3;
+    --md-primary-muted: #fefce8;
+    --md-primary-border: #fde68a;
+    --md-primary-ring: rgba(234, 179, 8, 0.32);
+    --md-heading-h1: #ca8a04;
+    --md-heading-accent: #ca8a04;
+    --md-row-alt: #fffdf5;
+    --md-on-primary: #422006;
+    --md-quote-strong: #854d0e;
+  }
+
   &.accent-indigo {
     --md-primary: #6366f1;
     --md-primary-hover: #4f46e5;
@@ -552,6 +575,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
     --md-primary-muted: #eef2ff;
     --md-primary-border: #c7d2fe;
     --md-primary-ring: rgba(99, 102, 241, 0.32);
+    --md-heading-h1: #4f46e5;
     --md-heading-accent: #4f46e5;
     --md-row-alt: #fafbff;
     --md-on-primary: #fff;
@@ -604,8 +628,8 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
     :deep(.md-h1) {
       font-size: 1.7em;
       padding-bottom: 0.35em;
-      color: var(--md-heading-accent);
-      border-bottom: 2px solid var(--md-primary);
+      color: var(--md-heading-h1, var(--md-heading-accent));
+      border-bottom: 2px solid var(--md-primary-border);
     }
     :deep(.md-h2) {
       font-size: 1.4em;
@@ -615,11 +639,11 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
     }
     :deep(.md-h3) {
       font-size: 1.18em;
-      color: var(--md-primary-active);
+      color: var(--md-heading-accent);
     }
     :deep(.md-h4) {
       font-size: 1.02em;
-      color: var(--md-fg-secondary);
+      color: var(--md-fg);
     }
     :deep(h5),
     :deep(h6) {
@@ -751,7 +775,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
       overflow: hidden;
       border: 1px solid var(--md-primary-border);
       box-shadow:
-        0 4px 16px rgba(234, 179, 8, 0.1),
+        0 4px 16px var(--md-primary-ring),
         0 1px 3px rgba(0, 0, 0, 0.06);
       background: var(--surface-card);
       transition:
@@ -760,7 +784,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
         transform 0.18s;
       &:hover {
         box-shadow:
-          0 8px 24px rgba(234, 179, 8, 0.16),
+          0 8px 24px var(--md-primary-ring),
           0 2px 6px rgba(0, 0, 0, 0.08);
         border-color: var(--md-primary);
         transform: translateY(-1px);
@@ -789,7 +813,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
           font-weight: 700;
           letter-spacing: 0.4px;
           text-transform: uppercase;
-          box-shadow: 0 1px 6px rgba(234, 179, 8, 0.35);
+          box-shadow: 0 1px 6px var(--md-primary-ring);
         }
         .md-code-stats {
           font-size: 11px;
@@ -931,7 +955,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
         th {
           background: var(--md-primary-muted);
           font-weight: 700;
-          color: var(--md-primary-active);
+          color: var(--md-quote-strong, var(--md-primary-active));
           position: sticky;
           top: 0;
         }
@@ -965,7 +989,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
         font-size: 0.9em;
       }
       &.is-external {
-        color: #a16207;
+        color: var(--md-primary-active);
       }
       &.is-email {
         color: #047857;
@@ -1149,16 +1173,32 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
   --md-fg-secondary: #aeb4c1;
   --md-surface: #222630;
   --md-border: #3b4250;
-  --md-primary-active: #facc15;
-  --md-heading-accent: #facc15;
-  --md-primary-soft: #473b16;
-  --md-primary-muted: #302a18;
-  --md-primary-border: #75621c;
+  --md-primary: var(--brand-400);
+  --md-primary-active: var(--brand-400);
+  --md-heading-h1: var(--brand-300);
+  --md-heading-accent: var(--brand-400);
+  --md-primary-soft: rgba(218, 114, 77, 0.18);
+  --md-primary-muted: rgba(218, 114, 77, 0.1);
+  --md-primary-border: rgba(218, 114, 77, 0.35);
   --md-row-alt: #272a31;
-  --md-quote-strong: #fde68a;
+  --md-quote-strong: var(--brand-200);
+
+  &.accent-yellow {
+    --md-primary: #facc15;
+    --md-primary-active: #facc15;
+    --md-heading-h1: #facc15;
+    --md-heading-accent: #facc15;
+    --md-primary-soft: #473b16;
+    --md-primary-muted: #302a18;
+    --md-primary-border: #75621c;
+    --md-row-alt: #272a31;
+    --md-quote-strong: #fde68a;
+  }
 
   &.accent-indigo {
+    --md-primary: #a5b4fc;
     --md-primary-active: #a5b4fc;
+    --md-heading-h1: #a5b4fc;
     --md-heading-accent: #a5b4fc;
     --md-primary-soft: #303663;
     --md-primary-muted: #252a48;
