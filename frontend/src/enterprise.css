@@ -363,7 +363,6 @@ textarea:focus-visible {
 .enterprise-sidebar-footer {
   margin-top: 0;
   padding: 20px var(--sidebar-gutter) 0;
-  border-top: 1px solid var(--line);
   flex-shrink: 0;
 }
 .enterprise-management-nav {
@@ -447,7 +446,6 @@ textarea:focus-visible {
 }
 .enterprise-profile {
   position: relative;
-  border-top: 1px solid var(--line);
   padding: 14px 0;
   margin-top: 18px;
 }
