@@ -626,7 +626,7 @@ onMounted(load);
         <section v-else class="plugin-directory">
           <header class="capability-section-head">
             <h2>业务插件</h2>
-            <span>{{ pluginRows.length }} 个插件 · {{ pendingPluginCount }} 个待审核版本</span>
+            <span>{{ pluginRows.length }} 个插件 · {{ pendingPluginCount }} 个待审核</span>
           </header>
           <div class="plugin-filters" role="group" aria-label="插件状态筛选">
             <button
