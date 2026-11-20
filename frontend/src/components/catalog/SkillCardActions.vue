@@ -64,9 +64,6 @@ function onMenuClick(info: MenuInfo) {
 .skill-card-more {
   width: 34px;
   padding: 0;
-  color: var(--color-brand-active);
-  background: var(--color-brand-muted);
-  border: 1px solid var(--color-brand-border);
 }
 .skill-card-more:not(:disabled):hover,
 .skill-card-more:not(:disabled):focus-visible {
