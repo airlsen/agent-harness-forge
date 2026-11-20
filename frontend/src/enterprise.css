@@ -1821,39 +1821,19 @@ textarea:focus-visible {
   color: var(--color-warning-text);
   margin-top: 7px;
 }
-/* Model management is a compact connection library, not a single global settings form. */
+/* Model management follows the same density and semantic tokens as capability cards. */
 .model-management-heading {
-  margin-bottom: 25px;
+  margin-bottom: 24px;
 }
-.enterprise-view .page-heading p.model-management-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0;
-  margin-top: 10px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 1.5;
-}
-.model-management-summary span {
+.model-management-heading .page-heading-actions .ant-btn {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
 }
-.model-management-summary span + span::before {
-  width: 3px;
-  height: 3px;
-  margin: 0 9px;
-  border-radius: 50%;
-  background: var(--text-subtle);
-  content: '';
-}
-.model-management-summary strong {
-  margin-right: 3px;
-  color: var(--ink);
-  font-weight: 650;
-}
-.model-management-summary .needs-attention,
-.model-management-summary .needs-attention strong {
-  color: var(--color-warning-text);
+.model-directory-summary {
+  margin: 0 0 16px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
 }
 .model-card-grid {
   display: grid;
@@ -1864,317 +1844,188 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 277px;
-  padding: 21px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--surface);
+  min-height: 228px;
+  padding: 16px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-card);
   transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
+    border-color 170ms ease,
+    transform 170ms ease;
 }
-.model-management-card:hover {
-  border-color: var(--accent-line);
-  box-shadow: 0 5px 18px #26334a08;
+.model-management-card:hover,
+.model-management-card:has(:focus-visible) {
+  border-color: var(--color-brand);
+  transform: translateY(-2px);
 }
-.model-card-top {
+.model-card-heading {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: flex-start;
   gap: 12px;
-}
-.model-availability-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 0;
-  border: 0;
-  color: var(--text-secondary);
-  background: transparent;
-  font-size: 11px;
-  font-weight: 550;
-}
-.model-availability-toggle:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-.model-toggle-track {
-  display: inline-flex;
-  align-items: center;
-  width: 27px;
-  height: 16px;
-  padding: 2px;
-  border-radius: 20px;
-  background: var(--color-info-bg);
-  transition: background 0.15s;
-}
-.model-toggle-track i {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px #26334a30;
-  transition: transform 0.15s;
-}
-.model-availability-toggle.enabled {
-  color: var(--green);
-}
-.model-availability-toggle.enabled .model-toggle-track {
-  background: var(--green);
-}
-.model-availability-toggle.enabled .model-toggle-track i {
-  transform: translateX(11px);
 }
 .model-card-icon {
   display: grid;
+  flex: 0 0 36px;
   place-items: center;
-  width: 35px;
-  height: 35px;
-  color: var(--accent-ink);
-  border: 1px solid var(--accent-line);
-  border-radius: 7px;
-  background: var(--accent-wash);
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  color: var(--color-brand);
+  background: var(--surface-selected);
 }
 .model-card-copy {
-  margin-top: 18px;
+  flex: 1;
+  min-width: 0;
 }
 .model-card-copy h2 {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  color: var(--ink);
-  font-size: 16px;
-  font-weight: 600;
-}
-.model-card-copy h2 > span {
   overflow: hidden;
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.model-default-tag {
-  flex: none;
-  padding: 1px 6px;
-  border: 1px solid var(--accent-line);
-  border-radius: 4px;
-  color: var(--accent-ink);
-  background: var(--accent-soft);
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 500;
-  line-height: 16px;
-}
-.model-default-tag.is-implicit {
-  border-style: dashed;
-  color: var(--text-secondary);
-  background: transparent;
 }
 .model-card-copy p {
   overflow: hidden;
-  margin-top: 5px;
-  color: var(--text-secondary);
+  margin: 2px 0 0;
+  color: var(--color-text-tertiary);
   font-size: 12px;
+  line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.model-card-details {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr);
-  gap: 15px;
-  margin: auto 0 0;
-  padding-top: 20px;
-}
-.model-card-details > div {
-  min-width: 0;
-}
-.model-card-details dt {
-  color: var(--text-subtle);
-  font-size: 10px;
-}
-.model-card-details dd {
-  overflow: hidden;
-  margin: 4px 0 0;
-  color: var(--ink);
-  font-size: 11px;
-  font-weight: 550;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.model-card-status {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-height: 40px;
-  margin-top: 16px;
-  padding: 9px 10px;
-  border-radius: 6px;
-  background: var(--surface-subtle);
-}
-.model-status-dot {
-  width: 6px;
-  height: 6px;
+.model-default-tag.ant-tag {
   flex: 0 0 auto;
-  margin-top: 5px;
-  border-radius: 50%;
-  background: var(--border-default);
+  margin: 3px 0 0;
+  color: var(--color-brand);
+  background: var(--surface-selected);
 }
-.model-card-status p {
-  min-width: 0;
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 10px;
-  line-height: 1.45;
+.model-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 20px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
 }
-.model-card-status strong,
-.model-card-status p > span {
-  display: block;
+.model-card-meta span:first-child {
   overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.model-card-status strong {
-  color: var(--ink);
-  font-size: 11px;
-  font-weight: 600;
+.model-card-health {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 14px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
 }
-.model-card-status.is-normal {
+.model-card-health .ant-tag {
+  flex: 0 0 auto;
+  margin: 0;
+}
+.model-card-health .ant-tag-success {
+  color: var(--color-success-text);
   background: var(--color-success-bg);
 }
-.model-card-status.is-normal .model-status-dot {
-  background: var(--green);
+.model-card-health > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.model-card-status.is-attention {
-  background: var(--color-brand-muted);
-}
-.model-card-status.is-attention .model-status-dot {
-  background: var(--color-warning-text);
-}
-.model-card-status.is-attention strong {
-  color: var(--color-warning-text);
-}
-.model-card-status.is-disabled {
-  background: var(--surface-subtle-bg);
-}
-.model-management-card footer {
+.model-card-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-top: 17px;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 18px;
+}
+.model-availability {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
 }
 .model-card-actions {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 6px;
 }
-.model-card-menu {
-  position: relative;
-}
-.model-card-more {
-  width: 29px;
-  height: 29px;
-  color: var(--text-secondary);
-}
-.model-card-menu-list {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 7px);
-  z-index: 4;
-  min-width: 118px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--surface);
-  box-shadow: 0 8px 20px #26334a18;
-}
-.model-card-menu-list button {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  gap: 7px;
-  min-height: 31px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 4px;
-  color: var(--text-secondary);
-  background: transparent;
-  font-size: 11px;
-  text-align: left;
-  white-space: nowrap;
-}
-.model-card-menu-list button:hover {
-  color: var(--ink);
-  background: var(--surface-subtle);
-}
-.model-card-menu-list button.danger {
-  color: var(--red, var(--color-danger-text));
-}
-.model-card-menu-list button.danger:hover {
-  background: var(--color-danger-bg);
-}
-.model-management-card.is-disabled {
-  border-color: var(--color-info-bg);
-  background: var(--surface-content);
-}
-.model-management-card.is-disabled .model-card-icon {
-  border-color: var(--color-info-bg);
-  color: var(--color-info-text);
-  background: var(--surface-subtle-bg);
-}
-.model-management-card.is-disabled .model-card-copy h2,
-.model-management-card.is-disabled .model-card-details dd {
-  color: var(--text-secondary);
-}
-.model-management-card.needs-attention {
-  border-color: var(--color-brand-subtle);
-}
-.model-management-loading {
-  display: flex;
+.model-card-actions .ant-btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
-  min-height: 260px;
-  color: var(--text-secondary);
-  font-size: 12px;
 }
-.model-management-alert {
-  margin-bottom: 0;
+.model-management-card.is-disabled .model-card-icon {
+  color: var(--color-text-tertiary);
+  background: var(--surface-muted);
 }
-.model-management-empty {
-  min-height: 330px;
+.model-editor-drawer .ant-drawer-content,
+.model-editor-drawer .ant-drawer-header,
+.model-editor-drawer .ant-drawer-footer {
+  background: var(--surface-card);
 }
-.model-editor-drawer {
-  display: flex;
-  flex-direction: column;
-  width: min(480px, 100vw);
+.model-editor-drawer .ant-drawer-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-light);
 }
-.model-editor-form {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 0;
-  overflow: auto;
-  padding: 24px 28px;
+.model-editor-drawer .ant-drawer-title {
+  color: var(--color-text-primary);
+  font-size: 16px;
+  font-weight: 600;
 }
-.model-editor-form > label {
-  margin-top: 8px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 550;
+.model-editor-drawer .ant-drawer-body {
+  padding: 24px;
 }
-.model-editor-form > label:first-child {
-  margin-top: 0;
+.model-editor-drawer .ant-drawer-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-light);
 }
-.model-editor-form > input {
-  min-height: 40px;
-  color: var(--ink);
-  border-color: var(--line);
+.model-editor-form .ant-form-item {
+  margin-bottom: 18px;
+}
+.model-editor-form .ant-form-item-label > label {
+  color: var(--color-text-primary);
   font-size: 13px;
+  font-weight: 500;
 }
-.model-editor-form .field-hint {
-  margin: -1px 0 4px;
+.model-editor-form .ant-form-item-extra {
+  margin-top: 4px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+.model-editor-form .ant-input,
+.model-editor-form .ant-input-affix-wrapper,
+.model-editor-form .ant-input-number {
+  min-height: 38px;
+  border-radius: 4px;
+  background: var(--surface-card);
+}
+.model-editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.model-editor-footer .ant-btn {
+  min-width: 72px;
+}
+@media (max-width: 700px) {
+  .model-card-footer {
+    flex-wrap: wrap;
+  }
+  .model-card-actions {
+    margin-left: auto;
+  }
 }
 /* Runtime status is an actionable destination, not a replacement for the old management menu. */
 .runtime-status-hero {
@@ -3767,14 +3618,8 @@ textarea:focus-visible {
   .model-card-grid {
     grid-template-columns: 1fr;
   }
-  .model-management-card {
-    min-height: 263px;
-  }
-  .model-management-summary {
-    row-gap: 3px;
-  }
-  .model-editor-form {
-    padding: 20px 22px;
+  .model-editor-drawer .ant-drawer-body {
+    padding: 20px;
   }
   .runtime-status-hero {
     align-items: flex-start;
