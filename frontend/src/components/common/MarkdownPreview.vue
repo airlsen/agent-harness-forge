@@ -8,26 +8,26 @@
  * <MarkdownPreview :content="md" streaming show-line-numbers enable-mermaid />
  * <MarkdownPreview :content="md" accent="indigo" theme="dark" />
  */
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { Marked, Renderer, type Token, type Tokens } from 'marked'
-import DOMPurify from 'dompurify'
-import hljs from 'highlight.js'
-import 'highlight.js/styles/atom-one-dark.css'
-import CodeBlock from '../CodeBlock.vue'
-import MermaidBlock from '../MermaidBlock.vue'
-import ChartBlock from '../ChartBlock.vue'
-import { useCopy } from '../../utils/useCopy'
+import { ref, computed, watch, nextTick, onMounted } from 'vue';
+import { Marked, Renderer, type Token, type Tokens } from 'marked';
+import DOMPurify from 'dompurify';
+import hljs from 'highlight.js';
+import 'highlight.js/styles/atom-one-dark.css';
+import CodeBlock from '../CodeBlock.vue';
+import MermaidBlock from '../MermaidBlock.vue';
+import ChartBlock from '../ChartBlock.vue';
+import { useCopy } from '../../utils/useCopy';
 
 interface Props {
-  content: string
-  streaming?: boolean
-  enableMath?: boolean
-  enableMermaid?: boolean
-  showLineNumbers?: boolean
-  maxHeight?: string
-  theme?: 'light' | 'dark' | 'auto'
-  accent?: 'yellow' | 'indigo'
-  compact?: boolean
+  content: string;
+  streaming?: boolean;
+  enableMath?: boolean;
+  enableMermaid?: boolean;
+  showLineNumbers?: boolean;
+  maxHeight?: string;
+  theme?: 'light' | 'dark' | 'auto';
+  accent?: 'yellow' | 'indigo';
+  compact?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -39,14 +39,14 @@ const props = withDefaults(defineProps<Props>(), {
   theme: 'auto',
   accent: 'yellow',
   compact: false,
-})
+});
 
-const contentRef = ref<HTMLElement>()
-const renderedContent = ref('')
-const mermaidCodes = ref<string[]>([])
-const vegaCodes = ref<string[]>([])
+const contentRef = ref<HTMLElement>();
+const renderedContent = ref('');
+const mermaidCodes = ref<string[]>([]);
+const vegaCodes = ref<string[]>([]);
 
-const { copy: copyText } = useCopy()
+const { copy: copyText } = useCopy();
 
 // 解析配置仅作用于当前预览，不污染聊天等其他 Markdown 渲染器。
 // 代码高亮由下方自定义 renderer.code 负责。
@@ -54,7 +54,7 @@ const markdownParser = new Marked({
   breaks: true,
   gfm: true,
   pedantic: false,
-})
+});
 
 const langDisplayName = (lang: string) => {
   const map: Record<string, string> = {
@@ -84,29 +84,29 @@ const langDisplayName = (lang: string) => {
     vue: 'Vue',
     plaintext: 'Text',
     text: 'Text',
-  }
-  return map[lang] || lang.toUpperCase()
-}
+  };
+  return map[lang] || lang.toUpperCase();
+};
 
 const codeStats = (code: string) => {
-  const lines = code.split('\n').length
-  const chars = code.length
-  return `${lines} 行 · ${chars} 字符`
-}
+  const lines = code.split('\n').length;
+  const chars = code.length;
+  return `${lines} 行 · ${chars} 字符`;
+};
 
 const generateLineNumbers = (code: string) =>
   code
     .split('\n')
     .map((_, i) => String(i + 1))
-    .join('\n')
+    .join('\n');
 
 const escapeHtml = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 /** 判断语言是否被 hljs 支持（用于归一化） */
 const normalizeHljsLang = (raw: string): string => {
-  const key = raw.trim().toLowerCase()
-  if (!key) return ''
+  const key = raw.trim().toLowerCase();
+  if (!key) return '';
   // 别名归一
   const aliases: Record<string, string> = {
     js: 'javascript',
@@ -118,97 +118,97 @@ const normalizeHljsLang = (raw: string): string => {
     md: 'markdown',
     vue: 'vue',
     html: 'xml',
-  }
-  const mapped = aliases[key] ?? key
-  return hljs.getLanguage(mapped) ? mapped : ''
-}
+  };
+  const mapped = aliases[key] ?? key;
+  return hljs.getLanguage(mapped) ? mapped : '';
+};
 
 const processMath = (content: string) => {
-  if (!props.enableMath) return content
+  if (!props.enableMath) return content;
   content = content.replace(/\$\$([\s\S]+?)\$\$/g, (_m: string, expr: string) => {
-    const safe = escapeHtml(expr.trim())
-    return `<div class="math-block"><span class="math-katex">${safe}</span></div>`
-  })
+    const safe = escapeHtml(expr.trim());
+    return `<div class="math-block"><span class="math-katex">${safe}</span></div>`;
+  });
   content = content.replace(/\$([^$\n]+?)\$/g, (_m: string, expr: string) => {
-    const safe = escapeHtml(expr.trim())
-    return `<span class="math-inline">${safe}</span>`
-  })
-  return content
-}
+    const safe = escapeHtml(expr.trim());
+    return `<span class="math-inline">${safe}</span>`;
+  });
+  return content;
+};
 
 const ensureCompleteCodeBlocks = (content: string) =>
   content.replace(/```(\w*)\n([\s\S]*?)(?:```|$)/g, (match: string, lang: string, code: string) => {
-    if (!match.endsWith('```')) return `\`\`\`${lang}\n${code}\n… 正在生成\n\`\`\``
-    return match
-  })
+    if (!match.endsWith('```')) return `\`\`\`${lang}\n${code}\n… 正在生成\n\`\`\``;
+    return match;
+  });
 
 /**
  * highlight.js 渲染后处理：
  * 代码块已由自定义 renderer 高亮；这里只处理极少数未闭合/异常块。
  */
 const postProcessHljs = (html: string) => {
-  const temp = document.createElement('div')
-  temp.innerHTML = html
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
   // 为异常块补充 hljs 类。
   for (const pre of Array.from(temp.querySelectorAll<HTMLPreElement>('pre.md-code-pre'))) {
     if (!pre.querySelector('code.hljs')) {
-      const codeEl = pre.querySelector('code')
-      const raw = pre.getAttribute('data-code') || codeEl?.textContent || ''
-      const langRaw = pre.getAttribute('data-lang') || ''
-      const lang = normalizeHljsLang(langRaw)
-      let highlighted = ''
+      const codeEl = pre.querySelector('code');
+      const raw = pre.getAttribute('data-code') || codeEl?.textContent || '';
+      const langRaw = pre.getAttribute('data-lang') || '';
+      const lang = normalizeHljsLang(langRaw);
+      let highlighted = '';
       if (lang && hljs.getLanguage(lang)) {
         try {
-          highlighted = hljs.highlight(raw, { language: lang }).value
+          highlighted = hljs.highlight(raw, { language: lang }).value;
         } catch {
-          highlighted = escapeHtml(raw)
+          highlighted = escapeHtml(raw);
         }
       } else if (raw) {
         try {
-          highlighted = hljs.highlightAuto(raw).value
+          highlighted = hljs.highlightAuto(raw).value;
         } catch {
-          highlighted = escapeHtml(raw)
+          highlighted = escapeHtml(raw);
         }
       }
       if (codeEl) {
-        codeEl.innerHTML = highlighted
-        codeEl.classList.add('hljs')
-        if (lang) codeEl.classList.add(`language-${lang}`)
+        codeEl.innerHTML = highlighted;
+        codeEl.classList.add('hljs');
+        if (lang) codeEl.classList.add(`language-${lang}`);
       }
     }
   }
-  return temp.innerHTML
-}
+  return temp.innerHTML;
+};
 
 const buildRenderer = () => {
-  const renderer = new Renderer()
+  const renderer = new Renderer();
 
   // code: marked v15 token object — 用 highlight.js 高亮
   renderer.code = (token: Tokens.Code) => {
-    const code = token.text || ''
-    const langRaw = token.lang || ''
-    const hlLang = normalizeHljsLang(langRaw)
-    const validLang = hlLang || (langRaw ? langRaw.toLowerCase() : 'text')
-    const display = langDisplayName(validLang)
-    const stats = codeStats(code)
-    const id = `md-code-${Math.random().toString(36).slice(2, 8)}`
+    const code = token.text || '';
+    const langRaw = token.lang || '';
+    const hlLang = normalizeHljsLang(langRaw);
+    const validLang = hlLang || (langRaw ? langRaw.toLowerCase() : 'text');
+    const display = langDisplayName(validLang);
+    const stats = codeStats(code);
+    const id = `md-code-${Math.random().toString(36).slice(2, 8)}`;
     const lineNums = props.showLineNumbers
       ? `<div class="line-numbers">${escapeHtml(generateLineNumbers(code))}</div>`
-      : ''
+      : '';
 
     // 直接用 hljs 高亮（与 markedHighlight 配置保持一致，黄色主题外壳）
-    let highlighted = ''
+    let highlighted = '';
     if (hlLang && hljs.getLanguage(hlLang)) {
       try {
-        highlighted = hljs.highlight(code, { language: hlLang }).value
+        highlighted = hljs.highlight(code, { language: hlLang }).value;
       } catch {
-        highlighted = escapeHtml(code)
+        highlighted = escapeHtml(code);
       }
     } else {
       try {
-        highlighted = hljs.highlightAuto(code).value
+        highlighted = hljs.highlightAuto(code).value;
       } catch {
-        highlighted = escapeHtml(code)
+        highlighted = escapeHtml(code);
       }
     }
 
@@ -232,13 +232,34 @@ const buildRenderer = () => {
           <pre class="md-code-pre hljs-pre" id="${id}" data-code="${escapeHtml(code)}" data-lang="${escapeHtml(validLang)}"><code class="hljs language-${escapeHtml(validLang)}">${highlighted}</code></pre>
         </div>
       </div>
-    `
-  }
+    `;
+  };
 
-  renderer.table = (token: Tokens.Table) => {
-    const fallback = new Renderer().table(token)
-    const id = `md-table-${Math.random().toString(36).slice(2, 6)}`
-    const tableHtml = (fallback as string).replace('<table>', '<table class="md-table">')
+  renderer.table = function (this: Renderer, token: Tokens.Table) {
+    let fallback = '';
+    try {
+      fallback = Renderer.prototype.table.call(this, token);
+    } catch {
+      let header = '';
+      for (const cell of token.header) {
+        const content = markdownParser.parseInline(cell.text) || cell.text;
+        const align = cell.align ? ` align="${cell.align}"` : '';
+        header += `<th${align}>${content}</th>\n`;
+      }
+      let body = '';
+      for (const row of token.rows) {
+        let rowHtml = '';
+        for (const cell of row) {
+          const content = markdownParser.parseInline(cell.text) || cell.text;
+          const align = cell.align ? ` align="${cell.align}"` : '';
+          rowHtml += `<td${align}>${content}</td>\n`;
+        }
+        body += `<tr>\n${rowHtml}</tr>\n`;
+      }
+      fallback = `<table>\n<thead>\n<tr>\n${header}</tr>\n</thead>\n<tbody>\n${body}</tbody>\n</table>\n`;
+    }
+    const id = `md-table-${Math.random().toString(36).slice(2, 6)}`;
+    const tableHtml = (fallback as string).replace('<table>', '<table class="md-table">');
     return `
       <div class="md-table-wrapper" id="${id}">
         <div class="md-table-header">
@@ -247,111 +268,114 @@ const buildRenderer = () => {
         </div>
         <div class="md-table-container">${tableHtml}</div>
       </div>
-    `
-  }
+    `;
+  };
 
   renderer.link = (token: Tokens.Link) => {
-    const href = token.href || ''
-    const title = token.title || ''
-    const text = token.text || ''
-    const titleAttr = title ? ` title="${escapeHtml(title)}"` : ''
-    const isExternal = /^https?:\/\//.test(href) || href.startsWith('//')
-    const isEmail = href.startsWith('mailto:')
-    const isFile = /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar)$/i.test(href)
-    let cls = 'md-link'
-    let icon = ''
-    let attrs = ''
+    const href = token.href || '';
+    const title = token.title || '';
+    const text = token.text || '';
+    const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
+    const isExternal = /^https?:\/\//.test(href) || href.startsWith('//');
+    const isEmail = href.startsWith('mailto:');
+    const isFile = /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar)$/i.test(href);
+    let cls = 'md-link';
+    let icon = '';
+    let attrs = '';
     if (isExternal) {
-      cls += ' is-external'
-      icon = `<span class="md-link-icon">↗</span>`
-      attrs = ' target="_blank" rel="noopener noreferrer" data-external="true"'
+      cls += ' is-external';
+      icon = `<span class="md-link-icon">↗</span>`;
+      attrs = ' target="_blank" rel="noopener noreferrer" data-external="true"';
     } else if (isEmail) {
-      cls += ' is-email'
-      icon = `<span class="md-link-icon">✉</span>`
+      cls += ' is-email';
+      icon = `<span class="md-link-icon">✉</span>`;
     } else if (isFile) {
-      cls += ' is-file'
-      icon = `<span class="md-link-icon">⬇</span>`
-      attrs = ' target="_blank" rel="noopener noreferrer"'
+      cls += ' is-file';
+      icon = `<span class="md-link-icon">⬇</span>`;
+      attrs = ' target="_blank" rel="noopener noreferrer"';
     }
-    return `<a href="${escapeHtml(href)}"${titleAttr}${attrs} class="${cls}">${text}${icon}</a>`
-  }
+    return `<a href="${escapeHtml(href)}"${titleAttr}${attrs} class="${cls}">${text}${icon}</a>`;
+  };
 
   renderer.listitem = (token: Tokens.ListItem) => {
-    const t = token as Tokens.ListItem & { task?: boolean; checked?: boolean }
+    const t = token as Tokens.ListItem & { task?: boolean; checked?: boolean };
     if (t.task) {
-      const checked = t.checked ? 'checked' : ''
-      const cls = t.checked ? 'checked' : ''
-      const text = t.text || markdownParser.parser(t.tokens as Token[])
-      return `<li class="md-list-item md-task-item ${cls}"><input type="checkbox" ${checked} disabled class="md-task-checkbox"><span class="md-task-text">${text}</span></li>`
+      const checked = t.checked ? 'checked' : '';
+      const cls = t.checked ? 'checked' : '';
+      const text = t.text || markdownParser.parser(t.tokens as Token[]);
+      return `<li class="md-list-item md-task-item ${cls}"><input type="checkbox" ${checked} disabled class="md-task-checkbox"><span class="md-task-text">${text}</span></li>`;
     }
-    const text = (t as unknown as { text: string }).text || markdownParser.parser(t.tokens as Token[])
-    return `<li class="md-list-item">${text}</li>`
-  }
+    const text = (t as unknown as { text: string }).text || markdownParser.parser(t.tokens as Token[]);
+    return `<li class="md-list-item">${text}</li>`;
+  };
 
   renderer.blockquote = (token: Tokens.Blockquote) => {
-    const quote = markdownParser.parser(token.tokens as Token[])
-    let type = 'default'
-    let icon = ''
-    const lower = quote.toLowerCase()
+    const quote = markdownParser.parser(token.tokens as Token[]);
+    let type = 'default';
+    let icon = '';
+    const lower = quote.toLowerCase();
     if (quote.includes('📝') || lower.includes('note')) {
-      type = 'note'
-      icon = '<span class="md-quote-icon">📝</span>'
+      type = 'note';
+      icon = '<span class="md-quote-icon">📝</span>';
     } else if (quote.includes('⚠️') || lower.includes('warning')) {
-      type = 'warning'
-      icon = '<span class="md-quote-icon">⚠️</span>'
+      type = 'warning';
+      icon = '<span class="md-quote-icon">⚠️</span>';
     } else if (quote.includes('💡') || lower.includes('tip')) {
-      type = 'tip'
-      icon = '<span class="md-quote-icon">💡</span>'
+      type = 'tip';
+      icon = '<span class="md-quote-icon">💡</span>';
     } else if (quote.includes('❌') || lower.includes('error')) {
-      type = 'error'
-      icon = '<span class="md-quote-icon">❌</span>'
+      type = 'error';
+      icon = '<span class="md-quote-icon">❌</span>';
     } else if (quote.includes('ℹ️') || lower.includes('info')) {
-      type = 'info'
-      icon = '<span class="md-quote-icon">ℹ️</span>'
+      type = 'info';
+      icon = '<span class="md-quote-icon">ℹ️</span>';
     }
-    return `<blockquote class="md-quote md-quote-${type}">${icon}<div class="md-quote-content">${quote}</div></blockquote>`
-  }
+    return `<blockquote class="md-quote md-quote-${type}">${icon}<div class="md-quote-content">${quote}</div></blockquote>`;
+  };
 
   renderer.heading = (token: Tokens.Heading) => {
-    const depth = token.depth
-    const text = token.text || markdownParser.parser(token.tokens as Token[])
+    const depth = token.depth;
+    const text = token.text || markdownParser.parser(token.tokens as Token[]);
     const id = text
       .toLowerCase()
       .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
-      .slice(0, 64)
-    return `<h${depth} id="${id}" class="md-heading md-h${depth}">${text}<a href="#${id}" class="md-anchor" aria-hidden="true">#</a></h${depth}>`
-  }
+      .slice(0, 64);
+    return `<h${depth} id="${id}" class="md-heading md-h${depth}">${text}<a href="#${id}" class="md-anchor" aria-hidden="true">#</a></h${depth}>`;
+  };
 
-  return renderer
-}
+  return renderer;
+};
 
 const renderMarkdown = async (raw: string) => {
-  let content = raw || ''
-  if (props.streaming) content = ensureCompleteCodeBlocks(content)
-  content = processMath(content)
+  let content = raw || '';
+  if (props.streaming) content = ensureCompleteCodeBlocks(content);
+  content = processMath(content);
 
-  const mermaidStore: string[] = []
-  const vegaStore: string[] = []
+  const mermaidStore: string[] = [];
+  const vegaStore: string[] = [];
   content = content.replace(/```mermaid\n([\s\S]*?)\n```/g, (_m: string, code: string) => {
-    const i = mermaidStore.push(code.trim()) - 1
-    return `<!--mermaid:${i}:mermaid-->`
-  })
-  content = content.replace(/```(?:vega|vega-lite|vegalite|chart)\n([\s\S]*?)\n```/g, (_m: string, code: string) => {
-    const i = vegaStore.push(code.trim()) - 1
-    return `<!--vega:${i}:vega-->`
-  })
+    const i = mermaidStore.push(code.trim()) - 1;
+    return `<!--mermaid:${i}:mermaid-->`;
+  });
+  content = content.replace(
+    /```(?:vega|vega-lite|vegalite|chart)\n([\s\S]*?)\n```/g,
+    (_m: string, code: string) => {
+      const i = vegaStore.push(code.trim()) - 1;
+      return `<!--vega:${i}:vega-->`;
+    },
+  );
 
-  const renderer = buildRenderer()
-  let html = markdownParser.parse(content, { renderer }) as string
+  const renderer = buildRenderer();
+  let html = markdownParser.parse(content, { renderer }) as string;
 
   html = html.replace(/<!--mermaid:(\d+):mermaid-->/g, (_m: string, idx: string) => {
-    const code = escapeHtml(mermaidStore[Number(idx)] ?? '')
-    return `<div class="md-mermaid-placeholder" data-mermaid="${code}"><div class="md-mermaid-fallback">Mermaid 图表（下方独立渲染）<pre>${code}</pre></div></div>`
-  })
+    const code = escapeHtml(mermaidStore[Number(idx)] ?? '');
+    return `<div class="md-mermaid-placeholder" data-mermaid="${code}"><div class="md-mermaid-fallback">Mermaid 图表（下方独立渲染）<pre>${code}</pre></div></div>`;
+  });
   html = html.replace(/<!--vega:(\d+):vega-->/g, (_m: string, idx: string) => {
-    const code = escapeHtml(vegaStore[Number(idx)] ?? '')
-    return `<div class="md-vega-placeholder" data-vega="${code}"><div class="md-vega-fallback">数据图表（下方独立渲染）</div></div>`
-  })
+    const code = escapeHtml(vegaStore[Number(idx)] ?? '');
+    return `<div class="md-vega-placeholder" data-vega="${code}"><div class="md-vega-fallback">数据图表（下方独立渲染）</div></div>`;
+  });
 
   html = DOMPurify.sanitize(html, {
     ADD_TAGS: ['iframe', 'video', 'audio', 'source', 'span'],
@@ -376,97 +400,99 @@ const renderMarkdown = async (raw: string) => {
       'referrerpolicy',
       'class',
     ],
-  })
+  });
 
   // hljs 已在 renderer.code 阶段完成，此处仅做兜底
-  html = postProcessHljs(html)
-  return { html, mermaidStore, vegaStore }
-}
+  html = postProcessHljs(html);
+  return { html, mermaidStore, vegaStore };
+};
 
 const updateRenderedContent = async () => {
   if (!props.content) {
-    renderedContent.value = ''
-    mermaidCodes.value = []
-    vegaCodes.value = []
-    return
+    renderedContent.value = '';
+    mermaidCodes.value = [];
+    vegaCodes.value = [];
+    return;
   }
   try {
-    const { html, mermaidStore, vegaStore } = await renderMarkdown(props.content)
-    renderedContent.value = html
-    mermaidCodes.value = mermaidStore
-    vegaCodes.value = vegaStore
+    const { html, mermaidStore, vegaStore } = await renderMarkdown(props.content);
+    renderedContent.value = html;
+    mermaidCodes.value = mermaidStore;
+    vegaCodes.value = vegaStore;
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : '未知错误'
-    const stack = error instanceof Error ? error.stack || '' : ''
-    renderedContent.value = `<div class="md-render-error"><div class="md-error-icon">⚠️</div><div class="md-error-body"><h4>渲染错误</h4><p>${escapeHtml(msg)}</p><details><summary>详细信息</summary><pre>${escapeHtml(stack)}</pre></details></div></div>`
+    const msg = error instanceof Error ? error.message : '未知错误';
+    const stack = error instanceof Error ? error.stack || '' : '';
+    renderedContent.value = `<div class="md-render-error"><div class="md-error-icon">⚠️</div><div class="md-error-body"><h4>渲染错误</h4><p>${escapeHtml(msg)}</p><details><summary>详细信息</summary><pre>${escapeHtml(stack)}</pre></details></div></div>`;
   }
-}
+};
 
 watch(
   () => [props.content, props.streaming, props.showLineNumbers, props.enableMath, props.enableMermaid],
   () => void updateRenderedContent(),
   { immediate: true },
-)
+);
 
 const bindInteractivity = () => {
-  if (!contentRef.value) return
+  if (!contentRef.value) return;
 
   contentRef.value.querySelectorAll<HTMLButtonElement>('.md-copy-btn').forEach((btn) => {
     btn.onclick = async (e) => {
-      e.preventDefault()
-      const id = btn.getAttribute('data-copy-id') || ''
-      const pre = contentRef.value?.querySelector<HTMLPreElement>(`#${CSS.escape(id)}`)
-      const code = pre?.getAttribute('data-code') || pre?.textContent || ''
-      if (!code) return
+      e.preventDefault();
+      const id = btn.getAttribute('data-copy-id') || '';
+      const pre = contentRef.value?.querySelector<HTMLPreElement>(`#${CSS.escape(id)}`);
+      const code = pre?.getAttribute('data-code') || pre?.textContent || '';
+      if (!code) return;
       try {
-        await copyText(code)
-        const copyIcon = btn.querySelector<HTMLElement>('.copy-icon')
-        const checkIcon = btn.querySelector<HTMLElement>('.check-icon')
-        const txt = btn.querySelector<HTMLElement>('.md-btn-text')
+        await copyText(code);
+        const copyIcon = btn.querySelector<HTMLElement>('.copy-icon');
+        const checkIcon = btn.querySelector<HTMLElement>('.check-icon');
+        const txt = btn.querySelector<HTMLElement>('.md-btn-text');
         if (copyIcon && checkIcon) {
-          copyIcon.style.display = 'none'
-          checkIcon.style.display = 'inline'
-          if (txt) txt.textContent = '已复制'
+          copyIcon.style.display = 'none';
+          checkIcon.style.display = 'inline';
+          if (txt) txt.textContent = '已复制';
           setTimeout(() => {
-            copyIcon.style.display = 'inline'
-            checkIcon.style.display = 'none'
-            if (txt) txt.textContent = '复制'
-          }, 1600)
+            copyIcon.style.display = 'inline';
+            checkIcon.style.display = 'none';
+            if (txt) txt.textContent = '复制';
+          }, 1600);
         }
       } catch {
         // ignore
       }
-    }
-  })
+    };
+  });
 
   contentRef.value.querySelectorAll<HTMLButtonElement>('.md-expand-btn').forEach((btn) => {
     btn.onclick = (e) => {
-      e.preventDefault()
-      const id = btn.getAttribute('data-expand-id') || ''
-      const wrap = contentRef.value?.querySelector<HTMLElement>(`#wrap-${CSS.escape(id)}`)
-      if (!wrap) return
-      wrap.classList.toggle('is-expanded')
-      const expanded = wrap.classList.contains('is-expanded')
-      btn.textContent = expanded ? '收起' : '↕'
-      btn.title = expanded ? '收起' : '展开'
-    }
-  })
+      e.preventDefault();
+      const id = btn.getAttribute('data-expand-id') || '';
+      const wrap = contentRef.value?.querySelector<HTMLElement>(`#wrap-${CSS.escape(id)}`);
+      if (!wrap) return;
+      wrap.classList.toggle('is-expanded');
+      const expanded = wrap.classList.contains('is-expanded');
+      btn.textContent = expanded ? '收起' : '↕';
+      btn.title = expanded ? '收起' : '展开';
+    };
+  });
 
   contentRef.value.querySelectorAll<HTMLButtonElement>('.md-scroll-btn').forEach((btn) => {
     btn.onclick = (e) => {
-      e.preventDefault()
-      const id = btn.getAttribute('data-table') || ''
-      const container = contentRef.value?.querySelector<HTMLElement>(`#${CSS.escape(id)} .md-table-container`)
-      if (container) container.scrollBy({ left: 200, behavior: 'smooth' })
-    }
-  })
-}
+      e.preventDefault();
+      const id = btn.getAttribute('data-table') || '';
+      const container = contentRef.value?.querySelector<HTMLElement>(
+        `#${CSS.escape(id)} .md-table-container`,
+      );
+      if (container) container.scrollBy({ left: 200, behavior: 'smooth' });
+    };
+  });
+};
 
-watch(renderedContent, () => nextTick(() => bindInteractivity()))
-onMounted(() => nextTick(() => bindInteractivity()))
+watch(renderedContent, () => nextTick(() => bindInteractivity()));
+onMounted(() => nextTick(() => bindInteractivity()));
 
-const hasMermaid = computed(() => mermaidCodes.value.length > 0)
-const hasVega = computed(() => vegaCodes.value.length > 0)
+const hasMermaid = computed(() => mermaidCodes.value.length > 0);
+const hasVega = computed(() => vegaCodes.value.length > 0);
 </script>
 
 <template>

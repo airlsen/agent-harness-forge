@@ -419,6 +419,12 @@ onMounted(() => {
   void loadSkill({ focusAssistant: route.query.start === 'generate' });
 });
 onBeforeRouteUpdate((to) => {
+  if (
+    skill.value &&
+    (Number(to.params.id) === skill.value.id || to.path === `/agent/skills/${skill.value.id}`)
+  ) {
+    return true;
+  }
   if ((saving.value || busy.value || uploadingReference.value) && Number(to.params.id) !== skill.value?.id) {
     app.toast('请等待当前操作完成后再离开。', 'info');
     return false;
@@ -426,7 +432,13 @@ onBeforeRouteUpdate((to) => {
   if (!dirty.value || Number(to.params.id) === skill.value?.id) return true;
   return confirm({ title: '当前草稿有未保存的修改，确定离开吗？', okText: '离开', cancelText: '留下' });
 });
-onBeforeRouteLeave(() => {
+onBeforeRouteLeave((to) => {
+  if (
+    skill.value &&
+    (Number(to.params.id) === skill.value.id || to.path === `/agent/skills/${skill.value.id}`)
+  ) {
+    return true;
+  }
   if (saving.value || busy.value || uploadingReference.value) {
     app.toast('请等待当前操作完成后再离开。', 'info');
     return false;
