@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import DialogShell from './DialogShell.vue';
 import Icon from './ForgeIcon.vue';
 import Markdown from './MarkdownContent.vue';
+import { MarkdownPreview } from './common';
 import { apiBlob, saveBlob } from '../api/client';
 import { formatBytes } from '../utils/presentation';
 import {
@@ -142,7 +143,7 @@ onBeforeUnmount(() => {
           :title="file.path"
         ></iframe>
         <div v-else-if="kind === 'markdown' && mode === 'preview'" class="file-preview-markdown">
-          <Markdown :text="text" />
+          <MarkdownPreview :content="text" enable-mermaid show-line-numbers />
         </div>
         <div v-else-if="kind === 'table' && mode === 'preview' && table" class="file-preview-table">
           <table>
