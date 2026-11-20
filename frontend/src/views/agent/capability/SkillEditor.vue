@@ -100,6 +100,11 @@ async function loadSkill(options: { focusAssistant?: boolean; quiet?: boolean } 
     skill.value = {
       id: 0,
       name: '',
+      machineName: '',
+      publishedMachineName: '',
+      publishedName: '',
+      publishedDescription: '',
+      publishedReferenceCount: 0,
       description: '',
       status: 'draft',
       tags: [],

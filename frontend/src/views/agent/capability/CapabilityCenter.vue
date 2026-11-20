@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api, apiFetch } from '../../../api/client';
+import { api, apiFetch, downloadResponse } from '../../../api/client';
 import { formatBytes } from '../../../utils/presentation';
 import { confirm } from '../../../utils/feedback';
 import { usePlatform } from '../../../stores/platform';
@@ -54,6 +54,21 @@ const pluginTools = ref<PluginPackage | null>(null);
 const pluginPanels = ref<string[]>([]);
 let pluginPanelsInitialized = false;
 const skills = ref<{ items: SkillSummary[] } | null>(null);
+const downloadingSkill = ref<number | null>(null);
+async function downloadPublishedSkill(skill: SkillSummary) {
+  if (downloadingSkill.value !== null) return;
+  downloadingSkill.value = skill.id;
+  try {
+    await downloadResponse(
+      `/skills/${skill.id}/download?version=published`,
+      `${skill.publishedMachineName || `skill-${skill.id}`}.zip`,
+    );
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  } finally {
+    downloadingSkill.value = null;
+  }
+}
 const mcp = ref<{ items: McpServer[]; available: boolean; reason: string } | null>(null);
 const mcpJson = ref('');
 const mcpTransport = ref<'streamable-http' | 'sse' | 'stdio'>('streamable-http');
@@ -158,7 +173,9 @@ const publishedSkills = computed(() =>
   (skills.value?.items ?? []).filter((skill) => skill.publishedRevisionId !== null),
 );
 const visibleSkills = computed(() =>
-  publishedSkills.value.filter((skill) => matches(`${skill.name} ${skill.description}`)),
+  publishedSkills.value.filter((skill) =>
+    matches(`${skill.publishedName} ${skill.publishedMachineName} ${skill.publishedDescription}`),
+  ),
 );
 const viewedSkill = ref<SkillSummary | null>(null);
 const publishedContent = ref('');
@@ -825,19 +842,40 @@ onMounted(load);
             v-for="skill in visibleSkills"
             :key="skill.id"
             class="skill-card"
-            :title="skill.name"
+            :title="skill.publishedName"
             icon="book"
             tone="book"
-            :description="skill.description"
+            :description="skill.publishedDescription"
             placeholder="尚未添加用途说明。"
-            :status="`已发布 · v${skill.publishedVersion}`"
+            status="已发布"
             status-color="success"
           >
+            <template #sub>
+              <span class="skill-capability-machine" :title="skill.publishedMachineName">{{
+                skill.publishedMachineName || `skill-${skill.id}`
+              }}</span>
+            </template>
+            <template #tags>
+              <span class="skill-capability-meta">版本 v{{ skill.publishedVersion }}</span>
+              <span class="skill-capability-meta">{{
+                skill.publishedReferenceCount ? `${skill.publishedReferenceCount} 个参考文件` : 'SKILL.md'
+              }}</span>
+            </template>
+            <template #ops>
+              <a-button
+                type="text"
+                size="small"
+                :loading="downloadingSkill === skill.id"
+                :disabled="downloadingSkill !== null"
+                @click="downloadPublishedSkill(skill)"
+                >下载 ZIP</a-button
+              >
+            </template>
             <template #footer>
               <a-button
                 type="primary"
                 size="small"
-                :aria-label="`查看技能 ${skill.name}`"
+                :aria-label="`查看技能 ${skill.publishedName}`"
                 @click="viewPublishedSkill(skill)"
               >
                 查看
@@ -1185,6 +1223,18 @@ onMounted(load);
 </template>
 
 <style scoped>
+.skill-capability-machine {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-capability-meta {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
 .published-skill-content {
   max-height: 55vh;
   overflow: auto;

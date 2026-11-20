@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { api } from '../../../api/client';
+import { api, downloadResponse, remove } from '../../../api/client';
+import { confirm } from '../../../utils/feedback';
+import { usePlatform } from '../../../stores/platform';
+import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
 import Icon from '../../../components/ForgeIcon.vue';
 import CatalogCard from '../../../components/catalog/CatalogCard.vue';
 import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
@@ -10,6 +13,9 @@ import CatalogSearch from '../../../components/catalog/CatalogSearch.vue';
 import type { SkillSummary } from '../../../types/skill';
 
 const skills = ref<SkillSummary[]>([]);
+const app = usePlatform();
+const downloading = ref<number | null>(null);
+const deleting = ref<number | null>(null);
 const query = ref('');
 const status = ref<'all' | 'draft' | 'published'>('all');
 const loading = ref(true);
@@ -19,7 +25,8 @@ const visibleSkills = computed(() => {
   const keyword = query.value.trim().toLowerCase();
   return skills.value.filter((item) => {
     const matchesStatus = status.value === 'all' || item.status === status.value;
-    const matchesQuery = !keyword || `${item.name} ${item.description}`.toLowerCase().includes(keyword);
+    const matchesQuery =
+      !keyword || `${item.name} ${item.machineName} ${item.description}`.toLowerCase().includes(keyword);
     return matchesStatus && matchesQuery;
   });
 });
@@ -44,6 +51,45 @@ function formatUpdatedAt(value: string | null) {
 function clearFilters() {
   query.value = '';
   status.value = 'all';
+}
+async function downloadSkill(item: SkillSummary) {
+  if (downloading.value !== null) return;
+  downloading.value = item.id;
+  try {
+    await downloadResponse(
+      `/skills/${item.id}/download?version=current`,
+      `${item.machineName || `skill-${item.id}`}.zip`,
+    );
+  } catch (err) {
+    app.toast((err as Error).message, 'error');
+  } finally {
+    downloading.value = null;
+  }
+}
+async function deleteSkill(item: SkillSummary) {
+  if (item.publishedRevisionId !== null || deleting.value !== null) return;
+  if (
+    !(await confirm({
+      title: `删除草稿“${item.name}”？`,
+      content: '将永久删除该技能、所有修订及参考资料，无法恢复。',
+      okText: '删除草稿',
+      danger: true,
+    }))
+  )
+    return;
+  deleting.value = item.id;
+  try {
+    await remove(`/skills/${item.id}`);
+    skills.value = skills.value.filter((skill) => skill.id !== item.id);
+    app.toast('草稿已删除');
+  } catch (err) {
+    app.toast((err as Error).message, 'error');
+  } finally {
+    deleting.value = null;
+  }
+}
+function onCardMenu(info: MenuInfo, item: SkillSummary) {
+  if (info.key === 'delete') void deleteSkill(item);
 }
 async function load() {
   loading.value = true;
@@ -88,7 +134,11 @@ onMounted(load);
         <div class="collection-toolbar enterprise-collection-toolbar skill-library-toolbar">
           <CatalogFilter v-model:value="status" :options="statusOptions" aria-label="按状态筛选" />
           <div class="skill-library-actions">
-            <CatalogSearch v-model:value="query" placeholder="搜索技能名称或说明" aria-label="搜索技能" />
+            <CatalogSearch
+              v-model:value="query"
+              placeholder="搜索中文名、英文名或说明"
+              aria-label="搜索技能"
+            />
             <RouterLink v-slot="{ href, navigate }" to="/agent/skills/new" custom>
               <a-button type="primary" :href="href" @click="navigate">
                 <template #icon><Icon name="plus" :size="16" /></template>新建技能
@@ -113,12 +163,35 @@ onMounted(load);
               tone="book"
               :description="item.description"
               placeholder="尚未添加用途说明。"
-              :status="item.status === 'published' ? `已发布 · v${item.publishedVersion}` : '草稿'"
+              :status="
+                item.status === 'published' ? '已发布' : item.publishedRevisionId ? '有新草稿' : '草稿'
+              "
               :status-color="item.status === 'published' ? 'success' : undefined"
             >
               <template #sub>
-                <span>修订 r{{ item.revision ?? 1 }}</span
-                ><span>{{ formatUpdatedAt(item.updatedAt) }}</span>
+                <span class="skill-machine-name" :title="item.machineName">{{
+                  item.machineName || `skill-${item.id}`
+                }}</span>
+              </template>
+              <template #tags>
+                <span class="skill-card-meta">修订 r{{ item.revision ?? 1 }}</span>
+                <span v-if="item.publishedVersion" class="skill-card-meta"
+                  >已发布 v{{ item.publishedVersion }}</span
+                >
+                <span class="skill-card-meta">{{ formatUpdatedAt(item.updatedAt) }} 更新</span>
+                <span v-if="item.referenceFiles.length" class="skill-card-meta"
+                  >{{ item.referenceFiles.length }} 个参考文件</span
+                >
+              </template>
+              <template #ops>
+                <a-button
+                  type="text"
+                  size="small"
+                  :loading="downloading === item.id"
+                  :disabled="downloading !== null || deleting !== null"
+                  @click="downloadSkill(item)"
+                  >下载 ZIP</a-button
+                >
               </template>
               <template #footer>
                 <RouterLink v-slot="{ href, navigate }" :to="`/agent/skills/${item.id}`" custom>
@@ -132,6 +205,26 @@ onMounted(load);
                     <template #icon><Icon name="edit" :size="14" /></template>编辑
                   </a-button>
                 </RouterLink>
+                <a-dropdown
+                  v-if="item.publishedRevisionId === null"
+                  :trigger="['click']"
+                  placement="bottomRight"
+                >
+                  <a-button
+                    type="text"
+                    size="small"
+                    :aria-label="`更多操作 ${item.name}`"
+                    title="更多操作"
+                    :disabled="deleting !== null"
+                  >
+                    <template #icon><Icon name="more" :size="16" /></template>
+                  </a-button>
+                  <template #overlay>
+                    <a-menu @click="(info: MenuInfo) => onCardMenu(info, item)">
+                      <a-menu-item key="delete" danger>删除草稿</a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
               </template>
             </CatalogCard>
           </CatalogGrid>
@@ -175,6 +268,18 @@ onMounted(load);
 }
 .skill-library-actions > .ant-btn {
   flex-shrink: 0;
+}
+.skill-machine-name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-card-meta {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
 }
 .skill-alert {
   margin-bottom: 24px;

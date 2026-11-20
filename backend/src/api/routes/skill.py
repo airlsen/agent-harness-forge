@@ -1,6 +1,7 @@
 import json
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response, StreamingResponse
+from typing import Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.database import get_session
 from ..core.config import settings
@@ -28,6 +29,26 @@ async def create_skill(payload: SkillCreate, db: AsyncSession = Depends(get_sess
 @router.get("/{skill_id}")
 async def get_skill(skill_id: int, db: AsyncSession = Depends(get_session)):
     return ResponseUtil.ok(await skill_service.skill_detail(db, skill_id))
+
+
+@router.get("/{skill_id}/download")
+async def download_skill(
+    skill_id: int,
+    version: Literal["current", "published"] = Query("current"),
+    db: AsyncSession = Depends(get_session),
+):
+    content, name = await skill_service.skill_archive(db, skill_id, version)
+    return Response(
+        content,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{name}.zip"', "Cache-Control": "no-store"},
+    )
+
+
+@router.delete("/{skill_id}")
+async def delete_skill_draft(skill_id: int, db: AsyncSession = Depends(get_session)):
+    await skill_service.delete_draft(db, skill_id)
+    return ResponseUtil.ok({"deleted": True})
 
 
 @router.put("/{skill_id}/draft")

@@ -9,6 +9,11 @@ export type SkillReference = {
 export type SkillSummary = {
   id: number;
   name: string;
+  machineName: string;
+  publishedMachineName: string;
+  publishedName: string;
+  publishedDescription: string;
+  publishedReferenceCount: number;
   description: string;
   status: SkillStatus;
   tags: string[];
