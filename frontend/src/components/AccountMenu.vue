@@ -147,7 +147,6 @@ onBeforeUnmount(() => {
       aria-haspopup="menu"
       :aria-expanded="open"
       :aria-controls="open ? 'enterprise-account-menu' : undefined"
-      :title="username"
       @click="toggle"
       @keydown.down.prevent="showWithFocus"
       @keydown.up.prevent="showWithFocus"

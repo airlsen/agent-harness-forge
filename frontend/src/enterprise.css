@@ -463,7 +463,7 @@ textarea:focus-visible {
 }
 .enterprise-account-trigger:not(:disabled):hover,
 .enterprise-account-trigger[aria-expanded='true'] {
-  background: var(--accent-soft);
+  background: var(--surface-hover);
 }
 .enterprise-account-trigger:focus-visible {
   outline: 2px solid var(--accent-focus);
@@ -472,11 +472,11 @@ textarea:focus-visible {
 .enterprise-avatar {
   width: 33px;
   height: 33px;
-  border: 1px solid var(--color-brand-subtle);
-  background: var(--color-brand-subtle);
+  border: 1px solid transparent;
+  background: var(--surface-selected);
   display: grid;
   place-items: center;
-  color: var(--color-warning-text);
+  color: var(--color-brand);
   font-size: 12px;
   font-weight: 550;
   border-radius: 50%;
