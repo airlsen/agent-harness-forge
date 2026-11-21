@@ -123,8 +123,8 @@ defineProps<{
   flex-shrink: 0;
   margin: 7px 0 0;
 }
-/* 技能发布状态使用项目语义色阶，不依赖 Ant Design 自动推色。 */
-.skill-card .catalog-card-status.ant-tag-success {
+/* 所有卡片的成功状态共用语义色阶；MCP 服务可在自身页面保留轻量圆点样式。 */
+.catalog-card-status.ant-tag-success {
   color: var(--color-success-text);
   background: var(--color-success-bg);
 }
