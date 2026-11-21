@@ -208,6 +208,10 @@
   --border-focus: #e58b6b;
   --focus-ring-brand: rgba(218, 114, 77, 0.28);
 
+  --table-header-bg: var(--surface-muted);
+  --table-header-fg: var(--color-text-secondary);
+  --table-row-hover: var(--surface-hover);
+
   --color-success-bg: rgba(34, 160, 107, 0.14);
   --color-success-border: rgba(34, 160, 107, 0.35);
   --color-success-text: #4cc38a;

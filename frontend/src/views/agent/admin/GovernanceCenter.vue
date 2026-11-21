@@ -203,7 +203,7 @@ async function save() {
 }
 </script>
 <template>
-  <main class="page-content enterprise-page">
+  <main class="page-content enterprise-page admin-theme-page">
     <div class="enterprise-page-inner">
       <div class="page-heading">
         <div>
