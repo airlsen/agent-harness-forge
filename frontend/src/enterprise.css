@@ -1656,12 +1656,15 @@ textarea:focus-visible {
 .conversation-table .ant-table-thead > tr > th {
   background: var(--surface-subtle);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
 }
 .conversation-table .ant-table-tbody > tr > td {
   padding: 17px 18px;
   border-bottom-color: var(--line);
+}
+.conversation-table .session-state {
+  font-size: 14px;
 }
 .conversation-table .ant-table-tbody > tr:hover > td {
   background: var(--surface-hover);
@@ -1705,7 +1708,7 @@ textarea:focus-visible {
   margin: 0 7px;
 }
 .conversation-table time {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-secondary);
 }
 .conversation-table-actions {
