@@ -7,6 +7,7 @@ import { usePlatform } from '../../../stores/platform';
 import { MAX_SESSION_MCP, MAX_SESSION_SKILLS, useConversation } from '../../../stores/conversation';
 import { api, post, put, remove } from '../../../api/client';
 import { formatDate, isAvailableScenario, scenarioSource, scenarioState } from '../../../utils/presentation';
+import { catalogDate, orderScenarios, scenarioPublished } from '../../../utils/catalogOrdering';
 import type { Scenario, ScenarioPayload } from '../../../types/platform';
 import type { PluginPackage } from '../../../types/plugin';
 import Icon from '../../../components/ForgeIcon.vue';
@@ -91,10 +92,12 @@ const filterOptions = computed(() =>
   filters.value.map((item) => ({ value: item.id, label: item.label, count: item.count })),
 );
 const filtered = computed(() =>
-  base.value.filter(
-    (s) =>
-      (filter.value === 'all' || s.status === filter.value) &&
-      `${s.payload.name} ${s.payload.description}`.toLowerCase().includes(query.value.trim().toLowerCase()),
+  orderScenarios(
+    base.value.filter(
+      (s) =>
+        (filter.value === 'all' || s.status === filter.value) &&
+        `${s.payload.name} ${s.payload.description}`.toLowerCase().includes(query.value.trim().toLowerCase()),
+    ),
   ),
 );
 watch(maintenance, () => {
@@ -435,14 +438,26 @@ async function versions(scenario: Scenario) {
                 : undefined
           "
         >
-          <template v-if="maintenance" #sub>
-            <span>{{ scenarioSource(scenario) }}</span><span>v{{ scenario.current_version }}</span
-            ><span v-if="hasPendingDraft(scenario)">已发布 v{{ scenario.published_version }}</span
-            ><span :class="['scenario-card-test', { 'is-passed': scenario.tested }]"
-              ><Icon :name="scenario.tested ? 'check' : 'circle'" :size="12" />{{
-                scenario.tested ? '试运行通过' : '未试运行'
-              }}</span
-            >
+          <template #sub>
+            <template v-if="maintenance">
+              <span>{{ scenarioSource(scenario) }}</span><span>v{{ scenario.current_version }}</span
+              ><span v-if="hasPendingDraft(scenario)">已发布 v{{ scenario.published_version }}</span
+              ><span :class="['scenario-card-test', { 'is-passed': scenario.tested }]"
+                ><Icon :name="scenario.tested ? 'check' : 'circle'" :size="12" />{{
+                  scenario.tested ? '试运行通过' : '未试运行'
+                }}</span
+              >
+            </template>
+            <span v-if="!maintenance && scenarioPublished(scenario)">v{{ scenario.published_version }}</span>
+            <span v-if="scenario.space !== 'official'">{{
+              scenarioPublished(scenario)
+                ? catalogDate('发布', scenario.publishedAt)
+                : catalogDate('创建', scenario.createdAt)
+            }}</span>
+            <span v-if="maintenance && hasPendingDraft(scenario)">{{
+              catalogDate('草稿更新', scenario.updatedAt)
+            }}</span>
+            <span v-if="!maintenance && scenario.space === 'official'">平台预置</span>
           </template>
           <template v-if="cardLabels(scenario.payload).length" #tags>
             <a-tag v-for="item in cardLabels(scenario.payload).slice(0, 2)" :key="item.key" :bordered="false"

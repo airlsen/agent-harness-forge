@@ -1,6 +1,7 @@
 """第二期：会话内切换模型（按轮生效、按段计价、旧会话迁移与 Runner 配置下发）。"""
 
 import asyncio
+from datetime import datetime
 
 import pytest
 import pytest_asyncio
@@ -157,9 +158,57 @@ async def test_new_scenario_revision_does_not_replace_published_sessions_before_
         await publish(scenario_id, db)
         updated = await scenario_service.view(db, await scenario_service.row(db, scenario_id))
         assert updated["published_version"] == 2
+        assert updated["publishedAt"] is not None
+        first_published_at = updated["publishedAt"]
+        await publish(scenario_id, db)
+        after_repeat = await scenario_service.view(db, await scenario_service.row(db, scenario_id))
+        assert after_repeat["publishedAt"] == first_published_at
+        draft = await scenario_service.update(
+            db, "admin", scenario_id, ScenarioPayload(name="新草稿", prompt_template="尚未发布")
+        )
+        assert draft["publishedAt"] == first_published_at
+        assert draft["published_payload"]["name"] == "新版助手"
 
     latest = await service.create(scenario_id, model_id=model_id)
     assert latest["scenarioVersion"] == 2
+
+
+@pytest.mark.asyncio
+async def test_scenario_release_time_advances_only_for_a_new_published_version(env):
+    scenario_id = env["scenario"]["id"]
+    async with env["sessions"]() as db:
+        row = await scenario_service.row(db, scenario_id)
+        row.status = "published"
+        row.published_version = row.current_version
+        row.published_at = None  # A migrated historical release has no trustworthy timestamp.
+        db.add(
+            PlatformSetting(
+                key=f"scenario-test:{scenario_id}:1",
+                value={"ok": True, "environmentRef": await settings_service.environment_ref(db)},
+            )
+        )
+        await db.commit()
+        await db.refresh(row)
+        await publish(scenario_id, db)
+        assert (await scenario_service.view(db, row))["publishedAt"] is None
+        row.published_at = datetime(2020, 1, 1)
+        await db.commit()
+        await db.refresh(row)
+        updated = await scenario_service.update(
+            db, "admin", scenario_id, ScenarioPayload(name="新版本", prompt_template="新版本内容")
+        )
+        assert updated["publishedAt"] == "2020-01-01T00:00:00+00:00"
+        db.add(
+            PlatformSetting(
+                key=f"scenario-test:{scenario_id}:2",
+                value={"ok": True, "environmentRef": await settings_service.environment_ref(db)},
+            )
+        )
+        await db.commit()
+        await publish(scenario_id, db)
+        result = await scenario_service.view(db, row)
+        assert result["publishedAt"] != updated["publishedAt"]
+        assert result["published_version"] == 2
 
 
 @pytest.mark.asyncio

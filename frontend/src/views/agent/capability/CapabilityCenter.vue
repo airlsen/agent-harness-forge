@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, apiFetch, downloadResponse } from '../../../api/client';
 import { formatBytes } from '../../../utils/presentation';
+import { catalogDate, orderByCreated, orderPublishedSkills } from '../../../utils/catalogOrdering';
 import { confirm } from '../../../utils/feedback';
 import { usePlatform } from '../../../stores/platform';
 import { useConversation } from '../../../stores/conversation';
@@ -33,6 +34,7 @@ type McpServer = {
   tools: { name: string; description: string; inputSchema?: Record<string, any> }[];
   serverInfo: Record<string, unknown>;
   hasCredentials: boolean;
+  createdAt: string | null;
 };
 const app = usePlatform();
 const chat = useConversation();
@@ -186,11 +188,17 @@ function matches(text: string) {
 }
 const publishedSkills = computed(() => skills.value?.items ?? []);
 const visibleSkills = computed(() =>
-  publishedSkills.value.filter((skill) => matches(`${skill.name} ${skill.machineName} ${skill.description}`)),
+  orderPublishedSkills(
+    publishedSkills.value.filter((skill) =>
+      matches(`${skill.name} ${skill.machineName} ${skill.description}`),
+    ),
+  ),
 );
 const visibleMcp = computed(() =>
-  (mcp.value?.items ?? []).filter((server) =>
-    matches(`${server.name} ${server.url} ${server.serverInfo?.name ?? ''} ${server.transport}`),
+  orderByCreated(
+    (mcp.value?.items ?? []).filter((server) =>
+      matches(`${server.name} ${server.url} ${server.serverInfo?.name ?? ''} ${server.transport}`),
+    ),
   ),
 );
 function transportLabel(transport: string) {
@@ -734,6 +742,7 @@ onMounted(load);
             <template #sub>
               <span>{{ transportLabel(server.transport) }}</span><span>{{ server.tools.length }} 项工具</span
               ><span>{{ server.hasCredentials ? '认证信息已加密' : '无需认证' }}</span>
+              <span>{{ catalogDate('接入', server.createdAt) }}</span>
             </template>
             <template v-if="server.lastError || server.transport === 'sse'">
               <a-alert v-if="server.lastError" type="error" :message="server.lastError" show-icon />
@@ -838,6 +847,7 @@ onMounted(load);
             </template>
             <template #tags>
               <span class="skill-capability-meta">版本 v{{ skill.version }}</span>
+              <span class="skill-capability-meta">{{ catalogDate('发布', skill.publishedAt) }}</span>
               <span class="skill-capability-meta">{{
                 skill.referenceCount ? `${skill.referenceCount} 个参考文件` : 'SKILL.md'
               }}</span>

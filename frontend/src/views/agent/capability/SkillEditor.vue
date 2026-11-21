@@ -122,6 +122,7 @@ async function loadSkill(options: { focusAssistant?: boolean; quiet?: boolean } 
       referenceFiles: [],
       createdAt: null,
       updatedAt: null,
+      publishedAt: null,
     };
     revisions.value = [];
     session.value = null;
