@@ -27,7 +27,7 @@ const tool = (id, callId, name = 'workspace_read') => ({
   meta: { toolCallId: callId, tool: name, arguments: { path: 'a.txt' }, isError: false },
 });
 try {
-  const { buildTurns, capabilityChanges, codeChanges, processStats, processSummary } =
+  const { buildTurns, latestUnavailable, processStats, processSummary } =
     await vite.ssrLoadModule('/src/utils/turns.ts');
 
   check('一轮 = 用户消息 + 一个 AI 块；思考与正文是同一块内的步骤', () => {
@@ -140,7 +140,7 @@ try {
     );
   });
 
-  check('切换轮带切换标记，用户消息上的模型优先于回复（执行中也能显示）', () => {
+  check('切换模型后，用户消息上的模型优先于回复（执行中也能显示）', () => {
     const switched = {
       modelName: 'Reasoner',
       model: 'reasoner-v1',
@@ -158,12 +158,11 @@ try {
       { running: true, reasoning: '', text: '流式中', activeTools: [] },
     );
     assert.deepEqual(
-      turns.map((turn) => [turn.model, turn.switch]),
-      [
-        ['Chat', null],
-        ['Reasoner', { from: 'Chat', to: 'Reasoner' }],
-      ],
+      turns.map((turn) => turn.model),
+      ['Chat', 'Reasoner'],
     );
+    // 消息流里不再渲染模型切换分隔条
+    assert.equal('switch' in turns[1], false);
   });
   check('workspace_present 结果成为本轮交付物；失败调用与其他轮不受影响，同路径以后声明为准', () => {
     const present = (id, callId, files, isError = false) => ({
@@ -269,65 +268,25 @@ try {
     assert.equal(processSummary(processStats(turn.process)), '调用 2 个工具 · 1 个失败');
   });
 
-  check('关联代码分隔线只出现在关联列表变化的轮次', () => {
-    const withCode = (id, codeProjects) => ({ ...user(id), meta: { codeProjects } });
-    const turns = buildTurns(
-      [
-        user(1),
-        assistant(2, '一'),
-        withCode(3, ['alpha']),
-        assistant(4, '二'),
-        withCode(5, ['alpha']),
-        assistant(6, '三'),
-        withCode(7, ['alpha', 'beta']),
-        assistant(8, '四'),
-        user(9),
-        assistant(10, '五'),
-      ],
-      idle,
+  check('latestUnavailable：只取最后一条用户消息记录的未生效扩展能力', () => {
+    const withCaps = (id, unavailable) => ({
+      id,
+      role: 'user',
+      content: '任务',
+      meta: { capabilities: { skills: [], mcp: [], web: null, unavailable } },
+    });
+    const jira = { kind: 'mcp', id: 3, title: 'Jira' };
+    const web = { kind: 'web', id: null, title: '联网搜索' };
+    assert.deepEqual(latestUnavailable([]), []);
+    assert.deepEqual(latestUnavailable([{ user: user(1) }]), []);
+    // 早先的未生效项已恢复：以最后一轮为准
+    assert.deepEqual(latestUnavailable([{ user: withCaps(1, [jira]) }, { user: withCaps(2, []) }]), []);
+    assert.deepEqual(
+      latestUnavailable([{ user: withCaps(1, []) }, { user: withCaps(2, [jira, web]) }, { user: null }]),
+      [jira, web],
     );
-    assert.deepEqual(codeChanges(turns), [null, ['alpha'], null, ['alpha', 'beta'], []]);
-    // 没有用户消息的轮次（如历史中只剩回复）不参与比较
-    assert.deepEqual(codeChanges([{ user: null }, { user: withCode(1, ['x']) }]), [null, ['x']]);
-  });
-  check('capabilityChanges：生效集合变化时给出列表，未装配的项每轮提示', () => {
-    const withCaps = (id, capabilities) => ({ id, role: 'user', content: '任务', meta: { capabilities } });
-    const caps = (extra = {}) => ({ skills: [], mcp: [], web: null, unavailable: [], ...extra });
-    const skill = { id: 1, name: 'report', title: '周报', source: 'chat' };
-    const turns = [
-      { user: user(1) },
-      {
-        user: withCaps(2, caps({ skills: [skill], web: { search: true, fetch: true, source: 'scenario' } })),
-      },
-      {
-        user: withCaps(3, caps({ skills: [skill], web: { search: true, fetch: true, source: 'scenario' } })),
-      },
-      {
-        user: withCaps(
-          4,
-          caps({
-            skills: [skill],
-            web: { search: true, fetch: true, source: 'scenario' },
-            unavailable: [
-              { kind: 'mcp', id: 3, title: 'Jira' },
-              { kind: 'skill', id: 9, title: '' },
-            ],
-          }),
-        ),
-      },
-      { user: withCaps(5, caps({ mcp: [{ id: 3, name: 'Jira', tools: 2, approvalTools: 1 }] })) },
-      { user: user(6) },
-      { user: null },
-    ];
-    assert.deepEqual(capabilityChanges(turns), [
-      null,
-      { active: ['周报', '联网搜索'], unavailable: [] },
-      null,
-      { active: null, unavailable: ['Jira', 'Skill #9'] },
-      { active: ['Jira'], unavailable: [] },
-      { active: [], unavailable: [] },
-      null,
-    ]);
+    // 格式异常的条目被忽略
+    assert.deepEqual(latestUnavailable([{ user: withCaps(1, [null, { kind: 'other' }, jira]) }]), [jira]);
   });
 } finally {
   await vite.close();

@@ -446,10 +446,12 @@ class SessionService:
                     **({"modelSwitch": switch} if switch else {}),
                     # 本轮可读取的代码项目，供历史消息回溯
                     **({"codeProjects": code} if code else {}),
-                    # 本轮生效的扩展能力摘要（不含正文与凭据），供历史消息回溯
+                    # 本轮生效的扩展能力摘要（不含正文与凭据），供历史消息回溯；
+                    # 全部未生效时也要记录，聊天页据此在「能力」面板标记未生效项
                     **(
                         {"capabilities": active_caps}
                         if not capability_service.summary_is_empty(active_caps)
+                        or active_caps.get("unavailable")
                         else {}
                     ),
                 }

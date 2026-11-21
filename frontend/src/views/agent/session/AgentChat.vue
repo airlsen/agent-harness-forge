@@ -9,7 +9,7 @@ import { trapTabKey } from '../../../utils/focus';
 import { confirm } from '../../../utils/feedback';
 import { animateComposerArrival, captureComposerOrigin } from '../../../utils/composerTransition';
 import type { KernelEvent } from '../../../types/platform';
-import { buildTurns, capabilityChanges, type ToolCallView, type Turn } from '../../../utils/turns';
+import { buildTurns, latestUnavailable, type ToolCallView, type Turn } from '../../../utils/turns';
 import Icon from '../../../components/ForgeIcon.vue';
 import Markdown from '../../../components/MarkdownContent.vue';
 import ProcessBlock from '../../../components/ProcessBlock.vue';
@@ -151,8 +151,11 @@ const turns = computed(() =>
     activeTools: pendingTools.value,
   }),
 );
-/** 每轮的扩展能力变化（渲染分隔线） */
-const turnCapabilityChanges = computed(() => capabilityChanges(turns.value));
+/** 最近一轮实际未生效的扩展能力：在「能力」面板逐项标记，并在面板按钮上提示数量 */
+const lastUnavailable = computed(() => (chat.current ? latestUnavailable(turns.value) : []));
+function skippedLastTurn(kind: 'skill' | 'mcp' | 'web', id: number | null = null) {
+  return lastUnavailable.value.some((item) => item.kind === kind && (kind === 'web' || item.id === id));
+}
 /** 右侧面板展示的关联代码：附带代码根目录中读到的分支与提交 */
 const linkedCode = computed(() =>
   (chat.current ? chat.appliedCodeProjects : chat.codeProjects).map((name) => {
@@ -201,13 +204,21 @@ const extensionSkills = computed(() => {
     ...chatOnly.map((id) => ({ id, title: '', name: '', source: 'chat' as const })),
   ].map((skill) => {
     const option = options.find((item) => item.id === skill.id);
+    const name = skill.name || option?.name || '';
+    // 上一轮实际未装配；或临时选择的 Skill 已取消发布，下一轮将被跳过
+    const skipped = skippedLastTurn('skill', skill.id);
+    const missing = skipped || (skill.source === 'chat' && Boolean(chat.capabilityOptions) && !option);
+    const origin = skill.source === 'scenario' ? '场景绑定' : '临时选用';
     return {
       id: skill.id,
-      source: skill.source,
       title: skill.title || option?.title || `Skill #${skill.id}`,
-      name: skill.name || option?.name || '',
-      // 临时选择的 Skill 已取消发布：下一轮将被跳过
-      missing: skill.source === 'chat' && Boolean(chat.capabilityOptions) && !option,
+      missing,
+      note: skipped
+        ? '上一轮未生效：已取消发布或已删除'
+        : missing
+          ? '已取消发布，下一轮将跳过'
+          : [origin, name ? `/${name}` : ''].filter(Boolean).join(' · '),
+      icon: missing ? 'info' : skill.source === 'scenario' ? 'lock' : 'check',
     };
   });
 });
@@ -220,20 +231,62 @@ const extensionServers = computed(() => {
     ...chatOnly.map((id) => ({ id, name: '', source: 'chat' as const })),
   ].map((server) => {
     const option = options.find((item) => item.id === server.id);
+    const tools = option?.tools.length ?? 0;
+    const approval = option?.tools.filter((tool) => tool.permission === 'approval').length ?? 0;
+    // 上一轮实际未装配；或已停用、连接异常，下一轮不会装配
+    const skipped = skippedLastTurn('mcp', server.id);
+    const missing = skipped || (Boolean(chat.capabilityOptions) && !option);
     return {
       id: server.id,
-      source: server.source,
       name: server.name || option?.name || `MCP #${server.id}`,
-      tools: option?.tools.length ?? 0,
-      approval: option?.tools.filter((tool) => tool.permission === 'approval').length ?? 0,
-      transport: option?.transport,
-      // 停用或连接异常的服务下一轮不会装配
-      missing: Boolean(chat.capabilityOptions) && !option,
+      approval,
+      missing,
+      note: skipped
+        ? '上一轮未生效：已停用或连接异常'
+        : missing
+          ? '已停用或连接异常，下一轮将跳过'
+          : [
+              server.source === 'scenario' ? '场景绑定' : '临时选用',
+              tools ? `${tools} 个工具` : '',
+              approval ? `${approval} 个需确认` : '',
+            ]
+              .filter(Boolean)
+              .join(' · '),
+      icon: missing ? 'info' : server.source === 'scenario' ? 'lock' : 'check',
     };
   });
 });
 const extensionWeb = computed(() =>
   scenarioExtensions.value.webSearch ? 'scenario' : shownCapabilities.value.webSearch ? 'chat' : null,
+);
+/** 联网未生效：上一轮实际跳过，或平台当前已关闭（下一轮将跳过） */
+const webIssue = computed(() => {
+  if (!extensionWeb.value) return '';
+  if (skippedLastTurn('web')) return '上一轮未生效：平台未开启联网搜索';
+  if (chat.capabilityOptions && !chat.capabilityOptions.web.available)
+    return chat.capabilityOptions.web.reason || '平台已关闭联网，下一轮将跳过';
+  return '';
+});
+/** 面板列表里找不到对应条目的未生效项（如已从场景快照外删除），在面板中单独列出 */
+const unlistedUnavailable = computed(() =>
+  lastUnavailable.value
+    .filter(
+      (item) =>
+        (item.kind === 'skill' && !extensionSkills.value.some((skill) => skill.id === item.id)) ||
+        (item.kind === 'mcp' && !extensionServers.value.some((server) => server.id === item.id)),
+    )
+    .map((item) => item.title || `${item.kind === 'mcp' ? 'MCP' : 'Skill'} #${item.id ?? '?'}`),
+);
+/** 当前存在问题的扩展能力数量：显示在顶部「能力」按钮上，替代消息流中的提示条 */
+const capabilityIssueCount = computed(
+  () =>
+    extensionSkills.value.filter((skill) => skill.missing).length +
+    extensionServers.value.filter((server) => server.missing).length +
+    (webIssue.value ? 1 : 0) +
+    unlistedUnavailable.value.length,
+);
+const capabilityButtonLabel = computed(() =>
+  capabilityIssueCount.value ? `查看能力，${capabilityIssueCount.value} 项扩展技能未生效` : '查看能力',
 );
 /** 整个会话的交付物：最近一轮声明的排在最前，同一路径只保留最新一次声明 */
 const sessionDeliverables = computed<FileRef[]>(() => {
@@ -516,10 +569,12 @@ async function quoteMessage(text: string) {
           ><button
             :class="['session-panel-button', { selected: chat.panelOpen && chat.panel === 'context' }]"
             :aria-expanded="chat.panelOpen && chat.panel === 'context'"
-            aria-label="查看能力"
+            :aria-label="capabilityButtonLabel"
+            :title="capabilityIssueCount ? capabilityButtonLabel : undefined"
             @click="showPanel('context')"
           >
-            <Icon name="blocks" :size="16" /><span>能力</span>
+            <Icon name="blocks" :size="16" /><span>能力</span
+            ><small v-if="capabilityIssueCount" class="is-warning">{{ capabilityIssueCount }} 项未生效</small>
           </button>
         </div>
       </div>
@@ -543,36 +598,6 @@ async function quoteMessage(text: string) {
         <ConversationStart v-else-if="welcome" @submitted="(id) => router.replace(`/agent/chat/${id}`)" />
         <div v-else class="conversation-messages">
           <article v-for="(turn, turnIndex) in turns" :key="turn.key" class="turn-block">
-            <div v-if="turn.switch" class="model-switch-divider" role="separator">
-              <span
-                ><Icon name="cpu" :size="12" />模型已切换：{{ turn.switch.from }} →
-                <strong>{{ turn.switch.to }}</strong></span
-              >
-            </div>
-            <div
-              v-if="turnCapabilityChanges[turnIndex]?.active"
-              class="model-switch-divider"
-              role="separator"
-              :title="turnCapabilityChanges[turnIndex]?.active?.join('、')"
-            >
-              <span v-if="turnCapabilityChanges[turnIndex]?.active?.length"
-                ><Icon name="puzzle" :size="12" />扩展技能：<strong>{{
-                  turnCapabilityChanges[turnIndex]?.active?.join('、')
-                }}</strong></span
-              >
-              <span v-else><Icon name="puzzle" :size="12" />已关闭扩展技能</span>
-            </div>
-            <div
-              v-if="turnCapabilityChanges[turnIndex]?.unavailable.length"
-              class="model-switch-divider is-warning"
-              role="note"
-            >
-              <span
-                ><Icon name="info" :size="12" />未生效（已下线或未开启）：<strong>{{
-                  turnCapabilityChanges[turnIndex]?.unavailable.join('、')
-                }}</strong></span
-              >
-            </div>
             <div v-if="turn.user" class="message-row user">
               <div class="user-message-block">
                 <div class="user-message-text">{{ turn.user.content }}</div>
@@ -601,12 +626,7 @@ async function quoteMessage(text: string) {
               <span class="message-avatar agent"><Icon name="sparkles" :size="18" /></span>
               <div class="message-main">
                 <div class="message-author">
-                  Agent<em
-                    v-if="turn.model || chat.current?.modelName"
-                    class="message-model"
-                    :title="`由 ${turn.model || chat.current?.modelName} 生成`"
-                    >{{ turn.model || chat.current?.modelName }}</em
-                  ><span v-if="turn.running">正在工作</span
+                  Agent<span v-if="turn.running">正在工作</span
                   ><span v-else-if="turnIndex === turns.length - 1 && lastTurnCompleted" class="done"
                     ><Icon name="check" :size="11" />已完成</span
                   >
@@ -820,6 +840,13 @@ async function quoteMessage(text: string) {
             输入框中已修改关联代码，随下一条消息生效。
           </p>
         </div>
+        <div v-if="unlistedUnavailable.length" class="context-section">
+          <p class="small-text warning-text" role="note">
+            <Icon name="info" :size="12" /><span
+              >上一轮未生效（已下线或未开启）：{{ unlistedUnavailable.join('、') }}</span
+            >
+          </p>
+        </div>
         <div class="context-section">
           <h3>
             Skill <span>{{ extensionSkills.length }}</span>
@@ -827,21 +854,16 @@ async function quoteMessage(text: string) {
           <p v-if="!extensionSkills.length" class="small-text muted-text">
             未启用。可在输入框「扩展技能」中临时选用已发布的 Skill。
           </p>
-          <div v-for="skill in extensionSkills" :key="`skill-${skill.id}`" class="context-tool">
+          <div
+            v-for="skill in extensionSkills"
+            :key="`skill-${skill.id}`"
+            :class="['context-tool', { 'is-unavailable': skill.missing }]"
+          >
             <span><Icon name="book" :size="16" /></span>
             <div>
-              <strong>{{ skill.title }}</strong><small>{{
-                skill.missing
-                  ? '已取消发布，下一轮将跳过'
-                  : [
-                      skill.source === 'scenario' ? '场景绑定' : '临时选用',
-                      skill.name ? `/${skill.name}` : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')
-              }}</small>
+              <strong>{{ skill.title }}</strong><small>{{ skill.note }}</small>
             </div>
-            <Icon :name="skill.source === 'scenario' ? 'lock' : 'check'" :size="13" />
+            <Icon :name="skill.icon" :size="13" />
           </div>
         </div>
         <div class="context-section">
@@ -851,33 +873,25 @@ async function quoteMessage(text: string) {
           <p v-if="!extensionServers.length" class="small-text muted-text">
             未连接。可在输入框「扩展技能」中临时选用管理员已启用的 MCP 服务。
           </p>
-          <div v-for="server in extensionServers" :key="`mcp-${server.id}`" class="context-tool">
+          <div
+            v-for="server in extensionServers"
+            :key="`mcp-${server.id}`"
+            :class="['context-tool', { 'is-unavailable': server.missing }]"
+          >
             <span><Icon name="plug" :size="16" /></span>
             <div>
-              <strong>{{ server.name }}</strong><small>{{
-                server.missing
-                  ? '已停用或连接异常，下一轮将跳过'
-                  : [
-                      server.source === 'scenario' ? '场景绑定' : '临时选用',
-                      server.tools ? `${server.tools} 个工具` : '',
-                      server.approval ? `${server.approval} 个需确认` : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')
-              }}</small>
+              <strong>{{ server.name }}</strong><small>{{ server.note }}</small>
             </div>
-            <Icon :name="server.source === 'scenario' ? 'lock' : 'check'" :size="13" />
+            <Icon :name="server.icon" :size="13" />
           </div>
         </div>
         <div class="context-section">
           <h3>联网</h3>
-          <p class="small-text muted-text">
+          <p :class="['small-text', webIssue ? 'warning-text' : 'muted-text']">
             {{
               extensionWeb
                 ? `${extensionWeb === 'scenario' ? '场景已开启' : '已临时开启'}：${
-                    chat.capabilityOptions && !chat.capabilityOptions.web.available
-                      ? chat.capabilityOptions.web.reason || '平台已关闭联网，下一轮将跳过'
-                      : '可搜索网络并读取网页，回答会注明来源'
+                    webIssue || '可搜索网络并读取网页，回答会注明来源'
                   }`
                 : '未开启。可在输入框「扩展技能」中开启联网搜索。'
             }}
