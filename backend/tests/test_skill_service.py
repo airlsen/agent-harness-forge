@@ -155,3 +155,96 @@ async def test_delete_draft_removes_authoring_data_and_reference_files(tmp_path,
             assert not (tmp_path / 'skills' / str(skill_id)).exists()
     finally:
         await engine.dispose()
+
+
+def test_builtin_skill_design_is_a_valid_skill():
+    """内置 skill-design 元 Skill 本身必须符合 Skill 规范，参考资料齐全。"""
+    content = (skill_service.SKILL_DESIGN_DIR / 'SKILL.md').read_text(encoding='utf-8')
+    assert validate_content(content) == []
+    front, _ = skill_service.parse_skill_document(content)
+    assert front['name'] == 'skill-design'
+    assert 0 < len(front['title']) <= 120
+    method, guides = skill_service.skill_design_method()
+    assert method.startswith('# Skill 设计方法')
+    assert '---' not in method.splitlines()[0]
+    assert set(guides) == set(skill_service.SKILL_DESIGN_GUIDES)
+    assert all(text.strip() for text in guides.values())
+    # 正文里提到的参考资料名称都必须真实存在
+    for name in skill_service.SKILL_DESIGN_GUIDES:
+        assert f'skill_read_guide 读 {name}' in method
+
+
+def test_authoring_history_keeps_recent_turns_in_order_and_bounded(monkeypatch):
+    def message(role, content):
+        return SkillAuthoringMessage(role=role, content=content, seq=0, authoring_session_id=1)
+
+    history = skill_service.authoring_history(
+        [message('user', '做个周报 Skill'), message('assistant', '谁来用？'), message('tool', '草稿已更新：初稿')]
+    )
+    assert history.startswith('## 之前的对话')
+    assert history.index('维护者：做个周报 Skill') < history.index('助手：谁来用？') < history.index('系统记录：草稿已更新')
+    assert skill_service.authoring_history([]) == ''
+    assert skill_service.authoring_history([message('user', '  ')]) == ''
+
+    long = skill_service.authoring_history([message('user', '长' * 5000)])
+    assert '……（已截断）' in long and '长' * 2001 not in long
+
+    # 超出总长度时丢弃最早的消息，保留最近的
+    monkeypatch.setattr(skill_service, 'AUTHORING_HISTORY_TOTAL_CHARS', 20)
+    bounded = skill_service.authoring_history([message('user', '最早的问题' * 3), message('assistant', '最近的回答')])
+    assert '最近的回答' in bounded and '最早的问题' not in bounded
+
+
+@pytest.mark.asyncio
+async def test_authoring_session_bundle_carries_method_history_guides_and_output_budget(monkeypatch):
+    engine = create_async_engine('sqlite+aiosqlite:///:memory:')
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    captured = {}
+
+    async def fake_connection(db, secret=False):
+        return {'configured': True, 'baseUrl': 'https://model.example', 'model': 'm', 'apiKey': 'k'}
+
+    async def fake_create_session(bundle, user_ctx, model_config):
+        captured['bundle'] = bundle
+        return {'sessionId': f'runner-{len(captured)}'}
+
+    policy = {'maxOutputTokens': 4096}
+
+    async def fake_policy(db):
+        return dict(policy)
+
+    monkeypatch.setattr(skill_service, 'get_connection', fake_connection)
+    monkeypatch.setattr(skill_service, 'get_policy', fake_policy)
+    monkeypatch.setattr(skill_service.runner_client, 'create_session', fake_create_session)
+    try:
+        async with sessions() as db:
+            created = await create_skill(db, '周报', '写周报时使用', None, 'tester')
+            first = await skill_service.create_authoring_session(db, created['id'], 'tester')
+            bundle = captured['bundle']
+            prompt = bundle['profile_patch']['systemPrompt']
+            assert '# Skill 设计方法' in prompt['workspace'][0]
+            assert prompt['workspace'][1] == ''  # 还没有历史对话
+            assert any('整体替换草稿' in rule for rule in prompt['safety'])
+            meta = bundle['meta']
+            assert 'skill_read_guide' in meta['builtin_tools']
+            assert meta['policy']['allowedTools'] == meta['builtin_tools']
+            # 企业策略低于 8192 时取 8192
+            assert meta['policy']['maxOutputTokens'] == 8192
+            authoring = meta['skillAuthoring']
+            assert [guide['name'] for guide in authoring['guides']] == list(skill_service.SKILL_DESIGN_GUIDES)
+            assert 'conversationContext' not in authoring
+
+            # 有了对话记录后重建会话（如手动编辑后）：历史进入系统提示；企业策略更高时跟随策略
+            row = await skill_service.get_authoring_session(db, created['id'], first['id'])
+            await skill_service._append_message(db, row, 'user', '给财务团队用的周报')
+            await skill_service._append_message(db, row, 'assistant', '好的，先确认数据来源。')
+            policy['maxOutputTokens'] = 16384
+            await skill_service.create_authoring_session(db, created['id'], 'tester')
+            rebuilt = captured['bundle']
+            history = rebuilt['profile_patch']['systemPrompt']['workspace'][1]
+            assert '维护者：给财务团队用的周报' in history and '助手：好的，先确认数据来源。' in history
+            assert rebuilt['meta']['policy']['maxOutputTokens'] == 16384
+    finally:
+        await engine.dispose()

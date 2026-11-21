@@ -78,15 +78,17 @@ function revisionSource(source: string) {
   if (source === 'restore') return '恢复修订';
   return '手动编辑';
 }
-const starterPrompts = computed(() => {
-  const label = skill.value?.name || '这个 Skill';
-  const description = skill.value?.description ? `，用途是：${skill.value.description}` : '';
-  return [
-    `请根据“${label}”${description}，生成一份完整的工作方法草稿。`,
-    '请补充输入检查、异常情况处理和需要向用户确认的边界。',
-    '请将输出要求整理成可直接复用的清晰格式，并补充质量检查步骤。',
-  ];
-});
+// 对应 skill-design 元 Skill 的三种模式：新建（访谈）/ 评审 / 修改。
+// 点击只填入输入框不发送；新建时首行会作为临时名称，所以写成让用户接着补全的开头。
+const starterPrompts = computed(() =>
+  isNew.value
+    ? ['我想把这项工作做成 Skill：', '帮我把下面这份流程整理成 Skill：']
+    : [
+        '帮我评审这个 Skill，按评分表指出问题，先不要修改。',
+        '补充不适用的情况、需要找人确认的地方和输出样例。',
+        '按我的要求修改：',
+      ],
+);
 
 function formatDate(value: string | null) {
   if (!value) return '刚刚';
@@ -989,8 +991,14 @@ onBeforeUnmount(() => {
           <div ref="chatLog" class="chat-log" aria-live="polite">
             <div v-if="!messages.length && !busy" class="chat-empty">
               <h2>想{{ isNew ? '创建' : '修改' }}什么技能？</h2>
-              <p>描述要求，我会更新草稿。发布由你确认。</p>
-              <button v-for="text in starterPrompts.slice(0, 2)" :key="text" @click="useStarterPrompt(text)">
+              <p>
+                {{
+                  isNew
+                    ? '说说这项工作平时怎么做，我会先问几个关键问题再起草。发布由你确认。'
+                    : '可以让我评审、补充或按要求修改草稿。发布由你确认。'
+                }}
+              </p>
+              <button v-for="text in starterPrompts" :key="text" @click="useStarterPrompt(text)">
                 {{ text }}
               </button>
             </div>
