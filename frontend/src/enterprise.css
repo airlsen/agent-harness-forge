@@ -1919,26 +1919,48 @@ textarea:focus-visible {
   color: var(--color-text-tertiary);
   background: var(--surface-muted);
 }
-.model-editor-drawer .ant-drawer-content,
-.model-editor-drawer .ant-drawer-header,
-.model-editor-drawer .ant-drawer-footer {
+/* All Ant Design drawers share the same flat shell. */
+.ant-drawer .ant-drawer-content,
+.ant-drawer .ant-drawer-header,
+.ant-drawer .ant-drawer-footer {
   background: var(--surface-card);
 }
-.model-editor-drawer .ant-drawer-header {
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--border-light);
+.ant-drawer .ant-drawer-header {
+  min-height: 64px;
+  padding: 16px 24px;
+  border-bottom: 0;
 }
-.model-editor-drawer .ant-drawer-title {
+.ant-drawer .ant-drawer-header-title {
+  flex-direction: row-reverse;
+  gap: 12px;
+}
+.ant-drawer .ant-drawer-title {
+  min-width: 0;
   color: var(--color-text-primary);
   font-size: 16px;
   font-weight: 600;
+  line-height: 24px;
 }
-.model-editor-drawer .ant-drawer-body {
-  padding: 24px;
+.ant-drawer .ant-drawer-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-inline-end: 0;
+  border-radius: 4px;
+  color: var(--color-text-tertiary);
 }
-.model-editor-drawer .ant-drawer-footer {
+.ant-drawer .ant-drawer-close:hover {
+  color: var(--color-text-primary);
+  background: var(--surface-hover);
+}
+.ant-drawer .ant-drawer-body {
+  padding: 16px 24px 24px;
+}
+.ant-drawer .ant-drawer-footer {
   padding: 16px 24px;
-  border-top: 1px solid var(--border-light);
+  border-top: 0;
 }
 .model-editor-form .ant-form-item {
   margin-bottom: 18px;

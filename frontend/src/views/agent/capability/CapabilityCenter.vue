@@ -1048,17 +1048,11 @@ onMounted(load);
     <a-drawer
       :open="!!detail"
       :width="520"
+      :title="shownTool?.title ?? '工具详情'"
       class="drawer capability-detail"
       v-bind="drawerA11y('工具详情', !!detail)"
       @close="closeTool"
     >
-      <template v-if="shownTool" #title>
-        <div class="capability-drawer-title">
-          <span class="eyebrow">SHARED TOOL</span>
-          <h2>{{ shownTool.title }}</h2>
-          <p>平台提供 · 按场景范围调用</p>
-        </div>
-      </template>
       <template v-if="shownTool">
         <div class="detail-block">
           <h3>能做什么</h3>
@@ -1384,19 +1378,9 @@ onMounted(load);
 }
 
 /* ============ antd 抽屉 / 对话框插槽内容（插槽在本组件内编译，scoped 样式随 Teleport 一并生效） ============ */
-.capability-drawer-title,
 .capability-modal-title {
   min-width: 0;
 }
-.capability-drawer-title .eyebrow {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--text-subtle);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 1.5px;
-}
-.capability-drawer-title h2,
 .capability-modal-title h2 {
   margin: 0;
   color: var(--ink);
@@ -1408,7 +1392,6 @@ onMounted(load);
 .capability-modal-title h2 {
   font-size: 16px;
 }
-.capability-drawer-title p,
 .capability-modal-title p {
   margin: 4px 0 0;
   color: var(--text-secondary);

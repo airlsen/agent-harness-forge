@@ -521,19 +521,15 @@ async function versions(scenario: Scenario) {
     <a-drawer
       :open="detailOpen"
       :width="580"
+      :title="detail?.payload.name ?? '场景详情'"
       class="drawer scenario-detail"
       v-bind="drawerA11y('场景详情', detailOpen)"
       @close="detailOpen = false"
     >
-      <template v-if="detail" #title>
-        <div class="scenario-drawer-title">
-          <h2>{{ detail.payload.name }}</h2>
-          <p v-if="maintenance">
-            {{ scenarioSource(detail) }} · {{ scenarioState(detail) }} · v{{ detail.current_version }}
-          </p>
-        </div>
-      </template>
       <template v-if="detail">
+        <p v-if="maintenance" class="scenario-drawer-meta">
+          {{ scenarioSource(detail) }} · {{ scenarioState(detail) }} · v{{ detail.current_version }}
+        </p>
         <div class="detail-block">
           <h3>用途</h3>
           <p>{{ detail.payload.description || '尚未添加用途说明。' }}</p>
@@ -609,6 +605,7 @@ async function versions(scenario: Scenario) {
     <a-drawer
       :open="drawer"
       :width="640"
+      :title="editing ? '编辑场景' : '新建工作场景'"
       class="drawer scenario-editor"
       v-bind="drawerA11y('场景编辑器', drawer)"
       :closable="!busy"
@@ -617,22 +614,10 @@ async function versions(scenario: Scenario) {
       destroy-on-close
       @close="closeEditor"
     >
-      <template #title>
-        <div class="scenario-drawer-title">
-          <span class="eyebrow">SCENARIO BUILDER</span>
-          <h2>{{ editing ? '编辑场景' : '新建工作场景' }}</h2>
-          <p>
-            {{
-              basedOn
-                ? `基于「${basedOn}」创建草稿`
-                : editing?.published_version
-                  ? '保存为新修订，已发布版本继续可用。'
-                  : '维护可复用的工作方式，保存后进入草稿。'
-            }}
-          </p>
-        </div>
-      </template>
       <a-form id="scenario-form" :model="draft" :rules="rules" layout="vertical" @finish="save">
+        <p v-if="basedOn || editing?.published_version" class="scenario-drawer-meta">
+          {{ basedOn ? `基于「${basedOn}」创建草稿` : '保存为新修订，已发布版本继续可用。' }}
+        </p>
         <div class="form-section-title"><span>01</span>基本信息</div>
         <a-form-item label="场景名称" name="name">
           <a-input v-model:value="draft.name" :maxlength="128" placeholder="例如：研发需求评审助手" />
@@ -906,16 +891,11 @@ async function versions(scenario: Scenario) {
     <a-drawer
       :open="historyOpen"
       :width="580"
+      :title="historyTitle"
       class="drawer scenario-history"
       v-bind="drawerA11y('场景版本历史', historyOpen)"
       @close="historyOpen = false"
     >
-      <template #title>
-        <div class="scenario-drawer-title">
-          <h2>{{ historyTitle }}</h2>
-          <p>不可变版本记录</p>
-        </div>
-      </template>
       <a-timeline v-if="versionHistory">
         <a-timeline-item v-for="version in versionHistory" :key="version.version">
           <div class="version-entry">
@@ -1000,31 +980,12 @@ async function versions(scenario: Scenario) {
 
 /* ============ antd 抽屉 / 对话框插槽内容 ============ */
 /* 插槽内容在本组件内编译，scoped 样式随 Teleport 一并生效 */
-.scenario-drawer-title {
-  min-width: 0;
-}
-.scenario-drawer-title .eyebrow {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 1.5px;
-  color: var(--text-subtle);
-}
-.scenario-drawer-title h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 18px;
-  font-weight: 550;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-.scenario-drawer-title p {
-  margin: 4px 0 0;
+.scenario-drawer-meta {
+  margin: 0 0 20px;
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 400;
-  line-height: 1.7;
+  line-height: 1.6;
 }
 .scenario-drawer-footer {
   display: flex;
