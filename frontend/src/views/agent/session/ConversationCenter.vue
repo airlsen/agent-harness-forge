@@ -7,7 +7,6 @@ import { remove } from '../../../api/client';
 import { formatDate, sessionMatches, sessionState } from '../../../utils/presentation';
 import type { Conversation } from '../../../types/platform';
 import Icon from '../../../components/ForgeIcon.vue';
-import DialogShell from '../../../components/DialogShell.vue';
 
 const app = usePlatform();
 const chat = useConversation();
@@ -18,6 +17,12 @@ const refreshing = ref(false);
 const error = ref('');
 const archiveTarget = ref<Conversation | null>(null);
 const archiving = ref(false);
+const columns = [
+  { title: '会话 / 场景', key: 'conversation', width: '48%' },
+  { title: '状态', key: 'status', width: '16%' },
+  { title: '创建时间', key: 'createdAt', width: '21%' },
+  { title: '操作', key: 'actions', width: '15%' },
+];
 const filtered = computed(() =>
   app.regularConversations.filter(
     (item) =>
@@ -82,84 +87,63 @@ onMounted(refresh);
           <h1>我的会话</h1>
           <p>找回上下文、查看结果，或继续推进一项工作。</p>
         </div>
-        <button class="button primary" @click="newChat"><Icon name="plus" :size="17" />新建会话</button>
+        <a-button type="primary" @click="newChat"><Icon name="plus" :size="17" />新建会话</a-button>
       </div>
-      <div class="preview-inline-note">
-        <Icon name="info" :size="15" /><span
-          >当前显示管理员账号的会话；员工身份与跨用户访问隔离尚未接入。</span
-        >
-      </div>
-      <div class="collection-toolbar enterprise-collection-toolbar">
-        <div class="collection-tabs" aria-label="会话状态筛选">
-          <button
-            v-for="item in filters"
-            :key="item.id"
-            :class="{ selected: filter === item.id }"
-            :aria-pressed="filter === item.id"
-            @click="filter = item.id"
-          >
-            {{ item.label }}<span>{{ item.count }}</span>
-          </button>
-        </div>
-        <div class="collection-search-actions">
-          <label class="search-field"
-            ><Icon name="search" :size="17" /><input
-              v-model="query"
-              placeholder="搜索标题或场景"
-              aria-label="搜索会话" /></label
-          ><button
-            class="icon-button"
+      <div class="conversations-toolbar">
+        <a-tabs v-model:active-key="filter" class="conversations-tabs" aria-label="会话状态筛选">
+          <a-tab-pane v-for="item in filters" :key="item.id">
+            <template #tab
+              >{{ item.label }} <span class="conversations-tab-count">{{ item.count }}</span></template
+            >
+          </a-tab-pane>
+        </a-tabs>
+        <div class="conversations-search-actions">
+          <a-input v-model:value="query" allow-clear placeholder="搜索标题或场景" aria-label="搜索会话">
+            <template #prefix><Icon name="search" :size="16" /></template>
+          </a-input>
+          <a-button
+            type="text"
             :disabled="refreshing"
             aria-label="刷新会话"
             title="刷新会话"
             @click="refresh"
           >
             <Icon name="refresh" :size="17" :class="{ spinning: refreshing }" />
-          </button>
+          </a-button>
         </div>
       </div>
-      <div v-if="error" class="form-alert error" role="alert">
-        <Icon name="info" :size="18" />
-        <div>
-          <strong>未能读取会话</strong>
-          <p>{{ error }}</p>
-        </div>
-        <button class="button secondary small" @click="refresh">重试</button>
-      </div>
+      <a-alert v-if="error" type="error" show-icon message="未能读取会话" :description="error" role="alert">
+        <template #action><a-button size="small" @click="refresh">重试</a-button></template>
+      </a-alert>
       <div v-if="refreshing && !app.regularConversations.length" class="loading-inline" role="status">
         <span class="loader"></span>正在读取会话…
       </div>
-      <div v-else-if="!filtered.length && !error" class="enterprise-empty conversation-empty">
-        <span class="enterprise-empty-symbol"
-          ><Icon :name="query || filter !== 'all' ? 'search' : 'message'" :size="29"
-        /></span>
-        <h2>{{ query || filter !== 'all' ? '没有匹配的会话' : '新的工作，从第一次对话开始。' }}</h2>
-        <p>
-          {{
-            query || filter !== 'all'
-              ? '换一个关键词，或查看全部状态。'
-              : '使用企业场景开始工作，对话、执行过程和文件会保留在会话中。'
-          }}
-        </p>
-        <button
+      <div v-else-if="!filtered.length && !error" class="conversation-empty">
+        <a-empty :description="query || filter !== 'all' ? '没有匹配的会话' : '还没有会话'" />
+        <a-button
           v-if="query || filter !== 'all'"
-          class="button secondary"
           @click="
             query = '';
             filter = 'all';
           "
+          >清除筛选</a-button
         >
-          清除筛选</button
-        ><button v-else class="button primary" @click="newChat">
-          开始会话 <Icon name="arrow" :size="16" />
-        </button>
+        <a-button v-else type="primary" @click="newChat">开始会话</a-button>
       </div>
-      <div v-else-if="filtered.length" class="conversation-table">
-        <div class="conversation-table-head">
-          <span>会话 / 场景</span><span>状态</span><span>创建时间</span><span>操作</span>
-        </div>
-        <article v-for="item in filtered" :key="item.id" class="conversation-table-row">
-          <RouterLink :to="`/agent/chat/${item.id}`" class="conversation-table-title"
+      <a-table
+        v-else-if="filtered.length"
+        class="conversation-table"
+        :columns="columns"
+        :data-source="filtered"
+        :row-key="(item: Conversation) => item.id"
+        :scroll="{ x: 680 }"
+        :pagination="{ pageSize: 10, hideOnSinglePage: true, showSizeChanger: false }"
+      >
+        <template #bodyCell="{ column, record: item }">
+          <RouterLink
+            v-if="column.key === 'conversation'"
+            :to="`/agent/chat/${item.id}`"
+            class="conversation-table-title"
             ><span class="conversation-table-icon"
               ><Icon
                 :name="app.scenarios.find((s) => s.id === item.scenarioId)?.payload.icon ?? 'message'"
@@ -169,46 +153,45 @@ onMounted(refresh);
               <h2>{{ item.title }}</h2>
               <small>{{ item.scenarioName }}<i>·</i>v{{ item.scenarioVersion }}</small>
             </div></RouterLink
-          ><span :class="['session-state', sessionState(item.status).tone]"
-            ><span></span>{{ sessionState(item.status).label }}</span
-          ><time :datetime="item.createdAt">{{ formatDate(item.createdAt, true) }}</time>
-          <div class="conversation-table-actions">
-            <RouterLink :to="`/agent/chat/${item.id}`" class="conversation-open"
-              >打开 <Icon name="arrow" :size="14" /></RouterLink
-            ><button
-              class="icon-button"
+          >
+          <a-tooltip
+            v-else-if="column.key === 'status'"
+            :title="item.status === 'idle' ? '本轮已结束，可以继续对话；不代表业务任务已完成' : undefined"
+          >
+            <span :class="['session-state', sessionState(item.status).tone]"
+              ><span></span>{{ sessionState(item.status).label }}</span
+            >
+          </a-tooltip>
+          <time v-else-if="column.key === 'createdAt'" :datetime="item.createdAt">{{
+            formatDate(item.createdAt, true)
+          }}</time>
+          <div v-else-if="column.key === 'actions'" class="conversation-table-actions">
+            <a-button
+              type="text"
               :disabled="item.status === 'running'"
               :aria-label="`归档会话 ${item.title}`"
               :title="item.status === 'running' ? '请先中止执行再归档' : '归档会话'"
               @click="archiveTarget = item"
             >
               <Icon name="archive" :size="16" />
-            </button>
+            </a-button>
           </div>
-        </article>
-      </div>
-      <div class="page-note">
-        <Icon name="info" :size="14" /><span
-          >“可继续”表示本轮结束，不代表业务任务已经完成。搜索与筛选作用于接口返回的最近会话（最多 150
-          条），不含试运行记录。</span
-        >
-      </div>
+        </template>
+      </a-table>
     </div>
-    <DialogShell
-      v-if="archiveTarget"
-      variant="modal"
-      label="归档会话确认"
-      panel-class="confirm-modal"
-      @close="!archiving && (archiveTarget = null)"
-      ><span class="confirm-icon"><Icon name="archive" :size="25" /></span>
-      <h2>归档「{{ archiveTarget.title }}」？</h2>
-      <p>会话将从最近记录中移出，消息、文件与审计记录仍保留。当前不提供取消归档操作。</p>
-      <footer>
-        <button class="button secondary" :disabled="archiving" @click="archiveTarget = null">取消</button
-        ><button class="button primary" :disabled="archiving" @click="archive">
-          <span v-if="archiving" class="loader small"></span>确认归档
-        </button>
-      </footer></DialogShell
+    <a-modal
+      :open="!!archiveTarget"
+      title="归档会话"
+      :closable="!archiving"
+      :mask-closable="!archiving"
+      :keyboard="!archiving"
+      @cancel="archiveTarget = null"
     >
+      <p>归档「{{ archiveTarget?.title }}」？归档后会话不再显示在最近记录中，暂不支持恢复。</p>
+      <template #footer>
+        <a-button :disabled="archiving" @click="archiveTarget = null">取消</a-button>
+        <a-button type="primary" :loading="archiving" @click="archive">确认归档</a-button>
+      </template>
+    </a-modal>
   </main>
 </template>

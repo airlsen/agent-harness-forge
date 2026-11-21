@@ -1561,29 +1561,49 @@ textarea:focus-visible {
   line-height: 1.9;
 }
 /* Conversation collection. */
-.preview-inline-note {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  padding: 11px 14px;
-  background: var(--surface-subtle);
-  border: 1px solid var(--color-brand-subtle);
-  border-radius: 6px;
-  color: var(--color-warning-text);
-  font-size: 11px;
-  line-height: 1.8;
-  margin-bottom: 23px;
-}
-.preview-inline-note > svg {
-  margin-top: 2px;
-}
-.collection-search-actions {
+.conversations-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
 }
-.collection-search-actions > .icon-button {
-  margin-bottom: 10px;
+.conversations-tabs {
+  flex: 1;
+  min-width: 0;
+}
+.conversations-tabs .ant-tabs-nav {
+  margin: 0;
+}
+.conversations-tabs .ant-tabs-tab {
+  padding: 11px 0;
+}
+.conversations-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--scenario-selection-text);
+}
+.conversations-tab-count {
+  margin-left: 5px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  font-size: 11px;
+}
+.conversations-search-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+}
+.conversations-search-actions .ant-input-affix-wrapper {
+  width: 240px;
+}
+.conversation-empty {
+  padding: 60px 20px;
+  text-align: center;
+}
+.conversation-empty .ant-empty {
+  margin-bottom: 18px;
 }
 .session-state {
   display: inline-flex;
@@ -1619,31 +1639,27 @@ textarea:focus-visible {
 .session-state.warning > span {
   background: var(--color-warning);
 }
-.conversation-table {
-  background: #fff;
+.conversation-table .ant-table-container {
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
 }
-.conversation-table-head,
-.conversation-table-row {
-  display: grid;
-  align-items: center;
-  grid-template-columns: minmax(0, 1fr) 102px 160px 102px;
-  gap: 15px;
-  padding: 19px 23px;
+.conversation-table .ant-table {
+  color: var(--ink);
+  background: var(--surface-card);
 }
-.conversation-table-head {
+.conversation-table .ant-table-thead > tr > th {
   background: var(--surface-subtle);
   color: var(--text-secondary);
-  font-size: 10px;
-  padding-block: 13px;
+  font-size: 12px;
+  font-weight: 500;
 }
-.conversation-table-row {
-  border-top: 1px solid var(--line);
+.conversation-table .ant-table-tbody > tr > td {
+  padding: 17px 18px;
+  border-bottom-color: var(--line);
 }
-.conversation-table-row:hover {
-  background: var(--accent-soft);
+.conversation-table .ant-table-tbody > tr:hover > td {
+  background: var(--surface-hover);
 }
 .conversation-table-title {
   display: flex;
@@ -1683,25 +1699,35 @@ textarea:focus-visible {
   font-style: normal;
   margin: 0 7px;
 }
-.conversation-table-row > time {
-  font-size: 11px;
+.conversation-table time {
+  font-size: 12px;
   color: var(--text-secondary);
 }
 .conversation-table-actions {
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: flex-start;
 }
-.conversation-open {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--accent-ink);
-}
-.conversation-table-actions .icon-button {
+.conversation-table-actions .ant-btn {
   color: var(--text-secondary);
-  width: 26px;
+}
+@media (max-width: 1060px) {
+  .conversations-toolbar {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .conversations-tabs {
+    flex-basis: 100%;
+  }
+}
+@media (max-width: 600px) {
+  .conversations-search-actions {
+    width: 100%;
+  }
+  .conversations-search-actions .ant-input-affix-wrapper {
+    flex: 1;
+    min-width: 0;
+  }
 }
 /* Management entry and guide. */
 .management-banner {
@@ -3396,18 +3422,6 @@ textarea:focus-visible {
     background: #26334a16;
     z-index: 60;
   }
-  .conversation-table-head,
-  .conversation-table-row {
-    grid-template-columns: minmax(0, 1fr) 84px 118px 85px;
-    gap: 10px;
-    padding-inline: 18px;
-  }
-  .conversation-table-row > time {
-    font-size: 10px;
-  }
-  .conversation-table-actions {
-    gap: 7px;
-  }
 }
 @media (max-width: 1060px) {
   .management-card-grid {
@@ -3434,14 +3448,6 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
     gap: 16px;
   }
-  .conversation-table-head,
-  .conversation-table-row {
-    grid-template-columns: minmax(0, 1fr) 90px 85px;
-  }
-  .conversation-table-head > span:nth-child(3),
-  .conversation-table-row > time {
-    display: none;
-  }
   .enterprise-collection-toolbar {
     flex-wrap: wrap;
   }
@@ -3449,12 +3455,6 @@ textarea:focus-visible {
     width: 100%;
   }
   .enterprise-view .search-field {
-    margin-bottom: 15px;
-  }
-  .collection-search-actions {
-    width: 100%;
-  }
-  .collection-search-actions > .icon-button {
     margin-bottom: 15px;
   }
 }
@@ -3476,20 +3476,6 @@ textarea:focus-visible {
   }
   .enterprise-view .search-field {
     margin-bottom: 10px;
-  }
-  .collection-search-actions {
-    width: auto;
-  }
-  .collection-search-actions > .icon-button {
-    margin-bottom: 10px;
-  }
-  .conversation-table-head,
-  .conversation-table-row {
-    grid-template-columns: minmax(0, 1fr) 90px 130px 85px;
-  }
-  .conversation-table-head > span:nth-child(3),
-  .conversation-table-row > time {
-    display: block;
   }
   .enterprise-chat .chat-scroll {
     padding: 28px;
@@ -3603,21 +3589,6 @@ textarea:focus-visible {
   .enterprise-view .search-field {
     width: 100%;
     margin-bottom: 13px;
-  }
-  .collection-search-actions {
-    width: 100%;
-  }
-  .collection-search-actions > .icon-button {
-    margin-bottom: 13px;
-  }
-  .conversation-table-head,
-  .conversation-table-row {
-    grid-template-columns: minmax(0, 1fr) 90px 85px;
-    padding-inline: 17px;
-  }
-  .conversation-table-head > span:nth-child(3),
-  .conversation-table-row > time {
-    display: none;
   }
   .management-card-grid {
     grid-template-columns: 1fr;
@@ -3828,35 +3799,6 @@ textarea:focus-visible {
   }
   .enterprise-empty p {
     font-size: 12px;
-  }
-  .preview-inline-note {
-    font-size: 10px;
-    padding: 12px;
-  }
-  .conversation-table-head {
-    display: none;
-  }
-  .conversation-table-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 13px;
-    padding: 19px 15px;
-  }
-  .conversation-table-title {
-    grid-column: 1 / -1;
-    gap: 11px;
-  }
-  .conversation-table-title h2 {
-    font-size: 12px;
-  }
-  .conversation-table-title small {
-    font-size: 10px;
-  }
-  .conversation-table-row > .session-state {
-    margin-left: 49px;
-  }
-  .conversation-table-actions {
-    justify-content: flex-end;
-    gap: 15px;
   }
   .management-banner {
     align-items: flex-start;
