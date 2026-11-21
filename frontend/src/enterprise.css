@@ -1596,9 +1596,16 @@ textarea:focus-visible {
   gap: 8px;
 }
 .conversations-refresh.ant-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   background: var(--surface-content);
   border-color: var(--border-default);
   color: var(--color-text-primary);
+}
+.conversations-refresh svg {
+  display: block;
 }
 .conversations-refresh.ant-btn:not(:disabled):hover {
   background: var(--surface-hover);
@@ -1649,25 +1656,11 @@ textarea:focus-visible {
   border-radius: 8px;
   overflow: hidden;
 }
-.conversation-table .ant-table {
-  color: var(--ink);
-  background: var(--surface-card);
-}
 .conversation-table .ant-table-thead > tr > th {
-  background: var(--surface-subtle);
-  color: var(--text-secondary);
   font-size: 13px;
-  font-weight: 500;
-}
-.conversation-table .ant-table-tbody > tr > td {
-  padding: 17px 18px;
-  border-bottom-color: var(--line);
 }
 .conversation-table .session-state {
   font-size: 14px;
-}
-.conversation-table .ant-table-tbody > tr:hover > td {
-  background: var(--surface-hover);
 }
 .conversation-table-title {
   display: flex;

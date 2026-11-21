@@ -106,8 +106,7 @@ onMounted(refresh);
             aria-label="刷新会话"
             @click="refresh"
           >
-            <template #icon><Icon name="refresh" :size="16" :class="{ spinning: refreshing }" /></template
-            >刷新
+            <Icon name="refresh" :size="16" :class="{ spinning: refreshing }" />刷新
           </a-button>
         </div>
       </div>
