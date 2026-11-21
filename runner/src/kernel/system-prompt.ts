@@ -1,7 +1,7 @@
 /**
  * 系统提示词拼装。
  *
- * 富内容渲染（代码高亮、Mermaid 图、Vega-Lite 图表）是对话界面的平台能力，与具体场景无关；
+ * 全局输出风格（STYLE_GUIDE）与富内容渲染（代码高亮、Mermaid 图、Vega-Lite 图表）是对话界面的平台能力，与具体场景无关；
  * 场景 Bundle 是发布时的不可变快照，若把说明写进 Bundle，已发布的场景永远拿不到。
  * 因此渲染说明由 runner 在每次会话启动时统一追加。
  */
@@ -162,6 +162,13 @@ const FALLBACK_IDENTITY = '你是 Forge 企业智能体，请准确、清晰地�
 const WORKSPACE_RULE = '所有文件操作仅限当前会话工作区。不可声称执行了未实际调用的工具。';
 const CODE_RULE = '文件写入仅限当前会话工作区，关联的代码项目只读。不可声称执行了未实际调用的工具。';
 
+// 全局输出风格：偏业务、友好、易懂，适用于所有会话（场景、Skill 编辑与兜底路径），与具体场景无关。
+const STYLE_GUIDE: readonly string[] = [
+  '回答面向业务使用：少用技术术语，必要的技术名词用一句话解释，让不懂技术的同事也能直接看懂。',
+  '语气友好、表达简约：先给结论，再给必要的依据或数字；默认两三句话到一小段说清，用户追问再展开。',
+  '多用平实的中文自然段，只在内容确实复杂时使用列表或表格；不堆砌客套话和空话。',
+];
+
 type StructuredPrompt = {
   identity?: string;
   domain?: string;
@@ -176,17 +183,16 @@ export function buildSystemPrompt(
   caps: CapabilityContext = {},
 ): string {
   const guide = [...workspaceGuide(tools), ...codeGuide(code, tools), ...capabilityGuide(caps)];
-  const sections =
+  const head =
     prompt && typeof prompt === 'object'
       ? [
           (prompt as StructuredPrompt).identity,
           (prompt as StructuredPrompt).domain,
           ...((prompt as StructuredPrompt).safety ?? []),
           ...((prompt as StructuredPrompt).workspace ?? []),
-          ...RENDER_GUIDE,
-          ...guide,
-          code.length ? CODE_RULE : WORKSPACE_RULE,
         ]
-      : [prompt == null || prompt === '' ? FALLBACK_IDENTITY : String(prompt), ...RENDER_GUIDE, ...guide];
-  return sections.filter(Boolean).join('\n\n');
+      : [prompt == null || prompt === '' ? FALLBACK_IDENTITY : String(prompt)];
+  return [...head, ...STYLE_GUIDE, ...RENDER_GUIDE, ...guide, code.length ? CODE_RULE : WORKSPACE_RULE]
+    .filter(Boolean)
+    .join('\n\n');
 }

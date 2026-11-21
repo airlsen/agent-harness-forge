@@ -9,13 +9,7 @@ import { trapTabKey } from '../../../utils/focus';
 import { confirm } from '../../../utils/feedback';
 import { animateComposerArrival, captureComposerOrigin } from '../../../utils/composerTransition';
 import type { KernelEvent } from '../../../types/platform';
-import {
-  buildTurns,
-  capabilityChanges,
-  codeChanges,
-  type ToolCallView,
-  type Turn,
-} from '../../../utils/turns';
+import { buildTurns, capabilityChanges, type ToolCallView, type Turn } from '../../../utils/turns';
 import Icon from '../../../components/ForgeIcon.vue';
 import Markdown from '../../../components/MarkdownContent.vue';
 import ProcessBlock from '../../../components/ProcessBlock.vue';
@@ -157,8 +151,7 @@ const turns = computed(() =>
     activeTools: pendingTools.value,
   }),
 );
-/** 每轮相对上一轮的关联代码变化（渲染分隔线） */
-const turnCodeChanges = computed(() => codeChanges(turns.value));
+/** 每轮的扩展能力变化（渲染分隔线） */
 const turnCapabilityChanges = computed(() => capabilityChanges(turns.value));
 /** 右侧面板展示的关联代码：附带代码根目录中读到的分支与提交 */
 const linkedCode = computed(() =>
@@ -555,19 +548,6 @@ async function quoteMessage(text: string) {
                 ><Icon name="cpu" :size="12" />模型已切换：{{ turn.switch.from }} →
                 <strong>{{ turn.switch.to }}</strong></span
               >
-            </div>
-            <div
-              v-if="turnCodeChanges[turnIndex]"
-              class="model-switch-divider"
-              role="separator"
-              :title="turnCodeChanges[turnIndex]?.join('、')"
-            >
-              <span v-if="turnCodeChanges[turnIndex]?.length"
-                ><Icon name="code" :size="12" />关联代码（只读）：<strong>{{
-                  turnCodeChanges[turnIndex]?.join('、')
-                }}</strong></span
-              >
-              <span v-else><Icon name="code" :size="12" />已取消关联代码</span>
             </div>
             <div
               v-if="turnCapabilityChanges[turnIndex]?.active"
