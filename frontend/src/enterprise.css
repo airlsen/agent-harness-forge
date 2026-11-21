@@ -301,8 +301,8 @@ textarea:focus-visible {
 .enterprise-sidebar .enterprise-primary .nav-count {
   margin-left: 0;
   justify-self: end;
-  background: var(--accent-soft);
-  color: var(--accent-ink);
+  background: var(--sidebar-nav-active-bg);
+  color: var(--sidebar-nav-active-text);
   font-size: 10px;
   font-weight: 500;
   border: 0;
@@ -540,13 +540,13 @@ textarea:focus-visible {
   flex: 1;
 }
 .enterprise-account-menu button[role^='menuitem'][aria-checked='true'] {
-  color: var(--accent-ink);
-  background: var(--surface-selected);
+  color: var(--sidebar-nav-active-text);
+  background: var(--sidebar-nav-active-bg);
 }
 .enterprise-account-menu button[role^='menuitem']:not(:disabled):hover,
 .enterprise-account-menu button[role^='menuitem']:focus-visible {
-  background: var(--accent-soft);
-  color: var(--accent-ink);
+  background: var(--sidebar-nav-hover-bg);
+  color: var(--sidebar-nav-hover-text);
 }
 .enterprise-account-menu-label {
   display: block;
