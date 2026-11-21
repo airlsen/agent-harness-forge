@@ -358,7 +358,11 @@ textarea:focus-visible {
 }
 .enterprise-recent-item:hover,
 .enterprise-recent-item.selected {
-  background: var(--accent-soft);
+  background: var(--sidebar-nav-active-bg);
+}
+.enterprise-recent-item:hover > a,
+.enterprise-recent-item.selected > a {
+  color: var(--sidebar-nav-active-text);
 }
 .enterprise-sidebar-footer {
   margin-top: 0;
@@ -2385,10 +2389,10 @@ textarea:focus-visible {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  background: #fff;
+  background: var(--surface-content);
 }
 .enterprise-chat .chat-primary {
-  background: #fff;
+  background: var(--surface-content);
   min-width: 0;
 }
 .enterprise-chat .chat-subbar {
@@ -2671,7 +2675,7 @@ textarea:focus-visible {
   width: 100%;
   max-width: 890px;
   margin: 0 auto;
-  background: #fff;
+  background: var(--surface-content);
   flex-shrink: 0;
 }
 .enterprise-chat .approval-card {
@@ -2727,7 +2731,7 @@ textarea:focus-visible {
   left: 50%;
   transform: translateX(-50%);
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--surface-card);
   border-radius: 18px;
   padding: 6px 11px;
   font-size: 10px;
