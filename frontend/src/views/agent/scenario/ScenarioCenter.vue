@@ -265,9 +265,11 @@ function askDelete(scenario: Scenario) {
   toDelete.value = scenario;
   deleteOpen.value = true;
 }
-/** 卡片「更多」下拉：版本记录 / 删除 */
+/** 卡片「更多」下拉：查看、重新试运行、版本记录与删除 */
 function moreAction(key: string, scenario: Scenario) {
-  if (key === 'versions') void versions(scenario);
+  if (key === 'detail') openDetail(scenario);
+  else if (key === 'test') void test(scenario);
+  else if (key === 'versions') void versions(scenario);
   else if (key === 'delete') askDelete(scenario);
 }
 function cancelDelete() {
@@ -418,6 +420,7 @@ async function versions(scenario: Scenario) {
         <CatalogCard
           v-for="scenario in filtered"
           :key="scenario.id"
+          class="scenario-card"
           :title="scenario.payload.name"
           :icon="scenario.payload.icon"
           :tone="scenario.payload.icon"
@@ -458,7 +461,7 @@ async function versions(scenario: Scenario) {
               {{ isAvailableScenario(scenario) ? '开始' : '预览草稿' }}
             </a-button>
           </template>
-          <!-- 维护模式：编辑 / 试运行 / 发布 在左；详情与「更多」在右，版本记录、删除收进下拉 -->
+          <!-- 维护模式：编辑 + 当前阶段操作；其他操作收进「更多」以保持单行。 -->
           <template v-if="maintenance" #ops>
             <a-button
               size="small"
@@ -471,7 +474,11 @@ async function versions(scenario: Scenario) {
               {{ scenario.space === 'official' ? '基于模板创建' : '编辑' }}
             </a-button>
             <a-button
-              v-if="scenario.space !== 'official'"
+              v-if="
+                scenario.space !== 'official' &&
+                (!scenario.published_version || hasPendingDraft(scenario)) &&
+                !scenario.tested
+              "
               type="text"
               size="small"
               :disabled="testing !== null"
@@ -486,7 +493,7 @@ async function versions(scenario: Scenario) {
                 (!scenario.published_version || hasPendingDraft(scenario)) &&
                 scenario.tested
               "
-              type="text"
+              type="primary"
               size="small"
               :disabled="busy"
               @click="publish(scenario)"
@@ -495,7 +502,6 @@ async function versions(scenario: Scenario) {
             </a-button>
           </template>
           <template v-if="maintenance" #footer>
-            <a-button type="text" size="small" @click="openDetail(scenario)">详情</a-button>
             <a-dropdown :trigger="['click']" placement="bottomRight">
               <a-button
                 type="text"
@@ -508,6 +514,24 @@ async function versions(scenario: Scenario) {
               </a-button>
               <template #overlay>
                 <a-menu @click="(info: MenuInfo) => moreAction(String(info.key), scenario)">
+                  <a-menu-item key="detail">详情</a-menu-item>
+                  <a-menu-item
+                    v-if="scenario.space !== 'official' && scenario.tested"
+                    key="test"
+                    :disabled="testing !== null"
+                    >重新试运行</a-menu-item
+                  >
+                  <a-menu-item
+                    v-if="
+                      scenario.space !== 'official' &&
+                      scenario.published_version &&
+                      !hasPendingDraft(scenario) &&
+                      !scenario.tested
+                    "
+                    key="test"
+                    :disabled="testing !== null"
+                    >试运行</a-menu-item
+                  >
                   <a-menu-item key="versions">版本记录 v{{ scenario.current_version }}</a-menu-item>
                   <a-menu-item v-if="scenario.space !== 'official'" key="delete" danger>删除场景</a-menu-item>
                 </a-menu>
@@ -943,7 +967,14 @@ async function versions(scenario: Scenario) {
   flex-shrink: 0;
 }
 
-/* 筛选、搜索、卡片样式见 components/catalog/*（与技能管理页共用）；这里只保留维护模式元信息里的试运行状态 */
+/* 卡片沿用目录组件；维护操作固定单行，避免「发布」被挤到下一行。 */
+.scenario-card :deep(.catalog-card-ops) {
+  flex-wrap: nowrap;
+}
+.scenario-card :deep(.catalog-card-footer .ant-btn) {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .scenario-card-test {
   display: inline-flex;
   align-items: center;

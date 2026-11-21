@@ -2207,13 +2207,15 @@ textarea::-webkit-scrollbar-corner {
   border-color: var(--color-brand-subtle);
   color: var(--color-text-secondary);
 }
-:root[data-theme='dark'] .scene-icon.book {
+:root[data-theme='dark'] .scene-icon.book,
+:root[data-theme='dark'] .scene-icon.sparkles {
   background: var(--surface-selected);
   border-color: var(--surface-selected);
   color: var(--brand-400);
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .scene-icon.book {
+  :root:not([data-theme='light']) .scene-icon.book,
+  :root:not([data-theme='light']) .scene-icon.sparkles {
     background: var(--surface-selected);
     border-color: var(--surface-selected);
     color: var(--brand-400);
