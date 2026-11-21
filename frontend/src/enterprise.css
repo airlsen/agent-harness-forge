@@ -2541,6 +2541,11 @@ textarea:focus-visible {
   padding: 0 4px;
   border-radius: 3px;
 }
+/* 扩展技能未生效：提示放在「能力」按钮上，不再在消息流中插入分隔条 */
+.session-panel-button small.is-warning {
+  color: var(--color-warning-text);
+  background: var(--color-warning-bg);
+}
 .enterprise-chat .chat-scroll {
   padding: 30px 35px 25px;
   scroll-behavior: auto;
@@ -2576,38 +2581,6 @@ textarea:focus-visible {
 .enterprise-chat .message-author > span.done {
   color: var(--color-success-text);
 }
-.model-switch-divider {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 4px 0 18px;
-  color: var(--text-subtle);
-  font-size: 11px;
-}
-.model-switch-divider::before,
-.model-switch-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--line);
-}
-.model-switch-divider > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 80%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.model-switch-divider strong {
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-.model-switch-divider.is-warning,
-.model-switch-divider.is-warning strong {
-  color: var(--color-warning-text);
-}
 .model-usage-list {
   margin: 8px 0 0;
   padding: 0;
@@ -2631,21 +2604,6 @@ textarea:focus-visible {
 .model-usage-list > li > small {
   flex: none;
   color: var(--text-subtle);
-}
-.message-author > .message-model {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 400;
-  line-height: 16px;
-  padding: 0 6px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  color: var(--text-secondary);
-  background: var(--surface-subtle);
 }
 .enterprise-chat .user-message-text {
   color: #fff;
@@ -3789,9 +3747,6 @@ textarea:focus-visible {
     width: 40px;
     height: 44px;
   }
-  .message-author > .message-model {
-    max-width: 140px;
-  }
   .task-composer-footnote {
     font-size: 9px;
     padding-inline: 1px;
@@ -4891,6 +4846,21 @@ textarea:focus-visible {
 .link-button:disabled {
   cursor: default;
   opacity: 0.6;
+}
+/* 会话能力面板：未生效的扩展技能 */
+.enterprise-session-panel .context-tool.is-unavailable small,
+.enterprise-session-panel .context-tool.is-unavailable > svg,
+.context-section .warning-text {
+  color: var(--color-warning-text);
+}
+.context-section .warning-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+}
+.context-section .warning-text > svg {
+  flex: none;
+  margin-top: 2px;
 }
 /* 会话能力面板：输入框中有未发送的修改 */
 .context-section > .pending-text {

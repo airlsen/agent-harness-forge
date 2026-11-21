@@ -1,52 +1,17 @@
-/** 一轮实际生效的扩展能力（Skill / MCP / 联网）与未能装配的项 */
-export interface CapabilityNotice {
-  /** 与上一轮相比生效集合有变化时为本轮名称列表（空数组表示已全部关闭），否则为 null */
-  active: string[] | null;
-  /** 本轮因下线、停用或平台关闭而被跳过的项 */
-  unavailable: string[];
-}
-function turnCapabilities(turn: Pick<Turn, 'user'>): { active: string[]; unavailable: string[] } | null {
-  if (!turn.user) return null;
-  const value = turn.user.meta?.capabilities as Partial<ActiveCapabilities> | undefined;
-  if (!value || typeof value !== 'object') return { active: [], unavailable: [] };
-  const names = (items: unknown, key: 'title' | 'name') =>
-    Array.isArray(items)
-      ? items
-          .map((item) => (item && typeof item === 'object' ? (item as Record<string, unknown>)[key] : null))
-          .filter((name): name is string => typeof name === 'string' && Boolean(name))
-      : [];
-  return {
-    active: [
-      ...names(value.skills, 'title'),
-      ...names(value.mcp, 'name'),
-      ...(value.web && typeof value.web === 'object' ? ['联网搜索'] : []),
-    ],
-    // 已删除的项没有名称：回退为「类型 #编号」
-    unavailable: Array.isArray(value.unavailable)
-      ? value.unavailable.map((item) =>
-          item?.title
-            ? item.title
-            : `${item?.kind === 'mcp' ? 'MCP' : item?.kind === 'web' ? '联网' : 'Skill'} #${item?.id ?? '?'}`,
-        )
-      : [],
-  };
-}
+/** 一项因下线、停用或平台关闭而未能装配的扩展能力（后端写在用户消息 meta.capabilities.unavailable） */
+export type UnavailableCapability = ActiveCapabilities['unavailable'][number];
 /**
- * 扩展能力的变化点（与 codeChanges 同理）：生效集合与上一轮不同时给出本轮列表；
- * 未能装配的项每轮都提示。没有可展示内容的轮次为 null。
+ * 最近一轮实际未生效的扩展能力。只看最后一条用户消息：它反映会话当前的真实装配结果，
+ * 在「能力」面板中逐项标记，不再在消息流里插入分隔条。
  */
-export function capabilityChanges(turns: Pick<Turn, 'user'>[]): (CapabilityNotice | null)[] {
-  let previous: string[] = [];
-  return turns.map((turn) => {
-    const current = turnCapabilities(turn);
-    if (current === null) return null;
-    const changed =
-      current.active.length !== previous.length ||
-      current.active.some((name, index) => name !== previous[index]);
-    previous = current.active;
-    if (!changed && !current.unavailable.length) return null;
-    return { active: changed ? current.active : null, unavailable: current.unavailable };
-  });
+export function latestUnavailable(turns: Pick<Turn, 'user'>[]): UnavailableCapability[] {
+  const last = [...turns].reverse().find((turn) => turn.user)?.user;
+  const value = (last?.meta?.capabilities as Partial<ActiveCapabilities> | undefined)?.unavailable;
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is UnavailableCapability =>
+      Boolean(item) && typeof item === 'object' && ['skill', 'mcp', 'web'].includes(item.kind),
+  );
 }
 /**
  * 把扁平的消息列表聚合成「轮次」视图：一轮 = 一条用户消息 + 一个 AI 块。
@@ -96,8 +61,6 @@ export interface Turn {
   running: boolean;
   /** 生成本轮回复的模型显示名；旧消息未记录时为空，由调用方回退为会话模型 */
   model: string;
-  /** 本轮起切换了模型（会话内切换），用于渲染切换分隔线 */
-  switch: { from: string; to: string } | null;
   /** 本轮模型通过 workspace_present 声明的交付文件（同一路径以最后一次声明为准） */
   deliverables: Deliverable[];
   /** 本轮结束时服务端记录的工作区改动（新增/修改/删除与行数），无改动时为 null */
@@ -106,13 +69,6 @@ export interface Turn {
 function modelLabel(meta: Record<string, any> | undefined) {
   const value = meta?.modelName || meta?.model;
   return typeof value === 'string' ? value : '';
-}
-function switchLabel(meta: Record<string, any> | undefined): Turn['switch'] {
-  const change = meta?.modelSwitch;
-  if (!change || typeof change !== 'object') return null;
-  const from = change.from?.name || change.from?.model;
-  const to = change.to?.name || change.to?.model;
-  return typeof from === 'string' && typeof to === 'string' ? { from, to } : null;
 }
 
 export interface LiveTurn {
@@ -142,7 +98,6 @@ export function buildTurns(messages: ChatMessage[], live: LiveTurn): Turn[] {
         answer: [],
         running: false,
         model: modelLabel(message.meta),
-        switch: switchLabel(message.meta),
         deliverables: [],
         changes: parseChanges(message.meta?.workspaceChanges),
       });
@@ -244,26 +199,4 @@ export function processSummary(stats: ProcessStats): string {
     ...(stats.failures ? [`${stats.failures} 个失败`] : []),
   ];
   return parts.join(' · ') || '执行过程';
-}
-
-/** 一轮用户消息记录的关联代码（旧消息未记录时视为未关联） */
-function turnCode(turn: Pick<Turn, 'user'>): string[] | null {
-  if (!turn.user) return null;
-  const value = turn.user.meta?.codeProjects;
-  return Array.isArray(value) ? value.filter((name): name is string => typeof name === 'string') : [];
-}
-/**
- * 关联代码的变化点：与上一轮用户消息相比关联列表有变化时，返回本轮的列表
- * （空数组表示已取消全部关联），未变化或没有用户消息时为 null。用于渲染分隔线。
- */
-export function codeChanges(turns: Pick<Turn, 'user'>[]): (string[] | null)[] {
-  let previous: string[] = [];
-  return turns.map((turn) => {
-    const current = turnCode(turn);
-    if (current === null) return null;
-    const changed =
-      current.length !== previous.length || current.some((name, index) => name !== previous[index]);
-    previous = current;
-    return changed ? current : null;
-  });
 }
