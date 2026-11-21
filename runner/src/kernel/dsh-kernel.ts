@@ -49,7 +49,7 @@ export interface SessionToolset {
   search: boolean;
   /** 是否关联了代码项目 */
   code: boolean;
-  /** 是否开放 DSH 只读 read（关联代码或 Skill 带参考资料） */
+  /** 是否开放 DSH 只读 read（关联代码或 Skill 带附加文件） */
   read: boolean;
   /** 是否装配 Skill（dsh-skill + dsh-tool-skill） */
   skills: boolean;
@@ -78,7 +78,7 @@ export function sessionToolset(
   const builtin = [...new Set([...BASE_TOOLS, ...declared])].filter(withinCeiling);
   const search = builtin.includes('workspace_read') || hasCode;
   const skills = caps.skills.length > 0;
-  const read = hasCode || caps.skills.some((skill) => skill.references.length > 0);
+  const read = hasCode || caps.skills.some((skill) => skill.files.length > 0);
   // bash 已在 BASE_TOOLS 中并经过平台策略筛选：策略未勾选时，即使关联了代码也不开放。
   const bash = builtin.includes('bash');
   const mcp = mcpToolNames(caps);
@@ -343,7 +343,7 @@ export class DshKernel implements AgentKernel {
         'tool-working-directory',
         ...(toolset.read ? [] : ['tool-fs']),
       ].map((id) => ({ id, disabled: true })),
-      // 关联代码或 Skill 参考资料时只开放 DSH 原生 read：写入、编辑、补丁全部关闭，只读
+      // 关联代码或 Skill 附加文件时只开放 DSH 原生 read：写入、编辑、补丁全部关闭，只读
       ...(toolset.read
         ? [
             {
@@ -427,7 +427,7 @@ export class DshKernel implements AgentKernel {
         skills: entry.caps.skills.map((skill) => ({
           name: skill.name,
           title: skill.title,
-          hasReferences: skill.references.length > 0,
+          hasFiles: skill.files.length > 0,
         })),
         mcp: summary.mcp.map((server) => ({
           serverName: server.serverName,
@@ -465,19 +465,24 @@ export class DshKernel implements AgentKernel {
     if (entry.hasHistory) await timeout(proc.request('session/resume', { sessionId: entry.id }), 15000);
   }
   /**
-   * 物化 Skill 参考资料：DATA/<id>/skills/<name>/references/<file>，每次启动整体重建，
-   * 已移除的 Skill 不留下文件。正文不落盘（以运行时 Skill 注册），返回 Skill 名 → 资料根目录。
+   * 物化 Skill 目录：DATA/<id>/skills/<name>/{references,assets}/<file>（只读），每次启动整体重建，
+   * 已移除的 Skill 不留下文件。正文不落盘（以运行时 Skill 注册），返回 Skill 名 → Skill 根目录，
+   * 正文中的相对路径（如 references/rules.md）按这个目录解析。
    */
   private async materializeSkills(entry: Entry) {
     const root = join(DATA, entry.id, 'skills');
     await rm(root, { recursive: true, force: true });
     const dirs: Record<string, string> = {};
     for (const skill of entry.caps.skills) {
-      if (!skill.references.length) continue;
+      if (!skill.files.length) continue;
       const dir = join(root, skill.name);
-      await mkdir(join(dir, 'references'), { recursive: true, mode: 0o700 });
-      for (const reference of skill.references)
-        await writeFile(join(dir, 'references', reference.filename), reference.content, { mode: 0o400 });
+      for (const file of skill.files) {
+        // 路径已由 SKILL_FILE_PATH 校验为 references|assets 下一层，这里再确认不越出 Skill 目录
+        const target = join(dir, file.path);
+        if (!target.startsWith(dir + sep)) throw new Error(`Skill 文件路径无效：${file.path}`);
+        await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+        await writeFile(target, file.content, { mode: 0o400 });
+      }
       dirs[skill.name] = dir;
     }
     return dirs;

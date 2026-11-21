@@ -646,7 +646,7 @@ export async function apply(ctx, config) {
   );
   // 搜索与只读 read 来自 DSH 官方插件，其路径参数不受工作区约束；
   // 在执行前统一收窄到会话工作区与已关联的代码项目（只读）。
-  // 只读根目录 = 已关联的代码项目 ∪ Skill 参考资料目录（Runner 物化，模型用 read 按需读取）
+  // 只读根目录 = 已关联的代码项目 ∪ Skill 目录（Runner 物化 references/、assets/，模型用 read 按需读取）
   const readRoots = [
     ...(Array.isArray(config.codeProjects) ? config.codeProjects : []),
     ...(Array.isArray(config.readRoots) ? config.readRoots : []),

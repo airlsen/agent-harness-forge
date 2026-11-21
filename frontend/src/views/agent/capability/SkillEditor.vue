@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import {
   isNavigationFailure,
   onBeforeRouteLeave,
@@ -7,7 +7,7 @@ import {
   useRoute,
   useRouter,
 } from 'vue-router';
-import { api, apiFetch, post, put } from '../../../api/client';
+import { api, apiFetch, post, put, remove } from '../../../api/client';
 import Icon from '../../../components/ForgeIcon.vue';
 import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
 import Markdown from '../../../components/MarkdownContent.vue';
@@ -20,6 +20,22 @@ import { lexer } from 'marked';
 import { readSkillDocument, updateSkillMetadata, initialSkillDocument } from '../../../utils/skillDocument';
 import { usePlatform } from '../../../stores/platform';
 import { confirm } from '../../../utils/feedback';
+import {
+  SKILL_MAIN_FILE,
+  acceptFor,
+  capacityError,
+  editorLanguage,
+  fileNameError,
+  fileNameOf,
+  initialFileContent,
+  previewMarkdown,
+  skillFileTree,
+  suggestFileName,
+  summarizeAssistantChanges,
+  type AssistantFileChange,
+  type SkillFileDir,
+} from '../../../utils/skillFiles';
+import { formatBytes } from '../../../utils/presentation';
 import type {
   SkillAuthoringMessage,
   SkillAuthoringSession,
@@ -60,6 +76,7 @@ const canPublish = computed(() =>
     skill.value &&
     skill.value.status === 'draft' &&
     !dirty.value &&
+    !fileDirty.value &&
     !saving.value &&
     !busy.value &&
     !publishing.value,
@@ -67,9 +84,9 @@ const canPublish = computed(() =>
 );
 const saveState = computed(() => {
   if (saveError.value) return '保存失败';
-  if (saving.value) return '保存中…';
+  if (saving.value || savingFile.value) return '保存中…';
   if (isNew.value) return '尚未保存';
-  if (dirty.value) return '有未保存修改';
+  if (dirty.value || fileDirty.value) return '有未保存修改';
   return skill.value?.updatedAt ? `已保存 · ${formatDate(skill.value.updatedAt)}` : '草稿已保存';
 });
 function revisionSource(source: string) {
@@ -111,7 +128,7 @@ async function loadSkill(options: { focusAssistant?: boolean; quiet?: boolean } 
       publishedMachineName: '',
       publishedName: '',
       publishedDescription: '',
-      publishedReferenceCount: 0,
+      publishedFileCount: 0,
       description: '',
       status: 'draft',
       tags: [],
@@ -121,7 +138,7 @@ async function loadSkill(options: { focusAssistant?: boolean; quiet?: boolean } 
       revision: null,
       content: initialSkillDocument(),
       changeSummary: '',
-      referenceFiles: [],
+      files: [],
       createdAt: null,
       updatedAt: null,
       publishedAt: null,
@@ -208,14 +225,19 @@ async function refreshRevisions() {
   if (!skill.value) return;
   revisions.value = (await api<{ items: SkillRevision[] }>(`/skills/${skill.value.id}/revisions`)).items;
 }
+/** 保存当前所有未保存修改：先保存正在编辑的附加文件，再保存 SKILL.md。 */
 async function save() {
+  await saveFile();
+  await saveDocument();
+}
+async function saveDocument() {
   if (
     !skill.value ||
     (!dirty.value && !isNew.value) ||
     saving.value ||
     busy.value ||
     publishing.value ||
-    uploadingReference.value
+    fileBusy.value
   )
     return;
   clearTimeout(saveTimer);
@@ -267,7 +289,7 @@ async function save() {
   }
 }
 async function requestPublish() {
-  if (dirty.value || isNew.value) await save();
+  if (dirty.value || fileDirty.value || isNew.value) await save();
   if (!canPublish.value) return;
   const ok = await confirm({
     title: '发布新的正式版本？',
@@ -305,6 +327,7 @@ async function restore(revision: SkillRevision) {
   try {
     skill.value = await post<SkillDetail>(`/skills/${skill.value.id}/revisions/${revision.id}/restore`);
     dirty.value = false;
+    fileDraft.value = null;
     previewRevision.value = null;
     session.value = null;
     lastChange.value = null;
@@ -316,37 +339,191 @@ async function restore(revision: SkillRevision) {
     saving.value = false;
   }
 }
-const uploadingReference = ref(false);
-// a-upload 只负责选择文件；返回 false 阻止组件自行上传，内容读出后走技能接口
-function beforeReferenceUpload(file: File) {
-  void uploadReference(file);
-  return false;
+// —— 附加文件（references/、assets/）——
+// 正在新建、上传、保存或删除附加文件；期间不允许保存主文档或发送消息，避免修订交错。
+const fileBusy = ref(false);
+const savingFile = ref(false);
+/** 修订内容不可变：按「修订 ID + 路径」缓存，切换文件或助手改完后只读取变化的部分。 */
+const fileCache = reactive(new Map<string, string>());
+const fileKey = (revisionId: number | null | undefined, path: string) => `${revisionId ?? 0}:${path}`;
+/** 正在编辑的附加文件：path 与编辑中的内容；保存成功后清空。 */
+const fileDraft = ref<{ path: string; content: string } | null>(null);
+const fileDirty = computed(() => {
+  const draft = fileDraft.value;
+  if (!draft) return false;
+  return draft.content !== fileCache.get(fileKey(skill.value?.currentRevisionId, draft.path));
+});
+const fileTree = computed(() => skillFileTree(skill.value?.files ?? []));
+const openDirs = ref<Record<SkillFileDir, boolean>>({ references: true, assets: true });
+/** 本轮助手改动过的文件（标 AI），发送下一条消息时清空。 */
+const assistantFiles = ref<string[]>([]);
+const fileDialog = ref({
+  open: false,
+  dir: 'references' as SkillFileDir,
+  name: '',
+  content: '',
+  upload: false,
+  error: '',
+});
+const fileDialogExists = computed(() =>
+  Boolean(
+    skill.value?.files.some(
+      (file) => file.path === `${fileDialog.value.dir}/${fileDialog.value.name.trim()}`,
+    ),
+  ),
+);
+
+async function ensureSaved() {
+  if (dirty.value || fileDirty.value || isNew.value) await save();
+  return !(dirty.value || fileDirty.value || isNew.value || saveError.value);
 }
-async function uploadReference(file: File) {
-  if (!skill.value || uploadingReference.value || busy.value || saving.value || publishing.value) return;
-  if (dirty.value || isNew.value) await save();
-  if (dirty.value || isNew.value) return;
-  uploadingReference.value = true;
+function canEditFiles() {
+  return Boolean(skill.value) && !busy.value && !saving.value && !publishing.value && !fileBusy.value;
+}
+function openNewFile(dir: SkillFileDir) {
+  if (!canEditFiles()) return;
+  openDirs.value[dir] = true;
+  fileDialog.value = { open: true, dir, name: '', content: '', upload: false, error: '' };
+}
+// a-upload 只负责选择文件；返回 false 阻止组件自行上传，内容读出后走技能接口
+function beforeFileUpload(dir: SkillFileDir) {
+  return (file: File) => {
+    void uploadFile(dir, file);
+    return false;
+  };
+}
+async function uploadFile(dir: SkillFileDir, file: File) {
+  if (!canEditFiles()) return;
+  const sizeError = capacityError([], '', file.size);
+  if (sizeError) return app.toast(sizeError, 'error');
+  let content: string;
   try {
-    if (!/\.(md|txt)$/i.test(file.name)) throw new Error('参考资料仅支持 .md 或 .txt 文件');
-    if (file.size > 120 * 1024) throw new Error('参考资料不能超过 120 KB');
-    const content = await file.text();
-    skill.value = await post<SkillDetail>(`/skills/${skill.value.id}/references`, {
-      filename: file.name,
+    content = await file.text();
+  } catch {
+    return app.toast(`无法读取 ${file.name}`, 'error');
+  }
+  const name = suggestFileName(dir, file.name);
+  const path = `${dir}/${name}`;
+  // 文件名需要整理或与已有文件重名时，让用户确认最终名称
+  if (!name || name !== file.name || skill.value?.files.some((item) => item.path === path)) {
+    fileDialog.value = {
+      open: true,
+      dir,
+      name,
       content,
+      upload: true,
+      error: name ? '' : '原文件名包含不支持的字符，请改成英文文件名',
+    };
+    return;
+  }
+  await writeFile(path, content, `上传文件：${path}`);
+}
+function rejectFiles(dir: SkillFileDir) {
+  app.toast(`${dir}/ 只支持 ${acceptFor(dir).replaceAll(',', '、')} 文件`, 'error');
+}
+async function submitFileDialog() {
+  const dialog = fileDialog.value;
+  const name = dialog.name.trim();
+  dialog.error = fileNameError(dialog.dir, name);
+  if (dialog.error) return;
+  if (fileDialogExists.value && !dialog.upload) {
+    dialog.error = '已有同名文件';
+    return;
+  }
+  const path = `${dialog.dir}/${name}`;
+  const content = dialog.upload ? dialog.content : initialFileContent(path);
+  if (await writeFile(path, content, dialog.upload ? `上传文件：${path}` : `新建文件：${path}`)) {
+    dialog.open = false;
+    if (!dialog.upload) mode.value = 'source';
+  }
+}
+/** 新建、上传或覆盖一个附加文件，成功后选中它。 */
+async function writeFile(path: string, content: string, summary: string) {
+  if (!skill.value || !canEditFiles()) return false;
+  const limit = capacityError(skill.value.files, path, new Blob([content]).size);
+  if (limit) {
+    app.toast(limit, 'error');
+    return false;
+  }
+  if (!(await ensureSaved())) return false;
+  fileBusy.value = true;
+  try {
+    const detail = await put<SkillDetail>(`/skills/${skill.value.id}/files`, {
+      path,
+      content,
+      change_summary: summary,
     });
+    fileCache.set(fileKey(detail.currentRevisionId, path), content);
+    skill.value = detail;
+    session.value = null; // 重建助手会话，让助手读到最新文件
+    app.toast(`已保存 ${path}`);
+    await selectFile(path);
+    await refreshRevisions().catch(() => undefined);
+    return true;
+  } catch (err) {
+    app.toast((err as Error).message, 'error');
+    return false;
+  } finally {
+    fileBusy.value = false;
+  }
+}
+/** 保存正在编辑的附加文件（自动保存与 Ctrl+S 共用）。 */
+async function saveFile() {
+  const draft = fileDraft.value;
+  if (!skill.value || !draft || !fileDirty.value || savingFile.value || busy.value || publishing.value)
+    return;
+  clearTimeout(saveTimer);
+  savingFile.value = true;
+  fileBusy.value = true;
+  saveError.value = '';
+  const { path, content } = draft;
+  try {
+    const detail = await put<SkillDetail>(`/skills/${skill.value.id}/files`, {
+      path,
+      content,
+      change_summary: `编辑文件：${path}`,
+    });
+    fileCache.set(fileKey(detail.currentRevisionId, path), content);
+    // 保留主文档里尚未保存的修改
+    skill.value = dirty.value ? { ...detail, content: skill.value.content } : detail;
+    if (fileDraft.value?.path === path && fileDraft.value.content === content) fileDraft.value = null;
     session.value = null;
-    app.toast(`已添加参考资料 ${file.name}`);
-    await refreshRevisions();
+    await refreshRevisions().catch(() => undefined);
+  } catch (err) {
+    saveError.value = (err as Error).message;
+  } finally {
+    savingFile.value = false;
+    fileBusy.value = false;
+  }
+  if (fileDirty.value && !saveError.value) scheduleSave();
+}
+function updateFileDraft(value: string) {
+  const path = selectedPath.value;
+  if (path === SKILL_MAIN_FILE || value === currentContent.value) return;
+  fileDraft.value = { path, content: value };
+  scheduleSave();
+}
+async function requestDeleteFile(path: string) {
+  if (!skill.value || !canEditFiles()) return;
+  const ok = await confirm({
+    title: `删除 ${path}？`,
+    content: 'SKILL.md 中引用这个文件的地方需要同步修改。删除会生成新的草稿修订，可以在版本历史中恢复。',
+    okText: '删除',
+    danger: true,
+  });
+  if (!ok || !(await ensureSaved())) return;
+  fileBusy.value = true;
+  try {
+    skill.value = await remove(`/skills/${skill.value.id}/files?path=${encodeURIComponent(path)}`);
+    if (fileDraft.value?.path === path) fileDraft.value = null;
+    session.value = null;
+    app.toast(`已删除 ${path}`);
+    await refreshRevisions().catch(() => undefined);
   } catch (err) {
     app.toast((err as Error).message, 'error');
   } finally {
-    uploadingReference.value = false;
+    fileBusy.value = false;
   }
-}
-// 拖放的文件不符合 accept 时组件会直接丢弃，这里补上同样的提示
-function rejectReferenceFiles() {
-  app.toast('参考资料仅支持 .md 或 .txt 文件', 'error');
 }
 function updateContent(value: string) {
   if (!skill.value) return;
@@ -380,7 +557,7 @@ const canSend = computed(
     !busy.value &&
     !saving.value &&
     !publishing.value &&
-    !uploadingReference.value &&
+    !fileBusy.value &&
     !metadataError.value,
 );
 function onPromptKeydown(event: KeyboardEvent) {
@@ -395,10 +572,11 @@ async function send() {
     skill.value.content = updateSkillMetadata(skill.value.content, title, title, 'my-skill');
     dirty.value = true;
   }
-  if (dirty.value || isNew.value) await save();
-  if (dirty.value || isNew.value || saveError.value) return;
+  if (!(await ensureSaved())) return;
   busy.value = true;
   assistantChange.value = '';
+  assistantFiles.value = [];
+  const changes: AssistantFileChange[] = [];
   streamingText.value = '';
   queuePosition.value = 0;
   const text = prompt.value;
@@ -442,14 +620,23 @@ async function send() {
           queuePosition.value = Number(event.payload?.position ?? 0);
         } else if (event.kind === 'dequeued') {
           queuePosition.value = 0;
+        } else if (event.kind === 'skill_revision' && event.payload?.path) {
+          changes.push({ action: event.payload.action ?? 'update_draft', path: String(event.payload.path) });
         } else if (event.kind === 'error') throw new Error(event.payload?.message ?? 'Skill 助手执行失败');
       }
     }
     await loadSkill({ quiet: true });
     if (skill.value?.revision && skill.value.revision !== previousRevision) {
-      assistantChange.value = '已更新 SKILL.md，尚未发布。';
+      const summary = summarizeAssistantChanges(changes);
+      assistantChange.value = summary.text || '已更新草稿，尚未发布。';
+      assistantFiles.value = summary.written;
       if (before)
-        lastChange.value = { before, after: skill.value.content, afterId: skill.value.currentRevisionId };
+        lastChange.value = {
+          before,
+          after: skill.value.content,
+          afterId: skill.value.currentRevisionId,
+          files: { written: summary.written, deleted: summary.deleted },
+        };
     }
   } catch (err) {
     const message = (err as Error).message;
@@ -488,11 +675,11 @@ onBeforeRouteUpdate((to) => {
   ) {
     return true;
   }
-  if ((saving.value || busy.value || uploadingReference.value) && Number(to.params.id) !== skill.value?.id) {
+  if ((saving.value || busy.value || fileBusy.value) && Number(to.params.id) !== skill.value?.id) {
     app.toast('请等待当前操作完成后再离开。', 'info');
     return false;
   }
-  if (!dirty.value || Number(to.params.id) === skill.value?.id) return true;
+  if ((!dirty.value && !fileDirty.value) || Number(to.params.id) === skill.value?.id) return true;
   return confirm({ title: '当前草稿有未保存的修改，确定离开吗？', okText: '离开', cancelText: '留下' });
 });
 onBeforeRouteLeave((to) => {
@@ -503,25 +690,25 @@ onBeforeRouteLeave((to) => {
   ) {
     return true;
   }
-  if (saving.value || busy.value || uploadingReference.value) {
+  if (saving.value || busy.value || fileBusy.value) {
     app.toast('请等待当前操作完成后再离开。', 'info');
     return false;
   }
-  if (!dirty.value) return true;
+  if (!dirty.value && !fileDirty.value) return true;
   return confirm({ title: '当前草稿有未保存的修改，确定离开吗？', okText: '离开', cancelText: '留下' });
 });
 
 const mode = ref<'preview' | 'source'>('source');
-const selectedFile = ref(-1);
+const selectedPath = ref<string>(SKILL_MAIN_FILE);
+const isMainFile = computed(() => selectedPath.value === SKILL_MAIN_FILE);
 const sourceOpened = ref(true);
 const previewPane = ref<HTMLElement>();
 const previewScroll = new Map<string, number>();
-const referenceContent = ref('');
-const referenceLoading = ref(false);
-const referenceError = ref('');
-let referenceRequest = 0;
+const fileContent = ref('');
+const fileLoading = ref(false);
+const fileError = ref('');
+let fileRequest = 0;
 const treeOpen = ref(true);
-const referencesOpen = ref(true);
 const chatOpen = ref(true);
 const mobilePanel = ref<'document' | 'chat'>('document');
 const historyOpen = ref(false);
@@ -531,26 +718,26 @@ const infoError = ref('');
 const metadataError = ref('');
 const saveError = ref('');
 const changesOpen = ref(false);
-const lastChange = ref<{ before: SkillRevision; after: string; afterId: number | null } | null>(null);
+const lastChange = ref<{
+  before: SkillRevision;
+  after: string;
+  afterId: number | null;
+  files: { written: string[]; deleted: string[] };
+} | null>(null);
 const chatLog = ref<HTMLElement>();
 const treeWidth = ref(210);
 const chatWidth = ref(380);
-const referenceCount = computed(() => {
-  const list = skill.value?.referenceFiles;
-  return Array.isArray(list) ? list.length : 0;
+const totalFiles = computed(() => 1 + (skill.value?.files.length ?? 0));
+const currentPath = computed(() => selectedPath.value);
+/** 附加文件读取中或读取失败：编辑器只读，内容区显示状态 */
+const fileUnavailable = computed(() => !isMainFile.value && (fileLoading.value || !!fileError.value));
+const currentContent = computed(() => {
+  if (isMainFile.value) return skill.value?.content ?? '';
+  const draft = fileDraft.value;
+  return draft && draft.path === selectedPath.value ? draft.content : fileContent.value;
 });
-const totalFiles = computed(() => 1 + referenceCount.value);
-const folderCountLabel = computed(() => (referenceCount.value > 0 ? String(referenceCount.value) : ''));
-const currentPath = computed(() =>
-  selectedFile.value < 0
-    ? 'SKILL.md'
-    : `references/${skill.value?.referenceFiles[selectedFile.value]?.filename ?? ''}`,
-);
-const currentContent = computed(() =>
-  selectedFile.value < 0 ? (skill.value?.content ?? '') : referenceContent.value,
-);
 const documentBody = computed(() => {
-  if (selectedFile.value >= 0) return currentContent.value;
+  if (!isMainFile.value) return previewMarkdown(selectedPath.value, currentContent.value);
   try {
     return readSkillDocument(currentContent.value).body;
   } catch {
@@ -559,7 +746,7 @@ const documentBody = computed(() => {
 });
 const needsDocumentTitle = computed(
   () =>
-    selectedFile.value < 0 &&
+    isMainFile.value &&
     !lexer(documentBody.value).some((token) => token.type === 'heading' && token.depth === 1),
 );
 const previewContent = computed(() =>
@@ -568,7 +755,7 @@ const previewContent = computed(() =>
     : documentBody.value,
 );
 watch(
-  [currentPath, mode, referenceLoading],
+  [currentPath, mode, fileLoading],
   async ([path, view, loading], [previousPath, previousView, wasLoading]) => {
     if (previewPane.value && previousView === 'preview' && !wasLoading) {
       previewScroll.set(previousPath, previewPane.value.scrollTop);
@@ -633,29 +820,59 @@ function closeInfo() {
   if (saving.value) return;
   infoOpen.value = false;
 }
-async function selectFile(index: number) {
-  selectedFile.value = index;
-  const request = ++referenceRequest;
-  referenceError.value = '';
-  referenceContent.value = '';
-  if (index < 0 || !skill.value) {
-    referenceLoading.value = false;
+async function selectFile(path: string) {
+  // 切换前先保存正在编辑的附加文件，保存失败时留在原文件
+  if (fileDraft.value && fileDraft.value.path !== path) {
+    await saveFile();
+    if (fileDirty.value) return;
+  }
+  selectedPath.value = path;
+  await loadFileContent();
+}
+async function loadFileContent() {
+  const path = selectedPath.value;
+  const request = ++fileRequest;
+  fileError.value = '';
+  if (path === SKILL_MAIN_FILE || !skill.value) {
+    fileLoading.value = false;
     return;
   }
-  referenceLoading.value = true;
+  const revisionId = skill.value.currentRevisionId;
+  const key = fileKey(revisionId, path);
+  if (fileCache.has(key)) {
+    fileContent.value = fileCache.get(key)!;
+    fileLoading.value = false;
+    return;
+  }
+  fileContent.value = '';
+  fileLoading.value = true;
   try {
     const result = await api<{ content: string }>(
-      `/skills/${skill.value.id}/references/${skill.value.currentRevisionId}/${index}`,
+      `/skills/${skill.value.id}/files/${revisionId}?path=${encodeURIComponent(path)}`,
     );
-    if (request === referenceRequest) referenceContent.value = result.content;
+    fileCache.set(key, result.content);
+    if (request === fileRequest) fileContent.value = result.content;
   } catch (err) {
-    if (request === referenceRequest) referenceError.value = (err as Error).message;
+    if (request === fileRequest) fileError.value = (err as Error).message;
   } finally {
-    if (request === referenceRequest) referenceLoading.value = false;
+    if (request === fileRequest) fileLoading.value = false;
   }
 }
+// 修订变化（助手修改、恢复版本、其他文件保存）后：选中的文件被删除就回到 SKILL.md，否则按新修订重新读取
+watch(
+  () => [skill.value?.currentRevisionId, skill.value?.files] as const,
+  () => {
+    if (isMainFile.value || !skill.value) return;
+    if (!skill.value.files.some((file) => file.path === selectedPath.value)) {
+      if (fileDraft.value?.path === selectedPath.value) fileDraft.value = null;
+      selectedPath.value = SKILL_MAIN_FILE;
+      return;
+    }
+    void loadFileContent();
+  },
+);
 function onUnload(event: BeforeUnloadEvent) {
-  if (dirty.value || saving.value || busy.value || uploadingReference.value) {
+  if (dirty.value || fileDirty.value || saving.value || busy.value || fileBusy.value) {
     event.preventDefault();
     event.returnValue = '';
   }
@@ -686,7 +903,10 @@ watch([() => messages.value.length, streamingText], async () => {
 watch(
   () => route.params.id,
   () => {
-    selectedFile.value = -1;
+    selectedPath.value = SKILL_MAIN_FILE;
+    fileDraft.value = null;
+    fileCache.clear();
+    assistantFiles.value = [];
     lastChange.value = null;
     clearTimeout(saveTimer);
   },
@@ -696,7 +916,7 @@ onBeforeUnmount(() => {
   clearTimeout(saveTimer);
   stopDrag?.();
   ++loadRequest;
-  ++referenceRequest;
+  ++fileRequest;
   window.removeEventListener('beforeunload', onUnload);
 });
 </script>
@@ -719,7 +939,7 @@ onBeforeUnmount(() => {
         <button
           class="studio-name"
           title="编辑技能信息"
-          :disabled="busy || saving || uploadingReference"
+          :disabled="busy || saving || fileBusy"
           @click="openInfo"
         >
           {{ skill.name || '未命名技能' }}<Icon name="settings" :size="14" />
@@ -742,7 +962,7 @@ onBeforeUnmount(() => {
               busy ||
               saving ||
               publishing ||
-              uploadingReference ||
+              fileBusy ||
               !!metadataError ||
               (!isNew && !dirty && skill.status === 'published')
             "
@@ -779,22 +999,6 @@ onBeforeUnmount(() => {
           <header class="pane-header">
             <strong>文件</strong>
             <div>
-              <a-upload
-                accept=".md,.txt"
-                :file-list="[]"
-                :show-upload-list="false"
-                :before-upload="beforeReferenceUpload"
-                @reject="rejectReferenceFiles"
-              >
-                <button
-                  class="icon-action"
-                  title="上传参考资料（Markdown 或文本）"
-                  aria-label="上传参考资料"
-                  :disabled="busy || saving || uploadingReference"
-                >
-                  <Icon name="paperclip" :size="15" />
-                </button>
-              </a-upload>
               <button
                 class="icon-action"
                 aria-label="收起文件树"
@@ -807,40 +1011,90 @@ onBeforeUnmount(() => {
           </header>
           <nav class="skill-file-tree" aria-label="文件列表">
             <button
-              :class="['file-row', { selected: selectedFile < 0 }]"
-              :aria-current="selectedFile < 0 ? 'page' : undefined"
-              @click="selectFile(-1)"
+              :class="['file-row', { selected: isMainFile }]"
+              :aria-current="isMainFile ? 'page' : undefined"
+              @click="selectFile(SKILL_MAIN_FILE)"
             >
-              <Icon name="file" :size="16" /><span>SKILL.md</span><small v-if="assistantChange">已更新</small>
+              <Icon name="file" :size="16" /><span>SKILL.md</span
+              ><small v-if="assistantFiles.includes(SKILL_MAIN_FILE)">已更新</small>
             </button>
-            <button
-              class="file-row folder-row"
-              :aria-expanded="referencesOpen"
-              @click="referencesOpen = !referencesOpen"
-            >
-              <span class="folder-caret">{{ referencesOpen ? '⌄' : '›' }}</span><Icon
-                name="folder-line"
-                :size="15"
-              /><span>references</span
-              ><small v-if="folderCountLabel" class="folder-count">{{ folderCountLabel }}</small>
-            </button>
-            <template v-if="referencesOpen">
-              <button
-                v-for="(file, index) in skill.referenceFiles"
-                :key="file.path"
-                :class="['file-row', 'reference-row', { selected: selectedFile === index }]"
-                :aria-current="selectedFile === index ? 'page' : undefined"
-                :title="file.filename"
-                @click="selectFile(index)"
-              >
-                <Icon name="file" :size="14" /><span>{{ file.filename }}</span>
-              </button>
+            <template v-for="folder in fileTree" :key="folder.dir">
+              <div class="folder-line">
+                <button
+                  class="file-row folder-row"
+                  :aria-expanded="openDirs[folder.dir]"
+                  :title="folder.hint"
+                  @click="openDirs[folder.dir] = !openDirs[folder.dir]"
+                >
+                  <span class="folder-caret">{{ openDirs[folder.dir] ? '⌄' : '›' }}</span><Icon
+                    name="folder-line"
+                    :size="15"
+                  /><span>{{ folder.dir }}</span
+                  ><small v-if="folder.files.length" class="folder-count">{{ folder.files.length }}</small>
+                </button>
+                <div class="folder-actions">
+                  <button
+                    class="icon-action"
+                    :title="`在 ${folder.dir}/ 新建文件`"
+                    :aria-label="`在 ${folder.dir} 新建文件`"
+                    :disabled="isNew || busy || saving || publishing || fileBusy"
+                    @click="openNewFile(folder.dir)"
+                  >
+                    <Icon name="add-line" :size="14" />
+                  </button>
+                  <a-upload
+                    :accept="acceptFor(folder.dir)"
+                    :file-list="[]"
+                    :show-upload-list="false"
+                    :disabled="isNew || busy || saving || publishing || fileBusy"
+                    :before-upload="beforeFileUpload(folder.dir)"
+                    @reject="rejectFiles(folder.dir)"
+                  >
+                    <button
+                      class="icon-action"
+                      :title="`上传到 ${folder.dir}/（${acceptFor(folder.dir)}）`"
+                      :aria-label="`上传到 ${folder.dir}`"
+                      :disabled="isNew || busy || saving || publishing || fileBusy"
+                    >
+                      <Icon name="paperclip" :size="14" />
+                    </button>
+                  </a-upload>
+                </div>
+              </div>
+              <template v-if="openDirs[folder.dir]">
+                <div v-for="file in folder.files" :key="file.path" class="file-line">
+                  <button
+                    :class="['file-row', 'reference-row', { selected: selectedPath === file.path }]"
+                    :aria-current="selectedPath === file.path ? 'page' : undefined"
+                    :title="`${file.path} · ${formatBytes(file.bytes)}`"
+                    @click="selectFile(file.path)"
+                  >
+                    <Icon name="file" :size="14" /><span>{{ fileNameOf(file.path) }}</span
+                    ><small
+                      v-if="assistantFiles.includes(file.path)"
+                      class="file-ai-tag"
+                      title="本轮由助手写入"
+                      >AI</small
+                    >
+                  </button>
+                  <button
+                    class="icon-action file-delete"
+                    :title="`删除 ${file.path}`"
+                    :aria-label="`删除 ${file.path}`"
+                    :disabled="busy || saving || publishing || fileBusy"
+                    @click="requestDeleteFile(file.path)"
+                  >
+                    <Icon name="delete-bin-line" :size="13" />
+                  </button>
+                </div>
+                <p v-if="!folder.files.length" class="tree-empty folder-empty">{{ folder.hint }}</p>
+              </template>
             </template>
           </nav>
           <div class="files-footer">
             <span class="files-count">共 {{ totalFiles }} 个文件</span>
           </div>
-          <p class="files-note">主文档支持对话修改<br />参考资料只读</p>
+          <p class="files-note">助手可读写全部文件<br />业务会话中只读</p>
         </aside>
         <div
           v-if="treeOpen"
@@ -865,7 +1119,16 @@ onBeforeUnmount(() => {
               >
                 <Icon name="folder-line" :size="16" /></button
               ><span class="file-path">{{ currentPath }}</span
-              ><span v-if="selectedFile >= 0" class="readonly-label">只读</span>
+              ><button
+                v-if="!isMainFile"
+                class="icon-action"
+                :title="`删除 ${currentPath}`"
+                :aria-label="`删除 ${currentPath}`"
+                :disabled="busy || saving || publishing || fileBusy"
+                @click="requestDeleteFile(currentPath)"
+              >
+                <Icon name="delete-bin-line" :size="14" />
+              </button>
             </div>
             <div class="document-actions">
               <span v-if="busy" class="readonly-label">助手正在修改</span>
@@ -901,24 +1164,9 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </header>
-          <div v-if="referenceLoading && selectedFile >= 0" class="studio-loading">
-            <a-spin size="small" />读取文件…
-          </div>
-          <a-alert
-            v-else-if="referenceError && selectedFile >= 0"
-            type="error"
-            :message="referenceError"
-            show-icon
-          />
-          <div
-            v-show="
-              mode === 'preview' &&
-              !(referenceLoading && selectedFile >= 0) &&
-              !(referenceError && selectedFile >= 0)
-            "
-            ref="previewPane"
-            class="document-preview"
-          >
+          <div v-if="fileLoading && !isMainFile" class="studio-loading"><a-spin size="small" />读取文件…</div>
+          <a-alert v-else-if="fileError && !isMainFile" type="error" :message="fileError" show-icon />
+          <div v-show="mode === 'preview' && !fileUnavailable" ref="previewPane" class="document-preview">
             <div v-if="isNew && !dirty" class="document-empty">
               <Icon name="file" :size="28" />
               <h2>从一个想法开始</h2>
@@ -929,26 +1177,20 @@ onBeforeUnmount(() => {
               <MarkdownPreview :content="previewContent" />
             </template>
           </div>
-          <div
-            v-if="sourceOpened"
-            v-show="
-              mode === 'source' &&
-              !(referenceLoading && selectedFile >= 0) &&
-              !(referenceError && selectedFile >= 0)
-            "
-            class="document-source"
-          >
+          <div v-if="sourceOpened" v-show="mode === 'source' && !fileUnavailable" class="document-source">
             <MonacoEditor
               :model-value="currentContent"
               :model-key="currentPath"
-              :language="currentPath.endsWith('.txt') ? 'plaintext' : 'markdown'"
+              :language="editorLanguage(currentPath)"
               theme="vs-dark"
-              :active="mode === 'source' && !referenceLoading && !referenceError"
-              :loading="selectedFile >= 0 && (referenceLoading || !!referenceError)"
-              :read-only="selectedFile >= 0 || busy || saving || publishing || uploadingReference"
-              aria-label="Skill 文档编辑"
+              :active="mode === 'source' && !fileUnavailable"
+              :loading="fileUnavailable"
+              :read-only="busy || saving || publishing || (fileBusy && !savingFile)"
+              aria-label="Skill 文件编辑"
               @shortcut-save="save"
-              @update:model-value="selectedFile < 0 && $event !== skill.content && updateContent($event)"
+              @update:model-value="
+                isMainFile ? $event !== skill.content && updateContent($event) : updateFileDraft($event)
+              "
             />
           </div>
         </section>
@@ -1045,18 +1287,18 @@ onBeforeUnmount(() => {
               />
               <div class="composer-actions">
                 <a-upload
-                  accept=".md,.txt"
+                  :accept="acceptFor('references')"
                   :file-list="[]"
                   :show-upload-list="false"
-                  :disabled="isNew || busy || saving || publishing || uploadingReference"
-                  :before-upload="beforeReferenceUpload"
-                  @reject="rejectReferenceFiles"
+                  :disabled="isNew || busy || saving || publishing || fileBusy"
+                  :before-upload="beforeFileUpload('references')"
+                  @reject="rejectFiles('references')"
                 >
                   <button
                     type="button"
                     class="composer-attach"
-                    :disabled="isNew || busy || saving || publishing || uploadingReference"
-                    :title="isNew ? '创建技能后可添加参考资料' : '添加 Markdown 或文本参考资料'"
+                    :disabled="isNew || busy || saving || publishing || fileBusy"
+                    :title="isNew ? '创建技能后可添加参考资料' : '把 Markdown 或文本资料添加到 references/'"
                     aria-label="添加参考资料"
                   >
                     <Icon name="paperclip" :size="15" />附件
@@ -1136,7 +1378,7 @@ onBeforeUnmount(() => {
                 class="history-restore"
                 type="text"
                 size="small"
-                :disabled="busy || saving || dirty || publishing || uploadingReference"
+                :disabled="busy || saving || dirty || fileDirty || publishing || fileBusy"
                 @click="requestRestore(revision)"
                 >恢复为草稿</a-button
               >
@@ -1170,13 +1412,50 @@ onBeforeUnmount(() => {
         <pre class="history-preview-content"><code>{{ previewRevision.content }}</code></pre>
       </div>
     </a-modal>
-    <a-drawer :open="changesOpen" title="本次修改 · SKILL.md" :width="760" @close="changesOpen = false"
+    <a-drawer :open="changesOpen" title="本次修改" :width="760" @close="changesOpen = false"
       ><template v-if="lastChange"
-        ><h3>修改前 · r{{ lastChange.before.revision }}</h3>
+        ><template v-if="lastChange.files.written.length || lastChange.files.deleted.length"
+          ><h3>文件</h3>
+          <ul class="change-files">
+            <li v-for="path in lastChange.files.written" :key="`w-${path}`">更新 {{ path }}</li>
+            <li v-for="path in lastChange.files.deleted" :key="`d-${path}`">删除 {{ path }}</li>
+          </ul></template
+        >
+        <h3>SKILL.md 修改前 · r{{ lastChange.before.revision }}</h3>
         <CodeBlock :code="lastChange.before.content" lang="markdown" />
-        <h3>修改后</h3>
+        <h3>SKILL.md 修改后</h3>
         <CodeBlock :code="lastChange.after" lang="markdown" /></template
     ></a-drawer>
+    <a-modal
+      v-model:open="fileDialog.open"
+      :title="fileDialog.upload ? `上传到 ${fileDialog.dir}/` : `在 ${fileDialog.dir}/ 新建文件`"
+      :ok-text="fileDialog.upload && fileDialogExists ? '覆盖' : '保存'"
+      cancel-text="取消"
+      :confirm-loading="fileBusy"
+      :mask-closable="false"
+      @ok="submitFileDialog"
+    >
+      <a-form layout="vertical" @submit.prevent="submitFileDialog"
+        ><a-form-item
+          label="文件名"
+          :extra="`英文文件名，支持 ${acceptFor(fileDialog.dir).replaceAll(',', '、')}；记得在 SKILL.md 里写明什么时候读或用它。`"
+          ><a-input
+            v-model:value="fileDialog.name"
+            :addon-before="`${fileDialog.dir}/`"
+            :maxlength="120"
+            :placeholder="fileDialog.dir === 'references' ? 'rules.md' : 'report-template.md'"
+            :disabled="fileBusy"
+            @change="fileDialog.error = ''"
+        /></a-form-item>
+      </a-form>
+      <a-alert v-if="fileDialog.error" type="error" :message="fileDialog.error" show-icon />
+      <a-alert
+        v-else-if="fileDialog.upload && fileDialogExists"
+        type="warning"
+        message="已有同名文件，保存将覆盖它（旧内容可在版本历史中找回）。"
+        show-icon
+      />
+    </a-modal>
   </main>
 </template>
 
@@ -1422,6 +1701,64 @@ onBeforeUnmount(() => {
 }
 .reference-row {
   padding-left: 28px;
+}
+/* 目录行与文件行：右侧操作按钮悬停或聚焦时出现，触屏设备始终显示 */
+.folder-line,
+.file-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.folder-line > .file-row,
+.file-line > .file-row {
+  flex: 1;
+  min-width: 0;
+}
+.folder-actions {
+  display: flex;
+  flex-shrink: 0;
+}
+.folder-actions,
+.file-delete {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.folder-line:hover .folder-actions,
+.folder-line:focus-within .folder-actions,
+.file-line:hover .file-delete,
+.file-line:focus-within .file-delete {
+  opacity: 1;
+}
+@media (hover: none) {
+  .folder-actions,
+  .file-delete {
+    opacity: 1;
+  }
+}
+.file-delete {
+  flex-shrink: 0;
+}
+.file-delete:hover:not(:disabled) {
+  color: var(--color-danger-text);
+}
+.file-row small.file-ai-tag {
+  min-width: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+  color: var(--color-brand);
+  background: var(--surface-shell);
+}
+.folder-empty {
+  margin: 0;
+  padding: 2px 10px 6px 28px;
+}
+.change-files {
+  margin: 0 0 16px;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--color-text-secondary);
 }
 .tree-empty {
   color: var(--color-text-tertiary);

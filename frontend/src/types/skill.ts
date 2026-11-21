@@ -1,9 +1,11 @@
 export type SkillStatus = 'draft' | 'published';
 
-export type SkillReference = {
-  filename: string;
+/** SKILL.md 之外的附加文件：references/、assets/ 下的一层文件 */
+export type SkillFile = {
   path: string;
   bytes: number;
+  /** manual：维护者上传或编辑；agent：Skill 助手写入 */
+  source: 'manual' | 'agent' | 'restore' | string;
 };
 
 export type SkillSummary = {
@@ -13,7 +15,7 @@ export type SkillSummary = {
   publishedMachineName: string;
   publishedName: string;
   publishedDescription: string;
-  publishedReferenceCount: number;
+  publishedFileCount: number;
   description: string;
   status: SkillStatus;
   tags: string[];
@@ -23,7 +25,7 @@ export type SkillSummary = {
   revision: number | null;
   content: string;
   changeSummary: string;
-  referenceFiles: SkillReference[];
+  files: SkillFile[];
   createdAt: string | null;
   updatedAt: string | null;
   publishedAt: string | null;
@@ -37,13 +39,13 @@ export type PublishedSkillSummary = {
   machineName: string;
   description: string;
   version: number;
-  referenceCount: number;
+  fileCount: number;
   publishedAt: string | null;
 };
 
-export type PublishedSkillDetail = Omit<PublishedSkillSummary, 'referenceCount'> & {
+export type PublishedSkillDetail = Omit<PublishedSkillSummary, 'fileCount'> & {
   content: string;
-  referenceFiles: { filename: string; bytes: number }[];
+  files: SkillFile[];
 };
 
 export type SkillRevision = {
@@ -54,7 +56,7 @@ export type SkillRevision = {
   contentHash: string;
   changeSummary: string;
   source: 'manual' | 'assistant' | 'publish' | 'restore' | string;
-  referenceFiles: SkillReference[];
+  files: SkillFile[];
   createdBy: string;
   createdAt: string | null;
 };

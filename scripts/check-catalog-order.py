@@ -51,7 +51,7 @@ def skill(id, name, created, published=None, pending=False):
         "publishedRevisionId": id if published else None,
         "publishedVersion": 1 if published else None,
         "currentRevisionId": id,
-        "referenceFiles": [],
+        "files": [],
         "revision": 2,
         "tags": [],
     }
@@ -82,7 +82,7 @@ responses.update(
                     "machineName": "skill-1",
                     "description": "",
                     "version": 1,
-                    "referenceCount": 0,
+                    "fileCount": 0,
                     "publishedAt": date(10),
                 },
                 {
@@ -91,7 +91,7 @@ responses.update(
                     "machineName": "skill-3",
                     "description": "",
                     "version": 1,
-                    "referenceCount": 0,
+                    "fileCount": 0,
                     "publishedAt": date(25),
                 },
             ]

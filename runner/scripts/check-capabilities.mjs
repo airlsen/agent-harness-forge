@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 扩展能力集成检查：真实启动 dsh，装配 Skill（运行时注册 + 只读参考资料）、stdio MCP（本机夹具服务）
+ * 扩展能力集成检查：真实启动 dsh，装配 Skill（运行时注册 + 只读 references/、assets/ 目录）、stdio MCP（本机夹具服务）
  * 与联网工具（DeepSeek 搜索 + HTTP 抓取，只检查装配，不发外部请求）。模型是本机 OpenAI 协议夹具。
  */
 import assert from 'node:assert/strict';
@@ -59,8 +59,11 @@ const skill = {
   title: '报告规范',
   description: '撰写周报时使用的格式规范',
   whenToUse: '用户要求写周报',
-  content: '# 报告规范\n\n标题用「周报」开头，结论先行。详见 references/glossary.md。',
-  references: [{ filename: 'glossary.md', content: 'GLOSSARY-SENTINEL\n' }],
+  content: '# 报告规范\n\n标题用「周报」开头，结论先行。详见 references/glossary.md，按 assets/template.md 输出。',
+  files: [
+    { path: 'references/glossary.md', content: 'GLOSSARY-SENTINEL\n' },
+    { path: 'assets/template.md', content: 'TEMPLATE-SENTINEL\n' },
+  ],
   source: 'scenario',
 };
 const mcp = {
@@ -90,9 +93,30 @@ await check('capabilities are validated: names, transports, duplicates, referenc
   assert.deepEqual(resolveCapabilities(undefined), { skills: [], mcp: [], web: null });
   assert.throws(() => resolveCapabilities({ skills: [{ ...skill, name: 'Bad Name' }] }), /Skill 名称无效/);
   assert.throws(() => resolveCapabilities({ skills: [skill, skill] }), /Skill 名称重复/);
+  for (const path of ['../x', 'references/../x.md', 'scripts/run.py', 'references/a/b.md', 'SKILL.md', 'assets/.env'])
+    assert.throws(
+      () => resolveCapabilities({ skills: [{ ...skill, files: [{ path, content: '' }] }] }),
+      /附加文件无效/,
+      path,
+    );
   assert.throws(
-    () => resolveCapabilities({ skills: [{ ...skill, references: [{ filename: '../x', content: '' }] }] }),
-    /参考资料无效/,
+    () => resolveCapabilities({ skills: [{ ...skill, files: [skill.files[0], skill.files[0]] }] }),
+    /附加文件无效/,
+  );
+  const big = 'x'.repeat(110_000);
+  assert.throws(
+    () =>
+      resolveCapabilities({
+        skills: [{ ...skill, files: [1, 2, 3, 4, 5].map((n) => ({ path: `assets/f${n}.md`, content: big })) }],
+      }),
+    /合计超过 512 KB/,
+  );
+  // 旧控制面的 references:[{filename,content}] 仍可用，视为 references/<filename>
+  const { files: _files, ...legacySkill } = skill;
+  assert.deepEqual(
+    resolveCapabilities({ skills: [{ ...legacySkill, references: [{ filename: 'glossary.md', content: 'g' }] }] })
+      .skills[0].files,
+    [{ path: 'references/glossary.md', content: 'g' }],
   );
   assert.throws(() => resolveCapabilities({ mcp: [{ ...mcp, transport: 'sse' }] }), /传输方式不受支持/);
   assert.throws(
@@ -129,8 +153,8 @@ await check('session toolset adds skill/read, web tools and granted MCP tools on
   ]);
   assert.deepEqual(toolset.approval, ['mcp__demo__write_note']);
   assert.equal(toolset.read, true);
-  // 没有参考资料的 Skill 不开放 read
-  const plain = resolveCapabilities({ skills: [{ ...skill, references: [] }] });
+  // 没有附加文件的 Skill 不开放 read
+  const plain = resolveCapabilities({ skills: [{ ...skill, files: [] }] });
   assert.equal(sessionToolset({ policy: { allowedTools: [] } }, false, plain).read, false);
 });
 await check('summary never leaks skill bodies, credentials, commands or env', () => {
@@ -140,7 +164,7 @@ await check('summary never leaks skill bodies, credentials, commands or env', ()
 });
 await check('system prompt explains skills, MCP confirmation and web citation rules', () => {
   const prompt = buildSystemPrompt('x', [], [], {
-    skills: [{ name: 'report-style', hasReferences: true }],
+    skills: [{ name: 'report-style', hasFiles: true }],
     mcp: [{ serverName: 'demo', tools: [{ publicName: 'mcp__demo__write_note', approval: true }] }],
     webSearch: true,
     webFetch: true,
@@ -160,6 +184,10 @@ const plan = {
   REFERENCE: [
     'read',
     { file_path: () => join(dir, 'sessions', id, 'skills', 'report-style', 'references', 'glossary.md') },
+  ],
+  ASSET: [
+    'read',
+    { file_path: () => join(dir, 'sessions', id, 'skills', 'report-style', 'assets', 'template.md') },
   ],
   ECHO: ['mcp__demo__echo', { text: 'hi' }],
   NOTE: ['mcp__demo__write_note', { note: 'n1' }],
@@ -305,6 +333,15 @@ try {
     const payload = result(list);
     assert.equal(payload.isError, false, payload.result);
     assert.ok(payload.result.includes('GLOSSARY-SENTINEL'));
+  });
+  list = await turn('ASSET');
+  await check('skill assets are materialized next to references (full directory)', async () => {
+    const payload = result(list);
+    assert.equal(payload.isError, false, payload.result);
+    assert.ok(payload.result.includes('TEMPLATE-SENTINEL'));
+    const { statSync } = await import('node:fs');
+    const file = join(dir, 'sessions', id, 'skills', 'report-style', 'assets', 'template.md');
+    assert.equal(statSync(file).mode & 0o777, 0o400);
   });
   list = await turn('ECHO');
   await check('stdio MCP tool runs with configured env and without host secrets', () => {

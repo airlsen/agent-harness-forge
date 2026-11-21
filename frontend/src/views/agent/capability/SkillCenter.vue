@@ -185,8 +185,8 @@ onMounted(load);
                 <span v-if="item.status === 'draft'" class="skill-card-meta">{{
                   catalogDate('草稿更新', item.updatedAt)
                 }}</span>
-                <span v-if="item.referenceFiles.length" class="skill-card-meta"
-                  >{{ item.referenceFiles.length }} 个参考文件</span
+                <span v-if="item.files.length" class="skill-card-meta"
+                  >{{ item.files.length }} 个附加文件</span
                 >
               </template>
               <template #footer>

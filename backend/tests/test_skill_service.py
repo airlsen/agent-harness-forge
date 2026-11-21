@@ -82,7 +82,7 @@ async def test_archives_use_selected_revision_and_reference_snapshot(tmp_path, m
         async with sessions() as db:
             created = await create_skill(db, '名称', '说明', content, 'tester')
             skill_id = created['id']
-            await skill_service.add_reference(db, skill_id, 'readme.md', '发布的附件')
+            await skill_service.write_file(db, skill_id, 'references/readme.md', '发布的附件')
             with pytest.raises(HTTPException) as unpublished:
                 await skill_service.published_skill_detail(db, skill_id)
             assert unpublished.value.status_code == 404
@@ -97,10 +97,10 @@ async def test_archives_use_selected_revision_and_reference_snapshot(tmp_path, m
             assert published[1] == 'published-name'
             assert current[1] == 'draft-name'
             with zipfile.ZipFile(io.BytesIO(published[0])) as archive:
-                assert 'published-name' in archive.read('SKILL.md').decode()
-                assert archive.read('references/readme.md').decode() == '发布的附件'
+                assert 'published-name' in archive.read('published-name/SKILL.md').decode()
+                assert archive.read('published-name/references/readme.md').decode() == '发布的附件'
             with zipfile.ZipFile(io.BytesIO(current[0])) as archive:
-                assert 'draft-name' in archive.read('SKILL.md').decode()
+                assert 'draft-name' in archive.read('draft-name/SKILL.md').decode()
             view = await skill_service.skill_detail(db, skill_id)
             assert view['machineName'] == 'draft-name'
             assert view['publishedMachineName'] == 'published-name'
@@ -116,10 +116,12 @@ async def test_archives_use_selected_revision_and_reference_snapshot(tmp_path, m
             assert public['description'] == '稳定版本'
             assert public['version'] == 1
             assert 'draft-name' not in public['content']
-            assert public['referenceFiles'] == [{'filename': 'readme.md', 'bytes': len('发布的附件'.encode())}]
-            assert (await skill_service.published_reference_content(db, skill_id, 0))['content'] == '发布的附件'
+            assert public['files'] == [
+                {'path': 'references/readme.md', 'bytes': len('发布的附件'.encode()), 'source': 'manual'}
+            ]
+            assert (await skill_service.published_file(db, skill_id, 'references/readme.md'))['content'] == '发布的附件'
             with pytest.raises(HTTPException) as missing:
-                await skill_service.published_reference_content(db, skill_id, 1)
+                await skill_service.published_file(db, skill_id, 'references/other.md')
             assert missing.value.status_code == 404
             with pytest.raises(HTTPException) as error:
                 await skill_service.delete_draft(db, skill_id)
@@ -140,7 +142,7 @@ async def test_delete_draft_removes_authoring_data_and_reference_files(tmp_path,
         async with sessions() as db:
             created = await create_skill(db, '名称', '说明', None, 'tester')
             skill_id = created['id']
-            await skill_service.add_reference(db, skill_id, 'note.md', '附件内容')
+            await skill_service.write_file(db, skill_id, 'references/note.md', '附件内容')
             authoring = SkillAuthoringSession(skill_id=skill_id, status='idle')
             db.add(authoring)
             await db.flush()
@@ -246,5 +248,161 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
             history = rebuilt['profile_patch']['systemPrompt']['workspace'][1]
             assert '维护者：给财务团队用的周报' in history and '助手：好的，先确认数据来源。' in history
             assert rebuilt['meta']['policy']['maxOutputTokens'] == 16384
+    finally:
+        await engine.dispose()
+
+
+def test_skill_files_convert_legacy_entries_and_validate_paths():
+    from src.api.services.skill_files import skill_files, validate_file_path
+
+    legacy = {'filename': 'glossary.md', 'path': 'skills/3/references/abc-glossary.md', 'bytes': 9}
+    current = {'path': 'assets/report.md', 'storage': 'skills/3/files/def-report.md', 'bytes': 5, 'source': 'agent'}
+    assert skill_files([legacy, current, {'bad': True}, 'x']) == [
+        {'path': 'references/glossary.md', 'storage': 'skills/3/references/abc-glossary.md', 'bytes': 9, 'source': 'manual'},
+        {'path': 'assets/report.md', 'storage': 'skills/3/files/def-report.md', 'bytes': 5, 'source': 'agent'},
+    ]
+    # 同一路径以后出现的为准
+    newer = {**current, 'storage': 'skills/3/files/xyz-report.md'}
+    assert [item['storage'] for item in skill_files([current, newer])] == ['skills/3/files/xyz-report.md']
+
+    assert validate_file_path(' references/rules.md ') == 'references/rules.md'
+    assert validate_file_path('assets/data.json') == 'assets/data.json'
+    for path, message in [
+        ('scripts/run.py', '后续版本'),
+        ('SKILL.md', '主文档'),
+        ('rules.md', '目录/文件名'),
+        ('references/a/b.md', '目录/文件名'),
+        ('../references/x.md', '目录/文件名'),
+        ('docs/x.md', 'references/ 或 assets/'),
+        ('references/.hidden.md', '文件名'),
+        ('references/规则.md', '文件名'),
+        ('references/data.json', '.md'),
+        ('assets/run.sh', '.json'),
+    ]:
+        with pytest.raises(ValueError, match=message):
+            validate_file_path(path)
+
+
+async def _memory_sessions():
+    engine = create_async_engine('sqlite+aiosqlite:///:memory:')
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    return engine, async_sessionmaker(engine, expire_on_commit=False)
+
+
+@pytest.mark.asyncio
+async def test_file_writes_and_deletes_are_revisions_that_keep_history(tmp_path, monkeypatch):
+    monkeypatch.setattr(skill_service, 'SKILL_ROOT', tmp_path / 'skills')
+    monkeypatch.setattr(skill_service.settings, 'data_dir', tmp_path)
+    engine, sessions = await _memory_sessions()
+    try:
+        async with sessions() as db:
+            created = await create_skill(db, '周报', '写周报时使用', None, 'tester')
+            skill_id = created['id']
+            first = await skill_service.write_file(db, skill_id, 'references/rules.md', '规则 v1')
+            assert first.change_summary == '新建文件：references/rules.md'
+            await skill_service.write_file(db, skill_id, 'assets/template.md', '# 模板', source='agent')
+            updated = await skill_service.write_file(db, skill_id, 'references/rules.md', '规则 v2')
+            assert updated.change_summary == '更新文件：references/rules.md'
+
+            # 只改 SKILL.md 时文件清单原样沿用
+            detail = await update_draft(db, skill_id, created['content'] + '\n补充\n', '手动编辑', 'tester')
+            assert [(f['path'], f['source']) for f in detail['files']] == [
+                ('references/rules.md', 'manual'),
+                ('assets/template.md', 'agent'),
+            ]
+            current = detail['currentRevisionId']
+            assert (await skill_service.revision_file(db, skill_id, current, 'references/rules.md'))['content'] == '规则 v2'
+            # 历史修订读到的仍是当时的内容
+            assert (await skill_service.revision_file(db, skill_id, first.id, 'references/rules.md'))['content'] == '规则 v1'
+
+            deleted = await skill_service.delete_file(db, skill_id, 'assets/template.md')
+            assert deleted.change_summary == '删除文件：assets/template.md'
+            assert [f['path'] for f in (await skill_service.skill_detail(db, skill_id))['files']] == ['references/rules.md']
+            with pytest.raises(HTTPException) as missing:
+                await skill_service.delete_file(db, skill_id, 'assets/template.md')
+            assert missing.value.status_code == 404
+            # 恢复删除前的修订，文件随之恢复
+            restored = await restore_revision(db, skill_id, updated.id, 'tester')
+            assert [f['path'] for f in restored['files']] == ['references/rules.md', 'assets/template.md']
+            revisions = await skill_service.revisions(db, skill_id)
+            assert revisions[0]['files'][1] == {'path': 'assets/template.md', 'bytes': len('# 模板'.encode()), 'source': 'agent'}
+
+            with pytest.raises(HTTPException) as scripts:
+                await skill_service.write_file(db, skill_id, 'scripts/run.py', 'print(1)')
+            assert scripts.value.status_code == 422 and '后续版本' in scripts.value.detail
+            with pytest.raises(HTTPException) as too_big:
+                await skill_service.write_file(db, skill_id, 'references/big.md', 'x' * 120_001)
+            assert too_big.value.status_code == 413
+            monkeypatch.setattr('src.api.services.skill_files.MAX_FILES', 2)
+            with pytest.raises(HTTPException) as too_many:
+                await skill_service.write_file(db, skill_id, 'references/third.md', '第三份')
+            assert too_many.value.status_code == 413 and '最多 2 个' in too_many.value.detail
+            # 覆盖已有文件不增加数量
+            await skill_service.write_file(db, skill_id, 'references/rules.md', '规则 v3')
+
+            # 被篡改的清单不能读到 Skill 目录以外的文件
+            revision = await db.get(SkillRevision, (await skill_service.skill_detail(db, skill_id))['currentRevisionId'])
+            outside = tmp_path / 'secret.md'
+            outside.write_text('secret', encoding='utf-8')
+            revision.reference_files = [{'path': 'references/x.md', 'storage': 'secret.md', 'bytes': 6}]
+            await db.commit()
+            with pytest.raises(HTTPException):
+                await skill_service.revision_file(db, skill_id, revision.id, 'references/x.md')
+            assert skill_service.skill_file_contents(revision) == []
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_agent_turn_saves_document_and_files_without_dropping_references(tmp_path, monkeypatch):
+    """回归：助手保存 SKILL.md 时不能用插件回传的清单覆盖（此前会丢掉手动上传的参考资料）。"""
+    monkeypatch.setattr(skill_service, 'SKILL_ROOT', tmp_path / 'skills')
+    monkeypatch.setattr(skill_service.settings, 'data_dir', tmp_path)
+    engine, sessions = await _memory_sessions()
+    monkeypatch.setattr(skill_service, 'SessionFactory', sessions)
+
+    async def fake_call(method, path, *args, **kwargs):
+        return {}
+
+    events = []
+
+    async def fake_events(runner_id, message):
+        for event in events:
+            yield event
+
+    monkeypatch.setattr(skill_service.runner_client, 'call', fake_call)
+    monkeypatch.setattr(skill_service.runner_client, 'events', fake_events)
+    try:
+        async with sessions() as db:
+            created = await create_skill(db, '周报', '写周报时使用', None, 'tester')
+            skill_id = created['id']
+            await skill_service.write_file(db, skill_id, 'references/manual.md', '手动上传')
+            row = SkillAuthoringSession(skill_id=skill_id, runner_session_id='r1', status='idle')
+            db.add(row)
+            await db.commit()
+            session_id = row.id
+        new_content = created['content'] + '\n详见 references/rules.md。\n'
+        events.extend([
+            {'kind': 'skill_revision', 'payload': {'action': 'write_file', 'path': 'references/rules.md', 'content': '规则', 'summary': '拆出规则'}},
+            # 旧插件格式：带了过期的 referenceFiles 也要忽略
+            {'kind': 'skill_revision', 'payload': {'content': new_content, 'summary': '引用规则', 'referenceFiles': []}},
+            {'kind': 'skill_revision', 'payload': {'action': 'delete_file', 'path': 'references/manual.md', 'summary': ''}},
+        ])
+        relayed = [event async for event in skill_service.run_authoring_turn(skill_id, session_id, '拆分')]
+        assert [(e['payload']['action'], e['payload']['path']) for e in relayed] == [
+            ('write_file', 'references/rules.md'),
+            ('update_draft', 'SKILL.md'),
+            ('delete_file', 'references/manual.md'),
+        ]
+        async with sessions() as db:
+            history = await skill_service.revisions(db, skill_id)
+            # 第二条（只改正文）保留了手动文件和刚写入的文件
+            assert [f['path'] for f in history[1]['files']] == ['references/manual.md', 'references/rules.md']
+            assert history[1]['content'] == new_content
+            detail = await skill_service.skill_detail(db, skill_id)
+            assert detail['files'] == [{'path': 'references/rules.md', 'bytes': len('规则'.encode()), 'source': 'agent'}]
+            assert history[0]['changeSummary'] == '删除文件：references/manual.md'
+            assert history[0]['source'] == 'agent'
     finally:
         await engine.dispose()

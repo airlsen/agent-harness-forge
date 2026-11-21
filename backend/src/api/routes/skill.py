@@ -1,11 +1,11 @@
 import json
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response, StreamingResponse
 from typing import Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.database import get_session
 from ..core.config import settings
-from ..schemas.skill import SkillCreate, SkillDraftUpdate, SkillReferenceInput, SkillTurn
+from ..schemas.skill import SkillCreate, SkillDraftUpdate, SkillFileWrite, SkillTurn
 from ..services import skill_service
 from ..utils.response import ResponseUtil
 
@@ -41,11 +41,9 @@ async def get_published_skill(skill_id: int, db: AsyncSession = Depends(get_sess
     return ResponseUtil.ok(await skill_service.published_skill_detail(db, skill_id))
 
 
-@router.get("/{skill_id}/published/references/{reference_index}")
-async def get_published_reference(
-    skill_id: int, reference_index: int, db: AsyncSession = Depends(get_session)
-):
-    return ResponseUtil.ok(await skill_service.published_reference_content(db, skill_id, reference_index))
+@router.get("/{skill_id}/published/files")
+async def get_published_file(skill_id: int, path: str = Query(...), db: AsyncSession = Depends(get_session)):
+    return ResponseUtil.ok(await skill_service.published_file(db, skill_id, path))
 
 
 @router.get("/{skill_id}/download")
@@ -94,31 +92,23 @@ async def publish_skill(skill_id: int, db: AsyncSession = Depends(get_session)):
     return ResponseUtil.ok(await skill_service.publish_skill(db, skill_id, settings.admin_username))
 
 
-@router.post("/{skill_id}/references")
-async def add_reference(skill_id: int, payload: SkillReferenceInput, db: AsyncSession = Depends(get_session)):
-    return ResponseUtil.ok(await skill_service.add_reference(db, skill_id, payload.filename, payload.content))
-
-
-@router.get("/{skill_id}/references/{revision_id}/{reference_index}")
-async def get_reference(
-    skill_id: int, revision_id: int, reference_index: int, db: AsyncSession = Depends(get_session)
+@router.get("/{skill_id}/files/{revision_id}")
+async def get_file(
+    skill_id: int, revision_id: int, path: str = Query(...), db: AsyncSession = Depends(get_session)
 ):
-    skill = await skill_service.get_skill(db, skill_id)
-    revision = await db.get(skill_service.SkillRevision, revision_id)
-    if not revision or revision.skill_id != skill.id:
-        raise HTTPException(404, "参考资料不存在")
-    files = revision.reference_files or []
-    if reference_index < 0 or reference_index >= len(files):
-        raise HTTPException(404, "参考资料不存在")
-    ref = files[reference_index]
-    path = (skill_service.settings.data_dir / str(ref.get("path", ""))).resolve()
-    if not path.is_relative_to(skill_service.settings.data_dir.resolve()):
-        raise HTTPException(400, "参考资料路径无效")
-    try:
-        content = path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise HTTPException(404, "参考资料文件不可读取") from error
-    return ResponseUtil.ok({"filename": ref.get("filename"), "content": content})
+    return ResponseUtil.ok(await skill_service.revision_file(db, skill_id, revision_id, path))
+
+
+@router.put("/{skill_id}/files")
+async def write_file(skill_id: int, payload: SkillFileWrite, db: AsyncSession = Depends(get_session)):
+    await skill_service.write_file(db, skill_id, payload.path, payload.content, payload.change_summary)
+    return ResponseUtil.ok(await skill_service.skill_detail(db, skill_id))
+
+
+@router.delete("/{skill_id}/files")
+async def delete_file(skill_id: int, path: str = Query(...), db: AsyncSession = Depends(get_session)):
+    await skill_service.delete_file(db, skill_id, path)
+    return ResponseUtil.ok(await skill_service.skill_detail(db, skill_id))
 
 
 @router.get("/{skill_id}/authoring-session/latest")

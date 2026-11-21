@@ -23,7 +23,7 @@ from ..core import security
 from ..models.platform import ModelConnection, PlatformSetting
 from ..models.registry import McpServer
 from ..models.skill import Skill, SkillRevision
-from .skill_service import MAX_REFERENCE_BYTES, _reference_contents
+from .skill_service import skill_file_contents
 
 MAX_SESSION_SKILLS = 20
 MAX_SESSION_MCP = 10
@@ -142,16 +142,13 @@ async def _runtime_skill(db: AsyncSession, ref: dict, source: str, name: str) ->
     if not revision or revision.skill_id != ref.get("id"):
         return None
     _, _, body = parse_skill(revision.content)
-    references = {}
-    for item in await _reference_contents(list(revision.reference_files or [])):
-        # 同名资料以后添加的为准；Runner 只接受单层安全文件名
-        references[item["filename"]] = item["content"][:MAX_REFERENCE_BYTES]
     return {
         "name": name,
         "title": ref.get("title") or name,
         "description": ref.get("description") or name,
         "content": body or revision.content,
-        "references": [{"filename": key, "content": value} for key, value in references.items()],
+        # 完整 Skill 目录：Runner 写成 <name>/SKILL.md + references/、assets/ 只读文件
+        "files": skill_file_contents(revision),
         "source": source,
     }
 
