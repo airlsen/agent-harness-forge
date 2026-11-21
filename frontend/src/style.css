@@ -1439,18 +1439,30 @@ textarea::-webkit-scrollbar-corner {
 }
 .markdown-body table {
   border-collapse: collapse;
-  width: 100%;
-  font-size: 11px;
+  max-width: 100%;
+  margin: 12px 0;
+  font-size: 13px;
+  line-height: 1.6;
   display: block;
   overflow-x: auto;
 }
 .markdown-body td,
 .markdown-body th {
-  border: 1px solid var(--surface-shell);
-  padding: 8px 11px;
+  border: 1px solid var(--border-default);
+  padding: 7px 11px;
+  vertical-align: top;
+  /* 不在接口名等英文标识符中间断行，放不下时整表横向滚动 */
+  overflow-wrap: normal;
 }
 .markdown-body th {
   background: var(--surface-subtle-bg);
+  color: var(--color-text-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* 表头默认居中；未指定对齐（|---|）时与正文一致左对齐，保留 :---: / ---: 生成的 align */
+.markdown-body th:not([align]) {
+  text-align: left;
 }
 /* 代码块 / Mermaid 图 / 数据图表的卡片外壳 */
 .markdown-body .code-block {
