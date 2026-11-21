@@ -7,6 +7,7 @@ import { downloadResponse } from '../../../api/client';
 import { formatBytes, sessionState } from '../../../utils/presentation';
 import { trapTabKey } from '../../../utils/focus';
 import { confirm } from '../../../utils/feedback';
+import { animateComposerArrival, captureComposerOrigin } from '../../../utils/composerTransition';
 import type { KernelEvent } from '../../../types/platform';
 import {
   buildTurns,
@@ -373,8 +374,17 @@ watch(() => route.params.sessionId, loadSession, { immediate: true });
 // routing in this persistent parent so unmounting it cannot swallow the receipt.
 watch(
   () => (chat.messages.some((message) => message.role === 'user') ? chat.current?.id : null),
-  (id) => {
-    if (id && !route.params.sessionId) void router.replace(`/agent/chat/${id}`);
+  async (id) => {
+    if (!id || route.params.sessionId) return;
+    const origin = captureComposerOrigin();
+    try {
+      await router.replace(`/agent/chat/${id}`);
+      await nextTick();
+      if (router.currentRoute.value.path === `/agent/chat/${id}` && chat.current?.id === id)
+        animateComposerArrival(origin);
+    } catch {
+      // A failed or interrupted navigation must not affect the accepted turn.
+    }
   },
 );
 // 发送消息后总是回到底部：即使之前向上翻看了历史，也要看到刚发出的消息与后续回复
@@ -566,11 +576,11 @@ async function quoteMessage(text: string) {
               :title="turnCapabilityChanges[turnIndex]?.active?.join('、')"
             >
               <span v-if="turnCapabilityChanges[turnIndex]?.active?.length"
-                ><Icon name="puzzle" :size="12" />扩展能力：<strong>{{
+                ><Icon name="puzzle" :size="12" />扩展技能：<strong>{{
                   turnCapabilityChanges[turnIndex]?.active?.join('、')
                 }}</strong></span
               >
-              <span v-else><Icon name="puzzle" :size="12" />已关闭扩展能力</span>
+              <span v-else><Icon name="puzzle" :size="12" />已关闭扩展技能</span>
             </div>
             <div
               v-if="turnCapabilityChanges[turnIndex]?.unavailable.length"
@@ -832,7 +842,7 @@ async function quoteMessage(text: string) {
             Skill <span>{{ extensionSkills.length }}</span>
           </h3>
           <p v-if="!extensionSkills.length" class="small-text muted-text">
-            未启用。可在输入框「扩展能力」中临时选用已发布的 Skill。
+            未启用。可在输入框「扩展技能」中临时选用已发布的 Skill。
           </p>
           <div v-for="skill in extensionSkills" :key="`skill-${skill.id}`" class="context-tool">
             <span><Icon name="book" :size="16" /></span>
@@ -856,7 +866,7 @@ async function quoteMessage(text: string) {
             MCP 服务 <span>{{ extensionServers.length }}</span>
           </h3>
           <p v-if="!extensionServers.length" class="small-text muted-text">
-            未连接。可在输入框「扩展能力」中临时选用管理员已启用的 MCP 服务。
+            未连接。可在输入框「扩展技能」中临时选用管理员已启用的 MCP 服务。
           </p>
           <div v-for="server in extensionServers" :key="`mcp-${server.id}`" class="context-tool">
             <span><Icon name="plug" :size="16" /></span>
@@ -886,11 +896,11 @@ async function quoteMessage(text: string) {
                       ? chat.capabilityOptions.web.reason || '平台已关闭联网，下一轮将跳过'
                       : '可搜索网络并读取网页，回答会注明来源'
                   }`
-                : '未开启。可在输入框「扩展能力」中开启联网搜索。'
+                : '未开启。可在输入框「扩展技能」中开启联网搜索。'
             }}
           </p>
           <p v-if="chat.capabilitiesPending" class="small-text pending-text">
-            输入框中已修改扩展能力，随下一条消息生效。
+            输入框中已修改扩展技能，随下一条消息生效。
           </p>
         </div>
         <div class="context-section">
@@ -951,7 +961,7 @@ async function quoteMessage(text: string) {
         <div v-else class="context-tip">
           <Icon name="info" :size="15" />
           <p>
-            提交后会记录场景与策略快照，后续维护不会静默改变已有会话；模型、关联代码与扩展能力在输入框中调整，随下一条消息生效。
+            提交后会记录场景与策略快照，后续维护不会静默改变已有会话；模型、关联代码与扩展技能在输入框中调整，随下一条消息生效。
           </p>
         </div>
       </div>

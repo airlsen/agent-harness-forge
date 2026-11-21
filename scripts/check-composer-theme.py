@@ -198,6 +198,20 @@ def main():
                         path=f"{os.environ['FORGE_COMPOSER_SCREENSHOTS']}/{theme}-{width}.png"
                     )
                 expect(page.get_by_label("发送任务")).to_be_disabled()
+                assert page.locator(".task-send").evaluate("""e => {
+                    const probe = document.createElement('span');
+                    probe.style.color = 'var(--scenario-selection-text)';
+                    e.appendChild(probe);
+                    const matches = getComputedStyle(probe).color === getComputedStyle(e).color;
+                    probe.remove();
+                    return matches;
+                }""")
+                assert (
+                    page.locator(".model-select").evaluate(
+                        "e => e.getBoundingClientRect().width"
+                    )
+                    == 175
+                )
                 assert (
                     page.locator(".task-send").evaluate(
                         "e => getComputedStyle(e).borderRadius"
@@ -265,7 +279,7 @@ def main():
                 expect(page.locator(".picker-trigger.is-active")).to_contain_text(
                     "forge"
                 )
-                page.get_by_role("button", name="扩展能力", exact=True).click()
+                page.get_by_role("button", name="扩展技能", exact=True).click()
                 page.get_by_text("代码审查", exact=True).last.click()
                 expect(page.locator(".picker-trigger.is-active")).to_have_count(2)
                 page.locator("input[type=file]").set_input_files(

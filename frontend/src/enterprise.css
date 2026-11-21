@@ -774,7 +774,7 @@ textarea:focus-visible {
   width: 100%;
   min-width: 0;
   min-height: 100%;
-  padding: clamp(36px, 11vh, 120px) var(--page-padding-x) clamp(64px, 19vh, 188px);
+  padding: clamp(76px, calc(11vh + 40px), 160px) var(--page-padding-x) clamp(64px, 19vh, 188px);
 }
 .conversation-start-inner {
   max-width: var(--start-max-width);
@@ -1009,7 +1009,7 @@ textarea:focus-visible {
   width: 140px;
 }
 .task-composer .model-select {
-  width: 195px;
+  width: 175px;
 }
 .task-composer .scenario-select .ant-select-selector,
 .task-composer .model-select .ant-select-selector {
@@ -1123,9 +1123,9 @@ textarea:focus-visible {
 }
 .task-composer .task-send:disabled {
   opacity: 1;
-  border-color: var(--line);
-  background: var(--surface-subtle);
-  color: var(--text-secondary);
+  border-color: transparent;
+  background: var(--scenario-selection-bg);
+  color: var(--scenario-selection-text);
 }
 .task-composer .stop-button > span {
   width: 10px;

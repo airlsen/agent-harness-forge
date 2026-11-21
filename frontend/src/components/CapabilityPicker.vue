@@ -6,7 +6,7 @@ import type { McpOption, SkillOption } from '../types/platform';
 import Icon from './ForgeIcon.vue';
 
 /**
- * 聊天输入框的「扩展能力」：临时选用 Skill、MCP 服务与联网搜索，与场景绑定的能力取并集。
+ * 聊天输入框的「扩展技能」：临时选用 Skill、MCP 服务与联网搜索，与场景绑定的能力取并集。
  * 场景已绑定的项显示为已选且不可取消。点选即改输入框中的选择，随下一条消息一起提交。
  */
 const emit = defineEmits<{ opened: [] }>();
@@ -49,7 +49,7 @@ const serverOn = (id: number) =>
   scenario.value.mcpServerIds.includes(id) || choice.value.mcpServerIds.includes(id);
 const webOn = computed(() => scenario.value.webSearch || choice.value.webSearch);
 
-/** 本轮将生效的全部扩展能力名称（场景 ∪ 临时选择），用于触发按钮 */
+/** 本轮将生效的全部扩展技能名称（场景 ∪ 临时选择），用于触发按钮 */
 const activeNames = computed(() => {
   const skillIds = [...new Set([...scenario.value.skillIds, ...choice.value.skillIds])];
   const serverIds = [...new Set([...scenario.value.mcpServerIds, ...choice.value.mcpServerIds])];
@@ -71,13 +71,13 @@ const activeNames = computed(() => {
 });
 const label = computed(() => {
   const [first, ...rest] = activeNames.value;
-  if (!first) return '扩展能力';
+  if (!first) return '扩展技能';
   return rest.length ? `${first} +${rest.length}` : first;
 });
 const title = computed(
   () =>
     (activeNames.value.length
-      ? `扩展能力：${activeNames.value.join('、')}`
+      ? `扩展技能：${activeNames.value.join('、')}`
       : '临时选用 Skill、MCP 服务与联网搜索；与场景绑定的能力一起生效') +
     (chat.capabilitiesPending ? ' · 随下一条消息生效' : ''),
 );
@@ -188,7 +188,7 @@ defineExpose({ close: () => (open.value = false) });
         :class="['model-trigger', 'picker-trigger', { 'is-active': activeNames.length }]"
         :disabled="chat.loading || chat.sending"
         :aria-expanded="open"
-        aria-label="扩展能力"
+        aria-label="扩展技能"
         aria-controls="capability-options"
         :title="title"
         @keydown.esc.stop="open = false"
@@ -202,11 +202,11 @@ defineExpose({ close: () => (open.value = false) });
           id="capability-options"
           class="scenario-popover picker-popover capability-popover"
           role="dialog"
-          aria-label="选择扩展能力"
+          aria-label="选择扩展技能"
           @keydown.esc.stop="open = false"
         >
           <div class="picker-head">
-            <span>扩展能力</span><small :class="{ 'is-pending': chat.capabilitiesPending }">{{ hint }}</small>
+            <span>扩展技能</span><small :class="{ 'is-pending': chat.capabilitiesPending }">{{ hint }}</small>
           </div>
           <div v-if="searchable" class="picker-search">
             <Icon name="search" :size="13" />
@@ -214,7 +214,7 @@ defineExpose({ close: () => (open.value = false) });
               ref="search"
               v-model:value="query"
               placeholder="搜索 Skill 或 MCP 服务"
-              aria-label="搜索扩展能力"
+              aria-label="搜索扩展技能"
             />
           </div>
           <div class="picker-list">
