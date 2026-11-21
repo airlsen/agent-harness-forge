@@ -133,8 +133,8 @@ defineExpose({ focus: () => textarea.value?.focus() });
 <template>
   <div :class="['task-composer', { 'task-composer-hero': hero }]">
     <div v-if="chat.draftAttachments.length" class="attachment-chips">
-      <span v-for="(file, index) in chat.draftAttachments" :key="index">
-        <Icon name="file" :size="14" />{{ file.name }}
+      <span v-for="(file, index) in chat.draftAttachments" :key="index" :title="file.name">
+        <Icon name="file" :size="14" /><span class="attachment-name">{{ file.name }}</span>
         <button
           :aria-label="`移除附件 ${file.name}`"
           :disabled="chat.running"
@@ -156,7 +156,7 @@ defineExpose({ focus: () => textarea.value?.focus() });
       @keydown="keyboard"
     ></textarea>
     <div class="task-composer-toolbar">
-      <div class="task-composer-options">
+      <div class="task-composer-options" role="group" aria-label="任务配置，可横向滚动">
         <div class="scenario-picker-wrap">
           <Icon
             v-if="!chat.current"
@@ -229,7 +229,6 @@ defineExpose({ focus: () => textarea.value?.focus() });
             codePicker?.close();
           "
         />
-        <span class="composer-option-divider"></span>
         <a-button
           type="text"
           class="icon-button"
@@ -252,25 +251,26 @@ defineExpose({ focus: () => textarea.value?.focus() });
       </div>
       <button
         v-if="chat.current?.status === 'running'"
+        type="button"
         class="stop-button"
+        aria-label="中止执行"
+        title="中止执行"
         @click="chat.interrupt().catch((e) => app.toast(e.message, 'error'))"
       >
-        <span></span>中止
+        <span aria-hidden="true"></span>
       </button>
       <a-button
         v-else
         type="primary"
         class="task-send"
-        :shape="hero ? 'default' : 'circle'"
+        shape="circle"
         :disabled="!canSend && !submitting && !chat.sending"
         :loading="submitting || chat.sending"
         aria-label="发送任务"
         title="发送任务 · Enter"
         @click="send"
       >
-        <template v-if="!submitting && !chat.sending"
-          ><span v-if="hero">发送</span><Icon name="ri-arrow-up-line" :size="18"
-        /></template>
+        <Icon v-if="!submitting && !chat.sending" name="ri-arrow-up-line" :size="18" />
       </a-button>
     </div>
   </div>
