@@ -826,6 +826,7 @@ onBeforeUnmount(() => {
                 v-for="(file, index) in skill.referenceFiles"
                 :key="file.path"
                 :class="['file-row', 'reference-row', { selected: selectedFile === index }]"
+                :aria-current="selectedFile === index ? 'page' : undefined"
                 :title="file.filename"
                 @click="selectFile(index)"
               >
@@ -1341,12 +1342,9 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
   border-radius: 6px;
 }
-.icon-action:hover {
-  background: var(--surface-content);
-  color: var(--color-brand);
-}
-.studio-files .icon-action:hover {
-  background: var(--surface-content);
+.icon-action:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--sidebar-nav-hover-text);
 }
 .skill-file-tree {
   display: block;
@@ -1377,17 +1375,15 @@ onBeforeUnmount(() => {
   color: var(--color-text-tertiary);
 }
 .file-row.selected {
-  background: var(--color-brand-subtle);
-  color: var(--color-brand-active);
+  background: var(--sidebar-nav-active-bg);
+  color: var(--sidebar-nav-active-text);
 }
 .file-row.selected svg {
-  color: var(--color-brand);
+  color: currentColor;
 }
 .file-row:hover:not(.selected) {
-  background: var(--surface-content);
-}
-.studio-files .file-row:hover:not(.selected) {
-  background: var(--surface-content);
+  background: var(--surface-hover);
+  color: var(--color-text-primary);
 }
 .file-row small {
   margin-left: auto;
@@ -1508,9 +1504,13 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   background: transparent;
 }
+.view-switch button:hover:not(.active) {
+  color: var(--color-text-primary);
+  background: var(--surface-hover);
+}
 .view-switch button.active {
-  color: var(--color-brand-active);
-  background: var(--color-brand-muted);
+  color: var(--scenario-selection-text);
+  background: var(--scenario-selection-bg);
   font-weight: 600;
 }
 .view-switch button:focus-visible {
@@ -1603,8 +1603,8 @@ onBeforeUnmount(() => {
   padding: 10px 12px;
 }
 .chat-empty > button:hover {
-  color: var(--color-brand);
-  background: var(--color-brand-subtle);
+  color: var(--sidebar-nav-hover-text);
+  background: var(--sidebar-nav-hover-bg);
 }
 .chat-message {
   margin-bottom: 20px;
@@ -1627,8 +1627,8 @@ onBeforeUnmount(() => {
   width: 22px;
   height: 22px;
   border-radius: 7px;
-  color: var(--color-brand);
-  background: var(--color-brand-muted);
+  color: var(--sidebar-nav-active-text);
+  background: var(--sidebar-nav-active-bg);
 }
 .chat-message.user {
   margin-left: 20px;
@@ -1658,7 +1658,7 @@ onBeforeUnmount(() => {
   color: var(--color-text-primary);
 }
 .chat-message :deep(.markdown-body a) {
-  color: var(--color-brand-active);
+  color: var(--scenario-selection-text);
 }
 .tool-note {
   display: flex;
@@ -1713,8 +1713,8 @@ onBeforeUnmount(() => {
     box-shadow 0.15s;
 }
 .composer-box:focus-within {
-  border-color: var(--color-brand-border);
-  box-shadow: 0 0 0 2px var(--color-brand-muted);
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--focus-ring-brand);
 }
 .composer-box :deep(textarea.ant-input) {
   display: block;
@@ -1750,8 +1750,8 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 .composer-attach:hover:not(:disabled) {
-  color: var(--color-brand);
-  background: var(--color-brand-muted);
+  color: var(--sidebar-nav-hover-text);
+  background: var(--sidebar-nav-hover-bg);
 }
 .composer-attach:disabled {
   color: var(--color-text-tertiary);
@@ -1775,12 +1775,12 @@ onBeforeUnmount(() => {
   align-items: center;
   margin: 0;
 }
-/* 禁用态保留主题色倾向（主题色 + 灰），而非 antd 默认的纯灰 */
+/* Disabled controls remain subdued on both light and dark surfaces. */
 .composer-send:disabled,
 .composer-send:disabled:hover {
-  background: color-mix(in srgb, var(--color-brand) 30%, var(--neutral-300)) !important;
-  border-color: color-mix(in srgb, var(--color-brand) 30%, var(--neutral-300)) !important;
-  color: var(--color-text-inverse) !important;
+  background: var(--surface-muted) !important;
+  border-color: var(--border-default) !important;
+  color: var(--color-text-secondary) !important;
   cursor: not-allowed;
 }
 .composer-hint {
@@ -1804,7 +1804,7 @@ onBeforeUnmount(() => {
 }
 .history-row:hover,
 .history-row:focus-within {
-  background: var(--color-brand-subtle);
+  background: var(--surface-hover);
 }
 .history-heading,
 .history-identity,
@@ -1836,12 +1836,12 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .history-tag-published {
-  color: var(--color-brand-active);
-  background: var(--color-brand-muted);
+  color: var(--scenario-selection-text);
+  background: var(--scenario-selection-bg);
 }
 .history-time,
 .history-source {
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -1897,7 +1897,7 @@ onBeforeUnmount(() => {
 }
 .history-preview-header :deep(.ant-btn) {
   flex-shrink: 0;
-  color: var(--color-brand);
+  color: var(--scenario-selection-text);
   font-size: 12px;
 }
 .history-preview-summary {
