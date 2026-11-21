@@ -89,6 +89,38 @@ const server = http.createServer(async (req, res) => {
     res.end('data: [DONE]\n\n');
     return;
   }
+  const bashCase = ['BASH_SAFE', 'BASH_WRITE'].find((value) => instruction.includes(value));
+  if (bashCase && !answeredTool) {
+    const command =
+      bashCase === 'BASH_SAFE'
+        ? 'echo bash-marker && cat report.md 2>/dev/null'
+        : 'echo should-not-run > bash-denied.txt';
+    send({
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: 'fixture-call-' + requests.length,
+                type: 'function',
+                function: {
+                  name: 'bash',
+                  arguments: JSON.stringify({ description: 'Check bash routing', command }),
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    send({
+      choices: [{ delta: {}, finish_reason: 'tool_calls' }],
+      usage: { prompt_tokens: 100, completion_tokens: 10 },
+    });
+    res.end('data: [DONE]\n\n');
+    return;
+  }
   const code = [
     'CODE_GREP_SECRET',
     'CODE_GLOB_SECRET',
@@ -450,6 +482,22 @@ try {
   await assert.rejects(() => kernel.readRaw(id, 'missing.png'), /不存在/);
   check('Runner artifact reader also rejects traversal and symlinks', () => assert.ok(true));
   const toolResult = (list) => list.find((event) => event.kind === 'tool_result')?.payload;
+  events = await turn('BASH_SAFE');
+  check('real bash runs safe combinations without an approval ticket', () => {
+    assert.equal(
+      events.some((event) => event.kind === 'approval_required'),
+      false,
+    );
+    assert.equal(toolResult(events)?.isError, false);
+    assert.match(toolResult(events)?.result ?? '', /bash-marker/);
+    assert.match(toolResult(events)?.result ?? '', /Integration fixture/);
+  });
+  events = await turn('BASH_WRITE');
+  check('real bash write asks and a denied request does not execute', () => {
+    assert.equal(events.filter((event) => event.kind === 'approval_required').length, 1);
+    assert.ok(events.some((event) => event.kind === 'approval_resolved' && event.payload.action === 'deny'));
+  });
+  assert.ok(!(await kernel.listFiles(id)).some((file) => file.path === 'bash-denied.txt'));
   events = await turn('GREP');
   check('DSH grep (pinned search plugin) searches the session workspace', () => {
     const result = toolResult(events);

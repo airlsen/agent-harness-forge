@@ -58,7 +58,7 @@ try {
       workspace: root,
       // 旧版本策略字段：已下线，写入不再逐次确认
       requireWriteApproval: true,
-      allowedTools: ['workspace_list', 'workspace_read', 'workspace_write', 'glob', 'grep'],
+      allowedTools: ['workspace_list', 'workspace_read', 'workspace_write', 'glob', 'grep', 'bash'],
     },
   );
 
@@ -67,7 +67,15 @@ try {
       hooks.get('tools/pre-execute')({ name, callId: 'c', arguments: {} }, () => 'next');
     assert.equal(await decide('workspace_write'), 'next');
     assert.equal(await decide('workspace_read'), 'next');
-    assert.equal((await decide('bash')).kind, 'deny');
+    assert.equal((await decide('not_allowed')).kind, 'deny');
+  });
+  await check('bash pre-execution hook applies allow, ask and deny decisions', async () => {
+    const decide = (command) =>
+      hooks.get('tools/pre-execute')({ name: 'bash', callId: 'c', arguments: { command } }, () => 'next');
+    assert.equal(await decide('cd project && ls 2>/dev/null'), 'next');
+    assert.equal((await decide('find . -delete')).kind, 'ask');
+    assert.equal((await decide('echo x > report.txt')).kind, 'ask');
+    assert.equal((await decide('sudo ls')).kind, 'deny');
   });
   await check('256000-byte file is accepted and readable', async () => {
     await write('limit.txt', 'x'.repeat(256000));
@@ -127,7 +135,7 @@ try {
     assert.match(guarded('grep', { pattern: 'x', path: 7 }), /无效/);
     // 其他工具不受搜索路径规则影响；未授权工具由白名单 guard 拒绝
     assert.equal(guarded('workspace_read', { path: '/etc/passwd' }), undefined);
-    assert.match(guarded('bash', { command: 'ls' }), /禁止/);
+    assert.match(guarded('not_allowed', { command: 'ls' }), /禁止/);
     assert.equal(searchPathDenial(root, undefined), undefined);
   });
   await check('symlinks and hidden files are absent from listing', async () => {
@@ -312,6 +320,54 @@ try {
     assert.equal(classifyBashCommand('rm report.md').level, 'ask');
     assert.equal(classifyBashCommand('echo "test" > out.txt').level, 'ask');
     assert.equal(classifyBashCommand('touch newfile.txt').level, 'ask');
+  });
+
+  await check('bash read-only combinations and redirection are parsed conservatively', () => {
+    const allow = [
+      'cd /project && git status && ls -la',
+      'ls src; cat README.md',
+      'cat README.md 2>/dev/null | head -n 20',
+      'cat README.md 2> /dev/null',
+      `echo "a > b; c && d"`,
+      `grep -n 'a > b' README.md`,
+      `find . -maxdepth 2 -name '*.js'`,
+      `sed -n '1,20p' README.md`,
+      'git branch --list feature',
+    ];
+    const ask = [
+      'find . -delete',
+      'find . -exec touch file',
+      'git branch -D old',
+      'git branch new-branch',
+      'git branch -- -D',
+      'git branch -- newbranch --list',
+      `git branch '2'>/dev/null`,
+      'git tag v1',
+      'git remote add origin example',
+      'git diff --output=file',
+      'date -s tomorrow',
+      'rg --pre=sh foo .',
+      'echo "$(touch file)"',
+      'echo `touch file`',
+      'echo $HOME',
+      'ls *.js',
+      'ls > output.txt',
+      'cat README.md 2> errors.txt',
+      'git status && npm test',
+      'ls | sh',
+      'ls &',
+      'ls\ntouch file',
+      'echo "unterminated',
+      'ls # comment',
+      'cat < README.md',
+      'echo x 2>&1',
+      'echo x >> output.txt',
+      'echo x > /dev/null',
+    ];
+    for (const command of allow) assert.equal(classifyBashCommand(command).level, 'allow', command);
+    for (const command of ask) assert.notEqual(classifyBashCommand(command).level, 'allow', command);
+    assert.match(classifyBashCommand('echo x > output.txt').reason, /重定向/);
+    assert.doesNotMatch(classifyBashCommand('echo "a > b"').reason, /重定向/);
   });
 
   await check('git output sanitization strips credentials and access tokens', () => {
