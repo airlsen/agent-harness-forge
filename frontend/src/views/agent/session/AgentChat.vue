@@ -42,6 +42,7 @@ const chat = useConversation();
 const route = useRoute();
 const router = useRouter();
 const messagesPane = ref<HTMLElement | null>(null);
+const composer = ref<InstanceType<typeof TaskComposer> | null>(null);
 const panelNode = ref<HTMLElement | null>(null);
 const panelMedia = window.matchMedia('(max-width: 1280px)');
 const overlayPanel = ref(panelMedia.matches);
@@ -452,17 +453,6 @@ function eventText(event: KernelEvent) {
   if (event.kind === 'workspace_changes') return `文件改动 · ${event.payload.total ?? 0} 个文件`;
   return event.payload.partial ? '保留了部分输出' : '收到一条回复';
 }
-async function exportSession() {
-  if (!chat.current) return;
-  try {
-    await downloadResponse(
-      `/agent/sessions/${chat.current.id}/export`,
-      `forge-session-${chat.current.id}.json`,
-    );
-  } catch (error) {
-    app.toast((error as Error).message, 'error');
-  }
-}
 async function decide(id: number, action: 'approve' | 'deny') {
   approvalBusy.value = id;
   try {
@@ -481,6 +471,23 @@ async function copyMessage(text: string) {
   } catch {
     app.toast('剪贴板访问被浏览器拒绝，请手动选择内容复制', 'info');
   }
+}
+async function quoteMessage(text: string) {
+  const quote = text
+    .trim()
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
+  const draft = `${chat.input.trimEnd()}${chat.input.trim() ? '\n\n' : ''}${quote}\n\n`;
+  if (draft.length > 64000) {
+    app.toast('引用内容过长，请选择较短的消息', 'info');
+    return;
+  }
+  chat.input = draft;
+  stickToBottom.value = true;
+  await nextTick();
+  await scrollToBottom();
+  composer.value?.focus();
 }
 </script>
 <template>
@@ -509,15 +516,7 @@ async function copyMessage(text: string) {
             aria-label="查看能力"
             @click="showPanel('context')"
           >
-            <Icon name="blocks" :size="16" /><span>能力</span></button
-          ><button
-            v-if="chat.current"
-            class="icon-button"
-            title="导出会话与轨迹"
-            aria-label="导出会话"
-            @click="exportSession"
-          >
-            <Icon name="download" :size="17" />
+            <Icon name="blocks" :size="16" /><span>能力</span>
           </button>
         </div>
       </div>
@@ -585,7 +584,28 @@ async function copyMessage(text: string) {
               >
             </div>
             <div v-if="turn.user" class="message-row user">
-              <div class="user-message-text">{{ turn.user.content }}</div>
+              <div class="user-message-block">
+                <div class="user-message-text">{{ turn.user.content }}</div>
+                <div class="message-action-bar user-message-actions" aria-label="用户消息操作">
+                  <button
+                    type="button"
+                    aria-label="复制消息"
+                    title="复制消息"
+                    @click="copyMessage(turn.user.content)"
+                  >
+                    <Icon name="ri-file-copy-line" :size="16" />
+                  </button>
+                  <button
+                    type="button"
+                    :disabled="chat.running || chat.loading"
+                    aria-label="引用消息"
+                    title="引用到输入框"
+                    @click="quoteMessage(turn.user.content)"
+                  >
+                    <Icon name="ri-chat-1-line" :size="16" />
+                  </button>
+                </div>
+              </div>
             </div>
             <div class="message-row assistant">
               <span class="message-avatar agent"><Icon name="sparkles" :size="18" /></span>
@@ -611,17 +631,6 @@ async function copyMessage(text: string) {
                     v-if="step.live"
                     class="stream-cursor"
                   ></span>
-                  <div v-if="!step.live" class="step-actions">
-                    <span v-if="step.partial" class="message-partial">执行未完成时保留的部分输出</span
-                    ><button
-                      class="message-copy"
-                      aria-label="复制回复"
-                      title="复制内容"
-                      @click="copyMessage(step.text)"
-                    >
-                      <Icon name="copy" :size="13" />复制
-                    </button>
-                  </div>
                 </section>
                 <div v-if="turnWaiting(turn)" class="agent-working compact" role="status">
                   <span class="thinking-dots"><i></i><i></i><i></i></span
@@ -650,6 +659,23 @@ async function copyMessage(text: string) {
                   @diff="diffChange = $event"
                   @open="openChangedFile"
                 />
+                <div
+                  v-if="!turn.running && turn.answer.some((step) => step.text)"
+                  class="message-action-bar assistant-message-actions"
+                  aria-label="AI 回复操作"
+                >
+                  <span v-if="turn.answer.some((step) => step.partial)" class="message-partial"
+                    >执行未完成时保留的部分输出</span
+                  >
+                  <button
+                    type="button"
+                    aria-label="复制整轮回复"
+                    title="复制整轮回复"
+                    @click="copyMessage(turn.answer.map((step) => step.text).join('\n\n'))"
+                  >
+                    <Icon name="ri-file-copy-line" :size="16" />
+                  </button>
+                </div>
                 <div v-if="!turn.running && !turn.steps.length" class="turn-empty">（本轮没有输出）</div>
               </div>
             </div>
@@ -717,7 +743,7 @@ async function copyMessage(text: string) {
             </button>
           </div>
         </div>
-        <TaskComposer @submitted="(id) => router.replace(`/agent/chat/${id}`)" />
+        <TaskComposer ref="composer" @submitted="(id) => router.replace(`/agent/chat/${id}`)" />
       </div>
     </section>
     <button

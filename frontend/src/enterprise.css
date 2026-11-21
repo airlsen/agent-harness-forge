@@ -2594,6 +2594,43 @@ textarea:focus-visible {
   font-size: 14px;
   max-width: 78%;
 }
+.enterprise-chat .user-message-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 78%;
+  min-width: 0;
+}
+.enterprise-chat .user-message-block .user-message-text {
+  max-width: 100%;
+}
+.enterprise-chat .message-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  margin-top: 6px;
+  color: var(--text-secondary);
+}
+.enterprise-chat .user-message-actions {
+  justify-content: flex-end;
+}
+.enterprise-chat .message-action-bar button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: inherit;
+}
+.enterprise-chat .message-action-bar button:hover,
+.enterprise-chat .message-action-bar button:focus-visible {
+  color: var(--ink);
+  background: var(--surface-hover);
+}
+.enterprise-chat .message-action-bar button:disabled {
+  opacity: 0.4;
+}
 .enterprise-chat .markdown-body {
   color: var(--ink);
   font-size: 14px;
@@ -2631,10 +2668,6 @@ textarea:focus-visible {
 }
 .enterprise-chat .diagram-error {
   color: var(--color-warning-text);
-}
-.enterprise-chat .message-copy {
-  color: var(--text-secondary);
-  font-size: 10px;
 }
 .enterprise-chat .step-label {
   color: var(--text-secondary);
