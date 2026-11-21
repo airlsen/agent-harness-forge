@@ -811,7 +811,7 @@ textarea:focus-visible {
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--text-secondary);
-  background: var(--surface);
+  background: var(--surface-card);
   font-size: 12px;
   line-height: 20px;
 }
@@ -824,13 +824,13 @@ textarea:focus-visible {
   flex-shrink: 0;
 }
 .conversation-scenario-chip:not(:disabled):hover {
-  color: var(--accent-ink);
-  border-color: var(--accent-line);
+  color: var(--scenario-selection-text);
+  border-color: var(--scenario-selection-border);
 }
 .conversation-scenario-chip[aria-pressed='true'] {
-  color: var(--accent-ink);
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
+  color: var(--scenario-selection-text);
+  border-color: var(--scenario-selection-border);
+  background: var(--scenario-selection-bg);
 }
 .conversation-start-status {
   margin-top: 18px;
@@ -847,7 +847,7 @@ textarea:focus-visible {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  color: var(--accent-ink);
+  color: var(--scenario-selection-text);
   font-size: 11px;
   line-height: 1.8;
   margin-bottom: 12px;
@@ -864,7 +864,7 @@ textarea:focus-visible {
 .task-composer {
   position: relative;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--surface-card);
   border-radius: 11px;
   padding: 16px 17px 12px;
   box-shadow: 0 2px 6px #26334a04;
@@ -918,8 +918,59 @@ textarea:focus-visible {
   min-width: 0;
 }
 .task-composer .scenario-picker-wrap {
-  position: static;
+  position: relative;
   min-width: 0;
+}
+.task-composer .scenario-select-icon,
+.task-composer .model-select-icon {
+  position: absolute;
+  z-index: 1;
+  top: 8px;
+  left: 9px;
+  pointer-events: none;
+  color: var(--scenario-selection-text);
+}
+.task-composer .scenario-select,
+.task-composer .model-select {
+  min-width: 100px;
+  max-width: 240px;
+  font-size: 11px;
+}
+.task-composer .scenario-select {
+  width: 165px;
+}
+.task-composer .model-select {
+  width: 160px;
+}
+.task-composer .scenario-select .ant-select-selector,
+.task-composer .model-select .ant-select-selector {
+  min-height: 32px;
+  padding-left: 32px;
+  border-radius: 5px;
+  box-shadow: none;
+}
+.task-composer .scenario-select .ant-select-selector {
+  color: var(--scenario-selection-text);
+  border-color: var(--scenario-selection-border);
+  background: var(--scenario-selection-bg);
+}
+.task-composer .scenario-select .ant-select-selection-item {
+  color: var(--scenario-selection-text);
+}
+.task-composer .model-select .ant-select-selector {
+  color: var(--text-secondary);
+  border-color: var(--line);
+  background: var(--surface-card);
+}
+.task-composer .model-select .ant-select-selection-item {
+  color: var(--text-secondary);
+}
+.task-composer .scenario-select.ant-select-disabled .ant-select-selector,
+.task-composer .model-select.ant-select-disabled .ant-select-selector {
+  background: var(--surface-muted);
+}
+.task-composer .scenario-select.ant-select-disabled .ant-select-selector {
+  background: var(--scenario-selection-bg);
 }
 .task-composer .scenario-trigger {
   font-size: 11px;
@@ -927,11 +978,11 @@ textarea:focus-visible {
   display: flex;
   gap: 7px;
   align-items: center;
-  color: var(--accent-ink);
+  color: var(--scenario-selection-text);
   padding: 5px 8px;
-  border: 1px solid var(--accent-line);
+  border: 1px solid var(--scenario-selection-border);
   border-radius: 5px;
-  background: var(--accent-soft);
+  background: var(--scenario-selection-bg);
   max-width: 240px;
 }
 .task-composer .scenario-trigger > span {
@@ -940,16 +991,19 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 .task-composer .scenario-trigger:hover:not(:disabled) {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
+  border-color: var(--scenario-selection-border);
+  background: var(--scenario-selection-bg);
 }
 .task-composer .scenario-trigger:disabled {
   opacity: 0.85;
-  color: var(--accent-ink);
+  color: var(--scenario-selection-text);
 }
 .task-composer .model-picker-wrap {
-  position: static;
+  position: relative;
   min-width: 0;
+}
+.task-composer .model-select-icon {
+  color: var(--text-secondary);
 }
 .task-composer .model-trigger {
   font-size: 11px;
@@ -961,7 +1015,7 @@ textarea:focus-visible {
   padding: 5px 8px;
   border: 1px solid var(--line);
   border-radius: 5px;
-  background: #fff;
+  background: var(--surface-card);
   max-width: 200px;
 }
 .task-composer .model-trigger > span {
@@ -981,10 +1035,10 @@ textarea:focus-visible {
   color: var(--color-warning-text);
   border-style: dashed;
 }
-.task-composer .model-popover strong > small.model-status-badge.is-failed {
+.task-select-popup strong > small.model-status-badge.is-failed {
   color: var(--color-danger-text);
 }
-.task-composer .model-popover strong > small.model-status-badge.is-untested {
+.task-select-popup strong > small.model-status-badge.is-untested {
   color: var(--text-subtle);
 }
 .composer-option-divider {
@@ -1067,80 +1121,8 @@ textarea:focus-visible {
   border-color: var(--line);
   background: var(--surface-subtle);
 }
-.task-composer .scenario-popover {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  top: auto;
-  left: 0;
-  z-index: 70;
-  width: 354px;
-  min-width: 0;
-  max-width: 100%;
-  border-color: var(--line);
-  background: #fff;
-  box-shadow: 0 8px 35px #26334a1c;
-  border-radius: 10px;
-  max-height: min(350px, 45dvh);
-  overflow-y: auto;
-}
-.task-composer-hero .scenario-popover {
-  top: calc(100% + 10px);
-  bottom: auto;
-}
-.task-composer .scenario-popover .popover-label {
-  font-size: 10px;
-  color: var(--text-subtle);
-  padding: 12px 14px 7px;
-}
-.task-composer .scenario-popover > button {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 12px 14px;
-  text-align: left;
-  width: 100%;
-  color: var(--text-secondary);
-}
-.task-composer .scenario-popover > button:hover,
-.task-composer .scenario-popover > button.selected {
-  background: var(--accent-soft);
-}
-.task-composer .scenario-popover > button > div {
-  min-width: 0;
-  flex: 1;
-}
-.task-composer .scenario-popover strong {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ink);
-}
-.task-composer .scenario-popover strong > small {
-  font-size: 9px;
-  font-weight: 400;
-  margin-left: 5px;
-  color: var(--color-warning-text);
-}
-.task-composer .scenario-popover > button > div > span {
-  display: block;
-  font-size: 10px;
-  color: var(--text-secondary);
-  margin-top: 4px;
-  line-height: 1.7;
-  white-space: normal;
-}
-.task-composer .scenario-popover > a {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
-  padding: 13px 14px;
-  border-top: 1px solid var(--line);
-  color: var(--text-secondary);
-}
 /*
- * 关联代码 / 扩展能力选择面板：与模型选择器同一套轻量样式。
- * 选项是按钮行（不用 label + 原生勾选框），避免全局 label / input 样式渗入；
+ * 关联代码 / 扩展能力使用 Ant Popover + Checkbox。
  * 点选即改输入框中的选择，随下一条消息提交，因此没有确定/取消。
  */
 .task-composer .code-picker-wrap {
@@ -1152,13 +1134,13 @@ textarea:focus-visible {
   max-width: 180px;
 }
 .task-composer .picker-trigger.is-active {
-  color: var(--accent-ink);
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
+  color: var(--scenario-selection-text);
+  border-color: var(--scenario-selection-border);
+  background: var(--scenario-selection-bg);
 }
 .task-composer .picker-trigger.is-active:hover:not(:disabled) {
-  color: var(--accent-ink);
-  background: var(--accent-soft);
+  color: var(--scenario-selection-text);
+  background: var(--scenario-selection-bg);
 }
 .task-composer .picker-trigger > .picker-trigger-label {
   min-width: 0;
@@ -1170,22 +1152,9 @@ textarea:focus-visible {
   right: -3px;
   width: 7px;
   height: 7px;
-  border: 1.5px solid #fff;
+  border: 1.5px solid var(--surface-card);
   border-radius: 50%;
   background: var(--accent-solid);
-}
-.task-composer .scenario-popover.picker-popover {
-  display: flex;
-  flex-direction: column;
-  width: 320px;
-  max-height: min(400px, 55dvh);
-  padding: 6px;
-  border-radius: 10px;
-  overflow: hidden;
-}
-.task-composer .scenario-popover.capability-popover {
-  width: 360px;
-  max-height: min(460px, 60dvh);
 }
 .picker-head {
   display: flex;
@@ -1203,7 +1172,7 @@ textarea:focus-visible {
   color: var(--text-subtle);
 }
 .picker-head > small.is-pending {
-  color: var(--accent-ink);
+  color: var(--scenario-selection-text);
 }
 .picker-search {
   display: flex;
@@ -1216,30 +1185,8 @@ textarea:focus-visible {
   color: var(--text-subtle);
 }
 .picker-search:focus-within {
-  background: #fff;
+  background: var(--surface-card);
   box-shadow: inset 0 0 0 1px var(--line);
-}
-.task-composer .picker-search > input[type='search'] {
-  flex: 1;
-  min-width: 0;
-  min-height: 30px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  outline: 0;
-  box-shadow: none;
-  background: transparent;
-  font-size: 12px;
-  color: var(--ink);
-}
-.task-composer .picker-search > input[type='search']:focus,
-.task-composer .picker-search > input[type='search']:focus-visible {
-  border: 0;
-  outline: 0;
-  box-shadow: none;
-}
-.picker-search > input::-webkit-search-cancel-button {
-  cursor: pointer;
 }
 .picker-list {
   flex: 1;
@@ -1273,14 +1220,14 @@ textarea:focus-visible {
   color: var(--text-secondary);
 }
 .picker-row:hover {
-  background: var(--surface-subtle);
+  background: var(--surface-hover);
 }
 .picker-row.selected {
-  background: var(--accent-soft);
+  background: var(--surface-selected);
 }
 .picker-row > svg {
   flex-shrink: 0;
-  color: var(--accent-ink);
+  color: var(--scenario-selection-text);
 }
 .picker-row-main {
   display: flex;
@@ -1308,7 +1255,7 @@ textarea:focus-visible {
   color: var(--text-subtle);
 }
 .picker-row.selected .picker-row-main > b {
-  color: var(--accent-ink);
+  color: var(--scenario-selection-text);
 }
 /* 场景已绑定：已选且不可取消 */
 .picker-row.is-locked {
@@ -1338,7 +1285,7 @@ textarea:focus-visible {
   background: transparent;
 }
 .picker-row.is-missing.selected {
-  background: var(--color-brand-muted);
+  background: var(--surface-selected);
 }
 .picker-row.is-missing .picker-row-main > b {
   color: var(--text-secondary);
@@ -1363,18 +1310,140 @@ textarea:focus-visible {
 }
 .picker-empty > button {
   margin-left: auto;
-  color: var(--accent-ink);
+  color: var(--scenario-selection-text);
   font-size: 11px;
 }
 .picker-empty > a {
-  color: var(--accent-ink);
+  color: var(--scenario-selection-text);
+}
+/* Select and Popover live in portals: their panels need standalone theme styles. */
+.task-select-popup.ant-select-dropdown {
+  width: min(354px, calc(100vw - 32px)) !important;
+  max-width: calc(100vw - 32px);
+  background: var(--surface-card);
+}
+.task-select-popup.model-select-popup.ant-select-dropdown {
+  width: min(380px, calc(100vw - 32px)) !important;
+}
+.task-select-popup .ant-select-item-option-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.task-select-popup .ant-select-item-option-content > svg {
+  flex: none;
+  color: var(--color-text-secondary);
+}
+.task-select-option-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.task-select-option-copy > strong,
+.task-select-option-copy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-select-option-copy > strong {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.task-select-option-copy > span {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+.task-select-option-copy small {
+  margin-left: 6px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 400;
+}
+.task-select-popup .ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+  background: var(--surface-hover);
+}
+.task-select-popup .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: var(--surface-selected);
+}
+.task-select-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 9px 10px 5px;
+  border-top: 1px solid var(--border-light);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+.task-select-footer:hover {
+  color: var(--scenario-selection-text);
+}
+.task-picker-overlay .ant-popover-inner {
+  padding: 6px;
+  background: var(--surface-card);
+}
+.task-picker-overlay .scenario-popover.picker-popover {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  width: min(320px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: min(400px, 55dvh);
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: var(--surface-card);
+  box-shadow: none;
+}
+.task-picker-overlay .scenario-popover.capability-popover {
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(460px, 60dvh);
+}
+.task-picker-overlay .picker-search .ant-input {
+  min-width: 0;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 12px;
+}
+.task-picker-overlay .ant-checkbox-wrapper.picker-row {
+  margin-inline-start: 0;
+  color: var(--color-text-secondary);
+}
+.task-picker-overlay .ant-checkbox-wrapper.picker-row > span:last-child {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.task-picker-overlay .ant-checkbox-wrapper.picker-row:hover,
+.task-picker-overlay .picker-row:not(.is-locked):hover {
+  background: var(--surface-hover);
+}
+.task-picker-overlay .ant-checkbox-wrapper.picker-row.selected {
+  background: var(--surface-selected);
+}
+.task-picker-overlay .ant-checkbox-wrapper.picker-row.is-locked {
+  opacity: 1;
+  background: var(--surface-muted);
+}
+.task-picker-overlay .ant-checkbox-wrapper.picker-row.is-locked .picker-row-main > b {
+  color: var(--color-text-secondary);
 }
 .enterprise-model-prompt.connect-model-prompt {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: var(--color-brand-muted);
-  border: 1px solid var(--color-brand-subtle);
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
   border-radius: 6px;
   margin: 14px 0 0;
   padding: 11px 13px;
@@ -3630,6 +3699,8 @@ textarea:focus-visible {
   .task-composer-options {
     gap: 7px;
     min-width: 0;
+    flex: 1;
+    flex-wrap: wrap;
   }
   .task-send {
     margin-left: auto;
@@ -3640,6 +3711,12 @@ textarea:focus-visible {
     max-width: 153px;
     padding: 5px 6px;
   }
+  .task-composer .scenario-select {
+    width: 145px;
+  }
+  .task-composer .model-select {
+    width: 118px;
+  }
   .task-composer .scenario-trigger > svg:first-child {
     width: 14px;
   }
@@ -3648,9 +3725,6 @@ textarea:focus-visible {
     gap: 4px;
     max-width: 118px;
     padding: 5px 6px;
-  }
-  .task-composer .scenario-popover.picker-popover {
-    width: 100%;
   }
   .task-composer .picker-trigger {
     max-width: 118px;
@@ -4345,7 +4419,7 @@ textarea:focus-visible {
   height: 100%;
   min-height: 60vh;
   border: 0;
-  background: #fff;
+  background: var(--surface-content);
 }
 .file-preview-media {
   display: block;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch, type VNode } from 'vue';
 import { useConversation } from '../stores/conversation';
 import { usePlatform } from '../stores/platform';
 import type { ModelOption } from '../types/platform';
@@ -13,8 +13,8 @@ import Icon from './ForgeIcon.vue';
 const emit = defineEmits<{ selected: []; opened: [] }>();
 const app = usePlatform();
 const chat = useConversation();
+const SelectMenu = (props: { node: VNode }) => props.node;
 const open = ref(false);
-const root = ref<HTMLElement | null>(null);
 watch(
   () => [app.modelOptions, app.defaultModelId, chat.current?.id, chat.current?.modelId] as const,
   () => chat.syncModel(),
@@ -40,6 +40,9 @@ const label = computed(() => {
   if (!app.modelOptions.length) return '未配置模型';
   return selected.value?.name ?? '选择模型';
 });
+const pickerValue = computed(() =>
+  keepsUnlisted.value ? '__current__' : (chat.selectedModelId ?? undefined),
+);
 const title = computed(() => {
   if (inSession.value && (keepsUnlisted.value || !selected.value)) return chat.current?.model || '未记录模型';
   if (!app.modelOptions.length) return '尚无可用模型，请由管理员在「模型管理」启用';
@@ -63,26 +66,21 @@ function tight(option: ModelOption) {
     contextPressure(chat.current?.contextTokens, option.contextWindow)
   );
 }
-function choose(id: number | null) {
+function choose(value: unknown) {
+  if (typeof value !== 'number' && value !== '__current__') return;
+  const id = value === '__current__' ? currentId.value : Number(value);
   if (chat.selectModel(id)) emit('selected');
   open.value = false;
 }
-function toggle() {
-  if (chat.running || chat.loading) return;
-  if (!inSession.value && !app.modelOptions.length) return;
-  open.value = !open.value;
-  if (open.value) emit('opened');
+function visible(value: boolean) {
+  open.value = value;
+  if (value) emit('opened');
 }
-function outside(event: PointerEvent) {
-  if (root.value && !root.value.contains(event.target as Node)) open.value = false;
-}
-onMounted(() => document.addEventListener('pointerdown', outside));
-onBeforeUnmount(() => document.removeEventListener('pointerdown', outside));
 defineExpose({ close: () => (open.value = false) });
 </script>
 
 <template>
-  <div ref="root" class="model-picker-wrap">
+  <div class="model-picker-wrap">
     <RouterLink
       v-if="!inSession && !app.modelOptions.length"
       to="/agent/models"
@@ -91,37 +89,28 @@ defineExpose({ close: () => (open.value = false) });
     >
       <Icon name="cpu" :size="15" /><span>{{ label }}</span>
     </RouterLink>
-    <button
-      v-else
-      type="button"
-      class="model-trigger"
+    <Icon v-if="inSession || app.modelOptions.length" class="model-select-icon" name="cpu" :size="15" />
+    <a-select
+      v-if="inSession || app.modelOptions.length"
+      class="model-select"
+      :value="pickerValue"
       :disabled="chat.running || chat.loading"
-      :aria-expanded="open"
       aria-label="选择模型"
-      aria-controls="model-options"
       :title="title"
-      @click="toggle"
-      @keydown.esc.stop="open = false"
+      :open="open"
+      :show-search="false"
+      option-label-prop="label"
+      popup-class-name="task-select-popup model-select-popup"
+      @dropdown-visible-change="visible"
+      @change="choose"
     >
-      <Icon name="cpu" :size="15" />
-      <span>{{ label }}</span>
-      <Icon name="chevronDown" :size="13" />
-    </button>
-    <div
-      v-if="open"
-      id="model-options"
-      class="scenario-popover model-popover"
-      @keydown.esc.stop="open = false"
-    >
-      <div class="popover-label">选择模型</div>
-      <button
+      <a-select-option
         v-if="currentUnlisted"
-        type="button"
-        :class="{ selected: keepsUnlisted }"
-        @click="choose(currentId)"
+        value="__current__"
+        :label="chat.current?.modelName || chat.current?.model || '未记录模型'"
       >
         <Icon name="cpu" :size="17" />
-        <div>
+        <span class="task-select-option-copy">
           <strong
             >{{ chat.current?.modelName || chat.current?.model || '未记录模型'
             }}<small class="model-status-badge is-failed">{{
@@ -129,18 +118,16 @@ defineExpose({ close: () => (open.value = false) });
             }}</small></strong
           >
           <span>不在可选列表中，切换后无法再切回</span>
-        </div>
-        <Icon v-if="keepsUnlisted" name="check" :size="15" />
-      </button>
-      <button
+        </span>
+      </a-select-option>
+      <a-select-option
         v-for="option in app.modelOptions"
         :key="option.id"
-        type="button"
-        :class="{ selected: option.id === chat.selectedModelId }"
-        @click="choose(option.id)"
+        :value="option.id"
+        :label="option.name"
       >
         <Icon name="cpu" :size="17" />
-        <div>
+        <span class="task-select-option-copy">
           <strong
             >{{ option.name
             }}<small v-if="option.id === app.defaultModelId" class="model-default-badge">默认</small
@@ -153,10 +140,14 @@ defineExpose({ close: () => (open.value = false) });
             >{{ option.model }} · {{ contextLabel(option.contextWindow)
             }}<template v-if="priceLabel(option)"> · {{ priceLabel(option) }}</template></span
           >
-        </div>
-        <Icon v-if="option.id === chat.selectedModelId" name="check" :size="15" />
-      </button>
-      <RouterLink to="/agent/models">管理模型 <Icon name="arrow" :size="14" /></RouterLink>
-    </div>
+        </span>
+      </a-select-option>
+      <template #dropdownRender="{ menuNode }">
+        <SelectMenu :node="menuNode" />
+        <RouterLink class="task-select-footer" to="/agent/models" @click="open = false"
+          >管理模型 <Icon name="arrow" :size="14"
+        /></RouterLink>
+      </template>
+    </a-select>
   </div>
 </template>

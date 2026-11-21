@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type VNode } from 'vue';
 import { useRouter } from 'vue-router';
 import { useConversation } from '../stores/conversation';
 import { usePlatform } from '../stores/platform';
@@ -15,7 +15,6 @@ const app = usePlatform();
 const chat = useConversation();
 const router = useRouter();
 const picker = ref(false);
-const root = ref<HTMLElement | null>(null);
 const textarea = ref<HTMLTextAreaElement | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const modelPicker = ref<InstanceType<typeof ModelPicker> | null>(null);
@@ -37,6 +36,7 @@ const canSend = computed(
     !chat.running &&
     !chat.loading,
 );
+const SelectMenu = (props: { node: VNode }) => props.node;
 
 function resize() {
   const node = textarea.value;
@@ -48,18 +48,30 @@ watch(
   () => chat.input,
   () => nextTick(resize),
 );
-function outside(event: PointerEvent) {
-  if (root.value && !root.value.contains(event.target as Node)) picker.value = false;
-}
 onMounted(() => {
-  document.addEventListener('pointerdown', outside);
   resize();
 });
 let active = true;
 onBeforeUnmount(() => {
   active = false;
-  document.removeEventListener('pointerdown', outside);
 });
+function chooseScenario(value: unknown) {
+  if (typeof value !== 'number') return;
+  const id = value;
+  chat.selectedScenarioId = id;
+  chat.previewScenarioId =
+    choices.value.find((scenario) => scenario.id === id)?.status === 'draft' ? id : null;
+  picker.value = false;
+  void nextTick(() => textarea.value?.focus());
+}
+function scenarioOpen(open: boolean) {
+  picker.value = open;
+  if (open) {
+    modelPicker.value?.close();
+    codePicker.value?.close();
+    capabilityPicker.value?.close();
+  }
+}
 
 async function send() {
   if (!canSend.value || chat.running) return;
@@ -119,7 +131,7 @@ function keyboard(event: KeyboardEvent) {
 defineExpose({ focus: () => textarea.value?.focus() });
 </script>
 <template>
-  <div ref="root" :class="['task-composer', { 'task-composer-hero': hero }]">
+  <div :class="['task-composer', { 'task-composer-hero': hero }]">
     <div v-if="chat.draftAttachments.length" class="attachment-chips">
       <span v-for="(file, index) in chat.draftAttachments" :key="index">
         <Icon name="file" :size="14" />{{ file.name }}
@@ -146,58 +158,51 @@ defineExpose({ focus: () => textarea.value?.focus() });
     <div class="task-composer-toolbar">
       <div class="task-composer-options">
         <div class="scenario-picker-wrap">
-          <button
-            class="scenario-trigger"
-            :disabled="Boolean(chat.current) || chat.running || chat.loading"
-            :aria-expanded="picker"
+          <Icon
+            v-if="!chat.current"
+            class="scenario-select-icon"
+            :name="selected?.payload.icon ?? 'sparkles'"
+            :size="16"
+          />
+          <a-select
+            v-if="!chat.current"
+            class="scenario-select"
+            :value="chat.selectedScenarioId ?? selected?.id"
+            :disabled="chat.running || chat.loading"
             aria-label="选择场景"
-            aria-controls="scenario-options"
-            @click="
-              picker = !picker;
-              modelPicker?.close();
-              codePicker?.close();
-              capabilityPicker?.close();
-            "
-            @keydown.esc.stop="picker = false"
+            :open="picker"
+            popup-class-name="task-select-popup scenario-select-popup"
+            option-label-prop="label"
+            :show-search="false"
+            @dropdown-visible-change="scenarioOpen"
+            @change="chooseScenario"
           >
-            <Icon
-              :name="chat.current?.bundle?.meta?.scenarioIcon ?? selected?.payload.icon ?? 'sparkles'"
-              :size="16"
-            />
-            <span>{{ chat.current?.scenarioName ?? selected?.payload.name ?? '选择场景' }}</span>
-            <Icon v-if="!chat.current" name="chevronDown" :size="13" />
-            <Icon v-else name="lock" :size="12" />
-          </button>
-          <div
-            v-if="picker"
-            id="scenario-options"
-            class="scenario-popover"
-            @keydown.esc.stop="picker = false"
-          >
-            <div class="popover-label">选择已发布场景或预置模板</div>
-            <button
+            <a-select-option
               v-for="scenario in choices"
               :key="scenario.id"
-              :class="{ selected: selected?.id === scenario.id }"
-              @click="
-                chat.selectedScenarioId = scenario.id;
-                chat.previewScenarioId = scenario.status === 'draft' ? scenario.id : null;
-                picker = false;
-                textarea?.focus();
-              "
+              :value="scenario.id"
+              :label="scenario.payload.name"
             >
               <Icon :name="scenario.payload.icon" :size="18" />
-              <div>
+              <span class="task-select-option-copy">
                 <strong
                   >{{ scenario.payload.name
                   }}<small v-if="scenario.status === 'draft'">草稿预览</small></strong
                 ><span>{{ scenario.payload.description }}</span>
-              </div>
-              <Icon v-if="selected?.id === scenario.id" name="check" :size="15" />
-            </button>
-            <p v-if="!choices.length" class="popover-label">暂无可用场景</p>
-            <RouterLink to="/agent/scenarios">浏览企业场景 <Icon name="arrow" :size="14" /></RouterLink>
-          </div>
+              </span>
+            </a-select-option>
+            <template #dropdownRender="{ menuNode }">
+              <SelectMenu :node="menuNode" />
+              <RouterLink class="task-select-footer" to="/agent/scenarios" @click="picker = false"
+                >浏览企业场景 <Icon name="arrow" :size="14"
+              /></RouterLink>
+            </template>
+          </a-select>
+          <button v-else class="scenario-trigger" disabled aria-label="当前会话场景已锁定">
+            <Icon :name="chat.current.bundle?.meta?.scenarioIcon ?? 'sparkles'" :size="16" />
+            <span>{{ chat.current.scenarioName }}</span>
+            <Icon name="lock" :size="12" />
+          </button>
         </div>
         <ModelPicker
           ref="modelPicker"
@@ -225,15 +230,17 @@ defineExpose({ focus: () => textarea.value?.focus() });
           "
         />
         <span class="composer-option-divider"></span>
-        <button
+        <a-button
+          type="text"
           class="icon-button"
-          :disabled="chat.running || attaching || chat.loading"
+          :disabled="chat.running || chat.loading"
+          :loading="attaching"
           aria-label="附加文本文件"
           title="附加文本文件 · 最多 4 个，每个 200 KB"
           @click="fileInput?.click()"
         >
-          <span v-if="attaching" class="loader small"></span><Icon v-else name="paperclip" :size="18" />
-        </button>
+          <Icon v-if="!attaching" name="paperclip" :size="18" />
+        </a-button>
         <input
           ref="fileInput"
           type="file"
@@ -258,17 +265,20 @@ defineExpose({ focus: () => textarea.value?.focus() });
       >
         <span></span>中止
       </button>
-      <button
+      <a-button
         v-else
+        type="primary"
         class="task-send"
-        :disabled="!canSend"
+        :disabled="!canSend && !submitting && !chat.sending"
+        :loading="submitting || chat.sending"
         aria-label="发送任务"
         title="发送任务 · Enter"
         @click="send"
       >
-        <span v-if="submitting || chat.sending" class="loader small"></span
-        ><template v-else><span v-if="hero">发送</span><Icon name="arrowUp" :size="18" /></template>
-      </button>
+        <template v-if="!submitting && !chat.sending"
+          ><span v-if="hero">发送</span><Icon name="arrowUp" :size="18"
+        /></template>
+      </a-button>
     </div>
   </div>
   <div :class="['task-composer-footnote', { 'task-composer-shortcuts': hero }]">
