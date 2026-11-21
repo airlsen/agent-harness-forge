@@ -94,7 +94,7 @@ const server = http.createServer(async (req, res) => {
     const command =
       bashCase === 'BASH_SAFE'
         ? 'echo bash-marker && cat report.md 2>/dev/null'
-        : 'echo should-not-run > bash-denied.txt';
+        : 'echo pwned > /etc/passwd';
     send({
       choices: [
         {
@@ -493,10 +493,12 @@ try {
     assert.match(toolResult(events)?.result ?? '', /Integration fixture/);
   });
   events = await turn('BASH_WRITE');
-  check('real bash write asks and a denied request does not execute', () => {
-    assert.equal(events.filter((event) => event.kind === 'approval_required').length, 1);
-    assert.ok(events.some((event) => event.kind === 'approval_resolved' && event.payload.action === 'deny'));
+  check('real bash denied command does not execute', () => {
+    const result = toolResult(events);
+    assert.equal(result?.isError, true);
+    assert.match(result?.result ?? '', /安全策略|系统核心路径/);
   });
+  assert.ok(!(await kernel.listFiles(id)).some((file) => file.path === 'pwned.txt'));
   assert.ok(!(await kernel.listFiles(id)).some((file) => file.path === 'bash-denied.txt'));
   events = await turn('GREP');
   check('DSH grep (pinned search plugin) searches the session workspace', () => {

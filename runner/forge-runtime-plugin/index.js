@@ -3,7 +3,7 @@ import { LlmAdapter, attributionHeaders } from '@deepseek-ai/dsh-llm';
 import { lstatSync, realpathSync } from 'node:fs';
 import { mkdir, readFile, writeFile, readdir, lstat } from 'node:fs/promises';
 import { resolve, relative, dirname, sep } from 'node:path';
-import { inspectReadOnlyShell } from './bash-readonly.js';
+import { inspectReadOnlyShell, ALLOWED_SHELL_COMMANDS } from './bash-readonly.js';
 
 export const name = 'forge-runtime';
 export const inject = ['llm', 'tools', 'approval'];
@@ -143,19 +143,34 @@ export function classifyBashCommand(cmd) {
     return { level: 'deny', reason: '安全策略禁止使用提权命令 (sudo/su)' };
   }
 
-  // (3) 探测凭据、密钥与平台环境变量
-  if (
-    /\b(cat|more|less|tail|head|grep|awk|sed)\s+.*(\/etc\/(shadow|gshadow|sudoers)|\.git-credentials|\.netrc|id_(rsa|dsa|ecdsa|ed25519))/i.test(
+  // (3) 探测凭据、密钥与平台/跨会话敏感文件（与平台 secretPath 语义一致：.env.example/.sample/.template/.dist 放行）
+  const readsSensitive =
+    /\b(cat|more|less|tail|head|grep|awk|sed|type|print|echo|show)\b/i.test(clean) &&
+    /(\/etc\/(shadow|gshadow|sudoers|passwd)|\.git-credentials|\.netrc|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|\.npmrc|\.pypirc|\.pem|\.key|\.p12|\.pfx|\.jks|\.keystore|data\/encryption\.key|data\/auth\.json|data\/sessions\/|\.ssh\/(config|known_hosts|id_))/i.test(
       clean,
-    ) ||
-    /(^|\s)(printenv|env)(\s|$)/i.test(clean) ||
-    /\b(cat|head|tail|more|less)\s+.*\.env(\.local|\.production|\.development)?\b/i.test(clean)
+    );
+  const readsDotEnv =
+    /\b(cat|head|tail|more|less)\b/i.test(clean) &&
+    /\.env(?!\.(?:example|sample|template|dist)\b)/i.test(clean);
+  if (
+    readsSensitive ||
+    readsDotEnv ||
+    /(^|\s)(printenv|env)(\s|$)/i.test(clean)
   ) {
-    return { level: 'deny', reason: '安全策略禁止探测系统凭据与敏感环境变量' };
+    return { level: 'deny', reason: '安全策略禁止读取系统凭据、密钥与敏感文件' };
   }
 
-  // (4) 网络管道直接执行 (curl/wget | sh)
-  if (/(curl|wget)[^|;&]+\|\s*(ba|z|k|c)?sh\b/i.test(clean)) {
+  // (4) 对外联地址发起网络请求（下载/外泄）；本地回环（localhost/127.0.0.1/0.0.0.0）允许
+  if (
+    /\b(curl|wget)\b[\s\S]*\b(https?:\/\/|ftp:\/\/)/i.test(clean) &&
+    !/\b(curl|wget)\b[\s\S]*\b(https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)|ftp:\/\/(localhost|127\.0\.0\.1))\b/i.test(
+      clean,
+    )
+  ) {
+    return { level: 'deny', reason: '安全策略禁止向外部地址发起网络请求（curl/wget）' };
+  }
+  // (4b) 通过网络管道直接下载并执行脚本
+  if (/(curl|wget)[\s\S]*\|\s*(ba|z|k|c)?sh\b/i.test(clean)) {
     return { level: 'deny', reason: '安全策略禁止通过网络管道直接下载并执行脚本' };
   }
 
@@ -164,13 +179,12 @@ export function classifyBashCommand(cmd) {
     return { level: 'deny', reason: '安全策略禁止向系统核心路径重定向写入' };
   }
 
-  // Only a conservatively recognized subset is automatic. Unknown shell syntax and
-  // arguments require approval; recognizing a command is not OS-level isolation.
-  const inspection = inspectReadOnlyShell(clean);
-  if (inspection.safe) return { level: 'allow', reason: '只读命令自动放行' };
-  if (inspection.redirect)
-    return { level: 'ask', reason: `命令包含重定向，请确认目标: ${truncateCmd(clean)}` };
-  return { level: 'ask', reason: `命令包含未识别或可能修改环境的操作: ${truncateCmd(clean)}` };
+  // 2. 🟢 白名单（当前为空，保留供未来登记免确认只读命令）；deny-list-only 下其余默认放行。
+  //    注意：bash 工具没有路径沙箱，黑名单只挡明显危险操作；真正的隔离依赖 Runner 沙箱/只读挂载。
+  if (ALLOWED_SHELL_COMMANDS.size > 0 && inspectReadOnlyShell(clean).safe) {
+    return { level: 'allow', reason: '只读命令自动放行' };
+  }
+  return { level: 'allow', reason: '非禁止命令自动放行（deny-list-only）' };
 }
 /**
  * 搜索结果中的密钥类文件：DSH 搜索为发现配置会包含隐藏与被忽略的文件（只排除 .git 等版本库目录），
