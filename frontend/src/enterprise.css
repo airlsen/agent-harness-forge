@@ -1055,17 +1055,6 @@ textarea:focus-visible {
   width: 29px;
   height: 29px;
 }
-.composer-capabilities {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  color: var(--text-secondary);
-  padding: 5px 3px;
-}
-.composer-capabilities:hover {
-  color: var(--accent-ink);
-}
 .task-send {
   display: flex;
   align-items: center;
@@ -3741,9 +3730,6 @@ textarea:focus-visible {
     width: 23px;
   }
   .composer-option-divider {
-    display: none;
-  }
-  .composer-capabilities > span {
     display: none;
   }
   .task-composer-footnote {

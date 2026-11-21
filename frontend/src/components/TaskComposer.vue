@@ -10,7 +10,7 @@ import CodePicker from './CodePicker.vue';
 import CapabilityPicker from './CapabilityPicker.vue';
 
 const props = withDefaults(defineProps<{ hero?: boolean }>(), { hero: false });
-const emit = defineEmits<{ submitted: [id: number]; capabilities: [] }>();
+const emit = defineEmits<{ submitted: [id: number] }>();
 const app = usePlatform();
 const chat = useConversation();
 const router = useRouter();
@@ -249,14 +249,6 @@ defineExpose({ focus: () => textarea.value?.focus() });
           hidden
           @change="attach"
         />
-        <button
-          v-if="!hero"
-          class="composer-capabilities"
-          title="查看本次会话的能力与边界"
-          @click="emit('capabilities')"
-        >
-          <Icon name="blocks" :size="15" /><span>能力</span>
-        </button>
       </div>
       <button
         v-if="chat.current?.status === 'running'"

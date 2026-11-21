@@ -504,12 +504,12 @@ async function copyMessage(text: string) {
             <Icon name="folder" :size="16" /><span>结果</span
             ><small v-if="chat.files.length">{{ chat.files.length }}</small></button
           ><button
-            :class="['session-panel-button', { selected: chat.panelOpen && chat.panel === 'trajectory' }]"
-            :aria-expanded="chat.panelOpen && chat.panel === 'trajectory'"
-            aria-label="查看过程"
-            @click="showPanel('trajectory')"
+            :class="['session-panel-button', { selected: chat.panelOpen && chat.panel === 'context' }]"
+            :aria-expanded="chat.panelOpen && chat.panel === 'context'"
+            aria-label="查看能力"
+            @click="showPanel('context')"
           >
-            <Icon name="activity" :size="16" /><span>过程</span></button
+            <Icon name="blocks" :size="16" /><span>能力</span></button
           ><button
             v-if="chat.current"
             class="icon-button"
@@ -717,10 +717,7 @@ async function copyMessage(text: string) {
             </button>
           </div>
         </div>
-        <TaskComposer
-          @submitted="(id) => router.replace(`/agent/chat/${id}`)"
-          @capabilities="showPanel('context')"
-        />
+        <TaskComposer @submitted="(id) => router.replace(`/agent/chat/${id}`)" />
       </div>
     </section>
     <button
