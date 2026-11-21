@@ -269,6 +269,7 @@ defineExpose({ focus: () => textarea.value?.focus() });
         v-else
         type="primary"
         class="task-send"
+        :shape="hero ? 'default' : 'circle'"
         :disabled="!canSend && !submitting && !chat.sending"
         :loading="submitting || chat.sending"
         aria-label="发送任务"
@@ -276,7 +277,7 @@ defineExpose({ focus: () => textarea.value?.focus() });
         @click="send"
       >
         <template v-if="!submitting && !chat.sending"
-          ><span v-if="hero">发送</span><Icon name="arrowUp" :size="18"
+          ><span v-if="hero">发送</span><Icon name="ri-arrow-up-line" :size="18"
         /></template>
       </a-button>
     </div>

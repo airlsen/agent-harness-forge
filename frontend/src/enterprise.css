@@ -1091,6 +1091,14 @@ textarea:focus-visible {
   background: var(--surface-subtle);
   color: var(--text-subtle);
 }
+.task-composer:not(.task-composer-hero) .task-send {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 50%;
+}
 .task-composer-hero .task-send {
   min-height: 35px;
   padding: 7px 12px;
@@ -2396,7 +2404,7 @@ textarea:focus-visible {
   min-width: 0;
 }
 .enterprise-chat .chat-subbar {
-  height: 59px;
+  height: 62px;
   padding: 0 29px;
   border-bottom-color: var(--line);
   gap: 12px;
@@ -2408,7 +2416,8 @@ textarea:focus-visible {
 }
 .enterprise-chat .chat-title > strong {
   color: var(--ink);
-  font-size: 12px;
+  font-size: 14px;
+  font-weight: 600;
   max-width: 370px;
 }
 .enterprise-chat .session-icon {
@@ -2430,7 +2439,7 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .session-panel-button:hover {
   background: var(--accent-soft);
@@ -2644,7 +2653,7 @@ textarea:focus-visible {
 }
 .enterprise-chat .tool-status.error {
   color: var(--color-warning-text);
-  background: var(--color-brand-muted);
+  background: var(--color-warning-bg);
 }
 .enterprise-chat .tool-status.pending {
   background: transparent;
@@ -2679,8 +2688,8 @@ textarea:focus-visible {
   flex-shrink: 0;
 }
 .enterprise-chat .approval-card {
-  border-color: var(--color-brand-subtle);
-  background: var(--color-brand-muted);
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-bg);
   margin-bottom: 14px;
   padding: 17px;
   border-radius: 9px;
@@ -2698,7 +2707,11 @@ textarea:focus-visible {
 }
 .enterprise-chat .approval-symbol {
   color: var(--color-warning-text);
-  background: var(--color-brand-subtle);
+  background: var(--surface-card);
+}
+.enterprise-chat .approval-card > details {
+  border-color: var(--color-warning-border);
+  background: var(--surface-card);
 }
 .enterprise-chat .approval-card > details > summary {
   color: var(--color-warning-text);

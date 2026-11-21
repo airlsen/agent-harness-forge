@@ -1398,7 +1398,7 @@ textarea::-webkit-scrollbar-corner {
   font-size: 11px;
   color: var(--color-text-secondary);
   background: var(--surface-subtle-bg);
-  border: 1px solid var(--color-brand-subtle);
+  border: 1px solid var(--border-default);
   padding: 2px 4px;
   border-radius: 4px;
 }
@@ -1502,23 +1502,23 @@ textarea::-webkit-scrollbar-corner {
 
 /* 代码块：默认深色（tokyo-night 配色，背景由外壳提供） */
 .markdown-body .code-block.is-code {
-  background: var(--color-text-primary);
-  color: var(--color-info-bg);
+  background: var(--source-editor-bg);
+  color: var(--source-editor-text);
 }
 .code-block.is-code .code-head {
-  background: var(--color-text-primary);
+  background: var(--source-editor-bg);
 }
 .code-block.is-code .code-lang {
   font-family: 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
-  color: var(--color-info-bg);
+  color: var(--source-editor-text);
 }
 .code-block.is-code .code-copy {
-  background: var(--color-text-primary);
-  color: var(--color-info-bg);
+  background: var(--source-editor-bg);
+  color: var(--source-editor-text);
 }
 .code-block.is-code .code-copy:hover {
-  background: var(--color-text-secondary);
-  color: var(--surface-content);
+  background: var(--surface-hover);
+  color: var(--color-text-primary);
 }
 .code-block.is-code .code-body ::selection {
   background: var(--color-text-secondary);
@@ -1527,7 +1527,7 @@ textarea::-webkit-scrollbar-corner {
   height: 8px;
 }
 .code-block.is-code .code-body::-webkit-scrollbar-thumb {
-  background: var(--color-text-primary);
+  background: var(--border-strong);
   border-radius: 4px;
 }
 
