@@ -3,6 +3,7 @@ import { LlmAdapter, attributionHeaders } from '@deepseek-ai/dsh-llm';
 import { lstatSync, realpathSync } from 'node:fs';
 import { mkdir, readFile, writeFile, readdir, lstat } from 'node:fs/promises';
 import { resolve, relative, dirname, sep } from 'node:path';
+import { inspectReadOnlyShell } from './bash-readonly.js';
 
 export const name = 'forge-runtime';
 export const inject = ['llm', 'tools', 'approval'];
@@ -163,48 +164,13 @@ export function classifyBashCommand(cmd) {
     return { level: 'deny', reason: '安全策略禁止向系统核心路径重定向写入' };
   }
 
-  // 2. 🟢 绿色通道：只读命令自动放行（Allow）
-  // 检查是否含有写入重定向 (>, >>)；含有重定向的一律不能免审
-  if (/[>]/.test(clean)) {
-    return { level: 'ask', reason: `命令包含文件重定向写入: ${truncateCmd(clean)}` };
-  }
-
-  // 拆分管道并逐段核验
-  const segments = clean
-    .split('|')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const isReadOnlySegment = (seg) => {
-    // Git 只读子命令
-    if (
-      /^git\s+(status|branch|log|diff|show|tag|rev-parse|describe|remote|ls-files|shortlog|help|version|config\s+--get)\b/i.test(
-        seg,
-      )
-    ) {
-      // 排除带有输出重定向或写入参数的 git 命令
-      return !/--output\b/i.test(seg);
-    }
-
-    // 常用只读查看工具
-    if (
-      /^(ls|dir|pwd|cat|head|tail|grep|egrep|fgrep|rg|wc|find|echo|which|whereis|file|tree|stat|uname|date|whoami|id)\b/i.test(
-        seg,
-      )
-    ) {
-      // 排除类似 find -delete, find -exec rm 等破坏性动作
-      return !/\b(-delete|-exec\s+rm)\b/i.test(seg);
-    }
-
-    return false;
-  };
-
-  // 如果不含命令串联符号 (;, &&) 且所有管道段均为只读，则自动放行
-  if (segments.length > 0 && segments.every(isReadOnlySegment) && !/[;&]/.test(clean)) {
-    return { level: 'allow', reason: '只读命令自动放行' };
-  }
-
-  // 3. 🟡 黄色通道：其他操作发起审批（Ask）
-  return { level: 'ask', reason: `模型请求执行终端命令: ${truncateCmd(clean)}` };
+  // Only a conservatively recognized subset is automatic. Unknown shell syntax and
+  // arguments require approval; recognizing a command is not OS-level isolation.
+  const inspection = inspectReadOnlyShell(clean);
+  if (inspection.safe) return { level: 'allow', reason: '只读命令自动放行' };
+  if (inspection.redirect)
+    return { level: 'ask', reason: `命令包含重定向，请确认目标: ${truncateCmd(clean)}` };
+  return { level: 'ask', reason: `命令包含未识别或可能修改环境的操作: ${truncateCmd(clean)}` };
 }
 /**
  * 搜索结果中的密钥类文件：DSH 搜索为发现配置会包含隐藏与被忽略的文件（只排除 .git 等版本库目录），

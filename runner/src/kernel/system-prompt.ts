@@ -30,7 +30,7 @@ export function workspaceGuide(tools: readonly string[]): string[] {
     );
   if (has('bash'))
     lines.push(
-      '你可以调用 bash 执行受限的终端与 Git 命令。只读查看命令（如 git status、git branch、git log、git diff、ls、pwd、cat）直接执行；编译、修改等操作会由系统向用户发起确认。支持在会话工作区或关联项目（cwd）中执行。',
+      '你可以调用 bash 执行受限的终端与 Git 命令。只读查看命令（如 git status、git branch、git log、git diff、ls、pwd、cat）直接执行；编译、修改等操作会由系统向用户发起确认。代码分析优先使用 glob、grep、read；需要终端时使用简单只读命令，避免不必要的脚本、写文件与复杂 Shell 语法。支持在会话工作区或关联项目中执行。',
     );
   if (has('glob') || has('grep') || has('workspace_read'))
     lines.push(
@@ -88,9 +88,9 @@ export function codeGuide(projects: readonly CodeContext[], tools: readonly stri
       '用户为本会话关联了以下代码项目。分析、解答与代码相关的问题时，先检索并阅读这些项目里的真实代码，以代码为依据回答，引用时给出文件路径与行号；不要凭印象猜测实现。',
       '检索与查看方法：grep 按正则搜索内容（path 传项目绝对路径，可用 include 限定文件类型，如 *.ts）；glob 按文件名模式查找（path 传项目绝对路径；结果包含依赖与构建目录，尽量用更具体的子目录或模式）；read 读取文件（file_path 用绝对路径，大文件用 offset/limit 分段读取）' +
         (tools.includes('bash')
-          ? '；或通过 bash 执行只读 Git 命令（如 git branch -a、git log、git status、git diff，cwd 传项目绝对路径）。'
+          ? '；或通过 bash 执行只读 Git 命令（如 git branch -a、git log、git status、git diff，workdir 传项目绝对路径）。'
           : '。'),
-      '这些项目只读：不能修改其中的文件。需要产出文档、补丁或代码时，写入会话工作区。只能访问下列项目，未列出的目录会被拒绝。',
+      '这些项目只读：不能修改其中的文件。需要产出文档、补丁或代码时，写入会话工作区。read、grep、glob 只能访问会话工作区及下列项目；终端不提供操作系统级路径隔离，不要访问未关联目录或敏感文件。',
       list,
     ].join('\n\n'),
   ];

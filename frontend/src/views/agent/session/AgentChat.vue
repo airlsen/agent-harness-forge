@@ -731,9 +731,12 @@ async function quoteMessage(text: string) {
             </div>
             <span class="tag warning">待确认</span>
           </div>
-          <details>
+          <details :open="approval.tool === 'bash'">
             <summary>{{ toolTitle(approval.tool) }} <Icon name="chevron" :size="14" /></summary>
             <pre>{{ formatArgs(approval.arguments) }}</pre>
+            <p v-if="approval.tool === 'bash'" class="approval-workdir-hint">
+              未指定 workdir 时，在会话工作区执行。
+            </p>
           </details>
           <div class="approval-actions">
             <small>仅限本次调用，超时默认拒绝。</small

@@ -1943,6 +1943,12 @@ textarea::-webkit-scrollbar-corner {
   margin: 0;
   line-height: 1.8;
 }
+.approval-workdir-hint {
+  margin: 0;
+  padding: 0 12px 10px;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+}
 .approval-actions {
   display: flex;
   align-items: center;
