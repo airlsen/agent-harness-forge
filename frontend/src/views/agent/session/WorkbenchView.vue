@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { watch } from 'vue';
+import { nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useConversation } from '../../../stores/conversation';
 import ConversationStart from '../../../components/ConversationStart.vue';
+import { animateComposerArrival, captureComposerOrigin } from '../../../utils/composerTransition';
 
 const router = useRouter();
 const chat = useConversation();
@@ -12,8 +13,17 @@ chat.prepareStart();
 // Navigate on the accepted message, not on the later sessions-list refresh.
 watch(
   () => (chat.messages.some((message) => message.role === 'user') ? chat.current?.id : null),
-  (id) => {
-    if (id) void router.push(`/agent/chat/${id}`);
+  async (id) => {
+    if (!id) return;
+    const origin = captureComposerOrigin();
+    try {
+      await router.push(`/agent/chat/${id}`);
+      await nextTick();
+      if (router.currentRoute.value.path === `/agent/chat/${id}` && chat.current?.id === id)
+        animateComposerArrival(origin);
+    } catch {
+      // A failed or interrupted navigation must not affect the accepted turn.
+    }
   },
 );
 </script>
