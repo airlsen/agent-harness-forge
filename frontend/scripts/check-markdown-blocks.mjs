@@ -134,6 +134,38 @@ try {
     assert.match(unsafe, /图表/);
   });
 
+  await check('GFM 表格与删除线可渲染（标题后紧跟表格也能识别）', () => {
+    const md = [
+      '## 二、Dubbo RPC 接口',
+      '| # | 接口 | 方法数 |',
+      '|---|---|---|',
+      '| 1 | `LoginApi` | 77 |',
+      '| — | ~~PassportApi~~ | 0 |',
+    ].join('\n');
+    const html = splitMarkdown(md)
+      .map((b) => b.html ?? '')
+      .join('');
+    assert.match(html, /<h2>二、Dubbo RPC 接口<\/h2>/);
+    assert.match(html, /<table>[\s\S]*<th>接口<\/th>[\s\S]*<code>LoginApi<\/code>/);
+    assert.match(html, /<del>PassportApi<\/del>/);
+    assert.doesNotMatch(html, /\|---/);
+  });
+
+  await check('开启 GFM 后裸链接仍由 linkifyText 处理，表格单元格内同样生效', () => {
+    const inline = splitMarkdown('文档见 https://example.com/docs。')
+      .map((b) => b.html ?? '')
+      .join('');
+    assert.match(
+      inline,
+      /<a class="markdown-external-link" href="https:\/\/example\.com\/docs"[^>]*target="_blank"[^>]*>https:\/\/example\.com\/docs<\/a>。/,
+    );
+
+    const cell = splitMarkdown('| 链接 | 说明 |\n|---|---|\n| https://example.com/a | 文档 |')
+      .map((b) => b.html ?? '')
+      .join('');
+    assert.match(cell, /<td><a class="markdown-external-link" href="https:\/\/example\.com\/a"/);
+  });
+
   await check('代码围栏中的图片地址仍作为代码，不触发外部图片请求', () => {
     const url = 'https://mdn.alipayobjects.com/one_clip/afts/img/chart-id/original';
     const blocks = splitMarkdown(`${FENCE}text\n${url}\n${FENCE}`);

@@ -4,7 +4,7 @@
  * 流式场景下文本只会从尾部增长，历史块的 key 与内容保持稳定，
  * 因此只有最后一个块会被重复解析与高亮。
  */
-import { marked, Renderer, type Token, type Tokens } from 'marked';
+import { marked, Renderer, Tokenizer, type MarkedOptions, type Token, type Tokens } from 'marked';
 import DOMPurify from 'dompurify';
 import { looksLikeImageUrl, normalizeHttpUrl, normalizeRemoteImageUrl } from './remoteImages';
 
@@ -91,6 +91,25 @@ function linkifyText(text: string, allowRemoteImages: boolean): string {
   }
 
   return result + escapeHtml(text.slice(cursor));
+}
+
+/**
+ * 关闭 GFM 的裸链接识别：它只在空白处断开，会把 URL 后紧跟的中文标点和文字一并吞进链接。
+ * 裸地址统一交给 linkifyText（支持中文标点截断、图片内嵌）。
+ */
+class ForgeTokenizer extends Tokenizer {
+  override url(): undefined {
+    return undefined;
+  }
+}
+
+/**
+ * marked.lexer / marked.parser 传入的 options 会整体替换默认配置而不是合并，
+ * 因此必须显式开启 gfm，否则表格、删除线都不会被识别。
+ * 每次新建：marked 会把 tokenizer / renderer 实例挂到传入的对象上。
+ */
+function markedOptions(renderer?: Renderer): MarkedOptions {
+  return { gfm: true, breaks: true, tokenizer: new ForgeTokenizer(), ...(renderer && { renderer }) };
 }
 
 function createMarkdownRenderer(allowRemoteImages: boolean): Renderer {
@@ -189,15 +208,12 @@ export function fenceClosed(raw: string): boolean {
 
 export function splitMarkdown(text: string, options: { live?: boolean } = {}): MarkdownBlock[] {
   const allowRemoteImages = !options.live;
-  const tokens = marked.lexer(text ?? '', { breaks: true });
+  const tokens = marked.lexer(text ?? '', markedOptions());
   const blocks: MarkdownBlock[] = [];
   let htmlGroup: Token[] = [];
   const flushHtml = () => {
     if (!htmlGroup.length) return;
-    const rendered = marked.parser(htmlGroup, {
-      breaks: true,
-      renderer: createMarkdownRenderer(allowRemoteImages),
-    });
+    const rendered = marked.parser(htmlGroup, markedOptions(createMarkdownRenderer(allowRemoteImages)));
     const html = sanitizeMarkdownHtml(rendered, allowRemoteImages);
     htmlGroup = [];
     if (!html.trim()) return;
