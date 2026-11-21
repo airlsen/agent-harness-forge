@@ -51,6 +51,16 @@ defineProps<{ icon: string; title: string; description?: string }>();
   color: var(--color-brand-active);
   background: var(--color-brand-muted);
 }
+:root[data-theme='dark'] .catalog-empty-symbol {
+  color: var(--brand-400);
+  background: var(--surface-selected);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .catalog-empty-symbol {
+    color: var(--brand-400);
+    background: var(--surface-selected);
+  }
+}
 .catalog-empty :deep(.ant-empty-footer) {
   display: flex;
   flex-direction: column;
