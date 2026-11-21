@@ -4994,3 +4994,26 @@ textarea:focus-visible {
   flex-direction: column;
   flex: 1;
 }
+
+/* Administration pages use the same semantic surfaces in both themes. */
+.admin-theme-page .audit-metrics strong {
+  color: var(--color-text-primary);
+}
+.admin-theme-page .text-link,
+.admin-theme-page .link-button {
+  color: var(--scenario-selection-text);
+}
+.admin-theme-page .button.primary {
+  color: var(--btn-primary-fg);
+}
+.admin-theme-page .policy-intro,
+.admin-theme-page .deployment-boundaries,
+.admin-theme-page .deployment-boundaries > p {
+  border-color: var(--border-default);
+}
+.admin-theme-page .switch-control {
+  background: var(--border-strong);
+}
+.admin-theme-page .switch-control.checked {
+  background: var(--color-brand);
+}
