@@ -1,4 +1,9 @@
+@use 'sass:color';
+@use 'sass:map';
+@use 'sass:math';
 @use './palette' as palette;
+// 当前主题（品牌色阶、按钮色阶、可视化色）；切换见 themes/_index.scss。
+@use './themes' as theme;
 
 @mixin emit-scale($name, $scale) {
   @each $step, $value in $scale {
@@ -6,8 +11,21 @@
   }
 }
 
+// 颜色 → 空格分隔的 RGB 通道（如 218 114 77），供 rgb(var(--brand-rgb) / 透明度) 生成半透明品牌色。
+@function rgb-channels($color) {
+  @return math.round(color.channel($color, 'red', $space: rgb))
+    math.round(color.channel($color, 'green', $space: rgb))
+    math.round(color.channel($color, 'blue', $space: rgb));
+}
+
+// 色阶加深一档或两档（主按钮悬停 / 按下），超出 900 时停在 900。
+@function brand-step($base, $offset) {
+  @return var(--brand-#{math.min($base + $offset, 900)});
+}
+
 :root {
-  @include emit-scale('brand', palette.$brand);
+  @include emit-scale('brand', theme.$brand);
+  --brand-rgb: #{rgb-channels(map.get(theme.$brand, 500))};
   @include emit-scale('neutral', palette.$neutral);
   @include emit-scale('success', palette.$success);
   @include emit-scale('info', palette.$info);
@@ -60,7 +78,7 @@
   --border-strong: var(--neutral-300);
   --border-focus: var(--brand-500);
   --border-disabled: #eaecf0;
-  --focus-ring-brand: #da724d33;
+  --focus-ring-brand: rgb(var(--brand-rgb) / 0.2);
 
   /* Semantic status roles: pale surfaces, readable dark labels */
   --color-success: var(--success-500);
@@ -148,9 +166,9 @@
   --text-2xl: 24px;
 
   /* Button roles (doc §2.3, §6.1) */
-  --btn-primary-bg: var(--brand-600);
-  --btn-primary-bg-hover: var(--brand-700);
-  --btn-primary-bg-active: var(--brand-800);
+  --btn-primary-bg: #{brand-step(theme.$button-step, 0)};
+  --btn-primary-bg-hover: #{brand-step(theme.$button-step, 100)};
+  --btn-primary-bg-active: #{brand-step(theme.$button-step, 200)};
   --btn-primary-fg: var(--neutral-0);
   --btn-secondary-bg: var(--surface-content);
   --btn-secondary-bg-hover: var(--neutral-50);
@@ -186,7 +204,7 @@
   --surface-subtle-bg: #1a2029;
   --surface-muted: #202733;
   --surface-hover: #232a36;
-  --surface-selected: rgba(218, 114, 77, 0.16);
+  --surface-selected: rgb(var(--brand-rgb) / 0.16);
   --scenario-selection-bg: var(--surface-selected);
   --scenario-selection-text: var(--brand-400);
   --scenario-selection-border: var(--border-focus);
@@ -205,8 +223,8 @@
   --border-light: #232933;
   --border-strong: #344054;
   --border-disabled: #232933;
-  --border-focus: #e58b6b;
-  --focus-ring-brand: rgba(218, 114, 77, 0.28);
+  --border-focus: var(--brand-400);
+  --focus-ring-brand: rgb(var(--brand-rgb) / 0.28);
 
   --table-header-bg: var(--surface-muted);
   --table-header-fg: var(--color-text-secondary);

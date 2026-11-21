@@ -1,27 +1,23 @@
 /**
  * 富内容渲染的统一视觉主题：
- * - Mermaid 流程图 / 时序图沿用界面主题色（品牌珊瑚橙浅底 + 橙色描边）；
- * - 饼图、柱状图、折线图等数据图表使用围绕品牌珊瑚橙的清透亮色板；
+ * - Mermaid 流程图 / 时序图沿用界面主题色（品牌色浅底 + 品牌色描边）；
+ * - 饼图、柱状图、折线图等数据图表使用以品牌色为首的清透亮色板；
  * - 代码块使用基于 tokyo-night 调整的深色主题。
+ * 品牌相关色值来自当前主题（styles/themes/，经 theme-export.module.scss 导出），这里不写品牌色。
  */
 import type { EmbedOptions } from 'vega-embed';
+import themeColors from '../styles/theme-export.module.scss';
 
 /**
- * 数据图表分类色板：以品牌珊瑚橙为首，其余为高明度、中高饱和的清透色（马卡龙但不发灰），
- * 冷暖交替排列，相邻扇区/柱子易区分；末位浅石板灰留给"其他"。
+ * 数据图表分类色板：以品牌色为首，其余为高明度、中高饱和的清透色（马卡龙但不发灰），
+ * 冷暖交替排列，相邻扇区/柱子易区分；末位浅石板灰留给"其他"。具体色值见当前主题的 $viz-palette。
  */
-export const VIZ_PALETTE = [
-  '#f28c64', // 珊瑚橙（品牌色提亮）
-  '#6cb4f4', // 天空蓝
-  '#5fcfaa', // 薄荷绿
-  '#f9c45c', // 芒果黄
-  '#a993f0', // 薰衣草紫
-  '#f589a8', // 蜜桃粉
-  '#4fc4d6', // 湖水青
-  '#c5ccd6', // 浅石板灰（其他）
-];
+export const VIZ_PALETTE: string[] = Array.from(
+  { length: Number(themeColors.vizPaletteSize) },
+  (_, i) => themeColors[`viz${i + 1}`],
+);
 
-/** 单系列图表默认用品牌珊瑚橙，与界面主题一致 */
+/** 单系列图表默认用品牌色，与界面主题一致 */
 export const VIZ_SINGLE = VIZ_PALETTE[0];
 
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif';
@@ -33,11 +29,11 @@ export const MERMAID_THEME_VARIABLES: Record<string, string | boolean | Record<s
   fontFamily: FONT,
   fontSize: '14px',
   background: '#ffffff',
-  // Mermaid 12 默认 neo 外观会用 primary→secondary 渐变描边（橙→蓝的双色边框），关掉保持单色
+  // Mermaid 12 默认 neo 外观会用 primary→secondary 渐变描边（品牌色→蓝的双色边框），关掉保持单色
   useGradient: false,
-  // 流程图节点 / 时序图参与者：界面主题色——浅橙底 + 品牌橙描边
-  primaryColor: '#fdf0e9',
-  primaryBorderColor: '#da724d',
+  // 流程图节点 / 时序图参与者：界面主题色——品牌色浅底 + 品牌色描边
+  primaryColor: themeColors.vizNodeBg,
+  primaryBorderColor: themeColors.vizNodeBorder,
   primaryTextColor: INK,
   secondaryColor: '#eaf1fb',
   secondaryBorderColor: '#4c84d9',
@@ -54,14 +50,14 @@ export const MERMAID_THEME_VARIABLES: Record<string, string | boolean | Record<s
   noteBorderColor: '#e2a93b',
   noteTextColor: INK,
   // 时序图
-  actorBkg: '#fdf0e9',
-  actorBorder: '#da724d',
+  actorBkg: themeColors.vizNodeBg,
+  actorBorder: themeColors.vizNodeBorder,
   actorTextColor: INK,
   actorLineColor: '#c3cad4',
   signalColor: '#58616f',
   signalTextColor: INK,
-  activationBkgColor: '#fbe1d5',
-  activationBorderColor: '#da724d',
+  activationBkgColor: themeColors.vizActivationBg,
+  activationBorderColor: themeColors.vizNodeBorder,
   // 甘特图：数据图表色板的清透色，深色文字保证可读
   taskBkgColor: '#9fcdf8',
   taskBorderColor: '#6cb4f4',
@@ -69,8 +65,8 @@ export const MERMAID_THEME_VARIABLES: Record<string, string | boolean | Record<s
   taskTextOutsideColor: INK,
   taskTextLightColor: INK,
   taskTextDarkColor: INK,
-  activeTaskBkgColor: '#f8b294',
-  activeTaskBorderColor: '#f28c64',
+  activeTaskBkgColor: themeColors.vizActiveTaskBg,
+  activeTaskBorderColor: themeColors.vizActiveTaskBorder,
   doneTaskBkgColor: '#a6e6d0',
   doneTaskBorderColor: '#5fcfaa',
   critBkgColor: '#f9b3c7',

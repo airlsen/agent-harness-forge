@@ -1,0 +1,52 @@
+// 主题 v1 · 珊瑚橙（Forge 最初的品牌色）。
+// 主题文件只放「品牌色及其派生」的数据，不写样式；其余颜色（中性、状态、能力类型）在 _palette.scss 共用。
+// 切换主题：修改同目录 _index.scss 里的 @forward 一行。
+
+$name: 'v1-orange';
+
+// 品牌色阶：tokens.scss 输出为 --brand-50 … --brand-900，并据 500 档自动生成 --brand-rgb。
+$brand: (
+  50: #fff5f0,
+  100: #fceae2,
+  200: #f5c7b5,
+  300: #eda58a,
+  400: #e58b6b,
+  500: #da724d,
+  600: #c65d3b,
+  700: #a94b2e,
+  800: #873b27,
+  900: #642b1e,
+);
+
+// 原生主按钮（.button.primary）底色色阶；悬停 / 按下依次加深 100 / 200。
+$button-step: 600;
+
+// Ant Design 的 colorPrimary 种子色阶（按钮、开关、选中、链接等由 antd 据此派生）。
+$antd-step: 500;
+
+// 富内容可视化：Mermaid 节点 / 时序图参与者，与数据图表分类色板（首位为品牌色）。
+// Mermaid base 主题只接受六位十六进制颜色。
+$viz: (
+  node-bg: #fdf0e9,
+  node-border: #da724d,
+  activation-bg: #fbe1d5,
+  active-task-bg: #f8b294,
+  active-task-border: #f28c64,
+);
+$viz-palette: (
+  #f28c64,
+  // 珊瑚橙（品牌色提亮）
+  #6cb4f4,
+  // 天空蓝
+  #5fcfaa,
+  // 薄荷绿
+  #f9c45c,
+  // 芒果黄
+  #a993f0,
+  // 薰衣草紫
+  #f589a8,
+  // 蜜桃粉
+  #4fc4d6,
+  // 湖水青
+  #c5ccd6 // 浅石板灰（其他）
+);

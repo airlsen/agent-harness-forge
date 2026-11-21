@@ -1,17 +1,6 @@
-// Raw Forge color scales. Components should consume semantic tokens from tokens.scss,
-// not these palette values directly.
-$brand: (
-  50: #fff5f0,
-  100: #fceae2,
-  200: #f5c7b5,
-  300: #eda58a,
-  400: #e58b6b,
-  500: #da724d,
-  600: #c65d3b,
-  700: #a94b2e,
-  800: #873b27,
-  900: #642b1e,
-);
+// Raw Forge color scales shared by every theme. Components should consume semantic tokens
+// from tokens.scss, not these palette values directly.
+// 品牌色阶不在这里：每套主题各自定义在 styles/themes/（v1-orange、v2-green …），由 themes/_index.scss 选择。
 
 $neutral: (
   0: #ffffff,
