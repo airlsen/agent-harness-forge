@@ -531,18 +531,18 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
 
 <style scoped lang="scss">
 .markdown-renderer {
-  --md-primary: var(--brand-600);
-  --md-primary-hover: var(--brand-700);
-  --md-primary-active: var(--brand-700);
-  --md-primary-soft: var(--brand-100);
-  --md-primary-muted: var(--brand-50);
-  --md-primary-border: var(--brand-200);
+  --md-primary: var(--color-brand);
+  --md-primary-hover: var(--color-brand-hover);
+  --md-primary-active: var(--scenario-selection-text);
+  --md-primary-soft: var(--scenario-selection-bg);
+  --md-primary-muted: var(--scenario-selection-bg);
+  --md-primary-border: var(--scenario-selection-border);
   --md-primary-ring: rgba(218, 114, 77, 0.28);
-  --md-heading-h1: var(--brand-800);
-  --md-heading-accent: var(--brand-700);
-  --md-row-alt: rgba(218, 114, 77, 0.035);
-  --md-on-primary: #ffffff;
-  --md-quote-strong: var(--brand-800);
+  --md-heading-h1: var(--scenario-selection-text);
+  --md-heading-accent: var(--scenario-selection-text);
+  --md-row-alt: var(--surface-subtle-bg);
+  --md-on-primary: var(--color-text-inverse);
+  --md-quote-strong: var(--scenario-selection-text);
   --md-fg: var(--color-text-primary);
   --md-fg-secondary: var(--color-text-secondary);
   --md-surface: var(--surface-card);
@@ -748,20 +748,20 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
         border-left: 4px solid var(--md-primary);
       }
       &.md-quote-warning {
-        background: linear-gradient(135deg, #fffbeb, #fef3c7);
-        border-left: 4px solid #f59e0b;
+        background: var(--color-warning-bg);
+        border-left: 4px solid var(--color-warning-text);
       }
       &.md-quote-tip {
-        background: linear-gradient(135deg, #ecfdf5, #d1fae5);
-        border-left: 4px solid #10b981;
+        background: var(--color-success-bg);
+        border-left: 4px solid var(--color-success-text);
       }
       &.md-quote-error {
-        background: linear-gradient(135deg, #fef2f2, #fee2e2);
-        border-left: 4px solid #ef4444;
+        background: var(--color-danger-bg);
+        border-left: 4px solid var(--color-danger-text);
       }
       &.md-quote-info {
-        background: linear-gradient(135deg, #eff6ff, #dbeafe);
-        border-left: 4px solid #3b82f6;
+        background: var(--color-info-bg);
+        border-left: 4px solid var(--color-info-text);
       }
       &.md-quote-default {
         background: var(--md-primary-muted);
@@ -992,11 +992,11 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
         color: var(--md-primary-active);
       }
       &.is-email {
-        color: #047857;
-        border-bottom-color: #a7f3d0;
+        color: var(--color-success-text);
+        border-bottom-color: var(--color-success-border);
       }
       &.is-file {
-        color: #b91c1c;
+        color: var(--color-danger-text);
       }
     }
 
@@ -1084,24 +1084,24 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
       display: flex;
       gap: 12px;
       padding: 16px;
-      background: #fef2f2;
-      border: 1px solid #fecaca;
+      background: var(--color-danger-bg);
+      border: 1px solid var(--color-danger-border);
       border-radius: 12px;
-      color: #991b1b;
+      color: var(--color-danger-text);
       .md-error-icon {
         font-size: 20px;
       }
       h4 {
         margin: 0 0 6px;
-        color: #dc2626;
+        color: var(--color-danger-text);
       }
       details summary {
         cursor: pointer;
-        color: #b91c1c;
+        color: var(--color-danger-text);
         font-weight: 600;
       }
       pre {
-        background: rgba(0, 0, 0, 0.04);
+        background: var(--surface-subtle-bg);
         padding: 8px;
         border-radius: 8px;
         font-size: 11px;

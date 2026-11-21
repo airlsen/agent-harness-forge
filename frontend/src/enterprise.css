@@ -2442,13 +2442,13 @@ textarea:focus-visible {
   font-size: 12px;
 }
 .session-panel-button:hover {
-  background: var(--accent-soft);
-  color: var(--accent-ink);
+  background: var(--scenario-selection-bg);
+  color: var(--scenario-selection-text);
 }
 .session-panel-button.selected {
-  background: var(--accent-soft);
-  color: var(--accent-ink);
-  border-color: var(--accent-line);
+  background: var(--scenario-selection-bg);
+  color: var(--scenario-selection-text);
+  border-color: var(--scenario-selection-border);
 }
 .session-panel-button small {
   font-size: 9px;
@@ -2787,7 +2787,7 @@ textarea:focus-visible {
   gap: 5px;
 }
 .enterprise-session-panel .context-tabs > button.selected {
-  color: var(--accent-ink);
+  color: var(--scenario-selection-text);
   border-bottom-color: var(--accent);
 }
 .enterprise-session-panel .context-tabs > button > span {
@@ -2811,9 +2811,9 @@ textarea:focus-visible {
   letter-spacing: 1.2px;
 }
 .enterprise-session-panel .context-scene-icon {
-  background: var(--accent-soft);
-  color: var(--accent-ink);
-  border-color: var(--accent-line);
+  background: var(--scenario-selection-bg);
+  color: var(--scenario-selection-text);
+  border-color: var(--scenario-selection-border);
 }
 .enterprise-session-panel .context-content > h2 {
   color: var(--ink);
@@ -4228,14 +4228,14 @@ textarea:focus-visible {
   margin: 14px 0 4px;
 }
 .file-card {
-  --file-tone: var(--accent-ink);
-  --file-tint: var(--accent-soft);
+  --file-tone: var(--scenario-selection-text);
+  --file-tint: var(--scenario-selection-bg);
   display: flex;
   align-items: center;
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #fff;
+  background: var(--surface-card);
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
@@ -4262,7 +4262,7 @@ textarea:focus-visible {
   --file-tint: var(--color-success-bg);
 }
 .file-card.kind-code {
-  --file-tone: var(--color-info);
+  --file-tone: var(--color-info-text);
   --file-tint: var(--color-agent-type-bg);
 }
 .file-card.kind-office,
@@ -4331,8 +4331,8 @@ textarea:focus-visible {
   color: var(--text-secondary);
 }
 .file-card-download:hover:not(:disabled) {
-  color: var(--accent-ink);
-  background: var(--accent-soft);
+  color: var(--scenario-selection-text);
+  background: var(--scenario-selection-bg);
 }
 .file-card.compact .file-card-main {
   gap: 10px;
@@ -4394,7 +4394,7 @@ textarea:focus-visible {
   cursor: pointer;
 }
 .segmented > button.selected {
-  background: #fff;
+  background: var(--surface-card);
   color: var(--ink);
   box-shadow: 0 1px 3px rgba(41, 46, 56, 0.1);
 }
@@ -4422,7 +4422,8 @@ textarea:focus-visible {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: repeating-conic-gradient(var(--surface-subtle-bg) 0% 25%, #fff 0% 50%) 50% / 18px 18px;
+  background: repeating-conic-gradient(var(--surface-subtle-bg) 0% 25%, var(--surface-card) 0% 50%) 50% / 18px
+    18px;
 }
 .file-preview-image img {
   max-width: 100%;
@@ -4446,7 +4447,7 @@ textarea:focus-visible {
 .file-preview-markdown {
   min-height: 100%;
   padding: 24px 32px;
-  background: #fff;
+  background: var(--surface-card);
 }
 .file-preview-code {
   padding: 16px;
@@ -4474,7 +4475,7 @@ textarea:focus-visible {
   border-spacing: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface-card);
   font-size: 12px;
 }
 .file-preview-table th,
@@ -4623,7 +4624,7 @@ textarea:focus-visible {
   margin: 12px 0 4px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #fff;
+  background: var(--surface-card);
 }
 .turn-changes > summary {
   display: flex;
@@ -4754,7 +4755,7 @@ textarea:focus-visible {
 .diff-table {
   width: 100%;
   border-collapse: collapse;
-  background: #fff;
+  background: var(--surface-card);
   font:
     12.5px/1.7 ui-monospace,
     SFMono-Regular,
