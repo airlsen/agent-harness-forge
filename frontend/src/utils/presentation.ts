@@ -37,7 +37,7 @@ export function scenarioSource(scenario: Scenario) {
 }
 
 export function scenarioState(scenario: Scenario) {
-  return scenario.status === 'template' ? '预置模板' : scenario.status === 'published' ? '已发布' : '草稿';
+  return scenario.status === 'template' ? '预置' : scenario.status === 'published' ? '已发布' : '草稿';
 }
 
 export function sessionMatches(session: Conversation, query: string) {
