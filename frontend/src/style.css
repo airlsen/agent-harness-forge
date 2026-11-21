@@ -216,12 +216,10 @@ textarea::-webkit-scrollbar-corner {
   background: var(--btn-primary-bg);
   border: 1px solid var(--btn-primary-bg);
   color: var(--btn-primary-fg);
-  box-shadow: var(--shadow-sm);
 }
 .button.primary:not(:disabled):hover {
   background: var(--btn-primary-bg-hover);
   border-color: var(--btn-primary-bg-hover);
-  box-shadow: var(--shadow-md);
 }
 .button.primary:not(:disabled):active {
   background: var(--btn-primary-bg-active);

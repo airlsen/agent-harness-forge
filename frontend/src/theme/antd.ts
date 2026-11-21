@@ -22,8 +22,20 @@ const shape = {
   borderRadius: 8,
 };
 
+// 按钮去掉 antd 自带的 `0 2px 0` 底部阴影（默认 / 虚线 / 主按钮 / 危险主按钮）。
+// 只在 Button 组件内覆盖：输入框、下拉框的聚焦光圈同样使用 controlOutline，不能改全局 token。
+// ant-design-vue 4 的 OverrideToken 把每个组件键都声明为必填，只覆盖 Button 时需断言类型。
+const components = {
+  Button: {
+    controlOutline: 'transparent',
+    controlTmpOutline: 'transparent',
+    colorErrorOutline: 'transparent',
+  },
+} as ThemeConfig['components'];
+
 export const forgeLightTheme: ThemeConfig = {
   algorithm: antdTheme.defaultAlgorithm,
+  components,
   token: {
     ...semantic,
     ...shape,
@@ -43,6 +55,7 @@ export const forgeLightTheme: ThemeConfig = {
 
 export const forgeDarkTheme: ThemeConfig = {
   algorithm: antdTheme.darkAlgorithm,
+  components,
   token: {
     ...semantic,
     ...shape,

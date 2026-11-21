@@ -1,4 +1,5 @@
 // 当前主题 —— 全站唯一的切换点。
-// 可选：v1-orange（珊瑚橙）、v2-green（松石青绿）。改这一行后重新构建即可，
-// CSS 变量、Ant Design 组件、Mermaid / 数据图表、浏览器标签页图标会一起切换。
-@forward 'v2-green';
+// 可选：v1-orange（珊瑚橙）、v2-green（松石青绿）、v3-blue（钴蓝）、v4-purple（葡萄紫）、v5-red（玫瑰红）。
+// 改这一行后重新构建即可：CSS 变量、Ant Design 组件、Mermaid / 数据图表、浏览器标签页图标会一起切换。
+// 新增主题：复制任一主题文件改色值，scripts/check-themes.mjs 会校验可编译、白字对比度与图表色板。
+@forward 'v5-red';
