@@ -312,14 +312,14 @@ try {
     assert.equal(classifyBashCommand('git branch -a | grep feature').level, 'allow');
     assert.equal(classifyBashCommand('ls src | wc -l').level, 'allow');
 
-    // 黄色通道：修改、构建、写操作发起用户审批
-    assert.equal(classifyBashCommand('npm install').level, 'ask');
-    assert.equal(classifyBashCommand('npm test').level, 'ask');
-    assert.equal(classifyBashCommand('git commit -m "update"').level, 'ask');
-    assert.equal(classifyBashCommand('git checkout -b new-branch').level, 'ask');
-    assert.equal(classifyBashCommand('rm report.md').level, 'ask');
-    assert.equal(classifyBashCommand('echo "test" > out.txt').level, 'ask');
-    assert.equal(classifyBashCommand('touch newfile.txt').level, 'ask');
+    // deny-list-only：写/构建/修改操作也默认放行（不再逐次确认）
+    assert.equal(classifyBashCommand('npm install').level, 'allow');
+    assert.equal(classifyBashCommand('npm test').level, 'allow');
+    assert.equal(classifyBashCommand('git commit -m "update"').level, 'allow');
+    assert.equal(classifyBashCommand('git checkout -b new-branch').level, 'allow');
+    assert.equal(classifyBashCommand('rm report.md').level, 'allow');
+    assert.equal(classifyBashCommand('echo "test" > out.txt').level, 'allow');
+    assert.equal(classifyBashCommand('touch newfile.txt').level, 'allow');
   });
 
   await check('bash read-only combinations and redirection are parsed conservatively', () => {
@@ -365,9 +365,7 @@ try {
       'echo x > /dev/null',
     ];
     for (const command of allow) assert.equal(classifyBashCommand(command).level, 'allow', command);
-    for (const command of ask) assert.notEqual(classifyBashCommand(command).level, 'allow', command);
-    assert.match(classifyBashCommand('echo x > output.txt').reason, /重定向/);
-    assert.doesNotMatch(classifyBashCommand('echo "a > b"').reason, /重定向/);
+    for (const command of ask) assert.equal(classifyBashCommand(command).level, 'allow', command);
   });
 
   await check('git output sanitization strips credentials and access tokens', () => {

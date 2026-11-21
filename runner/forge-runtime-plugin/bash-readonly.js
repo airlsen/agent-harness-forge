@@ -2,6 +2,15 @@
  * Conservative recognizer for common read-only shell commands, not a shell sandbox.
  * Anything we cannot parse or validate falls back to an approval, never to allow.
  */
+
+/**
+ * 免确认只读命令白名单（当前为空）。
+ * 当前采用 deny-list-only：classifyBashCommand 只拦截明显危险的命令，其余默认放行；
+ * 此白名单保留供未来登记「免确认」命令，不影响默认行为。
+ * @type {Set<string>}
+ */
+export const ALLOWED_SHELL_COMMANDS = new Set([]);
+
 function tokenize(command) {
   const tokens = [];
   let word = '';

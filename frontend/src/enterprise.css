@@ -920,7 +920,7 @@ textarea:focus-visible {
   border: 1px solid var(--line);
   background: var(--surface-card);
   border-radius: 18px;
-  padding: 16px 16px 12px;
+  padding: 12px 12px 4px;
   box-shadow: 0 4px 18px #26334a08;
   transition:
     border-color 0.15s,
@@ -2492,9 +2492,8 @@ textarea:focus-visible {
   min-width: 0;
 }
 .enterprise-chat .chat-subbar {
-  height: 55px;
+  height: 42px;
   padding: 0 29px;
-  border-bottom-color: var(--line);
   gap: 12px;
 }
 .enterprise-chat .chat-title {
