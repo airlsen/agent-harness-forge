@@ -1595,8 +1595,13 @@ textarea:focus-visible {
   flex: none;
   gap: 8px;
 }
-.conversations-search-actions .ant-input-affix-wrapper {
-  width: 240px;
+.conversations-refresh.ant-btn {
+  background: var(--surface-content);
+  border-color: var(--border-default);
+  color: var(--color-text-primary);
+}
+.conversations-refresh.ant-btn:not(:disabled):hover {
+  background: var(--surface-hover);
 }
 .conversation-empty {
   padding: 60px 20px;
@@ -1724,7 +1729,7 @@ textarea:focus-visible {
   .conversations-search-actions {
     width: 100%;
   }
-  .conversations-search-actions .ant-input-affix-wrapper {
+  .conversations-search-actions .catalog-search {
     flex: 1;
     min-width: 0;
   }

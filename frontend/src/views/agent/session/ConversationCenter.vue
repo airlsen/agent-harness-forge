@@ -7,6 +7,7 @@ import { remove } from '../../../api/client';
 import { formatDate, sessionMatches, sessionState } from '../../../utils/presentation';
 import type { Conversation } from '../../../types/platform';
 import Icon from '../../../components/ForgeIcon.vue';
+import CatalogSearch from '../../../components/catalog/CatalogSearch.vue';
 
 const app = usePlatform();
 const chat = useConversation();
@@ -98,17 +99,15 @@ onMounted(refresh);
           </a-tab-pane>
         </a-tabs>
         <div class="conversations-search-actions">
-          <a-input v-model:value="query" allow-clear placeholder="搜索标题或场景" aria-label="搜索会话">
-            <template #prefix><Icon name="search" :size="16" /></template>
-          </a-input>
+          <CatalogSearch v-model:value="query" placeholder="搜索标题或场景" aria-label="搜索会话" />
           <a-button
-            type="text"
+            class="conversations-refresh"
             :disabled="refreshing"
             aria-label="刷新会话"
-            title="刷新会话"
             @click="refresh"
           >
-            <Icon name="refresh" :size="17" :class="{ spinning: refreshing }" />
+            <template #icon><Icon name="refresh" :size="16" :class="{ spinning: refreshing }" /></template
+            >刷新
           </a-button>
         </div>
       </div>
@@ -171,7 +170,7 @@ onMounted(refresh);
               :disabled="item.status === 'running'"
               :aria-label="`归档会话 ${item.title}`"
               :title="item.status === 'running' ? '请先中止执行再归档' : '归档会话'"
-              @click="archiveTarget = item"
+              @click="archiveTarget = item as Conversation"
             >
               <Icon name="archive" :size="16" />
             </a-button>
