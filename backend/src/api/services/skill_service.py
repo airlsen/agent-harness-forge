@@ -173,6 +173,7 @@ def _skill_view(
         "referenceFiles": revision.reference_files if revision else [],
         "createdAt": _iso(row.created_at),
         "updatedAt": _iso(row.updated_at),
+        "publishedAt": _iso(published_revision.created_at) if published_revision else None,
     }
 
 
@@ -420,8 +421,8 @@ async def add_revision(
 
 async def update_draft(db: AsyncSession, skill_id: int, content: str, summary: str, created_by: str) -> dict:
     skill = await get_skill(db, skill_id)
-    revision = await add_revision(db, skill, content, summary, "manual", created_by)
-    return _skill_view(skill, revision)
+    await add_revision(db, skill, content, summary, "manual", created_by)
+    return await skill_detail(db, skill_id)
 
 
 async def publish_skill(db: AsyncSession, skill_id: int, created_by: str) -> dict:
@@ -460,7 +461,7 @@ async def restore_revision(db: AsyncSession, skill_id: int, revision_id: int, cr
     source = await db.get(SkillRevision, revision_id)
     if not source or source.skill_id != skill.id:
         raise HTTPException(404, "版本不存在")
-    restored = await add_revision(
+    await add_revision(
         db,
         skill,
         source.content,
@@ -469,7 +470,7 @@ async def restore_revision(db: AsyncSession, skill_id: int, revision_id: int, cr
         created_by,
         source.reference_files,
     )
-    return _skill_view(skill, restored)
+    return await skill_detail(db, skill_id)
 
 
 def _slug(filename: str) -> str:
@@ -500,12 +501,10 @@ async def add_reference(db: AsyncSession, skill_id: int, filename: str, content:
     }
     refs.append(ref)
     if current:
-        revision = await add_revision(
-            db, skill, current.content, f"添加参考资料：{clean_name}", "manual", references=refs
-        )
+        await add_revision(db, skill, current.content, f"添加参考资料：{clean_name}", "manual", references=refs)
     else:
         raise HTTPException(409, "Skill 草稿尚未初始化")
-    return _skill_view(skill, revision)
+    return await skill_detail(db, skill_id)
 
 
 async def get_authoring_session(db: AsyncSession, skill_id: int, session_id: int) -> SkillAuthoringSession:

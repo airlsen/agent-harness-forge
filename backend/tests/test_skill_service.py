@@ -32,12 +32,18 @@ async def test_skill_lifecycle_keeps_publications_immutable():
         updated_content = content + "\n\n## Escalation\n\nEscalate unresolved cases.\n"
         updated = await update_draft(db, created["id"], updated_content, "Add escalation", "tester")
         assert updated["revision"] == 2
+        assert created["publishedAt"] is None
         published = await publish_skill(db, created["id"], "tester")
         assert published["publishedVersion"] == 1
+        assert published["publishedAt"] is not None
         published_snapshot = await db.get(SkillRevision, published["currentRevisionId"])
         next_draft = await update_draft(db, created["id"], content, "Revise draft", "tester")
         assert next_draft["status"] == "draft"
         assert next_draft["publishedRevisionId"] == published["publishedRevisionId"]
+        assert next_draft["publishedAt"] == published["publishedAt"]
+        listed = await skill_service.list_skills(db)
+        assert listed[0]["publishedAt"] == published["publishedAt"]
+        assert (await skill_service.list_published_skills(db))[0]["publishedAt"] == published["publishedAt"]
         assert published_snapshot.content == updated_content
         restored = await restore_revision(db, created["id"], first_revision, "tester")
         assert restored["content"] == content

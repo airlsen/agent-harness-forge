@@ -10,6 +10,7 @@ import os
 import re
 import socket
 import asyncio
+from datetime import timezone
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -514,6 +515,11 @@ def public_view(row: McpServer) -> dict:
         "tools": row.tools_json or [],
         "serverInfo": row.server_info or {},
         "hasCredentials": has_credentials,
+        "createdAt": (
+            row.created_at.replace(tzinfo=timezone.utc).isoformat()
+            if row.created_at and row.created_at.tzinfo is None
+            else row.created_at.isoformat() if row.created_at else None
+        ),
         "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
     }
 

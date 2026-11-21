@@ -26,6 +26,7 @@ export type SkillSummary = {
   referenceFiles: SkillReference[];
   createdAt: string | null;
   updatedAt: string | null;
+  publishedAt: string | null;
 };
 
 export type SkillDetail = SkillSummary;

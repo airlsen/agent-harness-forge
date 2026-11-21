@@ -172,6 +172,9 @@ async def init_db() -> None:
                 sync_conn.execute(
                     text("UPDATE agent_scenario SET published_version = current_version WHERE status = 'published'")
                 )
+            # Do not infer a release time from a draft or version creation timestamp.
+            if "published_at" not in existing:
+                sync_conn.execute(text("ALTER TABLE agent_scenario ADD COLUMN published_at TIMESTAMP NULL"))
 
         await conn.run_sync(ensure_scenario_published_version)
     # 重启时关闭所有孤立审批，为未完成的运行保留明确的中断记录。

@@ -69,6 +69,7 @@ class ScenarioService:
             ),
             "createdAt": iso(row.created_at),
             "updatedAt": iso(row.updated_at),
+            "publishedAt": iso(row.published_at) if row.published_version else None,
         }
 
     async def list_mine(self, db, owner_id="admin"):

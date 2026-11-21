@@ -11,6 +11,7 @@ import CatalogFilter from '../../../components/catalog/CatalogFilter.vue';
 import CatalogGrid from '../../../components/catalog/CatalogGrid.vue';
 import CatalogSearch from '../../../components/catalog/CatalogSearch.vue';
 import type { SkillSummary } from '../../../types/skill';
+import { catalogDate, orderManagedSkills } from '../../../utils/catalogOrdering';
 
 const skills = ref<SkillSummary[]>([]);
 const app = usePlatform();
@@ -23,12 +24,14 @@ const error = ref('');
 
 const visibleSkills = computed(() => {
   const keyword = query.value.trim().toLowerCase();
-  return skills.value.filter((item) => {
-    const matchesStatus = status.value === 'all' || item.status === status.value;
-    const matchesQuery =
-      !keyword || `${item.name} ${item.machineName} ${item.description}`.toLowerCase().includes(keyword);
-    return matchesStatus && matchesQuery;
-  });
+  return orderManagedSkills(
+    skills.value.filter((item) => {
+      const matchesStatus = status.value === 'all' || item.status === status.value;
+      const matchesQuery =
+        !keyword || `${item.name} ${item.machineName} ${item.description}`.toLowerCase().includes(keyword);
+      return matchesStatus && matchesQuery;
+    }),
+  );
 });
 const publishedCount = computed(() => skills.value.filter((item) => item.status === 'published').length);
 const statusOptions = computed(() => [
@@ -37,17 +40,6 @@ const statusOptions = computed(() => [
   { value: 'published' as const, label: '已发布', count: publishedCount.value },
 ]);
 
-function formatUpdatedAt(value: string | null) {
-  if (!value) return '刚刚创建';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '最近更新';
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
-}
 function clearFilters() {
   query.value = '';
   status.value = 'all';
@@ -185,7 +177,14 @@ onMounted(load);
                 <span v-if="item.publishedVersion" class="skill-card-meta"
                   >已发布 v{{ item.publishedVersion }}</span
                 >
-                <span class="skill-card-meta">{{ formatUpdatedAt(item.updatedAt) }} 更新</span>
+                <span class="skill-card-meta">{{
+                  item.publishedRevisionId != null
+                    ? catalogDate('发布', item.publishedAt)
+                    : catalogDate('创建', item.createdAt)
+                }}</span>
+                <span v-if="item.status === 'draft'" class="skill-card-meta">{{
+                  catalogDate('草稿更新', item.updatedAt)
+                }}</span>
                 <span v-if="item.referenceFiles.length" class="skill-card-meta"
                   >{{ item.referenceFiles.length }} 个参考文件</span
                 >

@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.database import get_session
@@ -66,6 +68,9 @@ async def publish(scenario_id: int, db: AsyncSession = Depends(get_session)):
     tested = (await scenario_service.view(db, row))["tested"]
     if not tested:
         raise HTTPException(409, "当前版本尚未在当前模型与策略下通过试运行，不能发布")
+    if row.published_version != row.current_version:
+        # The database column is timezone-naive UTC (SQLite and PostgreSQL).
+        row.published_at = datetime.now(timezone.utc).replace(tzinfo=None)
     row.published_version = row.current_version
     row.status = "published"
     await db.commit()

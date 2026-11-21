@@ -28,6 +28,8 @@ class AgentScenario(Base):
     current_version: Mapped[int] = mapped_column(Integer, default=0)
     # 已发布版本单独指向；维护中的新修订不影响使用目录和新会话。
     published_version: Mapped[int] = mapped_column(Integer, default=0)
+    # Historical rows have no reliable publication timestamp and remain NULL.
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

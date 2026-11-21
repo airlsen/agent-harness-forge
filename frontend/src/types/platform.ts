@@ -30,7 +30,9 @@ export interface Scenario {
   payload: ScenarioPayload;
   bundleHash: string;
   tested: boolean;
+  createdAt: string | null;
   updatedAt: string;
+  publishedAt: string | null;
 }
 export interface Conversation {
   id: number;
