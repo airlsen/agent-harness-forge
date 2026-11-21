@@ -1,10 +1,36 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import vue from '@vitejs/plugin-vue';
 import Components from 'unplugin-vue-components/vite';
 import { AntDesignVueResolver } from 'unplugin-vue-components/resolvers';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+
+/**
+ * 当前主题的品牌色（500 档，不带 #），读取 styles/themes/_index.scss 选中的主题文件。
+ * index.html 在 JS 之前就要用到（标签页图标、theme-color），无法使用 CSS 变量，因此在构建 / 开发服务时替换。
+ */
+function activeThemeBrandHex(): string {
+  const dir = fileURLToPath(new URL('./src/styles/themes/', import.meta.url));
+  const name = /@forward\s+['"]([\w-]+)['"]/.exec(readFileSync(`${dir}_index.scss`, 'utf8'))?.[1];
+  const scale = name
+    ? /\$brand:\s*\(([\s\S]*?)\);/.exec(readFileSync(`${dir}_${name}.scss`, 'utf8'))?.[1]
+    : '';
+  const hex = scale ? /\b500:\s*#([0-9a-fA-F]{6})\b/.exec(scale)?.[1] : undefined;
+  if (!hex) throw new Error('无法从 styles/themes/_index.scss 解析当前主题的品牌色（$brand 的 500 档）');
+  return hex.toLowerCase();
+}
+
+/** 把 index.html 里的 __FORGE_BRAND_HEX__ 换成当前主题品牌色；开发时每次请求重新读取，改主题后刷新即可。 */
+function forgeThemeHtml(): Plugin {
+  return {
+    name: 'forge-theme-html',
+    transformIndexHtml: (html) => html.replaceAll('__FORGE_BRAND_HEX__', activeThemeBrandHex()),
+  };
+}
 
 export default defineConfig({
   plugins: [
+    forgeThemeHtml(),
     vue(),
     Components({
       // ant-design-vue 按需自动导入：模板里写 <a-xxx> 即可，无需逐文件 import，且仍 tree-shake。

@@ -1,0 +1,22 @@
+// 把当前主题的关键色值导出给 TS：Ant Design、Mermaid、Vega 需要具体色值，读不到 CSS 变量。
+// 构建时由 Vite（CSS Modules 的 :export）转成 JS 对象；颜色仍只定义在 styles/themes/ 一处，
+// 这里只做转发、不写任何色值。用法：import themeColors from '@/styles/theme-export.module.scss'。
+@use 'sass:list';
+@use 'sass:map';
+@use 'sass:string';
+@use './themes' as theme;
+
+:export {
+  name: string.unquote(theme.$name);
+  brand: map.get(theme.$brand, 500);
+  antdPrimary: map.get(theme.$brand, theme.$antd-step);
+  vizNodeBg: map.get(theme.$viz, node-bg);
+  vizNodeBorder: map.get(theme.$viz, node-border);
+  vizActivationBg: map.get(theme.$viz, activation-bg);
+  vizActiveTaskBg: map.get(theme.$viz, active-task-bg);
+  vizActiveTaskBorder: map.get(theme.$viz, active-task-border);
+  vizPaletteSize: list.length(theme.$viz-palette);
+  @for $i from 1 through list.length(theme.$viz-palette) {
+    viz#{$i}: list.nth(theme.$viz-palette, $i);
+  }
+}

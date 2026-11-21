@@ -181,6 +181,7 @@ try {
   });
 
   const { MERMAID_CONFIG, VEGA_CONFIG, VIZ_PALETTE } = await vite.ssrLoadModule('/src/utils/vizTheme.ts');
+  const { default: themeColors } = await vite.ssrLoadModule('/src/styles/theme-export.module.scss');
 
   await check('图与图表共用品牌色板，Mermaid 使用可自定义的 base 主题', () => {
     assert.equal(MERMAID_CONFIG.theme, 'base');
@@ -194,8 +195,10 @@ try {
     assert.deepEqual(VEGA_CONFIG.range.category, VIZ_PALETTE);
     assert.equal(VIZ_PALETTE.length, 8);
     assert.equal(vars.pie9, VIZ_PALETTE[0]); // 超过 8 类时循环取色
-    assert.equal(VEGA_CONFIG.mark.color, VIZ_PALETTE[0]); // 单系列默认品牌珊瑚橙
-    assert.equal(vars.primaryBorderColor, '#da724d'); // 流程图沿用界面主题色
+    assert.equal(VEGA_CONFIG.mark.color, VIZ_PALETTE[0]); // 单系列默认取色板首位（品牌色）
+    assert.match(themeColors.vizNodeBorder, /^#[0-9a-f]{6}$/i); // 色值来自当前主题（styles/themes/）
+    assert.equal(vars.primaryBorderColor, themeColors.vizNodeBorder); // 流程图沿用界面主题色
+    assert.equal(vars.actorBorder, themeColors.vizNodeBorder);
     assert.equal(vars.xyChart.plotColorPalette, VIZ_PALETTE.join(', ')); // Mermaid 柱状/折线图同色板
   });
 

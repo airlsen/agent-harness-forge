@@ -14,6 +14,22 @@ import time
 from playwright.async_api import async_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def active_brand_hex() -> str:
+    """当前主题的品牌色（styles/themes/_index.scss 选中主题的 $brand 500 档），即 --accent 的期望值。"""
+    import re as _re
+
+    themes = ROOT / "frontend/src/styles/themes"
+    name = _re.search(r"@forward\s+['\"]([\w-]+)['\"]", (themes / "_index.scss").read_text())
+    assert name, "styles/themes/_index.scss must @forward a theme"
+    scale = _re.search(r"\$brand:\s*\(([\s\S]*?)\);", (themes / f"_{name.group(1)}.scss").read_text())
+    hex_ = scale and _re.search(r"\b500:\s*(#[0-9a-fA-F]{6})\b", scale.group(1))
+    assert hex_, f"theme {name.group(1)} has no $brand 500 step"
+    return hex_.group(1).lower()
+
+
+ACCENT_HEX = active_brand_hex()
 parser = argparse.ArgumentParser()
 parser.add_argument("--base", default="http://127.0.0.1:5173")
 parser.add_argument("--credentials", default=str(ROOT / "data/admin-login.txt"))
@@ -827,7 +843,7 @@ async def main():
                 assert abs(geometry["sidebar"]["x"]) < 1, (width, height, geometry)
                 assert abs(geometry["body"]["x"] - geometry["sidebar"]["right"]) < 1
                 assert abs(geometry["body"]["right"] - width) < 1
-                assert geometry["accent"] == "#da724d"
+                assert geometry["accent"] == ACCENT_HEX
                 assert not any(
                     item["labelHidden"] or item["labelClipped"]
                     for item in geometry["items"]

@@ -2408,6 +2408,16 @@ textarea:focus-visible {
   border-radius: 50%;
   background: var(--accent);
 }
+/* 使用帮助：公共 antd 抽屉（.ant-drawer 共用外壳）内的正文 */
+.guide-intro {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.guide-drawer-footer {
+  display: flex;
+  justify-content: flex-end;
+}
 .guide-step {
   display: flex;
   align-items: flex-start;
@@ -4226,7 +4236,7 @@ textarea:focus-visible {
 .file-card:hover,
 .file-card:focus-within {
   border-color: var(--accent-line);
-  box-shadow: 0 3px 12px rgba(218, 114, 77, 0.09);
+  box-shadow: 0 3px 12px rgb(var(--brand-rgb) / 0.09);
 }
 .file-card.kind-image {
   --file-tone: var(--color-info-text);

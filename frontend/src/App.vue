@@ -12,12 +12,23 @@ import LoginView from './views/LoginView.vue';
 import { App as AntApp, ConfigProvider } from 'ant-design-vue';
 import zhCN from 'ant-design-vue/es/locale/zh_CN';
 import { forgeDarkTheme, forgeLightTheme } from './theme/antd';
+import { drawerA11y } from './utils/overlay';
 
 const app = usePlatform();
 const chat = useConversation();
 const route = useRoute();
 const router = useRouter();
 const help = ref(false);
+// 使用帮助用公共 antd 抽屉；关闭后把焦点还给打开它的按钮（键盘与读屏用户不丢失位置）
+let helpReturnFocus: HTMLElement | null = null;
+watch(help, (open) => {
+  if (open) helpReturnFocus = document.activeElement as HTMLElement | null;
+});
+function helpAfterOpenChange(open: boolean) {
+  if (open) return;
+  if (helpReturnFocus?.isConnected) helpReturnFocus.focus();
+  helpReturnFocus = null;
+}
 const loggingOut = ref(false);
 const managementOpen = ref(false);
 const managementMenu = ref<HTMLElement | null>(null);
@@ -300,17 +311,17 @@ onUnmounted(() => {
             <button class="button primary" @click="discardAndStart">放弃草稿并新建</button>
           </footer>
         </DialogShell>
-        <DialogShell v-if="help" label="使用帮助" panel-class="enterprise-guide" @close="help = false">
-          <header>
-            <div>
-              <h2>使用帮助</h2>
-              <p>从提交任务到查看结果，按需了解操作。</p>
-            </div>
-            <button class="icon-button" aria-label="关闭帮助面板" @click="help = false">
-              <Icon name="close" :size="21" />
-            </button>
-          </header>
-          <div class="drawer-body">
+        <a-drawer
+          :open="help"
+          :width="580"
+          title="使用帮助"
+          class="enterprise-guide"
+          v-bind="drawerA11y('使用帮助', help)"
+          :after-open-change="helpAfterOpenChange"
+          @close="help = false"
+        >
+          <p class="guide-intro">从提交任务到查看结果，按需了解操作。</p>
+          <div>
             <div class="guide-step">
               <span>01</span>
               <div>
@@ -374,8 +385,12 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
-          <footer><button class="button primary" @click="help = false">关闭帮助</button></footer>
-        </DialogShell>
+          <template #footer>
+            <div class="guide-drawer-footer">
+              <a-button type="primary" @click="help = false">关闭帮助</a-button>
+            </div>
+          </template>
+        </a-drawer>
       </div>
     </AntApp>
   </ConfigProvider>
