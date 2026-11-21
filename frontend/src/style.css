@@ -3373,11 +3373,12 @@ table td > .tag {
   display: grid;
   grid-template-columns: 1fr 1fr;
   min-height: 650px;
+  background: var(--surface-content);
 }
 .login-story {
   position: relative;
   background: var(--surface-shell);
-  border-right: 1px solid var(--color-brand-subtle);
+  border-right: 1px solid var(--border-default);
   padding: 41px 53px;
   display: flex;
   flex-direction: column;
@@ -3408,7 +3409,7 @@ table td > .tag {
   font-size: 51px;
   line-height: 1.55;
   font-weight: 550;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   margin: 20px 0 20px;
   letter-spacing: -1.5px;
 }
@@ -3428,7 +3429,7 @@ table td > .tag {
 }
 .illustration-orbit {
   position: absolute;
-  border: 1px dashed var(--color-brand-subtle);
+  border: 1px dashed var(--border-strong);
   border-radius: 50%;
 }
 .orbit-one {
@@ -3438,16 +3439,16 @@ table td > .tag {
 .orbit-two {
   width: 325px;
   height: 325px;
-  border-color: var(--color-brand-subtle);
+  border-color: var(--border-default);
 }
 .illustration-center {
   display: grid;
   place-items: center;
   height: 77px;
   width: 77px;
-  background: var(--color-brand-subtle);
-  color: var(--color-text-secondary);
-  border: 1px solid var(--border-strong);
+  background: var(--scenario-selection-bg);
+  color: var(--scenario-selection-text);
+  border: 1px solid var(--scenario-selection-border);
   border-radius: 20px;
   transform: rotate(12deg);
   box-shadow: 0 12px 30px #b39c7d0f;
@@ -3459,7 +3460,7 @@ table td > .tag {
   align-items: center;
   gap: 7px;
   font-size: 10px;
-  border: 1px solid var(--color-brand-subtle);
+  border: 1px solid var(--border-default);
   padding: 14px 16px;
   border-radius: 11px;
   background: var(--surface-subtle-bg);
@@ -3508,7 +3509,7 @@ table td > .tag {
   align-items: center;
   justify-content: center;
   padding: 50px 45px;
-  background: #fff;
+  background: var(--surface-content);
 }
 .login-form {
   width: 100%;
@@ -3524,7 +3525,7 @@ table td > .tag {
   font-size: 29px;
   letter-spacing: -0.6px;
   font-weight: 550;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
 }
 .login-form > p {
   color: var(--color-text-secondary);
@@ -3555,7 +3556,7 @@ table td > .tag {
   color: var(--color-text-secondary);
   margin-top: 38px;
   padding-top: 22px;
-  border-top: 1px solid var(--surface-subtle-bg);
+  border-top: 1px solid var(--border-light);
   text-align: center;
 }
 .login-version {
@@ -4898,7 +4899,7 @@ table td > .tag {
     padding: 29px;
     background: var(--surface-subtle-bg);
     border: 0;
-    border-bottom: 1px solid var(--color-brand-subtle);
+    border-bottom: 1px solid var(--border-default);
   }
   .login-story .brand {
     font-size: 31px;
@@ -5041,6 +5042,9 @@ textarea::placeholder {
   color: var(--color-text-inverse);
   background: var(--accent-solid);
   border-color: var(--accent-solid);
+}
+.login-form > .button {
+  color: var(--btn-primary-fg);
 }
 .button.primary:not(:disabled):hover,
 .login-form > .button:hover {
