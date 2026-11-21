@@ -774,7 +774,9 @@ textarea:focus-visible {
   width: 100%;
   min-width: 0;
   min-height: 100%;
-  padding: clamp(76px, calc(11vh + 40px), 160px) var(--page-padding-x) clamp(64px, 19vh, 188px);
+  /* The centered group moves by half the difference between its block paddings.
+     Reduce bottom space by 64px to move the whole group down by 32px when it fits. */
+  padding: clamp(76px, calc(11vh + 40px), 160px) var(--page-padding-x) calc(clamp(64px, 19vh, 188px) - 64px);
 }
 .conversation-start-inner {
   max-width: var(--start-max-width);
@@ -1185,6 +1187,7 @@ textarea:focus-visible {
 .task-composer .picker-trigger {
   position: relative;
   max-width: 180px;
+  font-size: 13px;
 }
 .task-composer .picker-trigger.is-active {
   color: var(--scenario-selection-text);
@@ -2479,7 +2482,7 @@ textarea:focus-visible {
   min-width: 0;
 }
 .enterprise-chat .chat-subbar {
-  height: 62px;
+  height: 55px;
   padding: 0 29px;
   border-bottom-color: var(--line);
   gap: 12px;
@@ -3891,7 +3894,7 @@ textarea:focus-visible {
     justify-self: end;
   }
   .enterprise-chat .chat-subbar {
-    height: 55px;
+    height: 52px;
     padding-inline: 17px;
     gap: 7px;
   }
