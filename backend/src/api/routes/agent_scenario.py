@@ -66,6 +66,7 @@ async def publish(scenario_id: int, db: AsyncSession = Depends(get_session)):
     tested = (await scenario_service.view(db, row))["tested"]
     if not tested:
         raise HTTPException(409, "当前版本尚未在当前模型与策略下通过试运行，不能发布")
+    row.published_version = row.current_version
     row.status = "published"
     await db.commit()
     await db.refresh(row)

@@ -187,7 +187,12 @@ class SessionService:
             scenario = await scenario_service.row(db, scenario_id)
             # 模型属于本次会话，与场景无关：显式选择优先，否则使用平台默认模型。
             config = await resolve_session_connection(db, model_id)
-            version = await scenario_service.version(db, scenario)
+            chosen_version = (
+                scenario.current_version
+                if is_test
+                else scenario.published_version or scenario.current_version
+            )
+            version = await scenario_service.version(db, scenario, chosen_version)
             payload = ScenarioPayload.model_validate(version.bundle_json["payload"])
             stored_bundle = version.bundle_json.get("bundle")
             current_policy = await get_policy(db)
@@ -219,7 +224,7 @@ class SessionService:
                 tenant_id="sandbox",
                 user_id=settings.admin_username,
                 scenario_id=scenario.id,
-                scenario_version=scenario.current_version,
+                scenario_version=chosen_version,
                 bundle_hash=bundle.bundle_hash,
                 bundle_snapshot=asdict(bundle),
                 status="idle",

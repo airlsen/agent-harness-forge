@@ -29,11 +29,12 @@ class ScenarioService:
             raise HTTPException(404, "场景不存在")
         return row
 
-    async def version(self, db, row):
+    async def version(self, db, row, version_number=None):
+        number = row.current_version if version_number is None else version_number
         value = await db.scalar(
             select(AgentScenarioVersion).where(
                 AgentScenarioVersion.scenario_id == row.id,
-                AgentScenarioVersion.version == row.current_version,
+                AgentScenarioVersion.version == number,
             )
         )
         if not value:
@@ -42,6 +43,13 @@ class ScenarioService:
 
     async def view(self, db, row):
         version = await self.version(db, row)
+        published = None
+        if row.published_version:
+            published = (
+                version
+                if row.published_version == row.current_version
+                else await self.version(db, row, row.published_version)
+            )
         tested = await db.get(PlatformSetting, f"scenario-test:{row.id}:{row.current_version}")
         return {
             "id": row.id,
@@ -49,6 +57,9 @@ class ScenarioService:
             "owner_id": row.owner_id,
             "status": row.status,
             "current_version": row.current_version,
+            "published_version": row.published_version,
+            "published_payload": published.bundle_json["payload"] if published else None,
+            "published_bundle_hash": published.bundle_hash if published else None,
             "payload": version.bundle_json["payload"],
             "bundleHash": version.bundle_hash,
             "tested": bool(
@@ -84,6 +95,7 @@ class ScenarioService:
             icon=payload.icon,
             status="template" if official else "draft",
             current_version=1,
+            published_version=0,
         )
         db.add(row)
         await db.flush()
@@ -110,7 +122,8 @@ class ScenarioService:
         )
         row.name, row.description, row.icon = clean.name.strip(), clean.description, clean.icon
         row.current_version += 1
-        row.status = "draft"
+        if not row.published_version:
+            row.status = "draft"
         db.add(
             AgentScenarioVersion(
                 scenario_id=row.id,

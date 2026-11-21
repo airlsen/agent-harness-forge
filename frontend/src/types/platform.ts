@@ -24,6 +24,9 @@ export interface Scenario {
   owner_id: string;
   status: 'template' | 'draft' | 'published';
   current_version: number;
+  published_version: number;
+  published_payload: ScenarioPayload | null;
+  published_bundle_hash: string | null;
   payload: ScenarioPayload;
   bundleHash: string;
   tested: boolean;

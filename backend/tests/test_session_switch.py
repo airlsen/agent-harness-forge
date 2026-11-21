@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from src.api.core.database import Base
 from src.api.models.agent_session import AgentSession, AgentSessionModel
 from src.api.models.platform import PlatformSetting, SessionMessage
+from src.api.routes.agent_scenario import publish
 from src.api.schemas.agent_scenario import ScenarioPayload
 from src.api.services import session_service as session_module
 from src.api.services import settings_service
@@ -117,6 +118,48 @@ async def turn(service, session_id, message, **kwargs):
     if task:
         await task
     return receipt
+
+
+@pytest.mark.asyncio
+async def test_new_scenario_revision_does_not_replace_published_sessions_before_release(env):
+    scenario_id = env["scenario"]["id"]
+    model_id = env["models"]["chat"]["id"]
+    async with env["sessions"]() as db:
+        row = await scenario_service.row(db, scenario_id)
+        row.status = "published"
+        row.published_version = 1
+        await db.commit()
+        revised = await scenario_service.update(
+            db, "admin", scenario_id, ScenarioPayload(name="新版助手", prompt_template="新版规范")
+        )
+        assert revised["status"] == "published"
+        assert revised["current_version"] == 2 and revised["published_version"] == 1
+        assert revised["payload"]["name"] == "新版助手"
+        assert revised["published_payload"]["name"] == "通用助手"
+
+    service = session_module.SessionService()
+    live = await service.create(scenario_id, model_id=model_id)
+    trial = await service.create(scenario_id, model_id=model_id, is_test=True)
+    assert live["scenarioVersion"] == 1
+    assert trial["scenarioVersion"] == 2
+
+    async with env["sessions"]() as db:
+        with pytest.raises(HTTPException) as blocked:
+            await publish(scenario_id, db)
+        assert blocked.value.status_code == 409
+        db.add(
+            PlatformSetting(
+                key=f"scenario-test:{scenario_id}:2",
+                value={"ok": True, "environmentRef": await settings_service.environment_ref(db)},
+            )
+        )
+        await db.commit()
+        await publish(scenario_id, db)
+        updated = await scenario_service.view(db, await scenario_service.row(db, scenario_id))
+        assert updated["published_version"] == 2
+
+    latest = await service.create(scenario_id, model_id=model_id)
+    assert latest["scenarioVersion"] == 2
 
 
 @pytest.mark.asyncio

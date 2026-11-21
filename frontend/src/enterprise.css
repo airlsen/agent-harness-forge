@@ -4019,7 +4019,47 @@ textarea:focus-visible {
 }
 .scenario-plugin-option:has(input:checked),
 .scenario-plugin-tool:has(input:checked) {
-  background: var(--accent-wash);
+  background: var(--scenario-selection-bg);
+}
+.scenario-editor .tool-checkbox > span:last-child,
+.scenario-editor .scenario-plugin-option > span:last-child,
+.scenario-editor .scenario-plugin-tool > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex: 1;
+  min-width: 0;
+}
+.scenario-editor .tool-checkbox-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+}
+.scenario-editor .tool-checkbox > span:last-child > div,
+.scenario-editor .scenario-plugin-option > span:last-child > div {
+  flex: 1;
+  min-width: 0;
+}
+.scenario-editor .scenario-plugin-option > span:last-child > div,
+.scenario-editor .scenario-plugin-tool > span:last-child > span {
+  display: grid;
+  gap: 3px;
+}
+.scenario-editor .scenario-plugin-tool > span:last-child > span {
+  flex: 1;
+  min-width: 0;
+}
+.scenario-editor .tool-checkbox:has(input:checked) {
+  border-color: var(--scenario-selection-border);
+  background: var(--scenario-selection-bg);
+}
+.scenario-editor .icon-options > button.selected {
+  color: var(--scenario-selection-text);
+  border-color: var(--scenario-selection-border);
+  background: var(--scenario-selection-bg);
 }
 .scenario-plugin-option > div,
 .scenario-plugin-tool > span:nth-child(2) {

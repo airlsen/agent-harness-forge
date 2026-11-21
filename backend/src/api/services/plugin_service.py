@@ -471,13 +471,20 @@ async def plugin_usage_counts(db: AsyncSession) -> dict[str, int]:
             )
         )
     ).all()
-    current = {scenario.id: scenario.current_version for scenario in scenarios}
+    relevant = {
+        scenario.id: {scenario.current_version, scenario.published_version} - {0}
+        for scenario in scenarios if scenario.status != "deleted"
+    }
     counts: dict[str, int] = {}
+    used: dict[int, set[str]] = {}
     for version in versions:
-        if current.get(version.scenario_id) != version.version:
+        if version.version not in relevant.get(version.scenario_id, set()):
             continue
         bindings = version.bundle_json.get("bundle", {}).get("meta", {}).get("pluginBindings", [])
         for plugin_id in {binding.get("package") for binding in bindings if binding.get("package")}:
+            used.setdefault(version.scenario_id, set()).add(plugin_id)
+    for plugins in used.values():
+        for plugin_id in plugins:
             counts[plugin_id] = counts.get(plugin_id, 0) + 1
     return counts
 
@@ -490,25 +497,36 @@ async def plugin_detail(db: AsyncSession, plugin_id: str) -> dict:
     scenarios = (await db.scalars(select(AgentScenario))).all()
     linked = []
     for scenario in scenarios:
-        version = await db.scalar(
-            select(AgentScenarioVersion).where(
-                AgentScenarioVersion.scenario_id == scenario.id,
-                AgentScenarioVersion.version == scenario.current_version,
-            )
-        )
-        for binding in (
-            version.bundle_json.get("bundle", {}).get("meta", {}).get("pluginBindings", []) if version else []
-        ):
-            if binding.get("package") == plugin_id:
-                linked.append(
-                    {
-                        "id": scenario.id,
-                        "name": scenario.name,
-                        "status": scenario.status,
-                        "version": binding.get("version"),
-                        "artifactHash": binding.get("artifactHash"),
-                    }
+        if scenario.status == "deleted":
+            continue
+        numbers = {scenario.current_version, scenario.published_version} - {0}
+        active_versions = (
+            await db.scalars(
+                select(AgentScenarioVersion).where(
+                    AgentScenarioVersion.scenario_id == scenario.id,
+                    AgentScenarioVersion.version.in_(numbers),
                 )
+            )
+        ).all()
+        # One scenario reference; when both revisions use the plugin, show the live release.
+        active_versions.sort(key=lambda row: row.version != scenario.published_version)
+        bindings = [
+            binding
+            for version in active_versions
+            for binding in version.bundle_json.get("bundle", {}).get("meta", {}).get("pluginBindings", [])
+            if binding.get("package") == plugin_id
+        ]
+        if bindings:
+            binding = bindings[0]
+            linked.append(
+                {
+                    "id": scenario.id,
+                    "name": scenario.name,
+                    "status": scenario.status,
+                    "version": binding.get("version"),
+                    "artifactHash": binding.get("artifactHash"),
+                }
+            )
     events = (
         await db.scalars(
             select(SessionEventIndex)

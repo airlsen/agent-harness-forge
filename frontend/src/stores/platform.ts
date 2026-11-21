@@ -28,7 +28,17 @@ export const usePlatform = defineStore('platform', {
     loading: false,
   }),
   getters: {
-    availableScenarios: (state) => state.scenarios.filter(isAvailableScenario),
+    availableScenarios: (state) =>
+      state.scenarios.filter(isAvailableScenario).map((scenario) =>
+        scenario.status === 'published' && scenario.published_payload
+          ? {
+              ...scenario,
+              current_version: scenario.published_version,
+              payload: scenario.published_payload,
+              bundleHash: scenario.published_bundle_hash ?? scenario.bundleHash,
+            }
+          : scenario,
+      ),
     regularConversations: (state) => state.conversations.filter((item) => !item.isTest),
   },
   actions: {

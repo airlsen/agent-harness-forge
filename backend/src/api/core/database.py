@@ -156,6 +156,24 @@ async def init_db() -> None:
                 sync_conn.execute(text("ALTER TABLE agent_session ADD COLUMN capability_selection JSON NULL"))
 
         await conn.run_sync(ensure_session_file_columns)
+
+        # Existing published rows keep their live version when new revisions are saved.
+        def ensure_scenario_published_version(sync_conn):
+            from sqlalchemy import inspect, text
+
+            inspector = inspect(sync_conn)
+            if "agent_scenario" not in inspector.get_table_names():
+                return
+            existing = {column["name"] for column in inspector.get_columns("agent_scenario")}
+            if "published_version" not in existing:
+                sync_conn.execute(
+                    text("ALTER TABLE agent_scenario ADD COLUMN published_version INTEGER NOT NULL DEFAULT 0")
+                )
+                sync_conn.execute(
+                    text("UPDATE agent_scenario SET published_version = current_version WHERE status = 'published'")
+                )
+
+        await conn.run_sync(ensure_scenario_published_version)
     # 重启时关闭所有孤立审批，为未完成的运行保留明确的中断记录。
     import json
     from datetime import datetime, timezone

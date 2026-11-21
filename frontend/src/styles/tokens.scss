@@ -46,6 +46,9 @@
   --surface-muted: var(--neutral-100);
   --surface-hover: #f5f6f8;
   --surface-selected: var(--brand-100);
+  --scenario-selection-bg: var(--color-brand-muted);
+  --scenario-selection-text: var(--color-brand-active);
+  --scenario-selection-border: var(--color-brand-border);
   --sidebar-nav-hover-bg: var(--color-brand-subtle);
   --sidebar-nav-hover-text: var(--color-brand-active);
   --sidebar-nav-active-bg: var(--color-brand-subtle);
@@ -184,6 +187,9 @@
   --surface-muted: #202733;
   --surface-hover: #232a36;
   --surface-selected: rgba(218, 114, 77, 0.16);
+  --scenario-selection-bg: var(--surface-selected);
+  --scenario-selection-text: var(--brand-400);
+  --scenario-selection-border: var(--border-focus);
   --sidebar-nav-hover-bg: var(--surface-selected);
   --sidebar-nav-hover-text: var(--brand-400);
   --sidebar-nav-active-bg: var(--surface-selected);

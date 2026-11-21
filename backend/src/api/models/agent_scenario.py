@@ -26,6 +26,8 @@ class AgentScenario(Base):
     # draft（草稿） / review（上架审批中，V1） / published
     status: Mapped[str] = mapped_column(String(16), default="draft")
     current_version: Mapped[int] = mapped_column(Integer, default=0)
+    # 已发布版本单独指向；维护中的新修订不影响使用目录和新会话。
+    published_version: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

@@ -25,6 +25,7 @@ const query = ref('');
 const filter = ref('all');
 const drawer = ref(false);
 const editing = ref<Scenario | null>(null);
+const basedOn = ref('');
 // 弹层的开合状态与内容数据分开：关闭时只收起 antd 抽屉/对话框，内容保留到退场动画结束，避免闪空。
 const detail = ref<Scenario | null>(null);
 const detailOpen = ref(false);
@@ -233,8 +234,9 @@ function setPluginTool(plugin: PluginPackage, toolName: string, enabled: boolean
 function pluginToolSelected(plugin: PluginPackage, toolName: string) {
   return (draft.capabilities.plugin_tools[plugin.package] ?? []).includes(toolName);
 }
-function edit(scenario?: Scenario) {
+function edit(scenario?: Scenario, sourceName = '') {
   editing.value = scenario ?? null;
+  basedOn.value = sourceName;
   Object.assign(draft, normalizePayload(scenario));
   drawer.value = true;
   void loadPlugins();
@@ -243,6 +245,18 @@ function edit(scenario?: Scenario) {
 function openDetail(scenario: Scenario) {
   detail.value = scenario;
   detailOpen.value = true;
+}
+function editDetail() {
+  if (!detail.value) return;
+  if (detail.value.space === 'official') createFromTemplate(detail.value);
+  else {
+    const scenario = detail.value;
+    detailOpen.value = false;
+    edit(scenario);
+  }
+}
+function hasPendingDraft(scenario: Scenario) {
+  return scenario.published_version > 0 && scenario.current_version > scenario.published_version;
 }
 function closeEditor() {
   if (!busy.value) drawer.value = false;
@@ -272,29 +286,23 @@ async function save() {
     else await post('/agent-scenarios', payload);
     await app.refreshScenarios();
     drawer.value = false;
-    filter.value = 'draft';
-    app.toast('维护草稿已保存，已有会话不受影响');
+    filter.value = editing.value?.published_version ? 'published' : 'draft';
+    app.toast(
+      editing.value?.published_version
+        ? '新修订已保存，线上仍使用已发布版本'
+        : '维护草稿已保存，已有会话不受影响',
+    );
   } catch (e) {
     app.toast((e as Error).message, 'error');
   } finally {
     busy.value = false;
   }
 }
-async function copy(scenario: Scenario) {
+function createFromTemplate(scenario: Scenario) {
   if (busy.value) return;
-  busy.value = true;
-  try {
-    await post(`/agent-scenarios/${scenario.id}/copy`);
-    await app.refreshScenarios();
-    if (!maintenance.value) await router.replace({ query: { view: 'maintain' } });
-    filter.value = 'draft';
-    query.value = '';
-    app.toast('已创建维护草稿，编辑并验证后可发布');
-  } catch (e) {
-    app.toast((e as Error).message, 'error');
-  } finally {
-    busy.value = false;
-  }
+  detailOpen.value = false;
+  edit(undefined, scenario.payload.name);
+  Object.assign(draft, normalizePayload(scenario), { name: `${scenario.payload.name} · 副本` });
 }
 async function discard() {
   if (!toDelete.value || deleting.value) return;
@@ -415,11 +423,18 @@ async function versions(scenario: Scenario) {
           :tone="scenario.payload.icon"
           :description="scenario.payload.description"
           placeholder="还没有添加场景描述。"
-          :status="scenarioState(scenario)"
-          :status-color="scenario.status === 'published' ? 'success' : undefined"
+          :status="maintenance && hasPendingDraft(scenario) ? '待发布修订' : scenarioState(scenario)"
+          :status-color="
+            maintenance && hasPendingDraft(scenario)
+              ? 'warning'
+              : scenario.status === 'published'
+                ? 'success'
+                : undefined
+          "
         >
           <template v-if="maintenance" #sub>
             <span>{{ scenarioSource(scenario) }}</span><span>v{{ scenario.current_version }}</span
+            ><span v-if="hasPendingDraft(scenario)">已发布 v{{ scenario.published_version }}</span
             ><span :class="['scenario-card-test', { 'is-passed': scenario.tested }]"
               ><Icon :name="scenario.tested ? 'check' : 'circle'" :size="12" />{{
                 scenario.tested ? '试运行通过' : '未试运行'
@@ -448,12 +463,12 @@ async function versions(scenario: Scenario) {
             <a-button
               size="small"
               :disabled="busy"
-              @click="scenario.space === 'official' ? copy(scenario) : edit(scenario)"
+              @click="scenario.space === 'official' ? createFromTemplate(scenario) : edit(scenario)"
             >
               <template #icon
                 ><Icon :name="scenario.space === 'official' ? 'copy' : 'edit'" :size="14"
               /></template>
-              {{ scenario.space === 'official' ? '复制为草稿' : '编辑' }}
+              {{ scenario.space === 'official' ? '基于模板创建' : '编辑' }}
             </a-button>
             <a-button
               v-if="scenario.space !== 'official'"
@@ -466,7 +481,11 @@ async function versions(scenario: Scenario) {
               <template #icon><Icon name="play" :size="14" /></template>试运行
             </a-button>
             <a-button
-              v-if="scenario.space !== 'official' && scenario.status !== 'published' && scenario.tested"
+              v-if="
+                scenario.space !== 'official' &&
+                (!scenario.published_version || hasPendingDraft(scenario)) &&
+                scenario.tested
+              "
               type="text"
               size="small"
               :disabled="busy"
@@ -576,8 +595,12 @@ async function versions(scenario: Scenario) {
       </template>
       <template v-if="detail" #footer>
         <div class="scenario-drawer-footer">
+          <a-button v-if="maintenance" :disabled="busy" @click="editDetail">
+            {{ detail.space === 'official' ? '基于模板创建' : '编辑' }}
+          </a-button>
           <a-button type="primary" @click="useScenario(detail)">
-            {{ isAvailableScenario(detail) ? '开始' : '预览草稿' }}<Icon name="arrow" :size="16" />
+            {{ hasPendingDraft(detail) ? '使用已发布版' : isAvailableScenario(detail) ? '开始' : '预览草稿'
+            }}<Icon name="arrow" :size="16" />
           </a-button>
         </div>
       </template>
@@ -598,7 +621,15 @@ async function versions(scenario: Scenario) {
         <div class="scenario-drawer-title">
           <span class="eyebrow">SCENARIO BUILDER</span>
           <h2>{{ editing ? '编辑场景' : '新建工作场景' }}</h2>
-          <p>维护可复用的工作方式，保存后进入草稿。</p>
+          <p>
+            {{
+              basedOn
+                ? `基于「${basedOn}」创建草稿`
+                : editing?.published_version
+                  ? '保存为新修订，已发布版本继续可用。'
+                  : '维护可复用的工作方式，保存后进入草稿。'
+            }}
+          </p>
         </div>
       </template>
       <a-form id="scenario-form" :model="draft" :rules="rules" layout="vertical" @finish="save">
