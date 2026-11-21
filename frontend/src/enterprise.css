@@ -1569,17 +1569,24 @@ textarea:focus-visible {
   margin-bottom: 20px;
 }
 .conversations-tabs {
-  flex: 1;
-  min-width: 0;
+  margin-bottom: 22px;
 }
 .conversations-tabs .ant-tabs-nav {
   margin: 0;
+}
+.conversations-tabs .ant-tabs-nav::before {
+  border-bottom-color: var(--line-subtle);
 }
 .conversations-tabs .ant-tabs-tab {
   padding: 11px 0;
 }
 .conversations-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
   color: var(--scenario-selection-text);
+}
+.conversations-results {
+  color: var(--text-secondary);
+  font-size: 14px;
+  white-space: nowrap;
 }
 .conversations-tab-count {
   margin-left: 5px;
@@ -1595,16 +1602,19 @@ textarea:focus-visible {
   flex: none;
   gap: 8px;
 }
-.conversations-refresh.ant-btn {
+.conversations-refresh.ant-btn,
+.conversations-new.ant-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+}
+.conversations-refresh.ant-btn {
   background: var(--surface-content);
   border-color: var(--border-default);
   color: var(--color-text-primary);
 }
-.conversations-refresh svg {
+.conversations-search-actions .ant-btn svg {
   display: block;
 }
 .conversations-refresh.ant-btn:not(:disabled):hover {
@@ -1717,17 +1727,14 @@ textarea:focus-visible {
     flex-wrap: wrap;
     gap: 12px;
   }
-  .conversations-tabs {
-    flex-basis: 100%;
-  }
 }
 @media (max-width: 600px) {
   .conversations-search-actions {
     width: 100%;
+    flex-wrap: wrap;
   }
   .conversations-search-actions .catalog-search {
-    flex: 1;
-    min-width: 0;
+    flex: 1 1 100%;
   }
 }
 /* Management entry and guide. */

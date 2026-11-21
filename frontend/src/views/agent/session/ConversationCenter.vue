@@ -88,16 +88,16 @@ onMounted(refresh);
           <h1>我的会话</h1>
           <p>找回上下文、查看结果，或继续推进一项工作。</p>
         </div>
-        <a-button type="primary" @click="newChat"><Icon name="plus" :size="17" />新建会话</a-button>
       </div>
+      <a-tabs v-model:active-key="filter" class="conversations-tabs" aria-label="会话状态筛选">
+        <a-tab-pane v-for="item in filters" :key="item.id">
+          <template #tab
+            >{{ item.label }} <span class="conversations-tab-count">{{ item.count }}</span></template
+          >
+        </a-tab-pane>
+      </a-tabs>
       <div class="conversations-toolbar">
-        <a-tabs v-model:active-key="filter" class="conversations-tabs" aria-label="会话状态筛选">
-          <a-tab-pane v-for="item in filters" :key="item.id">
-            <template #tab
-              >{{ item.label }} <span class="conversations-tab-count">{{ item.count }}</span></template
-            >
-          </a-tab-pane>
-        </a-tabs>
+        <span class="conversations-results" aria-live="polite">共 {{ filtered.length }} 个会话</span>
         <div class="conversations-search-actions">
           <CatalogSearch v-model:value="query" placeholder="搜索标题或场景" aria-label="搜索会话" />
           <a-button
@@ -107,6 +107,9 @@ onMounted(refresh);
             @click="refresh"
           >
             <Icon name="refresh" :size="16" :class="{ spinning: refreshing }" />刷新
+          </a-button>
+          <a-button type="primary" class="conversations-new" @click="newChat">
+            <Icon name="plus" :size="16" />新建会话
           </a-button>
         </div>
       </div>
