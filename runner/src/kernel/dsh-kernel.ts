@@ -59,7 +59,8 @@ export interface SessionToolset {
 /**
  * 计算会话工具集：基础能力 ∪ 场景声明，Forge 内置工具以平台策略为上限；
  * 写入开放时附带交付声明，读取开放时附带 glob/grep 搜索；插件工具原样保留。
- * 关联代码是会话级能力、与场景和策略无关：关联了项目就开放 glob/grep/read 与受控终端命令（bash）。
+ * 关联代码是会话级能力、与场景无关：关联了项目就开放只读的 glob/grep/read；
+ * 受控终端命令（bash）可执行编译、修改等操作，始终以平台策略为上限，关联代码不会绕过策略开放它。
  * 扩展能力（Skill / MCP / 联网）由控制面按场景绑定 ∪ 聊天临时选择、并经企业策略筛选后下发，原样加入白名单。
  */
 export function sessionToolset(
@@ -78,7 +79,8 @@ export function sessionToolset(
   const search = builtin.includes('workspace_read') || hasCode;
   const skills = caps.skills.length > 0;
   const read = hasCode || caps.skills.some((skill) => skill.references.length > 0);
-  const bash = builtin.includes('bash') || hasCode;
+  // bash 已在 BASE_TOOLS 中并经过平台策略筛选：策略未勾选时，即使关联了代码也不开放。
+  const bash = builtin.includes('bash');
   const mcp = mcpToolNames(caps);
   const allowed = [
     ...builtin,

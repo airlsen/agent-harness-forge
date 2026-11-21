@@ -1,12 +1,17 @@
 """控制面唯一执行出口。内部 Token 不向浏览器下发。"""
 
 import json
+from urllib.parse import urlencode
+
 import httpx
 from fastapi import HTTPException
 from ..core.config import settings
 
 
 class RunnerClient:
+    # 执行策略中设置的关联代码目录（空 = Runner 的 FORGE_CODE_ROOT）；启动时从数据库加载，保存时更新，随请求下发
+    code_root = ""
+
     def client(self, *, stream=False):
         return httpx.AsyncClient(
             base_url=settings.runner_endpoint_list[0],
@@ -59,14 +64,16 @@ class RunnerClient:
                 "userCtx": user_ctx,
                 "modelConfig": model_config,
                 "codeProjects": list(code_projects or []),
+                **({"codeRoot": self.code_root} if self.code_root else {}),
                 # 扩展能力含 MCP 凭据与联网密钥：只随请求下发，不进入 Bundle
                 "capabilities": capabilities or {"skills": [], "mcp": [], "web": None},
             },
         )
 
-    async def code_projects(self):
-        """代码根目录（Runner 的 FORGE_CODE_ROOT）下可关联的项目；目录由 Runner 读取，控制面不接触代码。"""
-        return await self.call("GET", "/v1/code/projects")
+    async def code_projects(self, root: str | None = None):
+        """代码目录下可关联的项目；目录由 Runner 读取，控制面不接触代码。传 root 时只检查该目录，不改变设置。"""
+        query = urlencode({"root": self.code_root if root is None else root})
+        return await self.call("GET", f"/v1/code/projects?{query}")
 
     async def events(
         self,
@@ -81,6 +88,7 @@ class RunnerClient:
             "message": message,
             **({"modelConfig": model_config} if model_config else {}),
             **({"codeProjects": list(code_projects)} if code_projects is not None else {}),
+            **({"codeRoot": self.code_root} if self.code_root else {}),
             **({"capabilities": capabilities} if capabilities is not None else {}),
         }
         async with self.client(stream=True) as client:

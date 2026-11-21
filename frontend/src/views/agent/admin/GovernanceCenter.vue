@@ -4,7 +4,7 @@ import type { Rule } from 'ant-design-vue/es/form';
 import { api, post, put } from '../../../api/client';
 import { formatBytes } from '../../../utils/presentation';
 import { usePlatform } from '../../../stores/platform';
-import type { WebSearchSettings } from '../../../types/platform';
+import type { Tool, WebSearchSettings } from '../../../types/platform';
 import Icon from '../../../components/ForgeIcon.vue';
 const app = usePlatform(),
   saving = ref(false),
@@ -48,6 +48,12 @@ function numberField(key: PolicyNumberKey) {
 const requestTimeoutValue = numberField('requestTimeoutSeconds');
 const approvalTimeoutValue = numberField('approvalTimeoutSeconds');
 const fileRetentionValue = numberField('fileRetentionDays');
+
+// 工具权限标签以后端登记的 permission 为准，避免按工具名硬编码导致 bash 被误标为「只读」。
+function toolTag(tool: Tool) {
+  if (tool.name === 'bash') return '写入 · 按风险审批';
+  return tool.permission === 'write' ? '写入' : '只读';
+}
 
 // 单次模型输出上限的固定档位。
 const outputTokenOptions = [1024, 2048, 4096, 8192, 16384].map((value) => ({
@@ -169,6 +175,45 @@ async function saveWeb(clearKey = false) {
     webSaving.value = false;
   }
 }
+// 关联代码目录：工作台「关联代码」从这里列项目（每个一级子目录一个项目），留空使用 FORGE_CODE_ROOT
+interface CodeRootStatus {
+  root: string;
+  effectiveRoot: string;
+  available: boolean;
+  count: number;
+  projects: string[];
+}
+const codeRootInput = ref(''),
+  codeRootChecked = ref<CodeRootStatus | null>(null),
+  codeRootBusy = ref(false);
+// 只显示与当前输入一致的检查结果，改了路径需要重新检查
+const codeRootResult = computed(() =>
+  codeRootChecked.value && codeRootChecked.value.root === codeRootInput.value.trim()
+    ? codeRootChecked.value
+    : null,
+);
+async function loadCodeRoot() {
+  try {
+    codeRootChecked.value = await api<CodeRootStatus>('/governance/code-root');
+    codeRootInput.value = codeRootChecked.value.root;
+  } catch {
+    codeRootChecked.value = null;
+  }
+}
+async function codeRootRequest(save: boolean) {
+  codeRootBusy.value = true;
+  try {
+    const body = { root: codeRootInput.value.trim() };
+    codeRootChecked.value = save
+      ? await put<CodeRootStatus>('/governance/code-root', body)
+      : await post<CodeRootStatus>('/governance/code-root/check', body);
+    if (save) app.toast(`代码目录已保存，共 ${codeRootChecked.value.count} 个项目`, 'success');
+  } catch (e) {
+    app.toast((e as Error).message, 'error');
+  } finally {
+    codeRootBusy.value = false;
+  }
+}
 const KEY_SOURCE: Record<WebSearchSettings['keySource'], string> = {
   custom: '已单独配置搜索密钥',
   model: '复用模型中心的 DeepSeek 官方模型密钥',
@@ -182,6 +227,7 @@ onMounted(async () => {
     Object.assign(policy, await api('/governance/policies'));
     void loadStorage();
     void loadWeb();
+    void loadCodeRoot();
     await app.refreshRuntime();
   } catch (e) {
     app.toast((e as Error).message, 'error');
@@ -230,9 +276,11 @@ async function save() {
             <Icon name="shield" :size="20" />
             <h2>工具与审批</h2>
           </div>
-          <p class="section-description">场景声明与平台策略取交集，未被同时授权的工具一律拒绝。</p>
+          <p class="section-description">
+            勾选的工具是所有会话的能力上限：基础工具默认对每个会话开放，场景声明的其他工具也须在此授权；关联代码同样不能越过这里的设置。
+          </p>
           <div class="policy-tool-list">
-            <label v-for="tool in app.tools" :key="tool.name" class="tool-checkbox"
+            <label v-for="tool in app.tools" :key="tool.name" class="tool-checkbox" :title="tool.description"
               ><input v-model="policy.allowedTools" type="checkbox" :value="tool.name" /><span
                 class="tool-checkbox-icon"
                 ><Icon :name="tool.icon" :size="18"
@@ -240,7 +288,9 @@ async function save() {
               <div>
                 <strong>{{ tool.title }}</strong><small>{{ tool.name }}</small>
               </div>
-              <span class="tag soft">{{ tool.name === 'workspace_write' ? '写入' : '只读' }}</span></label
+              <span :class="['tag', tool.permission === 'write' ? 'warm' : 'soft']">{{
+                toolTag(tool)
+              }}</span></label
             >
           </div>
           <div class="switch-setting plugin-policy-setting">
@@ -264,7 +314,8 @@ async function save() {
             <div>
               <strong>部署层强制边界</strong>
               <p>
-                任意 Shell 与宿主机文件访问未开放，不能通过此页面启用；联网仅限下方受控的搜索与公网网页读取。
+                不开放不受限的宿主机 Shell
+                与宿主机文件访问。终端命令（bash）仅在会话工作区或关联项目中受控执行：只读命令自动放行，修改、编译等命令逐次审批，高危命令直接拦截。联网仅限下方受控的搜索与公网网页读取。
               </p>
             </div>
           </div>
@@ -354,6 +405,50 @@ async function save() {
           </footer>
         </a-form>
         <aside class="settings-aside">
+          <section class="settings-card governance-form web-search-card">
+            <div class="settings-section-heading">
+              <Icon name="folder" :size="18" />
+              <h2>关联代码目录</h2>
+            </div>
+            <p class="section-description">
+              工作台「关联代码」从这个目录列出项目，每个一级子目录是一个项目。留空使用默认目录。
+            </p>
+            <a-input
+              v-model:value="codeRootInput"
+              placeholder="例如 /usr/data/git，留空使用默认目录"
+              allow-clear
+              @press-enter="codeRootRequest(false)"
+            />
+            <small v-if="codeRootResult" class="field-hint">
+              <template v-if="codeRootResult.available"
+                >✓ {{ codeRootResult.effectiveRoot }} · 共 {{ codeRootResult.count }} 个项目<template
+                  v-if="codeRootResult.count"
+                  >：{{ codeRootResult.projects.join('、')
+                  }}{{ codeRootResult.count > codeRootResult.projects.length ? ' …' : '' }}</template
+                ></template
+              >
+              <template v-else>✗ {{ codeRootResult.effectiveRoot }} 不存在或不是目录，不能保存</template>
+            </small>
+            <div style="display: flex; gap: 8px; margin-top: 14px">
+              <button
+                type="button"
+                class="button secondary"
+                :disabled="codeRootBusy"
+                @click="codeRootRequest(false)"
+              >
+                检查路径
+              </button>
+              <button
+                type="button"
+                class="button primary"
+                :disabled="codeRootBusy || (!!codeRootResult && !codeRootResult.available)"
+                @click="codeRootRequest(true)"
+              >
+                <span v-if="codeRootBusy" class="loader small"></span
+                ><Icon v-else name="save" :size="16" />保存
+              </button>
+            </div>
+          </section>
           <a-form
             v-if="web"
             class="settings-card governance-form web-search-card"
@@ -447,8 +542,8 @@ async function save() {
                 <dd>{{ app.runtime?.storage ?? '—' }}</dd>
               </div>
               <div>
-                <dt>Runner 会话</dt>
-                <dd>{{ app.runtime?.runner.sessions ?? 0 }} / {{ app.runtime?.runner.capacity ?? '—' }}</dd>
+                <dt>执行并发</dt>
+                <dd>{{ app.runtime?.runner.active ?? 0 }} / {{ app.runtime?.runner.capacity ?? '—' }}</dd>
               </div>
               <div>
                 <dt>认证方式</dt>

@@ -63,7 +63,7 @@ export interface CodeContext {
  * 关联代码说明：列出项目绝对路径与概览，并说明用 glob/grep/read 以绝对路径检索、阅读代码。
  * 只在关联了项目时出现；项目变化时 Runner 重启进程，新的说明从下一轮生效。
  */
-export function codeGuide(projects: readonly CodeContext[]): string[] {
+export function codeGuide(projects: readonly CodeContext[], tools: readonly string[] = []): string[] {
   if (!projects.length) return [];
   const list = projects
     .map((project) => {
@@ -86,7 +86,10 @@ export function codeGuide(projects: readonly CodeContext[]): string[] {
     [
       '## 关联代码（只读）',
       '用户为本会话关联了以下代码项目。分析、解答与代码相关的问题时，先检索并阅读这些项目里的真实代码，以代码为依据回答，引用时给出文件路径与行号；不要凭印象猜测实现。',
-      '检索与查看方法：grep 按正则搜索内容（path 传项目绝对路径，可用 include 限定文件类型，如 *.ts）；glob 按文件名模式查找（path 传项目绝对路径；结果包含依赖与构建目录，尽量用更具体的子目录或模式）；read 读取文件（file_path 用绝对路径，大文件用 offset/limit 分段读取）；或通过 bash 执行只读 Git 命令（如 git branch -a、git log、git status、git diff，cwd 传项目绝对路径）。',
+      '检索与查看方法：grep 按正则搜索内容（path 传项目绝对路径，可用 include 限定文件类型，如 *.ts）；glob 按文件名模式查找（path 传项目绝对路径；结果包含依赖与构建目录，尽量用更具体的子目录或模式）；read 读取文件（file_path 用绝对路径，大文件用 offset/limit 分段读取）' +
+        (tools.includes('bash')
+          ? '；或通过 bash 执行只读 Git 命令（如 git branch -a、git log、git status、git diff，cwd 传项目绝对路径）。'
+          : '。'),
       '这些项目只读：不能修改其中的文件。需要产出文档、补丁或代码时，写入会话工作区。只能访问下列项目，未列出的目录会被拒绝。',
       list,
     ].join('\n\n'),
@@ -172,7 +175,7 @@ export function buildSystemPrompt(
   code: readonly CodeContext[] = [],
   caps: CapabilityContext = {},
 ): string {
-  const guide = [...workspaceGuide(tools), ...codeGuide(code), ...capabilityGuide(caps)];
+  const guide = [...workspaceGuide(tools), ...codeGuide(code, tools), ...capabilityGuide(caps)];
   const sections =
     prompt && typeof prompt === 'object'
       ? [

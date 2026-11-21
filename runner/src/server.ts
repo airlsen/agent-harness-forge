@@ -4,7 +4,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { DshKernel, MAX_LISTED_FILES, validModel, type RuntimeModel } from './kernel/dsh-kernel.js';
 import { PluginWorkerClient } from './plugin-worker-client.js';
 import type { Bundle, UserCtx } from './kernel/types.js';
-import { listCodeProjects, resolveCodeProjects } from './kernel/code-projects.js';
+import { listCodeProjects, resolveCodeProjects, setCodeRoot } from './kernel/code-projects.js';
 import { resolveCapabilities } from './kernel/capabilities.js';
 
 const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
@@ -64,10 +64,12 @@ app.post('/v1/sessions', async (req, reply) => {
     userCtx: UserCtx;
     modelConfig: RuntimeModel;
     codeProjects?: string[];
+    codeRoot?: string;
     capabilities?: unknown;
   };
   if (!body?.bundle || !body?.modelConfig)
     return reply.code(422).send({ message: 'bundle and modelConfig are required' });
+  setCodeRoot(body.codeRoot);
   return kernel.createSession(
     body.bundle,
     body.userCtx,
@@ -76,8 +78,11 @@ app.post('/v1/sessions', async (req, reply) => {
     body.capabilities,
   );
 });
-// 代码根目录（FORGE_CODE_ROOT）下可关联的项目：一级子目录，附 git 分支与提交
-app.get('/v1/code/projects', async () => listCodeProjects());
+// 代码根目录下可关联的项目：一级子目录，附 git 分支与提交。
+// root：控制面当前保存的代码目录（空 = FORGE_CODE_ROOT）；执行策略页「检查」也走这里，只查询不保存
+app.get<{ Querystring: { root?: string } }>('/v1/code/projects', async (req) =>
+  listCodeProjects(req.query?.root),
+);
 app.get<{ Params: { id: string } }>('/v1/sessions/:id', async (req, reply) =>
   kernel.has(req.params.id)
     ? { exists: true, busy: kernel.isBusy(req.params.id) }
@@ -85,7 +90,13 @@ app.get<{ Params: { id: string } }>('/v1/sessions/:id', async (req, reply) =>
 );
 app.post<{
   Params: { id: string };
-  Body: { message: string; modelConfig?: RuntimeModel; codeProjects?: string[]; capabilities?: unknown };
+  Body: {
+    message: string;
+    modelConfig?: RuntimeModel;
+    codeProjects?: string[];
+    codeRoot?: string;
+    capabilities?: unknown;
+  };
 }>('/v1/sessions/:id/stream', async (req, reply) => {
   const id = req.params.id;
   if (!kernel.has(id)) return reply.code(404).send({ message: '执行会话不存在，请新建会话' });
@@ -96,6 +107,7 @@ app.post<{
   // 必须在接管响应流之前校验，否则错误无法以 422 返回给控制面。
   if (req.body.modelConfig !== undefined && !validModel(req.body.modelConfig))
     return reply.code(422).send({ message: 'modelConfig requires baseUrl and model' });
+  setCodeRoot(req.body.codeRoot);
   if (req.body.codeProjects !== undefined) resolveCodeProjects(req.body.codeProjects);
   if (req.body.capabilities !== undefined) resolveCapabilities(req.body.capabilities);
   reply.hijack();
