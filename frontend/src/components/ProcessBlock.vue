@@ -2,6 +2,8 @@
 /**
  * 一轮的执行过程：所有思考、工具调用与中间说明合成一个块。
  * 运行中只显示一个头部（正在思考 / 正在调用某工具）和当前活动；结束后收起成一行摘要，点开查看完整时间线。
+ * 运行中的调用明细只在本轮有多个工具调用时显示（含已完成的，可点开）；
+ * 单个调用与头部摘要重复，不渲染——一个动作只转一个圈。
  */
 import { computed, nextTick, ref, watch } from 'vue';
 import { usePlatform } from '../stores/platform';
@@ -22,6 +24,11 @@ const liveThinking = computed(() => {
   const last = props.steps.at(-1);
   return last?.kind === 'thinking' && last.live ? last.text : '';
 });
+const allCalls = computed(() => props.steps.flatMap((step) => (step.kind === 'tools' ? step.calls : [])));
+/** 运行中是否显示调用明细：本轮有多个工具调用时才显示，单个在跑时留空，圈只留在头部 */
+const showLiveCalls = computed(
+  () => !liveThinking.value && stats.value.pending.length > 0 && allCalls.value.length > 1,
+);
 const label = computed(() => {
   if (!props.active) return processSummary(stats.value);
   const call = stats.value.pending.at(-1);
@@ -40,7 +47,7 @@ watch(liveThinking, async () => {
 <template>
   <section :class="['process-block', { active, open }]">
     <button class="process-header" type="button" :aria-expanded="open" @click="open = !open">
-      <span v-if="active && stats.pending.length" class="loader small"></span
+      <span v-if="active && stats.pending.length && !showLiveCalls" class="loader small"></span
       ><Icon v-else :name="!active && stats.failures ? 'info' : 'think'" :size="13" /><span
         class="process-label"
         >{{ label }}</span
@@ -61,7 +68,7 @@ watch(liveThinking, async () => {
         class="step-thinking-text process-current"
         v-text="liveThinking"
       ></div>
-      <ToolCallGroup v-else-if="stats.pending.length" :calls="stats.pending" flat />
+      <ToolCallGroup v-else-if="showLiveCalls" :calls="allCalls" flat />
     </template>
   </section>
 </template>
