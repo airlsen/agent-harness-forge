@@ -849,7 +849,7 @@ onMounted(load);
               <span class="skill-capability-meta">版本 v{{ skill.version }}</span>
               <span class="skill-capability-meta">{{ catalogDate('发布', skill.publishedAt) }}</span>
               <span class="skill-capability-meta">{{
-                skill.referenceCount ? `${skill.referenceCount} 个参考文件` : 'SKILL.md'
+                skill.fileCount ? `SKILL.md + ${skill.fileCount} 个文件` : 'SKILL.md'
               }}</span>
             </template>
             <template #footer>

@@ -98,7 +98,7 @@ export function codeGuide(projects: readonly CodeContext[], tools: readonly stri
 
 /** 本会话可用的扩展能力摘要（不含 Skill 正文与任何凭据） */
 export interface CapabilityContext {
-  skills?: readonly { name: string; title?: string; hasReferences?: boolean }[];
+  skills?: readonly { name: string; title?: string; hasFiles?: boolean }[];
   mcp?: readonly {
     serverName: string;
     title?: string;
@@ -115,13 +115,13 @@ export interface CapabilityContext {
 export function capabilityGuide(caps: CapabilityContext = {}): string[] {
   const lines: string[] = [];
   if (caps.skills?.length) {
-    const refs = caps.skills.some((skill) => skill.hasReferences);
+    const files = caps.skills.some((skill) => skill.hasFiles);
     lines.push(
       [
         '## Skill',
         `本会话启用了 ${caps.skills.length} 个 Skill（${caps.skills.map((skill) => skill.name).join('、')}）。任务与某个 Skill 的说明相符时，先调用 skill 工具加载它，再严格按其中的步骤与规范完成任务；用户消息以 /名称 开头表示指定使用该 Skill。`,
-        refs
-          ? 'Skill 正文提到参考资料时，用 read 按需读取 skill 结果给出的目录中的文件（绝对路径）；参考资料只读。'
+        files
+          ? 'Skill 正文提到 references/、assets/ 中的文件时，按 skill 结果给出的目录拼出绝对路径，用 read 按需读取；这些文件只读。'
           : '',
       ]
         .filter(Boolean)

@@ -2,7 +2,8 @@
  * 会话扩展能力（Skill / MCP / 联网搜索）：控制面每轮下发「本轮生效」的完整集合 = 场景绑定 ∪ 聊天临时选择。
  *
  * - Skill：只是文本。Runner 把正文注册为 DSH 运行时 Skill（dsh-skill 注册表 + dsh-tool-skill 的 skill 工具），
- *   参考资料写到会话目录外的只读目录，模型用 read 按需读取；用户可在消息中用 /名称 直接调用。
+ *   references/、assets/ 中的文件写到会话目录外的只读目录（完整 Skill 目录），模型用 read 按需读取；
+ *   用户可在消息中用 /名称 直接调用。
  * - MCP：每个服务挂一个 dsh-mcp-client；凭据只在本轮配置里出现，不写入 Bundle。
  *   工具按 mcp__<server>__<tool> 命名，只有控制面允许的工具进入白名单，需确认的工具逐次审批。
  * - 联网：dsh-web + DeepSeek 搜索提供方 + HTTP 抓取，由 dsh-tool-web 提供 web_search / web_fetch。
@@ -13,16 +14,18 @@ import { createHash } from 'node:crypto';
 
 export const MAX_SKILLS = 20;
 export const MAX_SKILL_BYTES = 64_000;
-export const MAX_SKILL_REFERENCES = 10;
-export const MAX_REFERENCE_BYTES = 120_000;
+/** 与控制面 skill_files 一致：每个 Skill 最多 20 个附加文件、单个 120 KB、合计 512 KB */
+export const MAX_SKILL_FILES = 20;
+export const MAX_SKILL_FILE_BYTES = 120_000;
+export const MAX_SKILL_FILES_TOTAL_BYTES = 512_000;
 export const MAX_MCP_SERVERS = 10;
 export const MAX_MCP_TOOLS = 200;
 /** DSH 技能名语法（dsh-skill isSkillName）：小写 kebab-case */
 export const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** dsh-mcp-client 的 serverName 语法 */
 export const MCP_SERVER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
-/** 参考资料文件名：单层、非隐藏、常见安全字符 */
-const REFERENCE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
+/** 附加文件路径：references/ 或 assets/ 下一层、非隐藏、常见安全字符 */
+export const SKILL_FILE_PATH = /^(references|assets)\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
 const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 export const WEB_SEARCH_PROVIDERS = {
@@ -31,8 +34,9 @@ export const WEB_SEARCH_PROVIDERS = {
 } as const;
 export type WebSearchProvider = keyof typeof WEB_SEARCH_PROVIDERS;
 
-export interface SkillReference {
-  filename: string;
+export interface SkillFile {
+  /** Skill 目录内的相对路径，如 references/rules.md */
+  path: string;
   content: string;
 }
 export interface RuntimeSkill {
@@ -40,7 +44,7 @@ export interface RuntimeSkill {
   description: string;
   whenToUse?: string;
   content: string;
-  references: SkillReference[];
+  files: SkillFile[];
   /** 展示用：来源（scenario/chat）与平台 Skill 名称 */
   source: 'scenario' | 'chat';
   title?: string;
@@ -103,30 +107,40 @@ function stringMap(value: unknown, field: string, key: RegExp, maxEntries: numbe
   return out;
 }
 
+/** files:[{path,content}]；兼容旧控制面的 references:[{filename,content}]（视为 references/<filename>） */
+function resolveSkillFiles(name: string, raw: Record<string, unknown>): SkillFile[] {
+  const legacy = raw.files === undefined && raw.references !== undefined;
+  const items = legacy ? raw.references : (raw.files ?? []);
+  if (!Array.isArray(items) || items.length > MAX_SKILL_FILES) throw failure(`Skill ${name} 的附加文件无效`);
+  const seen = new Set<string>();
+  let total = 0;
+  return items.map((item) => {
+    if (!isObject(item)) throw failure(`Skill ${name} 的附加文件无效`);
+    const path = legacy
+      ? `references/${text(item.filename, 120, '附加文件名')}`
+      : text(item.path, 200, '附加文件路径')!;
+    const content = text(item.content, MAX_SKILL_FILE_BYTES, '附加文件内容', false) ?? '';
+    total += bytes(content);
+    if (!SKILL_FILE_PATH.test(path) || seen.has(path) || bytes(content) > MAX_SKILL_FILE_BYTES)
+      throw failure(`Skill ${name} 的附加文件无效：${path}`);
+    if (total > MAX_SKILL_FILES_TOTAL_BYTES) throw failure(`Skill ${name} 的附加文件合计超过 512 KB`);
+    seen.add(path);
+    return { path, content };
+  });
+}
+
 function resolveSkill(raw: unknown): RuntimeSkill {
   if (!isObject(raw)) throw failure('Skill 配置无效');
   const name = text(raw.name, 64, 'Skill 名称')!;
   if (!SKILL_NAME.test(name)) throw failure(`Skill 名称无效：${name}`);
   const content = text(raw.content, MAX_SKILL_BYTES, `Skill ${name} 正文`)!;
   if (bytes(content) > MAX_SKILL_BYTES) throw failure(`Skill ${name} 正文超过 64 KB`);
-  const references = raw.references === undefined ? [] : raw.references;
-  if (!Array.isArray(references) || references.length > MAX_SKILL_REFERENCES)
-    throw failure(`Skill ${name} 的参考资料无效`);
-  const seen = new Set<string>();
   return {
     name,
     description: text(raw.description, 1024, `Skill ${name} 描述`)!,
     ...(raw.whenToUse ? { whenToUse: text(raw.whenToUse, 1024, `Skill ${name} 适用场景`)! } : {}),
     content,
-    references: references.map((item) => {
-      if (!isObject(item)) throw failure(`Skill ${name} 的参考资料无效`);
-      const filename = text(item.filename, 120, '参考资料文件名')!;
-      const body = text(item.content, MAX_REFERENCE_BYTES, '参考资料内容', false) ?? '';
-      if (!REFERENCE_NAME.test(filename) || seen.has(filename) || bytes(body) > MAX_REFERENCE_BYTES)
-        throw failure(`Skill ${name} 的参考资料无效：${filename}`);
-      seen.add(filename);
-      return { filename, content: body };
-    }),
+    files: resolveSkillFiles(name, raw),
     source: source(raw.source),
     ...(typeof raw.title === 'string' && raw.title ? { title: raw.title.slice(0, 120) } : {}),
   };

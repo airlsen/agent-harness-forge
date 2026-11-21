@@ -199,7 +199,8 @@ async def test_turns_send_scenario_and_chat_capabilities_and_changes_apply_next_
     assert sent == runner.caps[0]
     assert [skill["name"] for skill in sent["skills"]] == ["weekly-report", f"weekly-report-{extra.id}"]
     assert sent["skills"][0]["content"] == SKILL_BODY
-    assert sent["skills"][0]["references"] == [{"filename": "glossary.md", "content": "术语表"}]
+    # 旧格式参考资料记录也按完整目录下发
+    assert sent["skills"][0]["files"] == [{"path": "references/glossary.md", "content": "术语表"}]
     assert sent["skills"][0]["source"] == "scenario" and sent["skills"][1]["source"] == "chat"
     assert sent["mcp"] == [
         {

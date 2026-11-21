@@ -15,7 +15,7 @@ const loading = ref(true);
 const error = ref('');
 const downloading = ref(false);
 const sourceOpen = ref(false);
-const selectedReference = ref<number | null>(null);
+const selectedReference = ref<string | null>(null);
 const referenceContent = ref('');
 const referenceLoading = ref(false);
 const referenceError = ref('');
@@ -56,19 +56,21 @@ async function load() {
   }
 }
 
-async function selectReference(index: number) {
+async function selectReference(path: string) {
   if (!skill.value) return;
-  if (selectedReference.value === index) {
+  if (selectedReference.value === path) {
     selectedReference.value = null;
     return;
   }
-  selectedReference.value = index;
+  selectedReference.value = path;
   referenceContent.value = '';
   referenceError.value = '';
   referenceLoading.value = true;
   const request = ++referenceRequest;
   try {
-    const result = await api<{ content: string }>(`/skills/${skill.value.id}/published/references/${index}`);
+    const result = await api<{ content: string }>(
+      `/skills/${skill.value.id}/published/files?path=${encodeURIComponent(path)}`,
+    );
     if (request === referenceRequest) referenceContent.value = result.content;
   } catch (reason) {
     if (request === referenceRequest) referenceError.value = (reason as Error).message;
@@ -145,30 +147,26 @@ watch(
           <Markdown v-else :text="documentBody" variant="document" />
         </section>
 
-        <section v-if="skill.referenceFiles.length" class="published-references">
+        <section v-if="skill.files.length" class="published-references">
           <div class="published-section-heading">
-            <strong>参考文件</strong>
-            <span>{{ skill.referenceFiles.length }} 个文件</span>
+            <strong>附加文件</strong>
+            <span>{{ skill.files.length }} 个文件</span>
           </div>
           <div class="published-reference-list">
-            <div v-for="(file, index) in skill.referenceFiles" :key="index">
+            <div v-for="file in skill.files" :key="file.path">
               <button
                 type="button"
                 class="published-reference-button"
-                :aria-expanded="selectedReference === index"
-                @click="selectReference(index)"
+                :aria-expanded="selectedReference === file.path"
+                @click="selectReference(file.path)"
               >
-                <span><Icon name="file" :size="15" />{{ file.filename }}</span>
+                <span><Icon name="file" :size="15" />{{ file.path }}</span>
                 <small>{{ formatBytes(file.bytes) }}</small>
               </button>
-              <div v-if="selectedReference === index" class="published-reference-body">
+              <div v-if="selectedReference === file.path" class="published-reference-body">
                 <a-spin v-if="referenceLoading" size="small" />
                 <a-alert v-else-if="referenceError" type="error" :message="referenceError" show-icon />
-                <Markdown
-                  v-else-if="/\.md$/i.test(file.filename)"
-                  :text="referenceContent"
-                  variant="document"
-                />
+                <Markdown v-else-if="/\.md$/i.test(file.path)" :text="referenceContent" variant="document" />
                 <pre v-else>{{ referenceContent }}</pre>
               </div>
             </div>

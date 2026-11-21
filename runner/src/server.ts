@@ -15,7 +15,7 @@ if (!token || token.length < 24) throw new Error('FORGE_RUNNER_TOKEN (>=24 chars
 const expected = Buffer.from(`Bearer ${token}`);
 const pluginWorker = await PluginWorkerClient.start();
 const kernel = new DshKernel(pluginWorker);
-const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 1024 * 1024 });
+const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 12 * 1024 * 1024 });
 app.addHook('onRequest', async (req, reply) => {
   if (req.url === '/healthz') return;
   const auth = Buffer.from(req.headers.authorization ?? '');

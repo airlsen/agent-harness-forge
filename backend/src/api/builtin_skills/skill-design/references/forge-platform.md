@@ -6,7 +6,8 @@
 
 - 业务会话列出已启用 Skill 的名称和 description，模型判断任务相符时加载正文，再照着执行
 - 用户在消息开头输入 /名称，可以直接指定 Skill
-- 参考资料不会自动读入，正文里写明"什么时候读哪份"，模型才会去读
+- references/、assets/ 中的文件不会自动读入：正文里用相对路径写明什么时候读或用，模型才会去读。skill 工具加载正文时会给出 Skill 目录，模型拼出完整路径后用 read 读取
+- assets/ 里的模板读出后照着填写，交付物再用 workspace_write 保存
 
 ## 业务会话里的工具
 
@@ -16,7 +17,7 @@
 | 会话工作区文件 | workspace_list / workspace_read / workspace_write | 一般可用 |
 | 交付文件卡片 | workspace_present | 能写文件时可用 |
 | 搜索文件 | glob / grep | 能读文件或关联了代码时可用 |
-| 只读读取代码和参考资料 | read | 关联了代码或 Skill 有参考资料时可用 |
+| 只读读取代码和 Skill 文件 | read | 关联了代码或 Skill 有附加文件时可用 |
 | 终端命令 | bash | 看企业策略，修改类命令需要用户确认 |
 | 联网 | web_search / web_fetch | 看场景配置 |
 | 外部系统 | MCP 工具 | 看场景配置，名称以实际为准 |
@@ -35,4 +36,7 @@
 - title：最长 120 字
 - description：1–512 字
 - 正文：不超过 64KB
-- 参考资料：最多 10 份，每份不超过 120KB，只读
+- 附加文件：references/ 只能放 .md、.txt；assets/ 能放 .md、.txt、.json、.csv、.yaml、.html。每个目录只有一层，不能再建子目录
+- 文件名：英文字母或数字开头，只能包含字母、数字、点、下划线、短横线
+- 数量和大小：最多 20 个文件，单个不超过 120KB，合计不超过 512KB；业务会话中只读
+- 暂不支持 scripts/ 脚本目录

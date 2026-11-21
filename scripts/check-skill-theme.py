@@ -20,7 +20,7 @@ URL = os.environ.get("FORGE_FRONTEND_URL", "http://127.0.0.1:5173")
 BROWSER = os.environ.get("FORGE_BROWSER_PATH")
 check = shared["check"]
 responses = {**shared["responses"], "/api/agent/sessions": {"items": []}}
-reference = {"filename": "guide.md", "path": "references/guide.md", "bytes": 50}
+reference = {"path": "references/guide.md", "bytes": 50, "source": "manual"}
 content = "---\nname: test-skill\ntitle: 测试技能\ndescription: 测试用途\n---\n\n# 测试技能\n\n正文"
 skill = {
     "id": 1,
@@ -32,7 +32,7 @@ skill = {
     "currentRevisionId": 2,
     "publishedVersion": 1,
     "content": content,
-    "referenceFiles": [reference],
+    "files": [reference],
     "updatedAt": "2026-11-21T14:13:47Z",
 }
 revisions = [
@@ -60,7 +60,7 @@ responses.update(
         "/api/skills/1": skill,
         "/api/skills/1/revisions": {"items": revisions},
         "/api/skills/1/authoring-session/latest": None,
-        "/api/skills/1/references/2/0": {"content": "# 参考资料\n\n示例内容"},
+        "/api/skills/1/files/2": {"path": "references/guide.md", "content": "# 参考资料\n\n示例内容"},
     }
 )
 
@@ -105,7 +105,7 @@ def main():
             check(
                 page, ".view-switch button.active", ".view-switch button.active", dark
             )
-            page.locator(".folder-row").hover()
+            page.locator(".folder-row").first.hover()
             check(page, ".folder-row", ".folder-row", dark)
             check(page, ".file-row.selected svg", ".file-row.selected", dark)
             page.get_by_label("给 Skill 助手的要求").focus()

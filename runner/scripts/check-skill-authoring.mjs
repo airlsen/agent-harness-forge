@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { apply, checkSkillDocument } from '../skill-authoring-plugin/index.js';
+import { apply, checkSkillDocument, validateFilePath } from '../skill-authoring-plugin/index.js';
 
 const tools = new Map();
 const ctx = {
@@ -37,16 +37,30 @@ try {
     name: 'Support',
     description: 'Support workflow',
     content: '---\nname: support\ndescription: Help customers\n---\n\n# Steps\n\nCheck details.',
-    references: [{ filename: 'notes.md', content: 'Untrusted reference' }],
+    files: [{ path: 'references/notes.md', content: 'Untrusted reference' }],
     guides: [
       { name: 'forge-platform', content: '# Forge 平台知识' },
       { name: 'templates', content: '# Skill 骨架模板' },
     ],
-    allowedTools: ['skill_read_draft', 'skill_read_references', 'skill_read_guide', 'skill_validate_draft', 'skill_update_draft'],
+    allowedTools: [
+      'skill_read_draft',
+      'skill_list_files',
+      'skill_read_file',
+      'skill_read_guide',
+      'skill_validate_draft',
+      'skill_update_draft',
+      'skill_write_file',
+      'skill_delete_file',
+    ],
   });
-  assert.equal(tools.size, 5);
+  assert.equal(tools.size, 8);
   assert.equal((await tools.get('skill_read_draft').execute({})).skillId, 4);
-  assert.equal((await tools.get('skill_read_references').execute({})).references[0].filename, 'notes.md');
+  assert.deepEqual((await tools.get('skill_list_files').execute({})).files, [
+    { path: 'references/notes.md', bytes: 19, mentioned: false },
+  ]);
+  assert.equal((await tools.get('skill_read_file').execute({ path: 'references/notes.md' })).content, 'Untrusted reference');
+  assert.ok((await tools.get('skill_read_file').execute({ path: 'SKILL.md' })).content.includes('# Steps'));
+  await assert.rejects(() => tools.get('skill_read_file').execute({ path: 'references/none.md' }), /文件不存在/);
 
   // 参考资料只能按白名单名称读取
   const guide = tools.get('skill_read_guide');
@@ -75,8 +89,74 @@ try {
   assert.equal(events.length, 1);
   assert.equal((await tools.get('skill_read_draft').execute({})).content.endsWith('# Updated'), true);
 
+  // 文件工具：写入 / 覆盖 / 删除都发修订事件；路径、类型、容量不合规时不保存
+  const write = tools.get('skill_write_file');
+  const created = await write.execute({ path: 'assets/report-template.md', content: '# 模板', summary: '新增模板' });
+  assert.equal(created.created, true);
+  assert.match(created.warnings[0], /还没有提到 assets\/report-template\.md/);
+  assert.deepEqual(events.at(-1).params, {
+    action: 'write_file',
+    path: 'assets/report-template.md',
+    content: '# 模板',
+    summary: '新增模板',
+  });
+  assert.equal((await write.execute({ path: 'assets/report-template.md', content: '# 模板 v2' })).created, false);
+  for (const [path, message] of [
+    ['scripts/run.py', /后续版本/],
+    ['SKILL.md', /skill_update_draft/],
+    ['references/a/b.md', /目录\/文件名/],
+    ['../x.md', /references\/ 或 assets\//],
+    ['references/规则.md', /文件名只能/],
+    ['references/data.json', /只支持/],
+  ])
+    await assert.rejects(() => write.execute({ path, content: 'x' }), message, path);
+  await assert.rejects(() => write.execute({ path: 'references/big.md', content: 'x'.repeat(120001) }), /120 KB/);
+  const before = events.length;
+  for (let index = 0; index < 18; index += 1) await write.execute({ path: `references/r${index}.md`, content: 'r' });
+  await assert.rejects(() => write.execute({ path: 'references/one-more.md', content: 'x' }), /最多 20 个/);
+  await write.execute({ path: 'references/r0.md', content: 'still fine' }); // 覆盖不增加数量
+  assert.equal(events.length, before + 19);
+  for (let index = 0; index < 18; index += 1) await tools.get('skill_delete_file').execute({ path: `references/r${index}.md` });
+  assert.deepEqual(events.at(-1).params, { action: 'delete_file', path: 'references/r17.md', summary: '' });
+  await assert.rejects(() => tools.get('skill_delete_file').execute({ path: 'references/r0.md' }), /文件不存在/);
+  for (let index = 0; index < 4; index += 1)
+    await write.execute({ path: `assets/big${index}.md`, content: 'x'.repeat(110000) });
+  await assert.rejects(() => write.execute({ path: 'assets/big4.md', content: 'x'.repeat(110000) }), /512 KB/);
+  for (let index = 0; index < 4; index += 1) await tools.get('skill_delete_file').execute({ path: `assets/big${index}.md` });
+
+  // 正文更新只发送正文（不回传文件清单），并检查正文与文件的引用是否对应
+  const saved = await tools.get('skill_update_draft').execute({
+    content: '---\nname: support\ndescription: Help\n---\n\n# Updated\n\n按 assets/report-template.md 输出，规则见 references/missing.md。',
+  });
+  assert.deepEqual(Object.keys(events.at(-1).params).sort(), ['action', 'content', 'summary']);
+  assert.equal(events.at(-1).params.action, 'update_draft');
+  assert.ok(saved.warnings.some((item) => item.includes('references/notes.md 没有在 SKILL.md 中提到')));
+  assert.ok(saved.warnings.some((item) => item.includes('references/missing.md，但文件不存在')));
+  assert.ok(!saved.warnings.some((item) => item.includes('assets/report-template.md')));
+  const deleted = await tools.get('skill_delete_file').execute({ path: 'assets/report-template.md', summary: '去掉模板' });
+  assert.match(deleted.warnings[0], /仍然提到 assets\/report-template\.md/);
+
   dispose();
   assert.equal(tools.size, 0);
+
+  // 旧控制面下发的 references:[{filename}] 视为 references/<filename>
+  const legacy = await apply(ctx, {
+    skillId: 6,
+    content: GOOD,
+    references: [{ filename: 'old.md', content: '旧资料' }],
+    allowedTools: ['skill_read_file'],
+  });
+  assert.equal((await tools.get('skill_read_file').execute({ path: 'references/old.md' })).content, '旧资料');
+  legacy();
+
+  assert.equal(validateFilePath(' assets/data.csv '), 'assets/data.csv');
+  assert.deepEqual(
+    checkSkillDocument(GOOD.replace('样例：', '样例见 assets/sample.md：'), ['assets/sample.md']).warnings,
+    [],
+  );
+  assert.deepEqual(checkSkillDocument(`${GOOD}\n参考 scripts/run.py`).warnings, [
+    'SKILL.md 提到了 scripts/run.py，但脚本目录暂不支持：改为把步骤写进正文',
+  ]);
 
   // 没有下发参考资料时不注册 skill_read_guide
   const bare = await apply(ctx, {
@@ -103,7 +183,7 @@ try {
   );
   assert.deepEqual(checkSkillDocument(metaSkill), { valid: true, errors: [], warnings: [] });
 
-  process.stderr.write('PASS isolated Skill authoring tools, guide whitelist, aligned validation with quality warnings, unsaved invalid drafts, and disposal\n');
+  process.stderr.write('PASS isolated Skill authoring tools, file read/write/delete with limits, reference checks, guide whitelist, aligned validation, unsaved invalid drafts, and disposal\n');
 } finally {
   process.stdout.write = originalWrite;
 }

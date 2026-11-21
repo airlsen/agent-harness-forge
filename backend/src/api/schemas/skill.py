@@ -12,9 +12,10 @@ class SkillDraftUpdate(BaseModel):
     change_summary: str = Field(default="手动编辑草稿", max_length=500)
 
 
-class SkillReferenceInput(BaseModel):
-    filename: str = Field(min_length=1, max_length=180)
-    content: str = Field(min_length=1, max_length=120000)
+class SkillFileWrite(BaseModel):
+    path: str = Field(min_length=1, max_length=200)
+    content: str = Field(max_length=120000)
+    change_summary: str = Field(default="", max_length=500)
 
 
 class SkillTurn(BaseModel):

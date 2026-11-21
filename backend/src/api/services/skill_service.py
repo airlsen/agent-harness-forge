@@ -20,15 +20,25 @@ from ..core.database import SessionFactory
 from ..models.skill import Skill, SkillAuthoringMessage, SkillAuthoringSession, SkillRevision
 from ..services.runner_client import runner_client
 from .settings_service import get_connection, get_policy
+from .skill_files import (
+    MAX_FILE_BYTES,
+    check_capacity,
+    file_view,
+    read_entry,
+    skill_files,
+    validate_file_path,
+)
 
 SKILL_ROOT = settings.data_dir / "skills"
 MAX_SKILL_BYTES = 64_000
-MAX_REFERENCE_BYTES = 120_000
 AUTHORING_TOOLS = [
     "skill_read_draft",
-    "skill_read_references",
+    "skill_list_files",
+    "skill_read_file",
     "skill_read_guide",
     "skill_update_draft",
+    "skill_write_file",
+    "skill_delete_file",
     "skill_validate_draft",
 ]
 
@@ -132,7 +142,7 @@ def _revision_view(row: SkillRevision) -> dict:
         "contentHash": row.content_hash,
         "changeSummary": row.change_summary,
         "source": row.source,
-        "referenceFiles": row.reference_files or [],
+        "files": [file_view(item) for item in skill_files(row.reference_files)],
         "createdBy": row.created_by,
         "createdAt": _iso(row.created_at),
     }
@@ -177,7 +187,7 @@ def _skill_view(
         "publishedName": published_metadata.get("title") or (row.name if published_revision else ""),
         "publishedDescription": published_metadata.get("description")
         or (row.description if published_revision else ""),
-        "publishedReferenceCount": len(published_revision.reference_files or []) if published_revision else 0,
+        "publishedFileCount": len(skill_files(published_revision.reference_files)) if published_revision else 0,
         "description": row.description,
         "status": row.status,
         "tags": row.tags or [],
@@ -187,7 +197,7 @@ def _skill_view(
         "revision": revision.revision if revision else None,
         "content": revision.content if revision else "",
         "changeSummary": revision.change_summary if revision else "",
-        "referenceFiles": revision.reference_files if revision else [],
+        "files": [file_view(item) for item in skill_files(revision.reference_files)] if revision else [],
         "createdAt": _iso(row.created_at),
         "updatedAt": _iso(row.updated_at),
         "publishedAt": _iso(published_revision.created_at) if published_revision else None,
@@ -244,7 +254,7 @@ async def list_published_skills(db: AsyncSession) -> list[dict]:
                 "machineName": _machine_name(revision),
                 "description": metadata.get("description") or "",
                 "version": revision.published_version,
-                "referenceCount": len(revision.reference_files or []),
+                "fileCount": len(skill_files(revision.reference_files)),
                 "publishedAt": _iso(revision.created_at),
             }
         )
@@ -271,32 +281,42 @@ async def published_skill_detail(db: AsyncSession, skill_id: int) -> dict:
         "description": metadata.get("description") or "",
         "version": revision.published_version,
         "content": revision.content,
-        "referenceFiles": [
-            {"filename": ref.get("filename", ""), "bytes": ref.get("bytes", 0)}
-            for ref in revision.reference_files or []
-        ],
+        "files": [file_view(item) for item in skill_files(revision.reference_files)],
         "publishedAt": _iso(revision.created_at),
     }
 
 
-async def published_reference_content(db: AsyncSession, skill_id: int, index: int) -> dict:
-    _, revision = await _published_revision(db, skill_id)
-    references = revision.reference_files or []
-    if index < 0 or index >= len(references):
-        raise HTTPException(404, "参考资料不存在")
-    reference = references[index]
-    root = (SKILL_ROOT / str(skill_id) / "references").resolve()
-    path = (settings.data_dir / str(reference.get("path", ""))).resolve()
-    if not path.is_relative_to(root):
-        raise HTTPException(404, "参考资料不存在")
+def _find_file(revision: SkillRevision, path: str) -> dict:
+    entry = next((item for item in skill_files(revision.reference_files) if item["path"] == path), None)
+    if not entry:
+        raise HTTPException(404, f"文件不存在：{path}")
+    return entry
+
+
+def _read_file(revision: SkillRevision, entry: dict) -> str:
     try:
-        content = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as error:
-        raise HTTPException(404, "参考资料文件不可读取") from error
-    return {"filename": reference.get("filename", ""), "content": content}
+        return read_entry(settings.data_dir, revision.skill_id, entry)
+    except (OSError, UnicodeError, ValueError) as error:
+        raise HTTPException(404, f"文件不可读取：{entry['path']}") from error
+
+
+async def revision_file(db: AsyncSession, skill_id: int, revision_id: int, path: str) -> dict:
+    skill = await get_skill(db, skill_id)
+    revision = await db.get(SkillRevision, revision_id)
+    if not revision or revision.skill_id != skill.id:
+        raise HTTPException(404, "版本不存在")
+    entry = _find_file(revision, path)
+    return {"path": entry["path"], "content": _read_file(revision, entry)}
+
+
+async def published_file(db: AsyncSession, skill_id: int, path: str) -> dict:
+    _, revision = await _published_revision(db, skill_id)
+    entry = _find_file(revision, path)
+    return {"path": entry["path"], "content": _read_file(revision, entry)}
 
 
 async def skill_archive(db: AsyncSession, skill_id: int, version: str = "current") -> tuple[bytes, str]:
+    """导出标准 Skill 包：zip 内是 <name>/SKILL.md 以及 references/、assets/ 下的全部文件。"""
     skill = await get_skill(db, skill_id)
     revision_id = skill.current_revision_id if version == "current" else skill.published_revision_id
     if not revision_id:
@@ -305,33 +325,20 @@ async def skill_archive(db: AsyncSession, skill_id: int, version: str = "current
     if not revision or revision.skill_id != skill_id:
         raise HTTPException(404, "所选技能版本不存在")
 
-    references = []
-    reference_root = (SKILL_ROOT / str(skill_id) / "references").resolve()
-    used_names = {"SKILL.md"}
-    for index, reference in enumerate(revision.reference_files or []):
-        path = (settings.data_dir / str(reference.get("path", ""))).resolve()
-        if not path.is_relative_to(reference_root) or not path.is_file():
-            raise HTTPException(409, "参考资料缺失或路径无效，无法完整下载技能")
-        filename = Path(str(reference.get("filename", ""))).name
-        if not filename or filename in (".", ".."):
-            raise HTTPException(409, "参考资料文件名无效")
-        archive_name = f"references/{filename}"
-        suffix = index + 1
-        while archive_name in used_names:
-            archive_name = f"references/{suffix}-{filename}"
-            suffix += 1
-        used_names.add(archive_name)
+    name = _slug(_machine_name(revision) or f"skill-{skill_id}")
+    files = []
+    for entry in skill_files(revision.reference_files):
         try:
-            references.append((archive_name, path.read_bytes()))
-        except OSError as error:
-            raise HTTPException(409, "参考资料无法读取，无法完整下载技能") from error
+            files.append((entry["path"], read_entry(settings.data_dir, skill_id, entry).encode("utf-8")))
+        except (OSError, UnicodeError, ValueError) as error:
+            raise HTTPException(409, f"文件缺失或无法读取，无法完整下载技能：{entry['path']}") from error
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("SKILL.md", revision.content)
-        for archive_name, content in references:
-            archive.writestr(archive_name, content)
-    return buffer.getvalue(), _slug(_machine_name(revision) or f"skill-{skill_id}")
+        archive.writestr(f"{name}/SKILL.md", revision.content)
+        for path, content in files:
+            archive.writestr(f"{name}/{path}", content)
+    return buffer.getvalue(), name
 
 
 async def delete_draft(db: AsyncSession, skill_id: int) -> None:
@@ -408,14 +415,15 @@ async def add_revision(
     summary: str,
     source: str,
     created_by: str = "admin",
-    references: list | None = None,
+    files: list | None = None,
 ) -> SkillRevision:
+    """新建草稿修订。files 为 None 时沿用上一修订的文件清单（只改 SKILL.md 时不能丢文件）。"""
     errors = validate_content(content)
     if errors:
         raise HTTPException(422, "；".join(errors))
     sync_skill_metadata(skill, content)
     old = await _current_revision(db, skill)
-    reference_files = references if references is not None else (old.reference_files if old else [])
+    reference_files = skill_files(files if files is not None else (old.reference_files if old else []))
     revision = SkillRevision(
         skill_id=skill.id,
         revision=await _next_revision(db, skill.id),
@@ -459,7 +467,7 @@ async def publish_skill(db: AsyncSession, skill_id: int, created_by: str) -> dic
         content_hash=current.content_hash,
         change_summary=f"发布 v{version}",
         source="publish",
-        reference_files=current.reference_files or [],
+        reference_files=skill_files(current.reference_files),
         created_by=created_by,
     )
     db.add(published)
@@ -496,32 +504,68 @@ def _slug(filename: str) -> str:
     return clean[:120] or "reference.txt"
 
 
-async def add_reference(db: AsyncSession, skill_id: int, filename: str, content: str) -> dict:
+async def _draft_revision(db: AsyncSession, skill_id: int) -> tuple[Skill, SkillRevision]:
     skill = await get_skill(db, skill_id)
-    clean_name = _slug(filename)
-    if Path(clean_name).suffix.lower() not in {".md", ".txt"}:
-        raise HTTPException(422, "首版参考资料仅支持 Markdown 和纯文本文件")
-    if len(content.encode("utf-8")) > MAX_REFERENCE_BYTES:
-        raise HTTPException(413, "单份参考资料不能超过 120 KB")
     current = await _current_revision(db, skill)
-    refs = list(current.reference_files or []) if current else []
-    rel_dir = Path(str(skill.id)) / "references"
-    target_dir = SKILL_ROOT / rel_dir
+    if not current:
+        raise HTTPException(409, "Skill 草稿尚未初始化")
+    return skill, current
+
+
+async def write_file(
+    db: AsyncSession, skill_id: int, path: str, content: str, summary: str = "", source: str = "manual"
+) -> SkillRevision:
+    """新建或覆盖 references/、assets/ 下的文件，生成一条新修订（SKILL.md 不变）。"""
+    try:
+        path = validate_file_path(path)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    if "\0" in content:
+        raise HTTPException(422, "文件内容不能包含空字符")
+    size = len(content.encode("utf-8"))
+    if size > MAX_FILE_BYTES:
+        raise HTTPException(413, f"单个文件不能超过 {MAX_FILE_BYTES // 1000} KB")
+    skill, current = await _draft_revision(db, skill_id)
+    files = skill_files(current.reference_files)
+    exists = any(item["path"] == path for item in files)
+    target_dir = SKILL_ROOT / str(skill.id) / "files"
     target_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    target = target_dir / f"{secrets.token_hex(8)}-{clean_name}"
+    target = target_dir / f"{secrets.token_hex(8)}-{path.split('/')[1]}"
+    entry = {
+        "path": path,
+        "storage": str(Path("skills") / str(skill.id) / "files" / target.name),
+        "bytes": size,
+        "source": source,
+    }
+    next_files = [entry if item["path"] == path else item for item in files] if exists else [*files, entry]
+    try:
+        check_capacity(next_files)
+    except ValueError as error:
+        raise HTTPException(413, str(error)) from error
     target.write_text(content, encoding="utf-8")
     target.chmod(0o600)
-    ref = {
-        "filename": clean_name,
-        "path": str(Path("skills") / rel_dir / target.name),
-        "bytes": len(content.encode("utf-8")),
-    }
-    refs.append(ref)
-    if current:
-        await add_revision(db, skill, current.content, f"添加参考资料：{clean_name}", "manual", references=refs)
-    else:
-        raise HTTPException(409, "Skill 草稿尚未初始化")
-    return await skill_detail(db, skill_id)
+    default = f"{'更新' if exists else '新建'}文件：{path}"
+    return await add_revision(
+        db, skill, current.content, summary.strip() or default, source, files=next_files
+    )
+
+
+async def delete_file(
+    db: AsyncSession, skill_id: int, path: str, summary: str = "", source: str = "manual"
+) -> SkillRevision:
+    """从文件清单移除；磁盘文件保留给历史修订和已发布版本使用。"""
+    skill, current = await _draft_revision(db, skill_id)
+    files = skill_files(current.reference_files)
+    if not any(item["path"] == path for item in files):
+        raise HTTPException(404, f"文件不存在：{path}")
+    return await add_revision(
+        db,
+        skill,
+        current.content,
+        summary.strip() or f"删除文件：{path}",
+        source,
+        files=[item for item in files if item["path"] != path],
+    )
 
 
 async def get_authoring_session(db: AsyncSession, skill_id: int, session_id: int) -> SkillAuthoringSession:
@@ -683,7 +727,7 @@ async def create_authoring_session(db: AsyncSession, skill_id: int, created_by: 
                 "description": skill.description,
                 "revisionId": revision.id,
                 "content": revision.content,
-                "references": await _reference_contents(revision.reference_files or []),
+                "files": skill_file_contents(revision),
                 "guides": [{"name": name, "content": guides[name]} for name in SKILL_DESIGN_GUIDES],
             },
         },
@@ -709,23 +753,15 @@ async def create_authoring_session(db: AsyncSession, skill_id: int, created_by: 
     return await authoring_session_view(db, row)
 
 
-async def _reference_contents(reference_files: list) -> list[dict]:
+def skill_file_contents(revision: SkillRevision) -> list[dict]:
+    """修订的全部附加文件及内容（编写会话与业务会话下发给 Runner）；读不到的文件跳过。"""
     values = []
-    root = settings.data_dir.resolve()
-    for ref in reference_files[:10]:
+    for entry in skill_files(revision.reference_files):
         try:
-            path = (root / str(ref["path"])).resolve()
-            if not path.is_relative_to(root):
-                continue
-            content = path.read_text(encoding="utf-8")
-            values.append(
-                {
-                    "filename": str(ref.get("filename", "reference.txt")),
-                    "content": content[:MAX_REFERENCE_BYTES],
-                }
-            )
-        except (OSError, KeyError, ValueError):
+            content = read_entry(settings.data_dir, revision.skill_id, entry)
+        except (OSError, UnicodeError, ValueError):
             continue
+        values.append({"path": entry["path"], "content": content[:MAX_FILE_BYTES]})
     return values
 
 
@@ -770,16 +806,27 @@ async def run_authoring_turn(skill_id: int, session_id: int, message: str):
             payload = event.get("payload") if isinstance(event, dict) else {}
             kind = event.get("kind") if isinstance(event, dict) else ""
             if kind == "skill_revision" and isinstance(payload, dict):
+                action = payload.get("action") or "update_draft"
+                path = str(payload.get("path") or "SKILL.md")
+                summary = str(payload.get("summary") or "")
                 async with SessionFactory() as db:
-                    skill = await get_skill(db, skill_id)
-                    revision = await add_revision(
-                        db,
-                        skill,
-                        str(payload.get("content", "")),
-                        str(payload.get("summary", "Agent 修改草稿")),
-                        "agent",
-                        references=payload.get("referenceFiles"),
-                    )
+                    if action == "write_file":
+                        revision = await write_file(
+                            db, skill_id, path, str(payload.get("content", "")), summary, "agent"
+                        )
+                    elif action == "delete_file":
+                        revision = await delete_file(db, skill_id, path, summary, "agent")
+                    else:
+                        # 只改 SKILL.md：文件清单一律沿用上一修订，不信任插件回传的清单。
+                        path = "SKILL.md"
+                        skill = await get_skill(db, skill_id)
+                        revision = await add_revision(
+                            db,
+                            skill,
+                            str(payload.get("content", "")),
+                            summary or "Agent 修改草稿",
+                            "agent",
+                        )
                     session = await get_authoring_session(db, skill_id, session_id)
                     session.current_revision_id = revision.id
                     await _append_message(
@@ -793,6 +840,8 @@ async def run_authoring_turn(skill_id: int, session_id: int, message: str):
                     "revisionId": revision.id,
                     "revision": revision.revision,
                     "summary": revision.change_summary,
+                    "action": action if action in ("write_file", "delete_file") else "update_draft",
+                    "path": path,
                 }
             elif kind == "message_delta" and isinstance(payload, dict) and payload.get("text"):
                 assistant_text.append(str(payload["text"]))
@@ -806,7 +855,3 @@ async def run_authoring_turn(skill_id: int, session_id: int, message: str):
             session = await get_authoring_session(db, skill_id, session_id)
             session.status = "idle"
             await db.commit()
-
-
-def references_path_for(skill_id: int) -> Path:
-    return SKILL_ROOT / str(skill_id) / "references"
