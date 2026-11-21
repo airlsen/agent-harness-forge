@@ -275,12 +275,12 @@ textarea:focus-visible {
   background: transparent;
 }
 .enterprise-sidebar .enterprise-primary > a:hover {
-  color: var(--accent-ink);
-  background: var(--accent-soft);
+  color: var(--sidebar-nav-hover-text);
+  background: var(--sidebar-nav-hover-bg);
 }
 .enterprise-sidebar .enterprise-primary > a.is-active {
-  color: var(--accent-ink);
-  background: var(--accent-soft);
+  color: var(--sidebar-nav-active-text);
+  background: var(--sidebar-nav-active-bg);
   font-weight: 700;
 }
 .enterprise-sidebar .enterprise-primary > a.is-active > svg {
@@ -387,11 +387,13 @@ textarea:focus-visible {
 .enterprise-management-link:hover,
 .enterprise-management-link.selected,
 .enterprise-management-link[aria-expanded='true'] {
-  background: var(--accent-soft);
-  color: var(--accent-ink);
+  background: var(--sidebar-nav-hover-bg);
+  color: var(--sidebar-nav-hover-text);
 }
 .enterprise-management-link.selected {
   font-weight: 700;
+  background: var(--sidebar-nav-active-bg);
+  color: var(--sidebar-nav-active-text);
 }
 .enterprise-management-link.selected > svg:first-child {
   stroke-width: 2;

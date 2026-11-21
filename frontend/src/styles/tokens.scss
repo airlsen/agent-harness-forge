@@ -46,6 +46,10 @@
   --surface-muted: var(--neutral-100);
   --surface-hover: #f5f6f8;
   --surface-selected: var(--brand-100);
+  --sidebar-nav-hover-bg: var(--color-brand-subtle);
+  --sidebar-nav-hover-text: var(--color-brand-active);
+  --sidebar-nav-active-bg: var(--color-brand-subtle);
+  --sidebar-nav-active-text: var(--color-brand-active);
 
   /* Borders and focus */
   --border-default: var(--neutral-200);
@@ -180,6 +184,10 @@
   --surface-muted: #202733;
   --surface-hover: #232a36;
   --surface-selected: rgba(218, 114, 77, 0.16);
+  --sidebar-nav-hover-bg: var(--surface-hover);
+  --sidebar-nav-hover-text: var(--color-text-primary);
+  --sidebar-nav-active-bg: var(--surface-selected);
+  --sidebar-nav-active-text: var(--brand-400);
 
   --color-text-primary: #eef1f5;
   --color-text-secondary: #a8b0bd;
