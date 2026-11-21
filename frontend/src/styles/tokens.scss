@@ -184,8 +184,8 @@
   --surface-muted: #202733;
   --surface-hover: #232a36;
   --surface-selected: rgba(218, 114, 77, 0.16);
-  --sidebar-nav-hover-bg: var(--surface-hover);
-  --sidebar-nav-hover-text: var(--color-text-primary);
+  --sidebar-nav-hover-bg: var(--surface-selected);
+  --sidebar-nav-hover-text: var(--brand-400);
   --sidebar-nav-active-bg: var(--surface-selected);
   --sidebar-nav-active-text: var(--brand-400);
 
