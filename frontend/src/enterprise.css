@@ -801,7 +801,7 @@ textarea:focus-visible {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 10px;
+  gap: 6px;
   margin-top: 20px;
 }
 .conversation-scenario-chip {
@@ -812,10 +812,10 @@ textarea:focus-visible {
   min-height: 36px;
   max-width: 100%;
   padding: 7px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
   color: var(--text-secondary);
-  background: var(--surface-card);
+  background: transparent;
   font-size: 12px;
   line-height: 20px;
 }
@@ -829,7 +829,8 @@ textarea:focus-visible {
 }
 .conversation-scenario-chip:not(:disabled):hover {
   color: var(--scenario-selection-text);
-  border-color: var(--scenario-selection-border);
+  border-color: transparent;
+  background: var(--surface-hover);
 }
 .conversation-scenario-chip[aria-pressed='true'] {
   color: var(--scenario-selection-text);
@@ -869,9 +870,9 @@ textarea:focus-visible {
   position: relative;
   border: 1px solid var(--line);
   background: var(--surface-card);
-  border-radius: 11px;
-  padding: 16px 17px 12px;
-  box-shadow: 0 2px 6px #26334a04;
+  border-radius: 18px;
+  padding: 16px 16px 12px;
+  box-shadow: 0 4px 18px #26334a08;
   transition:
     border-color 0.15s,
     box-shadow 0.15s;
@@ -883,14 +884,14 @@ textarea:focus-visible {
     0 5px 20px #26334a08;
 }
 .task-composer-hero {
-  padding: 20px 22px 15px;
-  border-color: var(--border-strong);
-  box-shadow: 0 5px 20px #26334a06;
-  border-radius: 12px;
+  padding: 22px 20px 15px;
+  border-color: var(--line);
+  box-shadow: 0 8px 30px #26334a0a;
+  border-radius: 20px;
 }
 .task-composer #task-input {
   min-height: 66px;
-  padding: 1px 2px 10px;
+  padding: 1px 4px 14px;
   width: 100%;
   background: transparent;
   border: 0;
@@ -909,19 +910,32 @@ textarea:focus-visible {
 .task-composer #task-input::placeholder {
   color: var(--text-secondary);
 }
+/* One continuous toolbar: controls scroll as a group on narrow screens, while
+   the primary action remains anchored on the right. Popups render in portals. */
 .task-composer-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
 }
 .task-composer-options {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex: 1 1 auto;
+  gap: 2px;
   min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+  padding: 3px 0;
 }
-.task-composer .scenario-picker-wrap {
+.task-composer-options > * {
+  flex-shrink: 0;
+}
+.task-composer .scenario-picker-wrap,
+.task-composer .model-picker-wrap {
   position: relative;
   min-width: 0;
 }
@@ -929,115 +943,87 @@ textarea:focus-visible {
 .task-composer .model-select-icon {
   position: absolute;
   z-index: 1;
-  top: 8px;
+  top: 9px;
   left: 9px;
   pointer-events: none;
+  color: var(--text-secondary);
+}
+.task-composer .scenario-select-icon {
   color: var(--scenario-selection-text);
 }
 .task-composer .scenario-select,
 .task-composer .model-select {
   min-width: 100px;
-  max-width: 240px;
-  font-size: 11px;
+  max-width: 200px;
+  font-size: 12px;
 }
 .task-composer .scenario-select {
-  width: 165px;
+  width: 140px;
 }
 .task-composer .model-select {
-  width: 160px;
+  width: 195px;
 }
 .task-composer .scenario-select .ant-select-selector,
 .task-composer .model-select .ant-select-selector {
-  min-height: 32px;
+  min-height: 34px;
   padding-left: 32px;
-  border-radius: 5px;
-  box-shadow: none;
-}
-.task-composer .scenario-select .ant-select-selector {
-  color: var(--scenario-selection-text);
-  border-color: var(--scenario-selection-border);
-  background: var(--scenario-selection-bg);
+  border: 1px solid transparent !important;
+  border-radius: 10px;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 .task-composer .scenario-select .ant-select-selection-item {
   color: var(--scenario-selection-text);
 }
-.task-composer .model-select .ant-select-selector {
-  color: var(--text-secondary);
-  border-color: var(--line);
-  background: var(--surface-card);
-}
 .task-composer .model-select .ant-select-selection-item {
   color: var(--text-secondary);
 }
-.task-composer .scenario-select.ant-select-disabled .ant-select-selector,
-.task-composer .model-select.ant-select-disabled .ant-select-selector {
-  background: var(--surface-muted);
+.task-composer .scenario-select:not(.ant-select-disabled):hover .ant-select-selector,
+.task-composer .model-select:not(.ant-select-disabled):hover .ant-select-selector,
+.task-composer .scenario-select.ant-select-open .ant-select-selector,
+.task-composer .model-select.ant-select-open .ant-select-selector {
+  background: var(--surface-hover) !important;
 }
-.task-composer .scenario-select.ant-select-disabled .ant-select-selector {
-  background: var(--scenario-selection-bg);
+.task-composer .scenario-select.ant-select-focused .ant-select-selector,
+.task-composer .model-select.ant-select-focused .ant-select-selector {
+  border-color: var(--accent-focus) !important;
 }
-.task-composer .scenario-trigger {
-  font-size: 11px;
-  min-height: 31px;
+.task-composer .scenario-trigger,
+.task-composer .model-trigger {
   display: flex;
-  gap: 7px;
   align-items: center;
-  color: var(--scenario-selection-text);
-  padding: 5px 8px;
-  border: 1px solid var(--scenario-selection-border);
-  border-radius: 5px;
-  background: var(--scenario-selection-bg);
-  max-width: 240px;
-}
-.task-composer .scenario-trigger > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  gap: 6px;
+  min-height: 34px;
+  max-width: 200px;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
   white-space: nowrap;
 }
-.task-composer .scenario-trigger:hover:not(:disabled) {
-  border-color: var(--scenario-selection-border);
-  background: var(--scenario-selection-bg);
-}
-.task-composer .scenario-trigger:disabled {
-  opacity: 0.85;
+.task-composer .scenario-trigger {
   color: var(--scenario-selection-text);
 }
-.task-composer .model-picker-wrap {
-  position: relative;
-  min-width: 0;
-}
-.task-composer .model-select-icon {
-  color: var(--text-secondary);
-}
-.task-composer .model-trigger {
-  font-size: 11px;
-  min-height: 31px;
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  color: var(--text-secondary);
-  padding: 5px 8px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  background: var(--surface-card);
-  max-width: 200px;
-}
+.task-composer .scenario-trigger > span,
 .task-composer .model-trigger > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.task-composer .model-trigger:hover:not(:disabled) {
+.task-composer .model-trigger:hover:not(:disabled),
+.task-composer .scenario-trigger:hover:not(:disabled) {
   color: var(--ink);
-  background: var(--surface-subtle);
+  background: var(--surface-hover);
 }
+.task-composer .scenario-trigger:disabled,
 .task-composer .model-trigger:disabled {
   cursor: default;
   opacity: 0.85;
 }
 .task-composer .model-trigger.is-empty {
   color: var(--color-warning-text);
-  border-style: dashed;
 }
 .task-select-popup strong > small.model-status-badge.is-failed {
   color: var(--color-danger-text);
@@ -1045,52 +1031,61 @@ textarea:focus-visible {
 .task-select-popup strong > small.model-status-badge.is-untested {
   color: var(--text-subtle);
 }
-.composer-option-divider {
-  width: 1px;
-  height: 15px;
-  background: var(--surface-subtle);
-}
 .task-composer-options > .icon-button {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   color: var(--text-secondary);
-  width: 29px;
-  height: 29px;
 }
-.task-send {
+.task-composer-options > .icon-button:not(:disabled):hover {
+  color: var(--ink);
+  background: var(--surface-hover);
+}
+.task-composer .task-send,
+.task-composer .stop-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
   border: 1px solid var(--accent-solid);
-  border-radius: 7px;
-  min-height: 33px;
-  min-width: 35px;
-  padding: 6px 8px;
+  border-radius: 50%;
   background: var(--accent-solid);
-  color: #fff;
-  font-size: 12px;
-  transition: background 0.15s;
-  flex-shrink: 0;
+  color: var(--color-text-inverse);
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
 }
-.task-send:not(:disabled):hover {
+/* The app-wide Ant button reset uses !important; the composer is an intentional exception. */
+.task-composer .task-send.ant-btn {
+  border-radius: 50% !important;
+}
+.task-composer .task-send:not(:disabled):hover,
+.task-composer .stop-button:hover {
   background: var(--accent-solid-hover);
 }
-.task-send:disabled {
+.task-composer .task-send:disabled {
   opacity: 1;
   border-color: var(--line);
   background: var(--surface-subtle);
-  color: var(--text-subtle);
+  color: var(--text-secondary);
 }
-.task-composer:not(.task-composer-hero) .task-send {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-  min-height: 36px;
-  padding: 0;
-  border-radius: 50%;
+.task-composer .stop-button > span {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: currentColor;
 }
-.task-composer-hero .task-send {
-  min-height: 35px;
-  padding: 7px 12px;
+.task-composer .stop-button:focus-visible,
+.task-composer .model-trigger:focus-visible,
+.conversation-scenario-chip:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 2px;
 }
 .task-composer-footnote {
   display: flex;
@@ -1121,6 +1116,19 @@ textarea:focus-visible {
   color: var(--text-secondary);
   border-color: var(--line);
   background: var(--surface-subtle);
+  min-width: 0;
+  max-width: 100%;
+  border-radius: 8px;
+}
+.task-composer .attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-composer .attachment-chips svg,
+.task-composer .attachment-chips button {
+  flex-shrink: 0;
 }
 /*
  * 关联代码 / 扩展能力使用 Ant Popover + Checkbox。
@@ -1136,7 +1144,7 @@ textarea:focus-visible {
 }
 .task-composer .picker-trigger.is-active {
   color: var(--scenario-selection-text);
-  border-color: var(--scenario-selection-border);
+  border-color: transparent;
   background: var(--scenario-selection-bg);
 }
 .task-composer .picker-trigger.is-active:hover:not(:disabled) {
@@ -2786,7 +2794,7 @@ textarea:focus-visible {
 .enterprise-chat .approval-actions {
   gap: 8px;
 }
-.enterprise-chat .stop-button {
+.enterprise-chat .stop-button:not(.task-composer .stop-button) {
   color: var(--color-warning-text);
   font-size: 11px;
 }
@@ -3697,13 +3705,13 @@ textarea:focus-visible {
   }
   .task-composer,
   .task-composer-hero {
-    padding: 16px 13px 12px;
-    border-radius: 9px;
+    padding: 16px 12px 12px;
+    border-radius: 18px;
   }
   .task-composer #task-input,
   .task-composer-hero #task-input {
-    font-size: 13px;
-    line-height: 1.9;
+    font-size: 16px;
+    line-height: 1.7;
   }
   .task-composer #task-input {
     min-height: 65px;
@@ -3711,59 +3719,16 @@ textarea:focus-visible {
   .task-composer-hero #task-input {
     min-height: 103px;
   }
-  .task-composer-toolbar {
-    flex-wrap: wrap;
-  }
-  .task-composer-options {
-    gap: 7px;
-    min-width: 0;
-    flex: 1;
-    flex-wrap: wrap;
-  }
-  .task-send {
-    margin-left: auto;
-  }
-  .task-composer .scenario-trigger {
-    font-size: 10px;
-    gap: 5px;
-    max-width: 153px;
-    padding: 5px 6px;
-  }
-  .task-composer .scenario-select {
-    width: 145px;
-  }
-  .task-composer .model-select {
-    width: 118px;
-  }
-  .task-composer .scenario-trigger > svg:first-child {
-    width: 14px;
-  }
-  .task-composer .model-trigger {
-    font-size: 10px;
-    gap: 4px;
-    max-width: 118px;
-    padding: 5px 6px;
-  }
-  .task-composer .picker-trigger {
-    max-width: 118px;
+  .task-composer .task-send,
+  .task-composer .stop-button {
+    flex-basis: 44px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
   }
   .message-author > .message-model {
     max-width: 140px;
-  }
-  .task-composer-hero .task-send {
-    padding: 7px 9px;
-    font-size: 10px;
-    min-height: 31px;
-    gap: 5px;
-  }
-  .task-composer-hero .task-send > svg {
-    width: 15px;
-  }
-  .task-composer-options > .icon-button {
-    width: 23px;
-  }
-  .composer-option-divider {
-    display: none;
   }
   .task-composer-footnote {
     font-size: 9px;
@@ -4039,14 +4004,6 @@ textarea:focus-visible {
   }
   .conversation-start-composer .task-composer-shortcuts {
     display: none;
-  }
-  .conversation-start-composer .scenario-trigger {
-    min-height: 32px;
-    font-size: 11px;
-    max-width: 145px;
-  }
-  .conversation-start-composer .task-send {
-    min-height: 33px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
