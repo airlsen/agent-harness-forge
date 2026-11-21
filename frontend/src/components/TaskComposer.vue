@@ -229,26 +229,26 @@ defineExpose({ focus: () => textarea.value?.focus() });
             codePicker?.close();
           "
         />
-        <a-button
-          type="text"
-          class="icon-button"
-          :disabled="chat.running || chat.loading"
-          :loading="attaching"
-          aria-label="附加文本文件"
-          title="附加文本文件 · 最多 4 个，每个 200 KB"
-          @click="fileInput?.click()"
-        >
-          <Icon v-if="!attaching" name="paperclip" :size="18" />
-        </a-button>
-        <input
-          ref="fileInput"
-          type="file"
-          multiple
-          accept=".txt,.md,.csv,.json,.ts,.js,.py,.html,.css,.yaml,.yml,.sql,.xml,.log"
-          hidden
-          @change="attach"
-        />
       </div>
+      <a-button
+        type="text"
+        class="icon-button composer-attachment"
+        :disabled="chat.running || chat.loading"
+        :loading="attaching"
+        aria-label="附加文本文件"
+        title="附加文本文件 · 最多 4 个，每个 200 KB"
+        @click="fileInput?.click()"
+      >
+        <Icon v-if="!attaching" name="paperclip" :size="18" />
+      </a-button>
+      <input
+        ref="fileInput"
+        type="file"
+        multiple
+        accept=".txt,.md,.csv,.json,.ts,.js,.py,.html,.css,.yaml,.yml,.sql,.xml,.log"
+        hidden
+        @change="attach"
+      />
       <button
         v-if="chat.current?.status === 'running'"
         type="button"
@@ -274,12 +274,11 @@ defineExpose({ focus: () => textarea.value?.focus() });
       </a-button>
     </div>
   </div>
-  <div :class="['task-composer-footnote', { 'task-composer-shortcuts': hero }]">
-    <span v-if="!hero"
+  <div v-if="!hero" class="task-composer-footnote">
+    <span
       ><Icon name="layers" :size="12" />{{
         chat.current ? '场景与策略已锁定 · 模型可在两轮之间切换' : '新会话将使用所选场景与模型'
       }}</span
     >
-    <span>Enter 发送 <i>·</i> Shift + Enter 换行</span>
   </div>
 </template>

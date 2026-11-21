@@ -797,43 +797,90 @@ textarea:focus-visible {
   position: relative;
   z-index: 2;
 }
-.conversation-start-suggestions {
+.conversation-start-discover {
+  margin-top: 24px;
+}
+.conversation-start-discover-heading {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 20px;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 2px 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.conversation-start-discover-heading small {
+  color: var(--text-subtle);
+  font-size: 11px;
+  font-weight: 400;
+}
+.conversation-start-suggestions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 10px;
 }
 .conversation-scenario-chip {
-  display: inline-flex;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  min-width: 0;
+  min-height: 94px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--text-secondary);
+  background: var(--surface-card);
+  text-align: left;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.conversation-scenario-icon {
+  display: flex;
+  flex: 0 0 34px;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  min-height: 36px;
-  max-width: 100%;
-  padding: 7px 12px;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  color: var(--text-secondary);
-  background: transparent;
-  font-size: 12px;
-  line-height: 20px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--scenario-selection-text);
+  background: var(--scenario-selection-bg);
 }
-.conversation-scenario-chip > span {
+.conversation-scenario-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.conversation-scenario-copy strong {
   overflow: hidden;
-  white-space: nowrap;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.conversation-scenario-chip > svg {
-  flex-shrink: 0;
+.conversation-scenario-copy > span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.conversation-scenario-arrow {
+  flex: none;
+  margin-top: 3px;
+  color: var(--text-subtle);
 }
 .conversation-scenario-chip:not(:disabled):hover {
-  color: var(--scenario-selection-text);
-  border-color: transparent;
+  border-color: var(--scenario-selection-border);
   background: var(--surface-hover);
 }
 .conversation-scenario-chip[aria-pressed='true'] {
-  color: var(--scenario-selection-text);
   border-color: var(--scenario-selection-border);
   background: var(--scenario-selection-bg);
 }
@@ -929,7 +976,7 @@ textarea:focus-visible {
   overscroll-behavior-x: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--line) transparent;
-  padding: 3px 0;
+  padding: 5px 2px;
 }
 .task-composer-options > * {
   flex-shrink: 0;
@@ -943,7 +990,7 @@ textarea:focus-visible {
 .task-composer .model-select-icon {
   position: absolute;
   z-index: 1;
-  top: 9px;
+  top: 10px;
   left: 9px;
   pointer-events: none;
   color: var(--text-secondary);
@@ -955,6 +1002,7 @@ textarea:focus-visible {
 .task-composer .model-select {
   min-width: 100px;
   max-width: 200px;
+  height: 36px;
   font-size: 12px;
 }
 .task-composer .scenario-select {
@@ -965,7 +1013,8 @@ textarea:focus-visible {
 }
 .task-composer .scenario-select .ant-select-selector,
 .task-composer .model-select .ant-select-selector {
-  min-height: 34px;
+  height: 36px !important;
+  min-height: 36px;
   padding-left: 32px;
   border: 1px solid transparent !important;
   border-radius: 10px;
@@ -985,8 +1034,11 @@ textarea:focus-visible {
   background: var(--surface-hover) !important;
 }
 .task-composer .scenario-select.ant-select-focused .ant-select-selector,
-.task-composer .model-select.ant-select-focused .ant-select-selector {
+.task-composer .model-select.ant-select-focused .ant-select-selector,
+.task-composer .scenario-select.ant-select-open .ant-select-selector,
+.task-composer .model-select.ant-select-open .ant-select-selector {
   border-color: var(--accent-focus) !important;
+  box-shadow: inset 0 0 0 1px var(--accent-focus) !important;
 }
 .task-composer .scenario-trigger,
 .task-composer .model-trigger {
@@ -1031,14 +1083,14 @@ textarea:focus-visible {
 .task-select-popup strong > small.model-status-badge.is-untested {
   color: var(--text-subtle);
 }
-.task-composer-options > .icon-button {
+.task-composer .composer-attachment.ant-btn {
   flex: 0 0 34px;
   width: 34px;
   height: 34px;
-  border-radius: 10px;
+  border-radius: 10px !important;
   color: var(--text-secondary);
 }
-.task-composer-options > .icon-button:not(:disabled):hover {
+.task-composer .composer-attachment.ant-btn:not(:disabled):hover {
   color: var(--ink);
   background: var(--surface-hover);
 }
@@ -1096,18 +1148,10 @@ textarea:focus-visible {
   font-size: 10px;
   color: var(--text-subtle);
 }
-.task-composer-shortcuts {
-  justify-content: flex-end;
-}
 .task-composer-footnote > span {
   display: inline-flex;
   gap: 5px;
   align-items: center;
-}
-.task-composer-footnote i {
-  margin: 0 3px;
-  font-style: normal;
-  color: var(--text-subtle);
 }
 .task-composer .attachment-chips {
   padding: 0 0 8px;
@@ -3727,15 +3771,17 @@ textarea:focus-visible {
     min-width: 44px;
     min-height: 44px;
   }
+  .task-composer .composer-attachment.ant-btn {
+    flex-basis: 40px;
+    width: 40px;
+    height: 44px;
+  }
   .message-author > .message-model {
     max-width: 140px;
   }
   .task-composer-footnote {
     font-size: 9px;
     padding-inline: 1px;
-  }
-  .task-composer-footnote > span:last-child {
-    display: none;
   }
   .enterprise-model-prompt.connect-model-prompt {
     padding: 11px 10px;
@@ -3987,23 +4033,27 @@ textarea:focus-visible {
     margin-bottom: 22px;
   }
 }
-@media (max-width: 480px) {
+@media (max-width: 700px) {
   .conversation-start-suggestions {
     gap: 8px;
-    margin-top: 18px;
   }
   .conversation-scenario-chip {
-    min-height: 34px;
-    font-size: 11px;
-    padding: 6px 10px;
+    min-height: 72px;
+    padding: 12px;
+  }
+}
+@media (max-width: 480px) {
+  .conversation-start-discover {
+    margin-top: 18px;
+  }
+  .conversation-start-discover-heading {
+    flex-wrap: wrap;
+    gap: 2px 8px;
   }
   .conversation-start-composer .task-composer-hero #task-input {
     font-size: 16px;
     line-height: 1.7;
     min-height: 100px;
-  }
-  .conversation-start-composer .task-composer-shortcuts {
-    display: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {

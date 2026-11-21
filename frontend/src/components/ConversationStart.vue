@@ -42,25 +42,30 @@ async function chooseScenario(scenario: Scenario) {
           <RouterLink to="/agent/models">配置连接 <Icon name="arrow" :size="14" /></RouterLink>
         </div>
       </div>
-      <div
-        v-if="suggestions.length"
-        class="conversation-start-suggestions"
-        role="group"
-        aria-label="快捷选择场景"
-      >
-        <button
-          v-for="scenario in suggestions"
-          :key="scenario.id"
-          class="conversation-scenario-chip"
-          :aria-label="`使用场景 ${scenario.payload.name}`"
-          :title="scenario.payload.name"
-          :aria-pressed="chat.selectedScenarioId === scenario.id"
-          :disabled="chat.running || chat.loading || Boolean(chat.current)"
-          @click="chooseScenario(scenario)"
-        >
-          <Icon :name="scenario.payload.icon" :size="16" /><span>{{ scenario.payload.name }}</span>
-        </button>
-      </div>
+      <section v-if="suggestions.length" class="conversation-start-discover" aria-label="快捷选择场景">
+        <div class="conversation-start-discover-heading">
+          <span>选择工作场景</span><small>选择后，在上方描述你的任务</small>
+        </div>
+        <div class="conversation-start-suggestions">
+          <button
+            v-for="scenario in suggestions"
+            :key="scenario.id"
+            class="conversation-scenario-chip"
+            :aria-label="`使用场景 ${scenario.payload.name}`"
+            :title="[scenario.payload.name, scenario.payload.description].filter(Boolean).join(' · ')"
+            :aria-pressed="chat.selectedScenarioId === scenario.id"
+            :disabled="chat.running || chat.loading || Boolean(chat.current)"
+            @click="chooseScenario(scenario)"
+          >
+            <span class="conversation-scenario-icon"><Icon :name="scenario.payload.icon" :size="18" /></span>
+            <span class="conversation-scenario-copy">
+              <strong>{{ scenario.payload.name }}</strong>
+              <span>{{ scenario.payload.description || '选择场景，开始描述任务' }}</span>
+            </span>
+            <Icon class="conversation-scenario-arrow" name="arrow" :size="15" />
+          </button>
+        </div>
+      </section>
       <p v-else-if="app.loading" class="conversation-start-status" role="status">正在读取可用场景…</p>
       <p v-else-if="!selected" class="conversation-start-status" role="status">
         暂无可用场景，<RouterLink to="/agent/scenarios">前往企业场景查看</RouterLink>。
