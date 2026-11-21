@@ -1409,6 +1409,17 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
   background: var(--surface-content);
 }
+/* Apply message styling only, not to file or document previews. */
+:is(.step-text, .latest-answer, .process-note, .chat-message) .markdown-body:not(.markdown-document) hr {
+  height: 16px;
+  margin: 0;
+  border: 0;
+}
+:is(.step-text, .latest-answer, .process-note, .chat-message)
+  .markdown-body:not(.markdown-document)
+  blockquote {
+  border-left-color: var(--color-brand);
+}
 .markdown-body a {
   color: var(--color-text-secondary);
   text-decoration: underline;

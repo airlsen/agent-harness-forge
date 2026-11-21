@@ -2644,9 +2644,10 @@ textarea:focus-visible {
   color: #fff;
   background: var(--accent);
   border-radius: 12px;
-  padding: 10px 16px;
+  padding: 6px 16px;
   line-height: 1.9;
   font-size: 14px;
+  width: fit-content;
   max-width: 78%;
 }
 .enterprise-chat .user-message-block {
@@ -3946,10 +3947,6 @@ textarea:focus-visible {
   .enterprise-chat .markdown-body {
     font-size: 13px;
   }
-  .enterprise-chat .user-message-text {
-    padding: 12px 13px;
-  }
-
   .enterprise-chat .approval-card {
     padding: 14px;
     max-height: 39vh;

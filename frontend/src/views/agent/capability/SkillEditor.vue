@@ -1631,8 +1631,10 @@ onBeforeUnmount(() => {
   background: var(--sidebar-nav-active-bg);
 }
 .chat-message.user {
-  margin-left: 20px;
-  padding: 8px 12px;
+  width: fit-content;
+  max-width: calc(100% - 20px);
+  margin-left: auto;
+  padding: 6px 16px;
   background: var(--accent);
   color: #fff;
   border-radius: 10px;
