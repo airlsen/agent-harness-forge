@@ -17,6 +17,9 @@ assert.ok(s.endsWith('不可声称执行了未实际调用的工具。'));
 assert.ok(buildSystemPrompt('custom').startsWith('custom\n\n'));
 assert.ok(buildSystemPrompt(undefined).startsWith('你是 Forge 企业智能体'));
 assert.ok(buildSystemPrompt(undefined).includes('mermaid'));
+// 全局输出风格：两条分支（结构化 / 兜底）都要拼入
+assert.ok(s.includes('语气友好、表达简约'));
+assert.ok(buildSystemPrompt(undefined).includes('语气友好、表达简约'));
 // 工作区能力说明只描述实际可用的工具
 const full = [...BASE_TOOLS, 'workspace_present', ...SEARCH_TOOLS];
 const withTools = buildSystemPrompt({ identity: 'I' }, full);

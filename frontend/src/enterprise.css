@@ -931,7 +931,7 @@ textarea:focus-visible {
     0 5px 20px #26334a08;
 }
 .task-composer-hero {
-  padding: 22px 20px 15px;
+  padding: 12px 12px 4px;
   border-color: var(--line);
   box-shadow: 0 8px 30px #26334a0a;
   border-radius: 20px;
