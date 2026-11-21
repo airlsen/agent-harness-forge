@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.database import get_session
 from ..models.platform import PlatformSetting
@@ -58,3 +59,49 @@ async def storage(db: AsyncSession = Depends(get_session)):
 async def cleanup():
     """立即按当前保留期限清理过期会话文件，并回收不再引用的内容。"""
     return ResponseUtil.ok(await file_service.cleanup_expired(runner_client))
+
+
+class CodeRootInput(BaseModel):
+    root: str = Field(default="", max_length=1024)
+
+
+async def code_root_view(root: str) -> dict:
+    """检查代码目录：是否存在、下面有多少个项目（一级子目录）。"""
+    listing = await runner_client.code_projects(root)
+    projects = [project["name"] for project in listing.get("projects", [])]
+    return {
+        "root": root,
+        "effectiveRoot": listing.get("root", ""),
+        "available": bool(listing.get("available")),
+        "count": len(projects),
+        "projects": projects[:20],
+    }
+
+
+@router.get("/code-root")
+async def code_root():
+    """关联代码目录：当前设置与检查结果；空表示使用 Runner 的 FORGE_CODE_ROOT。"""
+    return ResponseUtil.ok(await code_root_view(runner_client.code_root))
+
+
+@router.post("/code-root/check")
+async def check_code_root(payload: CodeRootInput):
+    """只检查，不保存。"""
+    return ResponseUtil.ok(await code_root_view(payload.root.strip()))
+
+
+@router.put("/code-root")
+async def save_code_root(payload: CodeRootInput, db: AsyncSession = Depends(get_session)):
+    """保存关联代码目录：目录必须存在；留空恢复默认。工作台列表与下一轮对话起生效。"""
+    root = payload.root.strip()
+    view = await code_root_view(root)
+    if root and not view["available"]:
+        raise HTTPException(422, "路径不存在或不是目录，不能添加")
+    row = await db.get(PlatformSetting, "codeRoot")
+    if row:
+        row.value = {"root": root}
+    else:
+        db.add(PlatformSetting(key="codeRoot", value={"root": root}))
+    await db.commit()
+    runner_client.code_root = root
+    return ResponseUtil.ok(view)

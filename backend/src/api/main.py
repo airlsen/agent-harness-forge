@@ -23,6 +23,7 @@ from .routes import (
     model,
     skill,
 )
+from .models.platform import PlatformSetting
 from .services.scenario_service import seed_scenarios
 from .services.plugin_service import seed_plugins
 from .services.file_service import file_service
@@ -41,6 +42,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with SessionFactory() as db:
         await seed_plugins(db)
         await seed_scenarios(db)
+        # 执行策略中设置的关联代码目录
+        saved = await db.get(PlatformSetting, "codeRoot")
+        runner_client.code_root = str((saved.value or {}).get("root") or "") if saved else ""
     # 按保留期限定期清理过期会话文件
     cleanup = asyncio.create_task(file_service.retention_loop(runner_client))
     yield
@@ -129,7 +133,7 @@ async def runtime():
             "deployment": "sandbox",
             "limitations": [
                 "单工作空间管理员账号；OIDC 与多租户 RBAC 尚未接入",
-                "只开放当前会话内的文本文件工具，不开放 shell/任意网络工具",
+                "只开放会话工作区文件工具与受控终端命令（bash：只读命令自动放行，修改类命令逐次审批，受平台策略约束）；不开放不受限的宿主机 Shell 与任意网络工具",
                 "原生 fork 与跨 Runner 重启恢复尚未接入；历史消息和事件持久化保留",
                 "本地数据库与文件存储，尚未接入 S3/WORM 和生产容器隔离",
             ],

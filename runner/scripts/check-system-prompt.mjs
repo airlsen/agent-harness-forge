@@ -66,16 +66,19 @@ assert.deepEqual(sessionToolset({ builtin_tools: authoring, policy: { allowedToo
   skills: false,
   approval: [],
 });
-// 关联代码：与场景、策略无关，关联了项目就开放 glob/grep/read 与受控终端命令（只读）
+// 关联代码：与场景无关，关联了项目就开放只读的 glob/grep/read；
+// 受控终端命令（bash）仍以平台策略为上限，策略未勾选时关联代码也不开放
 const codeOnly = sessionToolset({ policy: { allowedTools: ['current_time'] } }, true);
 assert.deepEqual(codeOnly, {
-  allowed: ['current_time', 'glob', 'grep', 'read', 'bash'],
+  allowed: ['current_time', 'glob', 'grep', 'read'],
   search: true,
   code: true,
   read: true,
   skills: false,
   approval: [],
 });
+const codeWithBash = sessionToolset({ policy: { allowedTools: ['current_time', 'bash'] } }, true);
+assert.deepEqual(codeWithBash.allowed, ['current_time', 'bash', 'glob', 'grep', 'read']);
 const project = {
   name: 'forge',
   path: '/usr/data/git/forge',
@@ -89,6 +92,11 @@ assert.ok(coded.includes('### forge → /usr/data/git/forge（git main@abc123）
 assert.ok(coded.includes('顶层：src/'));
 assert.ok(coded.includes('关联的代码项目只读'));
 assert.ok(coded.endsWith('不可声称执行了未实际调用的工具。'));
+assert.ok(coded.includes('或通过 bash 执行只读 Git 命令'));
+// 策略未开放 bash 时，关联代码说明不再引导模型调用 bash
+const codedNoBash = buildSystemPrompt({ identity: 'I' }, ['current_time', 'glob', 'grep', 'read'], [project]);
+assert.ok(codedNoBash.includes('## 关联代码（只读）'));
+assert.ok(!codedNoBash.includes('bash'));
 assert.ok(!withTools.includes('关联代码'));
 assert.deepEqual(codeGuide([]), []);
 console.log('system-prompt OK');

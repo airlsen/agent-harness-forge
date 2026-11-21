@@ -53,8 +53,15 @@ export interface CodeProjectList {
   projects: CodeProject[];
 }
 
-export function codeRoot() {
-  return resolve(process.env.FORGE_CODE_ROOT || '/usr/data/git');
+/** 执行策略中设置的代码目录（控制面随建会话、每轮执行下发）；空表示使用 FORGE_CODE_ROOT */
+let configuredRoot = '';
+export function setCodeRoot(root: unknown) {
+  configuredRoot = typeof root === 'string' ? root.trim() : '';
+}
+/** custom 传入时（含空字符串）只用于本次查询，不改变当前设置 */
+export function codeRoot(custom?: string) {
+  const chosen = custom !== undefined ? custom.trim() : configuredRoot;
+  return resolve(chosen || process.env.FORGE_CODE_ROOT || '/usr/data/git');
 }
 function failure(message: string, statusCode = 422) {
   return Object.assign(new Error(message), { statusCode });
@@ -166,8 +173,8 @@ function resolveProject(root: string, name: string): CodeProject | null {
 }
 
 /** 列出代码根目录下的项目（一级目录，按名称排序）；根目录不存在时 available=false */
-export function listCodeProjects(): CodeProjectList {
-  const configured = codeRoot();
+export function listCodeProjects(custom?: string): CodeProjectList {
+  const configured = codeRoot(custom);
   let root: string;
   try {
     root = realpathSync(configured);
