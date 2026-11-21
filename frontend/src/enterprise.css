@@ -31,11 +31,9 @@ textarea:focus-visible {
 .button.primary {
   background: var(--accent-solid);
   border-color: var(--accent-solid);
-  box-shadow: 0 2px 3px #26334a0b;
 }
 .button.primary:not(:disabled):hover {
   background: var(--accent-solid-hover);
-  box-shadow: 0 3px 9px #26334a12;
 }
 .button.secondary {
   border-color: var(--border-default);
