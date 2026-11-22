@@ -57,6 +57,55 @@ TOOLS = [
         "permission": "write",
         "icon": "terminal",
     },
+    {
+        "name": "todo_write",
+        "title": "维护任务清单",
+        "description": "记录、更新当前任务的待办与进度，纯会话内状态，不访问外部系统。",
+        "permission": "write",
+        "icon": "check",
+    },
+    {
+        "name": "job_output",
+        "title": "读取后台任务输出",
+        "description": "读取当前会话后台任务的输出结果。",
+        "permission": "read",
+        "icon": "file",
+    },
+    {
+        "name": "job_list",
+        "title": "列出后台任务",
+        "description": "列出当前会话正在运行与已结束的后台任务。",
+        "permission": "read",
+        "icon": "grid",
+    },
+    {
+        "name": "job_kill",
+        "title": "终止后台任务",
+        "description": "终止当前会话的一个后台任务。",
+        "permission": "write",
+        "icon": "close",
+    },
+    {
+        "name": "create_goal",
+        "title": "创建目标",
+        "description": "为当前会话创建并记录一个执行目标。",
+        "permission": "write",
+        "icon": "check",
+    },
+    {
+        "name": "get_goal",
+        "title": "查看目标",
+        "description": "查看当前会话已记录的目标及其状态。",
+        "permission": "read",
+        "icon": "eye",
+    },
+    {
+        "name": "update_goal",
+        "title": "更新目标",
+        "description": "更新当前会话目标的进度或状态。",
+        "permission": "write",
+        "icon": "edit",
+    },
 ]
 TOOL_NAMES = {x["name"] for x in TOOLS}
 DEFAULT_POLICY = {

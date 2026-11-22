@@ -45,6 +45,12 @@ export const SKILL_SCRIPT_TOOL = 'skill_run_script';
 /** dsh-tool-web 提供的联网工具 */
 export const WEB_SEARCH_TOOL = 'web_search';
 export const WEB_FETCH_TOOL = 'web_fetch';
+/** dsh-tool-todo 提供的任务清单工具（同会话事件源状态，纯内存无宿主访问） */
+export const TODO_TOOL = 'todo_write';
+/** dsh-tool-jobs 提供的后台任务控制工具（ctx.jobs 由 sdk-minimal 内置的 dsh-jobs-local 提供） */
+export const JOB_TOOLS = ['job_output', 'job_list', 'job_kill'] as const;
+/** dsh-goal + dsh-tool-goal 提供的同会话目标工具（不含会改变 agent 循环的 goal-round-driver） */
+export const GOAL_TOOLS = ['create_goal', 'get_goal', 'update_goal'] as const;
 export interface SessionToolset {
   /** forge-runtime 白名单：模型可见、允许执行的全部工具 */
   allowed: string[];
@@ -557,6 +563,38 @@ export class DshKernel implements AgentKernel {
           ...(pluginBridge ? [pluginBridge] : []),
           ...(skillAuthoringPlugin ? [skillAuthoringPlugin] : []),
           ...(skillScriptsPlugin ? [skillScriptsPlugin] : []),
+          // 纯增益：无模型工具面，只做上下文治理与重复调用提醒，不经过白名单。
+          // 结果裁剪阈值取 256 KiB，高于 forge-runtime 单次读取上限（256000 字符），
+          // 因此只兜底 bash / 大文件清单等无上限输出，不二次截断按 offset/limit 分段读取的内容。
+          {
+            id: 'tool-result-pruner',
+            name: '@deepseek-ai/dsh-compaction-tool-result-pruner',
+            config: { thresholdChars: 262144, headChars: 65536, tailChars: 16384 },
+          },
+          {
+            id: 'repeat-tool-reminder',
+            name: '@deepseek-ai/dsh-repeat-tool-reminder',
+            config: { thresholds: [3, 5, 8], argumentsPreviewChars: 500 },
+          },
+          // dsh 引擎状态工具（模型面）：随场景选择开放，经 sessionToolset 白名单门控。
+          ...(toolset.allowed.includes(TODO_TOOL)
+            ? [
+                {
+                  id: 'tool-todo',
+                  name: '@deepseek-ai/dsh-tool-todo',
+                  config: { allowParallelInProgress: true },
+                },
+              ]
+            : []),
+          ...(JOB_TOOLS.some((tool) => toolset.allowed.includes(tool))
+            ? [{ id: 'tool-jobs', name: '@deepseek-ai/dsh-tool-jobs' }]
+            : []),
+          ...(GOAL_TOOLS.some((tool) => toolset.allowed.includes(tool))
+            ? [
+                { id: 'goal', name: '@deepseek-ai/dsh-goal' },
+                { id: 'tool-goal', name: '@deepseek-ai/dsh-tool-goal' },
+              ]
+            : []),
           ...this.capabilityRows(entry, skillDirs),
         ],
       },
