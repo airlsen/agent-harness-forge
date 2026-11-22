@@ -52,7 +52,8 @@ SKILL_DESIGN_DIR = Path(__file__).resolve().parent.parent / "builtin_skills" / "
 SKILL_DESIGN_GUIDES = ("forge-platform", "templates", "examples")
 # 编写会话要整篇输出 SKILL.md：至少 8192（主流模型都支持），企业策略更高时跟随策略。
 AUTHORING_MIN_OUTPUT_TOKENS = 8192
-AUTHORING_HISTORY_MESSAGES = 20
+# 取最近的消息条数：过程消息（工具结果、只有思考的步骤）也占条数，按总字数再截断
+AUTHORING_HISTORY_MESSAGES = 80
 AUTHORING_HISTORY_MESSAGE_CHARS = 2000
 AUTHORING_HISTORY_TOTAL_CHARS = 12000
 
@@ -635,13 +636,27 @@ def skill_design_method() -> tuple[str, dict[str, str]]:
 AUTHORING_ROLE_LABELS = {"user": "维护者", "assistant": "助手", "tool": "系统记录"}
 
 
+def _history_text(message: SkillAuthoringMessage) -> str:
+    """对话摘要只保留维护者与助手的正文和草稿修改记录；工具的原始结果（整篇草稿、指南）不进入摘要。"""
+    meta = message.meta or {}
+    if message.role != "tool":
+        return (message.content or "").strip()
+    if not meta.get("toolCallId"):  # 旧版本单独记录的修改说明（kind=skill_revision）
+        return (message.content or "").strip()
+    revision = meta.get("revision")
+    items = revision if isinstance(revision, list) else [revision] if isinstance(revision, dict) else []
+    summaries = [str(item.get("summary") or "").strip() for item in items if isinstance(item, dict)]
+    summaries = [summary for summary in summaries if summary]
+    return f"草稿已更新：{'；'.join(summaries)}" if summaries else ""
+
+
 def authoring_history(messages: list[SkillAuthoringMessage]) -> str:
     """把最近的编写对话整理成系统提示中的一段，供重建会话后延续上下文（按时间正序传入）。"""
     lines: list[str] = []
     total = 0
     for message in reversed(messages):
         label = AUTHORING_ROLE_LABELS.get(message.role)
-        text = message.content.strip()
+        text = _history_text(message)
         if not label or not text:
             continue
         if len(text) > AUTHORING_HISTORY_MESSAGE_CHARS:
@@ -884,6 +899,42 @@ async def _append_message(
     await db.commit()
 
 
+AUTHORING_TOOL_RESULT_CHARS = 8000
+AUTHORING_TOOL_ARGUMENT_CHARS = 2000
+
+
+def clip_tool_result(text: str) -> str:
+    """工具结果落库上限：读取草稿、指南等结果可能很长，过程展示只需前一段。"""
+    if len(text) <= AUTHORING_TOOL_RESULT_CHARS:
+        return text
+    return text[:AUTHORING_TOOL_RESULT_CHARS] + f"\n……（已截断，共 {len(text)} 字）"
+
+
+def authoring_tool_meta(payload: dict) -> dict:
+    """工具结果消息的 meta（与工作台一致）。整篇草稿、文件内容等大字段只记录字数，正文以修订为准。"""
+    arguments = payload.get("arguments")
+    if isinstance(arguments, dict):
+        compact = {}
+        for key, value in arguments.items():
+            if isinstance(value, str) and len(value) > AUTHORING_TOOL_ARGUMENT_CHARS:
+                compact[key] = f"（{len(value)} 字，内容见对应修订）"
+            else:
+                compact[key] = value
+        arguments = compact
+    return {
+        "toolCallId": payload.get("toolCallId"),
+        "tool": payload.get("tool"),
+        "arguments": arguments,
+        "isError": bool(payload.get("isError")),
+    }
+
+
+async def _append_turn_message(skill_id: int, session_id: int, role: str, content: str, meta: dict):
+    async with SessionFactory() as db:
+        session = await get_authoring_session(db, skill_id, session_id)
+        await _append_message(db, session, role, content, meta)
+
+
 async def run_authoring_turn(skill_id: int, session_id: int, message: str, created_by: str = "admin"):
     """Persist the user turn and stream DSH events while checkpointing revisions/messages."""
     async with SessionFactory() as db:
@@ -894,13 +945,16 @@ async def run_authoring_turn(skill_id: int, session_id: int, message: str, creat
         session.status = "running"
         await _append_message(db, session, "user", message)
         runner_id = session.runner_session_id
-    assistant_text = []
+    # 与工作台一致地落库执行过程：每步模型回复（含思考）一条 assistant，每次工具结果一条 tool。
+    partial_text, partial_reasoning = "", ""
+    revisions: list[dict] = []  # 工具执行期间产生的草稿修订，挂到该次调用的工具结果上
     try:
         # 每轮下发当前模型配置：模型管理中修改后，Runner 比对指纹并以新配置重启接续
         async for event in runner_client.events(runner_id, message, model_config):
             payload = event.get("payload") if isinstance(event, dict) else {}
+            payload = payload if isinstance(payload, dict) else {}
             kind = event.get("kind") if isinstance(event, dict) else ""
-            if kind == "skill_revision" and isinstance(payload, dict):
+            if kind == "skill_revision":
                 action = payload.get("action") or "update_draft"
                 path = str(payload.get("path") or "SKILL.md")
                 summary = str(payload.get("summary") or "")
@@ -924,13 +978,7 @@ async def run_authoring_turn(skill_id: int, session_id: int, message: str, creat
                         )
                     session = await get_authoring_session(db, skill_id, session_id)
                     session.current_revision_id = revision.id
-                    await _append_message(
-                        db,
-                        session,
-                        "tool",
-                        f"草稿已更新：{revision.change_summary}",
-                        {"revisionId": revision.id, "kind": "skill_revision"},
-                    )
+                    await db.commit()
                 event["payload"] = {
                     "revisionId": revision.id,
                     "revision": revision.revision,
@@ -938,15 +986,36 @@ async def run_authoring_turn(skill_id: int, session_id: int, message: str, creat
                     "action": action if action in ("write_file", "delete_file") else "update_draft",
                     "path": path,
                 }
-            elif kind == "message_delta" and isinstance(payload, dict) and payload.get("text"):
-                assistant_text.append(str(payload["text"]))
+                revisions.append(event["payload"])
+            elif kind == "message_delta":
+                partial_text += str(payload.get("text") or "")
+            elif kind == "reasoning_delta":
+                partial_reasoning += str(payload.get("text") or "")
+            elif kind == "message":
+                partial_text, partial_reasoning = "", ""
+                text, reasoning = str(payload.get("text") or ""), str(payload.get("reasoning") or "")
+                if text or reasoning:
+                    meta = {
+                        "runtimeMessageId": payload.get("runtimeMessageId"),
+                        "partial": bool(payload.get("partial")),
+                        **({"reasoning": reasoning} if reasoning else {}),
+                    }
+                    await _append_turn_message(skill_id, session_id, "assistant", text, meta)
+            elif kind == "tool_result":
+                meta = authoring_tool_meta(payload)
+                if revisions:
+                    meta["revision"] = revisions[-1] if len(revisions) == 1 else revisions
+                    revisions = []
+                await _append_turn_message(
+                    skill_id, session_id, "tool", clip_tool_result(str(payload.get("result") or "")), meta
+                )
             yield event
-        if assistant_text:
-            async with SessionFactory() as db:
-                session = await get_authoring_session(db, skill_id, session_id)
-                await _append_message(db, session, "assistant", "".join(assistant_text), {})
     finally:
         async with SessionFactory() as db:
             session = await get_authoring_session(db, skill_id, session_id)
+            # 中途出错或断开时，尚未结算成消息的正文与思考保留为部分输出，不丢失
+            if partial_text or partial_reasoning:
+                meta = {"partial": True, **({"reasoning": partial_reasoning} if partial_reasoning else {})}
+                await _append_message(db, session, "assistant", partial_text, meta)
             session.status = "idle"
             await db.commit()

@@ -4,19 +4,18 @@
  * 运行中只显示一个头部（正在思考 / 正在调用某工具）和当前活动；结束后收起成一行摘要，点开查看完整时间线。
  * 运行中的调用明细只在本轮有多个工具调用时显示（含已完成的，可点开）；
  * 单个调用与头部摘要重复，不渲染——一个动作只转一个圈。
+ * 不依赖具体会话：工作台与 Skill 编写助手共用；waiting 表示进行中的调用正在等待用户确认。
  */
 import { computed, nextTick, ref, watch } from 'vue';
 import { usePlatform } from '../stores/platform';
-import { useConversation } from '../stores/conversation';
 import { processStats, processSummary, type TurnStep } from '../utils/turns';
 import { builtinToolTitle } from '../utils/files';
 import Icon from './ForgeIcon.vue';
 import Markdown from './MarkdownContent.vue';
 import ToolCallGroup from './ToolCallGroup.vue';
 
-const props = defineProps<{ steps: TurnStep[]; active: boolean }>();
+const props = defineProps<{ steps: TurnStep[]; active: boolean; waiting?: boolean }>();
 const app = usePlatform();
-const chat = useConversation();
 const open = ref(false);
 const current = ref<HTMLElement | null>(null);
 const stats = computed(() => processStats(props.steps));
@@ -33,7 +32,7 @@ const label = computed(() => {
   if (!props.active) return processSummary(stats.value);
   const call = stats.value.pending.at(-1);
   if (!call) return '正在思考';
-  return `${chat.approvals.length ? '等待你的确认' : '正在调用'}：${toolTitle(call.tool)}`;
+  return `${props.waiting ? '等待你的确认' : '正在调用'}：${toolTitle(call.tool)}`;
 });
 function toolTitle(name: string) {
   return app.tools.find((tool) => tool.name === name)?.title ?? builtinToolTitle(name);
@@ -57,7 +56,7 @@ watch(liveThinking, async () => {
     <div v-if="open" class="process-timeline">
       <template v-for="(step, index) in steps" :key="index">
         <div v-if="step.kind === 'thinking'" class="step-thinking-text">{{ step.text }}</div>
-        <ToolCallGroup v-else-if="step.kind === 'tools'" :calls="step.calls" flat />
+        <ToolCallGroup v-else-if="step.kind === 'tools'" :calls="step.calls" :waiting="waiting" flat />
         <div v-else class="process-note"><Markdown :text="step.text" :live="step.live" /></div>
       </template>
     </div>
@@ -68,7 +67,7 @@ watch(liveThinking, async () => {
         class="step-thinking-text process-current"
         v-text="liveThinking"
       ></div>
-      <ToolCallGroup v-else-if="showLiveCalls" :calls="allCalls" flat />
+      <ToolCallGroup v-else-if="showLiveCalls" :calls="allCalls" :waiting="waiting" flat />
     </template>
   </section>
 </template>

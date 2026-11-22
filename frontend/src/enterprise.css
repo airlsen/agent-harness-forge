@@ -2696,63 +2696,64 @@ textarea:focus-visible {
 .enterprise-chat .thinking-done > summary:hover {
   color: var(--ink);
 }
-.enterprise-chat .process-header {
+/* 过程块与工具调用：工作台对话与 Skill 编写助手（.process-host）共用同一套配色 */
+:is(.enterprise-chat, .process-host) .process-header {
   color: var(--text-secondary);
 }
-.enterprise-chat .process-header:hover {
+:is(.enterprise-chat, .process-host) .process-header:hover {
   color: var(--ink);
 }
-.enterprise-chat .process-note {
+:is(.enterprise-chat, .process-host) .process-note {
   color: var(--text-secondary);
 }
-.enterprise-chat .step-thinking-text {
+:is(.enterprise-chat, .process-host) .step-thinking-text {
   color: var(--text-secondary);
   border-left-color: var(--line);
 }
-.enterprise-chat .tool-group-header {
+:is(.enterprise-chat, .process-host) .tool-group-header {
   color: var(--text-secondary);
 }
-.enterprise-chat .tool-group-header:hover {
+:is(.enterprise-chat, .process-host) .tool-group-header:hover {
   color: var(--ink);
 }
-.enterprise-chat .tool-group-calls {
+:is(.enterprise-chat, .process-host) .tool-group-calls {
   border-left-color: var(--line);
 }
-.enterprise-chat .tool-call-row summary {
+:is(.enterprise-chat, .process-host) .tool-call-row summary {
   color: var(--text-secondary);
 }
-.enterprise-chat .tool-call-row summary strong {
+:is(.enterprise-chat, .process-host) .tool-call-row summary strong {
   color: var(--ink);
 }
-.enterprise-chat .tool-status {
+:is(.enterprise-chat, .process-host) .tool-status {
   color: var(--color-success-text);
   background: var(--color-success-bg);
 }
-.enterprise-chat .tool-status.error {
+:is(.enterprise-chat, .process-host) .tool-status.error {
   color: var(--color-warning-text);
   background: var(--color-warning-bg);
 }
-.enterprise-chat .tool-status.pending {
+:is(.enterprise-chat, .process-host) .tool-status.pending {
   background: transparent;
   color: var(--accent-ink);
 }
-.enterprise-chat .tool-call-details pre {
+:is(.enterprise-chat, .process-host) .tool-call-details pre {
   font-size: 11px;
   color: var(--text-secondary);
   background: var(--surface-subtle);
   border-color: var(--line);
 }
-.enterprise-chat .agent-working {
+:is(.enterprise-chat, .process-host) .agent-working {
   color: var(--text-secondary);
   font-size: 11px;
 }
-.enterprise-chat .agent-working.compact {
+:is(.enterprise-chat, .process-host) .agent-working.compact {
   margin: 6px 0 0;
 }
-.enterprise-chat .turn-empty {
+:is(.enterprise-chat, .process-host) .turn-empty {
   color: var(--text-subtle);
 }
-.enterprise-chat .stream-cursor {
+:is(.enterprise-chat, .process-host) .stream-cursor {
   background: var(--accent);
 }
 .enterprise-chat .enterprise-composer-area {

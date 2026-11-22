@@ -20,6 +20,17 @@ export const BUILTIN_TOOL_TITLES: Record<string, string> = {
   skill: '加载 Skill',
   web_search: '联网搜索',
   web_fetch: '读取网页',
+  // Skill 编写助手（只操作当前编辑的 Skill 草稿）
+  skill_read_draft: '读取草稿',
+  skill_list_files: '查看文件',
+  skill_read_file: '读取文件',
+  skill_write_file: '写入文件',
+  skill_delete_file: '删除文件',
+  skill_read_guide: '查阅写作指南',
+  skill_validate_draft: '校验草稿',
+  skill_test_script: '试运行脚本',
+  skill_update_draft: '更新 SKILL.md',
+  skill_revision: '更新草稿',
 };
 /** 内置工具的中文名；MCP 工具（mcp__服务__工具）显示为「服务 · 工具」，其余原样返回 */
 export function builtinToolTitle(name: string): string {

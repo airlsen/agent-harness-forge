@@ -65,6 +65,8 @@ export type SkillAuthoringMessage = {
   id: number | string;
   role: 'user' | 'assistant' | 'system' | string;
   content: string;
+  /** 与工作台消息一致：assistant 含 reasoning / partial，tool 含 toolCallId / tool / arguments / isError / revision */
+  meta?: Record<string, any>;
   createdAt?: string | null;
 };
 
