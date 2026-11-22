@@ -473,7 +473,8 @@ async def plugin_usage_counts(db: AsyncSession) -> dict[str, int]:
     ).all()
     relevant = {
         scenario.id: {scenario.current_version, scenario.published_version} - {0}
-        for scenario in scenarios if scenario.status != "deleted"
+        for scenario in scenarios
+        if scenario.status != "deleted"
     }
     counts: dict[str, int] = {}
     used: dict[int, set[str]] = {}

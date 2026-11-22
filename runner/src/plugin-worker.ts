@@ -14,7 +14,13 @@ type LeaseBinding = {
   artifactHash?: string;
   runtime?: string;
   tools?: { name?: string }[];
-  execution?: { kind?: string; endpoint?: string; networkDomains?: string[]; timeoutSeconds?: number; authRef?: string };
+  execution?: {
+    kind?: string;
+    endpoint?: string;
+    networkDomains?: string[];
+    timeoutSeconds?: number;
+    authRef?: string;
+  };
 };
 type Lease = { sessionId: string; expiresAt: number; bindings?: LeaseBinding[] };
 type InvokeBody = {

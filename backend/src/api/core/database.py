@@ -170,7 +170,9 @@ async def init_db() -> None:
                     text("ALTER TABLE agent_scenario ADD COLUMN published_version INTEGER NOT NULL DEFAULT 0")
                 )
                 sync_conn.execute(
-                    text("UPDATE agent_scenario SET published_version = current_version WHERE status = 'published'")
+                    text(
+                        "UPDATE agent_scenario SET published_version = current_version WHERE status = 'published'"
+                    )
                 )
             # Do not infer a release time from a draft or version creation timestamp.
             if "published_at" not in existing:
@@ -216,7 +218,9 @@ async def init_db() -> None:
                 )
             for row in (row for row in active if row.id == session_id):
                 row.status, row.ended_at = "interrupted", datetime.now(timezone.utc)
-                append("error", {"message": "控制面重启，未完成的任务已标记中断；可继续发送消息，上下文会保留"})
+                append(
+                    "error", {"message": "控制面重启，未完成的任务已标记中断；可继续发送消息，上下文会保留"}
+                )
                 append("done", {"status": "error", "reason": "control-plane-restart"})
 
         # Additive compatibility for existing platform policies and official scenarios to include bash

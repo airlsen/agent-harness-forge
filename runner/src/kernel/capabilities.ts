@@ -31,7 +31,8 @@ export const SKILL_SNAPSHOT = /^\d{1,15}-[0-9a-f]{12}$/;
 /** dsh-mcp-client 的 serverName 语法 */
 export const MCP_SERVER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
 /** 附加文件路径：references/、assets/ 或 scripts/ 下一层、非隐藏、常见安全字符 */
-export const SKILL_FILE_PATH = /^(references|assets)\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}$|^scripts\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(?:py|js|sh)$/;
+export const SKILL_FILE_PATH =
+  /^(references|assets)\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}$|^scripts\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(?:py|js|sh)$/;
 const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 export const WEB_SEARCH_PROVIDERS = {
@@ -156,7 +157,9 @@ function resolveSkill(raw: unknown, lookup?: SkillLookup): RuntimeSkill | { miss
   if (!SKILL_NAME.test(name)) throw failure(`Skill 名称无效：${name}`);
   if (
     raw.revisionId !== undefined &&
-    (!Number.isSafeInteger(raw.revisionId) || (raw.revisionId as number) < 1 || String(raw.revisionId).length > 15)
+    (!Number.isSafeInteger(raw.revisionId) ||
+      (raw.revisionId as number) < 1 ||
+      String(raw.revisionId).length > 15)
   )
     throw failure(`Skill ${name} 修订号无效`);
   const revisionId = raw.revisionId as number | undefined;
@@ -183,7 +186,8 @@ function resolveSkill(raw: unknown, lookup?: SkillLookup): RuntimeSkill | { miss
   if (bytes(content) > MAX_SKILL_BYTES) throw failure(`Skill ${name} 正文超过 64 KB`);
   // 新字段可选：旧控制面不下发时照常装配（只是不写 SKILL.md、快照修订号记为 0）
   const document = text(raw.document, MAX_SKILL_BYTES, `Skill ${name} 原文`, false);
-  if (document !== undefined && bytes(document) > MAX_SKILL_BYTES) throw failure(`Skill ${name} 原文超过 64 KB`);
+  if (document !== undefined && bytes(document) > MAX_SKILL_BYTES)
+    throw failure(`Skill ${name} 原文超过 64 KB`);
   const files = resolveSkillFiles(name, raw);
   const snapshot = skillSnapshotId({ revisionId, document, content, files });
   // 全文形式附带的快照标识必须与 Runner 自己算的一致，否则之后的引用永远对不上
@@ -385,7 +389,9 @@ export function mcpToolNames(caps: RuntimeCapabilities) {
  * Skill 的原文、正文与附件由快照标识（含内容哈希）代表，不再每轮对全文做哈希。
  */
 export function capabilityFingerprint(caps: RuntimeCapabilities) {
-  const skills = caps.skills.map(({ document: _document, content: _content, files: _files, ...rest }) => rest);
+  const skills = caps.skills.map(
+    ({ document: _document, content: _content, files: _files, ...rest }) => rest,
+  );
   return createHash('sha256')
     .update(JSON.stringify({ ...caps, skills }))
     .digest('hex');
@@ -398,8 +404,7 @@ export function capabilityFingerprint(caps: RuntimeCapabilities) {
  */
 export function skillSnapshotId(skill: Pick<RuntimeSkill, 'revisionId' | 'document' | 'content' | 'files'>) {
   const hash = createHash('sha256');
-  const parts =
-    skill.document !== undefined ? ['SKILL.md', skill.document] : ['content', skill.content];
+  const parts = skill.document !== undefined ? ['SKILL.md', skill.document] : ['content', skill.content];
   const files = [...skill.files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   for (const file of files) parts.push(file.path, file.content);
   for (const value of parts) hash.update(value, 'utf8').update('\0');

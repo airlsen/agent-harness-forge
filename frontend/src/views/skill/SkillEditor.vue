@@ -2110,7 +2110,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--color-text-tertiary);
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--font-mono, monospace);
 }
 .trial-actions {

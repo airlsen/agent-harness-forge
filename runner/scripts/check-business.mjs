@@ -93,9 +93,7 @@ const server = http.createServer(async (req, res) => {
   const bashCase = ['BASH_SAFE', 'BASH_WRITE'].find((value) => instruction.includes(value));
   if (bashCase && !answeredTool) {
     const command =
-      bashCase === 'BASH_SAFE'
-        ? 'echo bash-marker && cat report.md 2>/dev/null'
-        : 'echo pwned > /etc/passwd';
+      bashCase === 'BASH_SAFE' ? 'echo bash-marker && cat report.md 2>/dev/null' : 'echo pwned > /etc/passwd';
     send({
       choices: [
         {

@@ -4776,6 +4776,17 @@ textarea:focus-visible {
   font-size: 12px;
   line-height: 1.6;
 }
+/* 代码目录检测结果：可用 / 不可用的状态图标 */
+.governance-form .code-root-state {
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+.governance-form .code-root-state.ok {
+  color: var(--color-success-text);
+}
+.governance-form .code-root-state.bad {
+  color: var(--color-danger-text);
+}
 .storage-summary {
   display: flex;
   align-items: flex-end;

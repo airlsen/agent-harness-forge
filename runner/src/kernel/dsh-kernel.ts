@@ -84,7 +84,9 @@ export function sessionToolset(
   const read = hasCode || caps.skills.some((skill) => skill.files.length > 0);
   // bash 已在 BASE_TOOLS 中并经过平台策略筛选：策略未勾选时，即使关联了代码也不开放。
   const bash = builtin.includes('bash');
-  const scripts = withinCeiling(SKILL_SCRIPT_TOOL) && caps.skills.some((skill) => skill.files.some((file) => file.path.startsWith('scripts/')));
+  const scripts =
+    withinCeiling(SKILL_SCRIPT_TOOL) &&
+    caps.skills.some((skill) => skill.files.some((file) => file.path.startsWith('scripts/')));
   const mcp = mcpToolNames(caps);
   const allowed = [
     ...builtin,
@@ -100,7 +102,14 @@ export function sessionToolset(
     ...(caps.web?.fetch ? [WEB_FETCH_TOOL] : []),
     ...mcp.allowed,
   ];
-  return { allowed: [...new Set(allowed)], search, code: hasCode, read, skills, approval: [...mcp.approval, ...(scripts ? [SKILL_SCRIPT_TOOL] : [])] };
+  return {
+    allowed: [...new Set(allowed)],
+    search,
+    code: hasCode,
+    read,
+    skills,
+    approval: [...mcp.approval, ...(scripts ? [SKILL_SCRIPT_TOOL] : [])],
+  };
 }
 const MAX_RAW_BYTES = 20 * 1024 * 1024;
 /** 联网搜索密钥的环境变量名（含 KEY，不会被传给 stdio MCP 子进程） */
@@ -449,11 +458,14 @@ export class DshKernel implements AgentKernel {
           config: {
             // 脚本在会话工作区的 outputs/<脚本名>-<时间>/ 下运行，产出随会话文件同步
             workspace: entry.workspace,
-            skills: entry.caps.skills.filter((skill) => skill.files.some((file) => file.path.startsWith('scripts/')))
+            skills: entry.caps.skills
+              .filter((skill) => skill.files.some((file) => file.path.startsWith('scripts/')))
               .map((skill) => ({
                 name: skill.name,
                 dir: skillDirs[skill.name],
-                scripts: skill.files.filter((file) => file.path.startsWith('scripts/')).map((file) => file.path),
+                scripts: skill.files
+                  .filter((file) => file.path.startsWith('scripts/'))
+                  .map((file) => file.path),
               })),
           },
         }

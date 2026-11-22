@@ -421,13 +421,20 @@ async function save() {
             />
             <small v-if="codeRootResult" class="field-hint">
               <template v-if="codeRootResult.available"
-                >✓ {{ codeRootResult.effectiveRoot }} · 共 {{ codeRootResult.count }} 个项目<template
-                  v-if="codeRootResult.count"
+                ><Icon name="check-line" :size="13" class="code-root-state ok" />{{
+                  codeRootResult.effectiveRoot
+                }}
+                · 共 {{ codeRootResult.count }} 个项目<template v-if="codeRootResult.count"
                   >：{{ codeRootResult.projects.join('、')
                   }}{{ codeRootResult.count > codeRootResult.projects.length ? ' …' : '' }}</template
                 ></template
               >
-              <template v-else>✗ {{ codeRootResult.effectiveRoot }} 不存在或不是目录，不能保存</template>
+              <template v-else
+                ><Icon name="close-line" :size="13" class="code-root-state bad" />{{
+                  codeRootResult.effectiveRoot
+                }}
+                不存在或不是目录，不能保存</template
+              >
             </small>
             <div style="display: flex; gap: 8px; margin-top: 14px">
               <button

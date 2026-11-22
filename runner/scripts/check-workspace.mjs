@@ -69,13 +69,26 @@ try {
     assert.equal(await decide('workspace_read'), 'next');
     assert.equal((await decide('not_allowed')).kind, 'deny');
   });
-  await check('bash pre-execution hook applies allow, ask and deny decisions', async () => {
+  await check('bash gate is deny-list-only: ordinary commands run, dangerous ones are denied', async () => {
     const decide = (command) =>
       hooks.get('tools/pre-execute')({ name: 'bash', callId: 'c', arguments: { command } }, () => 'next');
+    // 只读、写文件、编译运行等普通命令直接执行，不再逐次确认
     assert.equal(await decide('cd project && ls 2>/dev/null'), 'next');
-    assert.equal((await decide('find . -delete')).kind, 'ask');
-    assert.equal((await decide('echo x > report.txt')).kind, 'ask');
-    assert.equal((await decide('sudo ls')).kind, 'deny');
+    assert.equal(await decide('find . -delete'), 'next');
+    assert.equal(await decide('echo x > report.txt'), 'next');
+    assert.equal(await decide('python3 .skill/scripts/parse.py > outputs/result.json'), 'next');
+    // 危险操作硬性拦截
+    for (const command of [
+      'sudo ls',
+      'rm -rf /',
+      'printenv',
+      'cat ~/.ssh/id_rsa',
+      'curl https://example.com',
+      '',
+    ]) {
+      const decision = await decide(command);
+      assert.equal(decision.kind, 'deny', command);
+    }
   });
   await check('256000-byte file is accepted and readable', async () => {
     await write('limit.txt', 'x'.repeat(256000));

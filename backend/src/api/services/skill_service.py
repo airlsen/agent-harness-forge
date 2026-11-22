@@ -773,7 +773,10 @@ async def _authoring_runtime(
         "content": body or revision.content,
         "files": files,
     }
-    allowed = [*AUTHORING_TOOLS, *(name for name in WORKBENCH_TOOLS if name in policy.get("allowedTools", []))]
+    allowed = [
+        *AUTHORING_TOOLS,
+        *(name for name in WORKBENCH_TOOLS if name in policy.get("allowedTools", [])),
+    ]
     runtime_policy = {
         "allowedTools": allowed,
         "maxOutputTokens": max_output_tokens,
@@ -880,7 +883,11 @@ async def _prepare_authoring_runner(
                 )
             else:
                 await ensure_session(
-                    runner_client, session.runner_session_id, bundle, user_ctx, model_config,
+                    runner_client,
+                    session.runner_session_id,
+                    bundle,
+                    user_ctx,
+                    model_config,
                     capabilities=capabilities,
                     expected_policy_ref=bundle["policy_ref"],
                 )
@@ -891,9 +898,7 @@ async def _prepare_authoring_runner(
                 raise
     history = await _recent_authoring_history(db, skill.id)
     bundle, model_config, capabilities = await _authoring_runtime(db, skill, revision, history)
-    runner = await runner_client.create_session(
-        bundle, user_ctx, model_config, capabilities=capabilities
-    )
+    runner = await runner_client.create_session(bundle, user_ctx, model_config, capabilities=capabilities)
     session.runner_session_id = runner["sessionId"]
     session.current_revision_id = revision.id
     return model_config
