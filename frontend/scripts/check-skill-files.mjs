@@ -12,17 +12,19 @@ try {
   const files = await vite.ssrLoadModule('/src/utils/skillFiles.ts');
   const file = (path, bytes = 10) => ({ path, bytes, source: 'manual' });
 
-  // 两个目录始终显示，文件按名称排序归入各自目录
+  // 三个目录始终显示，文件按名称排序归入各自目录
   const tree = files.skillFileTree([
     file('references/b.md'),
     file('assets/t.json'),
     file('references/a.txt'),
+    file('scripts/check.py'),
   ]);
   assert.deepEqual(
     tree.map((folder) => [folder.dir, folder.files.map((item) => item.path)]),
     [
       ['references', ['references/a.txt', 'references/b.md']],
       ['assets', ['assets/t.json']],
+      ['scripts', ['scripts/check.py']],
     ],
   );
   assert.deepEqual(
@@ -30,11 +32,14 @@ try {
     [
       ['references', 0],
       ['assets', 0],
+      ['scripts', 0],
     ],
   );
 
   assert.equal(files.fileNameError('references', 'rules.md'), '');
   assert.equal(files.fileNameError('assets', 'data.yaml'), '');
+  assert.equal(files.fileNameError('scripts', 'check.py'), '');
+  assert.match(files.fileNameError('scripts', 'check.exe'), /只支持/);
   assert.match(files.fileNameError('references', 'data.json'), /只支持/);
   assert.match(files.fileNameError('references', '规则.md'), /英文字母/);
   assert.match(files.fileNameError('references', '.hidden.md'), /英文字母/);
@@ -51,6 +56,7 @@ try {
   assert.equal(files.initialFileContent('assets/data.json'), '');
   assert.equal(files.editorLanguage('assets/a.yml'), 'yaml');
   assert.equal(files.editorLanguage('assets/a.csv'), 'plaintext');
+  assert.equal(files.editorLanguage('scripts/check.py'), 'python');
   assert.equal(files.previewMarkdown('references/a.md', '# 标题'), '# 标题');
   assert.equal(files.previewMarkdown('assets/a.json', '{"a":1}'), '```json\n{"a":1}\n```');
   // 内容里有反引号时使用更长的围栏，HTML 只展示源码

@@ -93,7 +93,7 @@ await check('capabilities are validated: names, transports, duplicates, referenc
   assert.deepEqual(resolveCapabilities(undefined), { skills: [], mcp: [], web: null });
   assert.throws(() => resolveCapabilities({ skills: [{ ...skill, name: 'Bad Name' }] }), /Skill 名称无效/);
   assert.throws(() => resolveCapabilities({ skills: [skill, skill] }), /Skill 名称重复/);
-  for (const path of ['../x', 'references/../x.md', 'scripts/run.py', 'references/a/b.md', 'SKILL.md', 'assets/.env'])
+  for (const path of ['../x', 'references/../x.md', 'scripts/run.exe', 'references/a/b.md', 'SKILL.md', 'assets/.env'])
     assert.throws(
       () => resolveCapabilities({ skills: [{ ...skill, files: [{ path, content: '' }] }] }),
       /附加文件无效/,
@@ -103,6 +103,7 @@ await check('capabilities are validated: names, transports, duplicates, referenc
     () => resolveCapabilities({ skills: [{ ...skill, files: [skill.files[0], skill.files[0]] }] }),
     /附加文件无效/,
   );
+  assert.equal(resolveCapabilities({ skills: [{ ...skill, files: [{ path: 'scripts/run.py', content: 'print(1)' }] }] }).skills[0].files[0].path, 'scripts/run.py');
   const big = 'x'.repeat(110_000);
   assert.throws(
     () =>

@@ -50,6 +50,13 @@ TOOLS = [
         "permission": "write",
         "icon": "terminal",
     },
+    {
+        "name": "skill_run_script",
+        "title": "运行 Skill 脚本",
+        "description": "在隔离环境中运行当前会话授权的 Skill 脚本，每次调用都需确认。",
+        "permission": "write",
+        "icon": "terminal",
+    },
 ]
 TOOL_NAMES = {x["name"] for x in TOOLS}
 DEFAULT_POLICY = {

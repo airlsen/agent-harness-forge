@@ -39,6 +39,7 @@ export const SEARCH_PLUGIN = '@deepseek-ai/dsh-tool-fs-search';
 export const CODE_READ_TOOL = 'read';
 /** dsh-tool-skill 提供的 Skill 加载工具 */
 export const SKILL_TOOL = 'skill';
+export const SKILL_SCRIPT_TOOL = 'skill_run_script';
 /** dsh-tool-web 提供的联网工具 */
 export const WEB_SEARCH_TOOL = 'web_search';
 export const WEB_FETCH_TOOL = 'web_fetch';
@@ -81,6 +82,7 @@ export function sessionToolset(
   const read = hasCode || caps.skills.some((skill) => skill.files.length > 0);
   // bash 已在 BASE_TOOLS 中并经过平台策略筛选：策略未勾选时，即使关联了代码也不开放。
   const bash = builtin.includes('bash');
+  const scripts = withinCeiling(SKILL_SCRIPT_TOOL) && caps.skills.some((skill) => skill.files.some((file) => file.path.startsWith('scripts/')));
   const mcp = mcpToolNames(caps);
   const allowed = [
     ...builtin,
@@ -91,11 +93,12 @@ export function sessionToolset(
     // 受管插件工具已由控制面按企业插件策略与场景授权筛选，不再按内置工具策略过滤。
     ...pluginTools,
     ...(skills ? [SKILL_TOOL] : []),
+    ...(scripts ? [SKILL_SCRIPT_TOOL] : []),
     ...(caps.web?.search ? [WEB_SEARCH_TOOL] : []),
     ...(caps.web?.fetch ? [WEB_FETCH_TOOL] : []),
     ...mcp.allowed,
   ];
-  return { allowed: [...new Set(allowed)], search, code: hasCode, read, skills, approval: mcp.approval };
+  return { allowed: [...new Set(allowed)], search, code: hasCode, read, skills, approval: [...mcp.approval, ...(scripts ? [SKILL_SCRIPT_TOOL] : [])] };
 }
 const MAX_RAW_BYTES = 20 * 1024 * 1024;
 /** 联网搜索密钥的环境变量名（含 KEY，不会被传给 stdio MCP 子进程） */
@@ -308,6 +311,20 @@ export class DshKernel implements AgentKernel {
           },
         }
       : null;
+    const skillScriptsPlugin = toolset.allowed.includes(SKILL_SCRIPT_TOOL)
+      ? {
+          id: 'skill-scripts',
+          name: pathToFileURL(join(ROOT, 'skill-scripts-plugin', 'index.js')).href,
+          config: {
+            skills: entry.caps.skills.filter((skill) => skill.files.some((file) => file.path.startsWith('scripts/')))
+              .map((skill) => ({
+                name: skill.name,
+                dir: skillDirs[skill.name],
+                scripts: skill.files.filter((file) => file.path.startsWith('scripts/')).map((file) => file.path),
+              })),
+          },
+        }
+      : null;
     if (entry.bundle.plugin_mounts.includes('forge-plugin-bridge') && !this.pluginWorker)
       throw failure('受管插件 Worker 不可用，已拒绝启动插件会话', 503);
     const bridgeBindings = pluginBindings.map((binding: any) => ({
@@ -381,6 +398,7 @@ export class DshKernel implements AgentKernel {
             : []),
           ...(pluginBridge ? [pluginBridge] : []),
           ...(skillAuthoringPlugin ? [skillAuthoringPlugin] : []),
+          ...(skillScriptsPlugin ? [skillScriptsPlugin] : []),
           ...this.capabilityRows(entry, skillDirs),
         ],
       },
@@ -428,6 +446,7 @@ export class DshKernel implements AgentKernel {
           name: skill.name,
           title: skill.title,
           hasFiles: skill.files.length > 0,
+          hasScripts: skill.files.some((file) => file.path.startsWith('scripts/')),
         })),
         mcp: summary.mcp.map((server) => ({
           serverName: server.serverName,
@@ -465,7 +484,7 @@ export class DshKernel implements AgentKernel {
     if (entry.hasHistory) await timeout(proc.request('session/resume', { sessionId: entry.id }), 15000);
   }
   /**
-   * 物化 Skill 目录：DATA/<id>/skills/<name>/{references,assets}/<file>（只读），每次启动整体重建，
+   * 物化 Skill 目录：DATA/<id>/skills/<name>/{references,assets,scripts}/<file>（只读），每次启动整体重建，
    * 已移除的 Skill 不留下文件。正文不落盘（以运行时 Skill 注册），返回 Skill 名 → Skill 根目录，
    * 正文中的相对路径（如 references/rules.md）按这个目录解析。
    */
@@ -477,7 +496,7 @@ export class DshKernel implements AgentKernel {
       if (!skill.files.length) continue;
       const dir = join(root, skill.name);
       for (const file of skill.files) {
-        // 路径已由 SKILL_FILE_PATH 校验为 references|assets 下一层，这里再确认不越出 Skill 目录
+        // 路径已由 SKILL_FILE_PATH 校验为允许的单层目录，这里再确认不越出 Skill 目录
         const target = join(dir, file.path);
         if (!target.startsWith(dir + sep)) throw new Error(`Skill 文件路径无效：${file.path}`);
         await mkdir(dirname(target), { recursive: true, mode: 0o700 });

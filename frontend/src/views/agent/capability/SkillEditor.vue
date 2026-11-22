@@ -103,6 +103,9 @@ const starterPrompts = computed(() =>
     : [
         '帮我评审这个 Skill，按评分表指出问题，先不要修改。',
         '补充不适用的情况、需要找人确认的地方和输出样例。',
+        ...(skill.value?.files.find((file) => file.path.startsWith('scripts/'))
+          ? ['试运行这个 Skill 的脚本，检查输出与错误，并根据结果修改。']
+          : []),
         '按我的要求修改：',
       ],
 );
@@ -339,7 +342,7 @@ async function restore(revision: SkillRevision) {
     saving.value = false;
   }
 }
-// —— 附加文件（references/、assets/）——
+// —— 附加文件（references/、assets/、scripts/）——
 // 正在新建、上传、保存或删除附加文件；期间不允许保存主文档或发送消息，避免修订交错。
 const fileBusy = ref(false);
 const savingFile = ref(false);
@@ -354,7 +357,7 @@ const fileDirty = computed(() => {
   return draft.content !== fileCache.get(fileKey(skill.value?.currentRevisionId, draft.path));
 });
 const fileTree = computed(() => skillFileTree(skill.value?.files ?? []));
-const openDirs = ref<Record<SkillFileDir, boolean>>({ references: true, assets: true });
+const openDirs = ref<Record<SkillFileDir, boolean>>({ references: true, assets: true, scripts: true });
 /** 本轮助手改动过的文件（标 AI），发送下一条消息时清空。 */
 const assistantFiles = ref<string[]>([]);
 const fileDialog = ref({

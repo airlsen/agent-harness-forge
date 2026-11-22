@@ -40,6 +40,7 @@ AUTHORING_TOOLS = [
     "skill_write_file",
     "skill_delete_file",
     "skill_validate_draft",
+    "skill_test_script",
 ]
 
 # Skill 编写助手的工作方法：仓库内置的 skill-design 元 Skill。
@@ -316,7 +317,7 @@ async def published_file(db: AsyncSession, skill_id: int, path: str) -> dict:
 
 
 async def skill_archive(db: AsyncSession, skill_id: int, version: str = "current") -> tuple[bytes, str]:
-    """导出标准 Skill 包：zip 内是 <name>/SKILL.md 以及 references/、assets/ 下的全部文件。"""
+    """导出标准 Skill 包：zip 内是 <name>/SKILL.md 以及 references/、assets/、scripts/ 下的全部文件。"""
     skill = await get_skill(db, skill_id)
     revision_id = skill.current_revision_id if version == "current" else skill.published_revision_id
     if not revision_id:

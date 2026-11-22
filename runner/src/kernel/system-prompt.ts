@@ -98,7 +98,7 @@ export function codeGuide(projects: readonly CodeContext[], tools: readonly stri
 
 /** 本会话可用的扩展能力摘要（不含 Skill 正文与任何凭据） */
 export interface CapabilityContext {
-  skills?: readonly { name: string; title?: string; hasFiles?: boolean }[];
+  skills?: readonly { name: string; title?: string; hasFiles?: boolean; hasScripts?: boolean }[];
   mcp?: readonly {
     serverName: string;
     title?: string;
@@ -112,7 +112,7 @@ export interface CapabilityContext {
  * 扩展能力说明：Skill 目录由 dsh-tool-skill 自带（skill 工具描述与会话目录消息），这里只补充 Forge 的约束；
  * MCP 与联网工具的 schema 由各自插件提供，这里说明来源、确认与引用规则。
  */
-export function capabilityGuide(caps: CapabilityContext = {}): string[] {
+export function capabilityGuide(caps: CapabilityContext = {}, tools: readonly string[] = []): string[] {
   const lines: string[] = [];
   if (caps.skills?.length) {
     const files = caps.skills.some((skill) => skill.hasFiles);
@@ -122,6 +122,9 @@ export function capabilityGuide(caps: CapabilityContext = {}): string[] {
         `本会话启用了 ${caps.skills.length} 个 Skill（${caps.skills.map((skill) => skill.name).join('、')}）。任务与某个 Skill 的说明相符时，先调用 skill 工具加载它，再严格按其中的步骤与规范完成任务；用户消息以 /名称 开头表示指定使用该 Skill。`,
         files
           ? 'Skill 正文提到 references/、assets/ 中的文件时，按 skill 结果给出的目录拼出绝对路径，用 read 按需读取；这些文件只读。'
+          : '',
+        caps.skills.some((skill) => skill.hasScripts) && tools.includes('skill_run_script')
+          ? '需要运行 Skill 自带脚本时，按正文说明调用 skill_run_script（skill 为英文名称，path 为 scripts/ 下相对路径）。每次运行需要用户批准，拒绝后不要改用 bash 绕过。'
           : '',
       ]
         .filter(Boolean)
@@ -182,7 +185,7 @@ export function buildSystemPrompt(
   code: readonly CodeContext[] = [],
   caps: CapabilityContext = {},
 ): string {
-  const guide = [...workspaceGuide(tools), ...codeGuide(code, tools), ...capabilityGuide(caps)];
+  const guide = [...workspaceGuide(tools), ...codeGuide(code, tools), ...capabilityGuide(caps, tools)];
   const head =
     prompt && typeof prompt === 'object'
       ? [

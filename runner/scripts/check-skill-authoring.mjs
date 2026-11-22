@@ -51,9 +51,10 @@ try {
       'skill_update_draft',
       'skill_write_file',
       'skill_delete_file',
+      'skill_test_script',
     ],
   });
-  assert.equal(tools.size, 8);
+  assert.equal(tools.size, 9);
   assert.equal((await tools.get('skill_read_draft').execute({})).skillId, 4);
   assert.deepEqual((await tools.get('skill_list_files').execute({})).files, [
     { path: 'references/notes.md', bytes: 19, mentioned: false },
@@ -101,23 +102,25 @@ try {
     summary: '新增模板',
   });
   assert.equal((await write.execute({ path: 'assets/report-template.md', content: '# 模板 v2' })).created, false);
+  assert.equal((await write.execute({ path: 'scripts/check.py', content: 'print("ok")' })).created, true);
+  await assert.rejects(() => tools.get('skill_test_script').execute({ path: 'scripts/unknown.py' }), /脚本不存在/);
   for (const [path, message] of [
-    ['scripts/run.py', /后续版本/],
+    ['scripts/run.exe', /只支持/],
     ['SKILL.md', /skill_update_draft/],
     ['references/a/b.md', /目录\/文件名/],
-    ['../x.md', /references\/ 或 assets\//],
+    ['../x.md', /references\/、assets\/ 或 scripts\//],
     ['references/规则.md', /文件名只能/],
     ['references/data.json', /只支持/],
   ])
     await assert.rejects(() => write.execute({ path, content: 'x' }), message, path);
   await assert.rejects(() => write.execute({ path: 'references/big.md', content: 'x'.repeat(120001) }), /120 KB/);
   const before = events.length;
-  for (let index = 0; index < 18; index += 1) await write.execute({ path: `references/r${index}.md`, content: 'r' });
+  for (let index = 0; index < 17; index += 1) await write.execute({ path: `references/r${index}.md`, content: 'r' });
   await assert.rejects(() => write.execute({ path: 'references/one-more.md', content: 'x' }), /最多 20 个/);
   await write.execute({ path: 'references/r0.md', content: 'still fine' }); // 覆盖不增加数量
-  assert.equal(events.length, before + 19);
-  for (let index = 0; index < 18; index += 1) await tools.get('skill_delete_file').execute({ path: `references/r${index}.md` });
-  assert.deepEqual(events.at(-1).params, { action: 'delete_file', path: 'references/r17.md', summary: '' });
+  assert.equal(events.length, before + 18);
+  for (let index = 0; index < 17; index += 1) await tools.get('skill_delete_file').execute({ path: `references/r${index}.md` });
+  assert.deepEqual(events.at(-1).params, { action: 'delete_file', path: 'references/r16.md', summary: '' });
   await assert.rejects(() => tools.get('skill_delete_file').execute({ path: 'references/r0.md' }), /文件不存在/);
   for (let index = 0; index < 4; index += 1)
     await write.execute({ path: `assets/big${index}.md`, content: 'x'.repeat(110000) });
@@ -155,7 +158,7 @@ try {
     [],
   );
   assert.deepEqual(checkSkillDocument(`${GOOD}\n参考 scripts/run.py`).warnings, [
-    'SKILL.md 提到了 scripts/run.py，但脚本目录暂不支持：改为把步骤写进正文',
+    'SKILL.md 提到了 scripts/run.py，但文件不存在：用 skill_write_file 创建，或删掉这处引用',
   ]);
 
   // 没有下发参考资料时不注册 skill_read_guide

@@ -1,4 +1,4 @@
-"""Skill 文件清单：SKILL.md 之外的 references/、assets/ 文件。
+"""Skill 文件清单：SKILL.md 之外的 references/、assets/、scripts/ 文件。
 
 修订表的 reference_files（JSON）保存文件清单，每条记录：
     {"path": "references/rules.md", "storage": "skills/5/files/c3d4-rules.md", "bytes": 1200, "source": "agent"}
@@ -14,9 +14,8 @@ from pathlib import Path
 FILE_DIRS: dict[str, frozenset[str]] = {
     "references": frozenset({".md", ".txt"}),
     "assets": frozenset({".md", ".txt", ".json", ".csv", ".yaml", ".yml", ".html"}),
+    "scripts": frozenset({".py", ".js", ".sh"}),
 }
-# 标准 Skill 目录中暂不支持的部分：给出明确提示，而不是笼统的“路径无效”。
-DEFERRED_DIRS = {"scripts": "scripts/ 脚本目录将在后续版本支持，当前请把步骤写进 SKILL.md"}
 FILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,119}")
 MAX_FILE_BYTES = 120_000
 MAX_FILES = 20
@@ -33,10 +32,8 @@ def validate_file_path(path: str) -> str:
     if "\\" in value or len(parts) != 2 or not all(parts):
         raise ValueError("文件路径应为“目录/文件名”，例如 references/rules.md")
     folder, name = parts
-    if folder in DEFERRED_DIRS:
-        raise ValueError(DEFERRED_DIRS[folder])
     if folder not in FILE_DIRS:
-        raise ValueError("文件只能放在 references/ 或 assets/ 目录")
+        raise ValueError("文件只能放在 references/、assets/ 或 scripts/ 目录")
     if not FILE_NAME.fullmatch(name):
         raise ValueError(
             "文件名只能使用英文字母、数字、点、下划线和短横线，以字母或数字开头，最长 120 个字符"

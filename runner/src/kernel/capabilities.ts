@@ -2,7 +2,7 @@
  * 会话扩展能力（Skill / MCP / 联网搜索）：控制面每轮下发「本轮生效」的完整集合 = 场景绑定 ∪ 聊天临时选择。
  *
  * - Skill：只是文本。Runner 把正文注册为 DSH 运行时 Skill（dsh-skill 注册表 + dsh-tool-skill 的 skill 工具），
- *   references/、assets/ 中的文件写到会话目录外的只读目录（完整 Skill 目录），模型用 read 按需读取；
+ *   references/、assets/、scripts/ 中的文件写到会话目录外的只读目录；脚本经单独工具隔离运行；
  *   用户可在消息中用 /名称 直接调用。
  * - MCP：每个服务挂一个 dsh-mcp-client；凭据只在本轮配置里出现，不写入 Bundle。
  *   工具按 mcp__<server>__<tool> 命名，只有控制面允许的工具进入白名单，需确认的工具逐次审批。
@@ -24,8 +24,8 @@ export const MAX_MCP_TOOLS = 200;
 export const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** dsh-mcp-client 的 serverName 语法 */
 export const MCP_SERVER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
-/** 附加文件路径：references/ 或 assets/ 下一层、非隐藏、常见安全字符 */
-export const SKILL_FILE_PATH = /^(references|assets)\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
+/** 附加文件路径：references/、assets/ 或 scripts/ 下一层、非隐藏、常见安全字符 */
+export const SKILL_FILE_PATH = /^(references|assets)\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}$|^scripts\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(?:py|js|sh)$/;
 const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 export const WEB_SEARCH_PROVIDERS = {

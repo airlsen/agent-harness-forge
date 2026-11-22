@@ -83,6 +83,7 @@ async def test_archives_use_selected_revision_and_reference_snapshot(tmp_path, m
             created = await create_skill(db, '名称', '说明', content, 'tester')
             skill_id = created['id']
             await skill_service.write_file(db, skill_id, 'references/readme.md', '发布的附件')
+            await skill_service.write_file(db, skill_id, 'scripts/check.py', 'print("ok")')
             with pytest.raises(HTTPException) as unpublished:
                 await skill_service.published_skill_detail(db, skill_id)
             assert unpublished.value.status_code == 404
@@ -99,6 +100,7 @@ async def test_archives_use_selected_revision_and_reference_snapshot(tmp_path, m
             with zipfile.ZipFile(io.BytesIO(published[0])) as archive:
                 assert 'published-name' in archive.read('published-name/SKILL.md').decode()
                 assert archive.read('published-name/references/readme.md').decode() == '发布的附件'
+                assert archive.read('published-name/scripts/check.py').decode() == 'print("ok")'
             with zipfile.ZipFile(io.BytesIO(current[0])) as archive:
                 assert 'draft-name' in archive.read('draft-name/SKILL.md').decode()
             view = await skill_service.skill_detail(db, skill_id)
@@ -117,7 +119,8 @@ async def test_archives_use_selected_revision_and_reference_snapshot(tmp_path, m
             assert public['version'] == 1
             assert 'draft-name' not in public['content']
             assert public['files'] == [
-                {'path': 'references/readme.md', 'bytes': len('发布的附件'.encode()), 'source': 'manual'}
+                {'path': 'references/readme.md', 'bytes': len('发布的附件'.encode()), 'source': 'manual'},
+                {'path': 'scripts/check.py', 'bytes': len(b'print("ok")'), 'source': 'manual'},
             ]
             assert (await skill_service.published_file(db, skill_id, 'references/readme.md'))['content'] == '发布的附件'
             with pytest.raises(HTTPException) as missing:
@@ -267,13 +270,14 @@ def test_skill_files_convert_legacy_entries_and_validate_paths():
 
     assert validate_file_path(' references/rules.md ') == 'references/rules.md'
     assert validate_file_path('assets/data.json') == 'assets/data.json'
+    assert validate_file_path('scripts/run.py') == 'scripts/run.py'
     for path, message in [
-        ('scripts/run.py', '后续版本'),
+        ('scripts/run.exe', '只支持'),
         ('SKILL.md', '主文档'),
         ('rules.md', '目录/文件名'),
         ('references/a/b.md', '目录/文件名'),
         ('../references/x.md', '目录/文件名'),
-        ('docs/x.md', 'references/ 或 assets/'),
+        ('docs/x.md', 'references/、assets/ 或 scripts/'),
         ('references/.hidden.md', '文件名'),
         ('references/规则.md', '文件名'),
         ('references/data.json', '.md'),
@@ -328,16 +332,15 @@ async def test_file_writes_and_deletes_are_revisions_that_keep_history(tmp_path,
             revisions = await skill_service.revisions(db, skill_id)
             assert revisions[0]['files'][1] == {'path': 'assets/template.md', 'bytes': len('# 模板'.encode()), 'source': 'agent'}
 
-            with pytest.raises(HTTPException) as scripts:
-                await skill_service.write_file(db, skill_id, 'scripts/run.py', 'print(1)')
-            assert scripts.value.status_code == 422 and '后续版本' in scripts.value.detail
+            await skill_service.write_file(db, skill_id, 'scripts/run.py', 'print(1)')
+            assert (await skill_service.skill_detail(db, skill_id))['files'][-1]['path'] == 'scripts/run.py'
             with pytest.raises(HTTPException) as too_big:
                 await skill_service.write_file(db, skill_id, 'references/big.md', 'x' * 120_001)
             assert too_big.value.status_code == 413
-            monkeypatch.setattr('src.api.services.skill_files.MAX_FILES', 2)
+            monkeypatch.setattr('src.api.services.skill_files.MAX_FILES', 3)
             with pytest.raises(HTTPException) as too_many:
                 await skill_service.write_file(db, skill_id, 'references/third.md', '第三份')
-            assert too_many.value.status_code == 413 and '最多 2 个' in too_many.value.detail
+            assert too_many.value.status_code == 413 and '最多 3 个' in too_many.value.detail
             # 覆盖已有文件不增加数量
             await skill_service.write_file(db, skill_id, 'references/rules.md', '规则 v3')
 

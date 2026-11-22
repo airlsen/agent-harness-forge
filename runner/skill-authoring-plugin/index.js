@@ -1,7 +1,11 @@
 /**
  * Narrow DSH extension for authoring exactly one Skill draft. No filesystem, shell, or network tools.
- * 草稿 = SKILL.md + references/、assets/ 下的文件（内存副本）；每次修改通过 forge.skill_revision 通知控制面落库。
+ * 草稿 = SKILL.md + references/、assets/、scripts/ 下的文件（内存副本）；每次修改通过 forge.skill_revision 通知控制面落库。
  */
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { runSkillScript } from '../skill-script-runtime/index.js';
 const notify = (method, params) =>
   process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n');
 
@@ -14,12 +18,13 @@ const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const FILE_DIRS = {
   references: ['.md', '.txt'],
   assets: ['.md', '.txt', '.json', '.csv', '.yaml', '.yml', '.html'],
+  scripts: ['.py', '.js', '.sh'],
 };
 const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
 export const MAX_FILE_BYTES = 120000;
 export const MAX_FILES = 20;
 export const MAX_TOTAL_BYTES = 512000;
-// 正文中的文件引用：references/x.md、assets/x.json（scripts/ 也识别，用于提示尚不支持）
+// 正文中的文件引用：references/x.md、assets/x.json、scripts/x.py
 const FILE_MENTION = /(?<![A-Za-z0-9_./-])((?:references|assets|scripts)\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)/g;
 
 /** 校验附加文件路径，返回规范化路径；不合规时抛出中文错误（与控制面 validate_file_path 同义）。 */
@@ -30,8 +35,7 @@ export function validateFilePath(value) {
   if (path.includes('\\') || parts.length !== 2 || !parts.every(Boolean))
     throw new Error('文件路径应为“目录/文件名”，例如 references/rules.md');
   const [folder, name] = parts;
-  if (folder === 'scripts') throw new Error('scripts/ 脚本目录将在后续版本支持，当前请把步骤写进 SKILL.md');
-  if (!Object.hasOwn(FILE_DIRS, folder)) throw new Error('文件只能放在 references/ 或 assets/ 目录');
+  if (!Object.hasOwn(FILE_DIRS, folder)) throw new Error('文件只能放在 references/、assets/ 或 scripts/ 目录');
   if (!FILE_NAME.test(name))
     throw new Error('文件名只能使用英文字母、数字、点、下划线和短横线，以字母或数字开头，最长 120 个字符');
   const suffix = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : '';
@@ -55,9 +59,7 @@ export function checkFileReferences(content, paths) {
   for (const path of mentioned)
     if (!paths.includes(path))
       warnings.push(
-        path.startsWith('scripts/')
-          ? `SKILL.md 提到了 ${path}，但脚本目录暂不支持：改为把步骤写进正文`
-          : `SKILL.md 提到了 ${path}，但文件不存在：用 skill_write_file 创建，或删掉这处引用`,
+        `SKILL.md 提到了 ${path}，但文件不存在：用 skill_write_file 创建，或删掉这处引用`,
       );
   return warnings;
 }
@@ -164,7 +166,7 @@ export async function apply(ctx, config) {
   if (allowed.has('skill_list_files')) {
     add(
       'skill_list_files',
-      '列出当前 Skill 的目录：SKILL.md 之外 references/、assets/ 下的文件（路径、大小、正文是否提到），以及容量限制。',
+       '列出当前 Skill 的目录：SKILL.md 之外 references/、assets/、scripts/ 下的文件（路径、大小、正文是否提到），以及容量限制。',
       {},
       [],
       async () => ({
@@ -189,7 +191,7 @@ export async function apply(ctx, config) {
   if (allowed.has('skill_write_file')) {
     add(
       'skill_write_file',
-      '新建或整体覆盖 references/、assets/ 下的一个文件，保存为草稿修订，不会自动发布。references/ 放按需读取的资料（.md/.txt），assets/ 放输出模板和样例（.md/.txt/.json/.csv/.yaml/.html）。写入后要在 SKILL.md 相应步骤写明什么时候读或用它。',
+       '新建或整体覆盖 references/、assets/、scripts/ 下的一个文件，保存为草稿修订，不会自动发布。references/ 放按需读取的资料，assets/ 放输出模板和样例，scripts/ 放 .py/.js/.sh 脚本。写入后要在 SKILL.md 相应步骤写明什么时候调用。',
       { path: { type: 'string' }, content: { type: 'string' }, summary: { type: 'string' } },
       ['path', 'content'],
       async ({ path: rawPath, content, summary }) => {
@@ -219,7 +221,7 @@ export async function apply(ctx, config) {
   if (allowed.has('skill_delete_file')) {
     add(
       'skill_delete_file',
-      '从当前 Skill 草稿删除 references/、assets/ 下的一个文件（历史修订和已发布版本不受影响）。删除后同步删掉 SKILL.md 中对它的引用。',
+       '从当前 Skill 草稿删除 references/、assets/、scripts/ 下的一个文件（历史修订和已发布版本不受影响）。删除后同步删掉 SKILL.md 中对它的引用。',
       { path: { type: 'string' }, summary: { type: 'string' } },
       ['path'],
       async ({ path, summary }) => {
@@ -251,10 +253,33 @@ export async function apply(ctx, config) {
   if (allowed.has('skill_validate_draft')) {
     add(
       'skill_validate_draft',
-      '检查当前 Skill 草稿：errors 为格式错误，必须修正；warnings 为质量提醒（含正文与 references/、assets/ 文件的引用是否对应），对照《Skill 设计方法》逐条判断。',
+      '检查当前 Skill 草稿：errors 为格式错误，必须修正；warnings 为质量提醒（含正文与附加文件的引用是否对应），对照《Skill 设计方法》逐条判断。',
       {},
       [],
       async () => checkSkillDocument(draft, [...files.keys()]),
+    );
+  }
+  if (allowed.has('skill_test_script')) {
+    add(
+      'skill_test_script',
+      '在隔离环境中试运行当前草稿 scripts/ 下的脚本；只读取草稿文件，不修改草稿，也不调用业务系统或网络。',
+      { path: { type: 'string' }, args: { type: 'array', items: { type: 'string' } } },
+      ['path'],
+      async ({ path, args }) => {
+        const safePath = validateFilePath(path);
+        if (!safePath.startsWith('scripts/') || !files.has(safePath)) throw new Error(`脚本不存在：${path}`);
+        const root = await mkdtemp(join(tmpdir(), 'forge-skill-draft-'));
+        try {
+          for (const [file, content] of files) {
+            const target = join(root, validateFilePath(file));
+            await mkdir(dirname(target), { recursive: true });
+            await writeFile(target, content, { mode: 0o400 });
+          }
+          return await runSkillScript(root, safePath, args ?? []);
+        } finally {
+          await rm(root, { recursive: true, force: true });
+        }
+      },
     );
   }
   if (allowed.has('skill_update_draft')) {
