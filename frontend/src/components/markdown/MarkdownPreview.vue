@@ -549,7 +549,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
   --md-border: var(--border-light);
   width: 100%;
   color: var(--md-fg);
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.8;
 
   &.accent-yellow {
@@ -583,7 +583,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
   }
 
   &.compact {
-    font-size: 12.5px;
+    font-size: 13px;
     line-height: 1.7;
   }
 
@@ -809,14 +809,14 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
           color: var(--md-on-primary);
           padding: 3px 9px;
           border-radius: 999px;
-          font-size: 11px;
+          font-size: 12px;
           font-weight: 700;
           letter-spacing: 0.4px;
           text-transform: uppercase;
           box-shadow: 0 1px 6px var(--md-primary-ring);
         }
         .md-code-stats {
-          font-size: 11px;
+          font-size: 12px;
           color: var(--color-text-tertiary);
           white-space: nowrap;
         }
@@ -835,7 +835,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
           color: var(--md-primary-active);
           border-radius: 8px;
           padding: 5px 10px;
-          font-size: 11px;
+          font-size: 12px;
           font-weight: 600;
           cursor: pointer;
           transition: all 0.15s;
@@ -866,7 +866,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
           color: #6b7280;
           padding: 16px 10px;
           font-family: 'SFMono-Regular', Menlo, monospace;
-          font-size: 12px;
+          font-size: 13px;
           line-height: 1.75;
           text-align: right;
           border-right: 1px solid #2c313c;
@@ -880,7 +880,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
           padding: 16px 18px;
           overflow-x: auto;
           background: transparent;
-          font-size: 12.8px;
+          font-size: 13px;
           line-height: 1.75;
           color: #abb2bf;
           &::-webkit-scrollbar {
@@ -929,7 +929,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
           color: var(--md-primary-active);
           border-radius: 8px;
           padding: 4px 8px;
-          font-size: 11px;
+          font-size: 12px;
           cursor: pointer;
           &:hover {
             background: var(--md-primary);
@@ -943,7 +943,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
       .md-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 12.5px;
+        font-size: 13px;
         background: var(--md-surface);
         th,
         td {
@@ -1104,7 +1104,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
         background: var(--surface-subtle-bg);
         padding: 8px;
         border-radius: 8px;
-        font-size: 11px;
+        font-size: 12px;
         margin-top: 8px;
       }
     }
@@ -1121,7 +1121,7 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
 
   .md-stream-hint {
     margin-top: 10px;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--md-primary-active);
     background: var(--md-primary-muted);
     border: 1px solid var(--md-primary-border);
@@ -1236,12 +1236,12 @@ const hasVega = computed(() => vegaCodes.value.length > 0);
 
 @media (max-width: 768px) {
   .markdown-renderer {
-    font-size: 12.5px;
+    font-size: 13px;
     .markdown-content :deep(.md-code-block) {
       .md-code-header {
         padding: 8px 10px;
         .md-lang-tag {
-          font-size: 10px;
+          font-size: 12px;
         }
         .md-code-stats {
           display: none;

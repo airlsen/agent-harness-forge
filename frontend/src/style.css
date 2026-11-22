@@ -291,7 +291,7 @@ textarea::-webkit-scrollbar-corner {
   align-items: center;
   gap: 5px;
   padding: 3px 7px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
   border-radius: 5px;
   line-height: 1.6;
@@ -392,7 +392,7 @@ textarea::-webkit-scrollbar-corner {
   font-size: 12px;
 }
 .eyebrow {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 2px;
   color: var(--color-text-secondary);
   font-weight: 600;
@@ -414,7 +414,7 @@ textarea::-webkit-scrollbar-corner {
   color: var(--accent);
 }
 .brand > small {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 1.8px;
   color: var(--color-text-secondary);
@@ -476,7 +476,7 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-brand-active);
 }
 .nav-count {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-left: auto;
   border: 1px solid var(--color-brand-subtle);
@@ -502,7 +502,7 @@ textarea::-webkit-scrollbar-corner {
   gap: 8px;
   min-width: 0;
   flex: 1;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   padding: 10px 12px;
   white-space: nowrap;
@@ -595,7 +595,7 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
 }
 .chat-title .tag {
-  font-size: 10px;
+  font-size: 12px;
   padding-block: 1px;
 }
 .chat-subbar-actions {
@@ -634,7 +634,7 @@ textarea::-webkit-scrollbar-corner {
   box-shadow: 0 4px 18px #d3a1810a;
 }
 .welcome-content .eyebrow {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 1.6px;
   color: var(--color-text-secondary);
   margin-bottom: 15px;
@@ -688,7 +688,7 @@ textarea::-webkit-scrollbar-corner {
 }
 .suggestion-grid strong {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
   letter-spacing: -0.2px;
@@ -696,7 +696,7 @@ textarea::-webkit-scrollbar-corner {
 }
 .suggestion-grid > button > span:not(.suggestion-icon) {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-top: 6px;
   line-height: 1.7;
@@ -722,14 +722,14 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
 }
 .connect-model-prompt strong {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
   display: block;
 }
 .connect-model-prompt div > span {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-top: 4px;
   line-height: 1.7;
@@ -739,7 +739,7 @@ textarea::-webkit-scrollbar-corner {
   align-items: center;
   gap: 5px;
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: 12px;
   margin-left: auto;
   white-space: nowrap;
 }
@@ -806,7 +806,7 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
   border-radius: 6px;
   padding: 5px 8px;
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
   min-height: 28px;
 }
@@ -829,7 +829,7 @@ textarea::-webkit-scrollbar-corner {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   overflow: hidden;
   white-space: nowrap;
@@ -864,7 +864,7 @@ textarea::-webkit-scrollbar-corner {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   background: var(--surface-shell);
   border-radius: 6px;
@@ -884,7 +884,7 @@ textarea::-webkit-scrollbar-corner {
   margin: 10px auto 0;
   gap: 15px;
   padding: 0 2px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   line-height: 1.7;
 }
@@ -910,7 +910,7 @@ textarea::-webkit-scrollbar-corner {
   z-index: 70;
 }
 .popover-label {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   padding: 9px 9px 12px;
 }
@@ -940,7 +940,7 @@ textarea::-webkit-scrollbar-corner {
   font-weight: 500;
 }
 .scenario-popover > button div > span {
-  font-size: 10px;
+  font-size: 12px;
   display: block;
   margin-top: 3px;
   line-height: 1.7;
@@ -957,7 +957,7 @@ textarea::-webkit-scrollbar-corner {
   border-top: 1px solid var(--surface-shell);
   padding: 12px 10px 5px;
   margin-top: 6px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .attachment-chips {
@@ -974,7 +974,7 @@ textarea::-webkit-scrollbar-corner {
   background: var(--surface-subtle-bg);
   border-radius: 5px;
   padding: 4px 5px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .attachment-chips button {
@@ -1007,7 +1007,7 @@ textarea::-webkit-scrollbar-corner {
   align-items: center;
   justify-content: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   border-bottom: 2px solid transparent;
   min-width: 57px;
@@ -1017,7 +1017,7 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
 }
 .context-tabs > button span {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   background: var(--surface-shell);
   border-radius: 3px;
@@ -1029,7 +1029,7 @@ textarea::-webkit-scrollbar-corner {
   flex: 1;
 }
 .panel-eyebrow {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 1.5px;
   color: var(--color-text-secondary);
   margin-bottom: 26px;
@@ -1052,7 +1052,7 @@ textarea::-webkit-scrollbar-corner {
   margin-bottom: 10px;
 }
 .context-content > p {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.9;
   color: var(--color-text-secondary);
 }
@@ -1063,7 +1063,7 @@ textarea::-webkit-scrollbar-corner {
   margin: 18px 0 26px;
 }
 .context-meta > span {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   border: 1px solid var(--surface-shell);
   background: var(--surface-subtle-bg);
@@ -1076,7 +1076,7 @@ textarea::-webkit-scrollbar-corner {
   border-top: 1px solid var(--surface-shell);
 }
 .context-section > h3 {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   font-weight: 500;
   margin-bottom: 18px;
@@ -1085,7 +1085,7 @@ textarea::-webkit-scrollbar-corner {
   gap: 7px;
 }
 .context-section > h3 > span {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .context-tool {
@@ -1105,13 +1105,13 @@ textarea::-webkit-scrollbar-corner {
   border-radius: 7px;
 }
 .context-tool strong {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   font-weight: 500;
   display: block;
 }
 .context-tool small {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   display: block;
   margin-top: 3px;
@@ -1132,7 +1132,7 @@ textarea::-webkit-scrollbar-corner {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .boundary-list svg {
@@ -1150,7 +1150,7 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
 }
 .context-tip > p {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.85;
   color: var(--color-text-secondary);
 }
@@ -1170,13 +1170,13 @@ textarea::-webkit-scrollbar-corner {
 }
 .bundle-info strong {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   font-weight: 500;
 }
 .bundle-info code {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   margin-top: 5px;
   color: var(--color-text-secondary);
 }
@@ -1184,7 +1184,7 @@ textarea::-webkit-scrollbar-corner {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   padding: 15px 21px;
   border-top: 1px solid var(--surface-shell);
@@ -1192,7 +1192,7 @@ textarea::-webkit-scrollbar-corner {
 }
 .context-footer > span {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 1px;
 }
 .panel-scroll {
@@ -1201,7 +1201,7 @@ textarea::-webkit-scrollbar-corner {
   padding: 15px;
 }
 .panel-description {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   line-height: 1.9;
   padding: 1px 3px 17px;
@@ -1229,7 +1229,7 @@ textarea::-webkit-scrollbar-corner {
   font-weight: 500;
 }
 .panel-empty p {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.9;
   color: var(--color-text-secondary);
 }
@@ -1247,7 +1247,7 @@ textarea::-webkit-scrollbar-corner {
   padding: 11px 8px;
 }
 .compact-event summary code {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1256,7 +1256,7 @@ textarea::-webkit-scrollbar-corner {
 .compact-event summary small {
   margin-left: auto;
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: 12px;
 }
 .event-point {
   width: 4px;
@@ -1266,7 +1266,7 @@ textarea::-webkit-scrollbar-corner {
   flex-shrink: 0;
 }
 .compact-event pre {
-  font-size: 10px;
+  font-size: 12px;
   background: var(--surface-subtle-bg);
   padding: 10px;
   margin: 0;
@@ -1298,7 +1298,7 @@ textarea::-webkit-scrollbar-corner {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  font-size: 11px;
+  font-size: 12px;
 }
 .message-avatar.agent {
   background: var(--color-agent-type-bg);
@@ -1311,7 +1311,7 @@ textarea::-webkit-scrollbar-corner {
   padding-top: 1px;
 }
 .message-author {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   font-weight: 550;
   margin-bottom: 13px;
@@ -1320,7 +1320,7 @@ textarea::-webkit-scrollbar-corner {
   gap: 8px;
 }
 .message-author > span {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   font-weight: 400;
 }
@@ -1376,7 +1376,7 @@ textarea::-webkit-scrollbar-corner {
   margin: 6px 0;
 }
 .markdown-body pre {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   background: var(--surface-subtle-bg);
   border: 1px solid var(--surface-shell);
@@ -1393,7 +1393,7 @@ textarea::-webkit-scrollbar-corner {
   color: inherit;
 }
 .markdown-body code {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   background: var(--surface-subtle-bg);
   border: 1px solid var(--border-default);
@@ -1508,7 +1508,7 @@ textarea::-webkit-scrollbar-corner {
   border: none;
   padding: 3px 9px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 .code-body {
@@ -1579,7 +1579,7 @@ textarea::-webkit-scrollbar-corner {
 }
 .diagram-block > .code-head .code-lang,
 .chart-block > .code-head .code-lang {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-text-secondary);
 }
@@ -1621,13 +1621,13 @@ textarea::-webkit-scrollbar-corner {
 .diagram-pending {
   margin: 0;
   padding: 14px 16px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .diagram-error {
   margin: 0;
   padding: 8px 16px 12px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-brand-active);
   background: var(--surface-subtle-bg);
 }
@@ -1640,7 +1640,7 @@ textarea::-webkit-scrollbar-corner {
 }
 .message-partial {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .stream-cursor {
@@ -1655,7 +1655,7 @@ textarea::-webkit-scrollbar-corner {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin: 28px 0;
 }
@@ -1689,7 +1689,7 @@ textarea::-webkit-scrollbar-corner {
   border: none;
   background: none;
   font: inherit;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--color-text-secondary);
   cursor: pointer;
   text-align: left;
@@ -1749,7 +1749,7 @@ textarea::-webkit-scrollbar-corner {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-bottom: 7px;
 }
@@ -1776,7 +1776,7 @@ textarea::-webkit-scrollbar-corner {
   transform: rotate(90deg);
 }
 .step-thinking-text {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.8;
   color: var(--color-text-secondary);
   white-space: pre-wrap;
@@ -1793,7 +1793,7 @@ textarea::-webkit-scrollbar-corner {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--color-text-secondary);
   padding: 0;
   background: none;
@@ -1817,7 +1817,7 @@ textarea::-webkit-scrollbar-corner {
   gap: 6px;
 }
 .tool-call-row {
-  font-size: 11px;
+  font-size: 13px;
 }
 .tool-call-row summary {
   display: flex;
@@ -1837,7 +1837,7 @@ textarea::-webkit-scrollbar-corner {
 }
 .tool-call-row .tool-arg {
   font-family: monospace;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1845,7 +1845,7 @@ textarea::-webkit-scrollbar-corner {
   min-width: 0;
 }
 .tool-call-row .tool-state {
-  font-size: 10px;
+  font-size: 12px;
 }
 .tool-call-row summary > svg:last-child {
   margin-left: auto;
@@ -1878,14 +1878,14 @@ textarea::-webkit-scrollbar-corner {
 }
 .tool-call-details label {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   margin: 8px 0 4px;
   color: var(--color-text-tertiary);
 }
 .tool-call-details pre {
   background: var(--surface-subtle-bg);
   border: 1px solid var(--surface-shell);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   line-height: 1.8;
   padding: 10px 11px;
@@ -1900,7 +1900,7 @@ textarea::-webkit-scrollbar-corner {
   margin: 0 0 6px;
 }
 .turn-empty {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-tertiary);
 }
 .approval-card {
@@ -1933,7 +1933,7 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
 }
 .approval-heading p {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-top: 4px;
   line-height: 1.7;
@@ -1954,11 +1954,11 @@ textarea::-webkit-scrollbar-corner {
   align-items: center;
   justify-content: space-between;
   font-family: monospace;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .approval-card pre {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   padding: 10px 12px;
   max-height: 200px;
@@ -1971,7 +1971,7 @@ textarea::-webkit-scrollbar-corner {
   margin: 0;
   padding: 0 12px 10px;
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: 12px;
 }
 .approval-actions {
   display: flex;
@@ -1980,12 +1980,12 @@ textarea::-webkit-scrollbar-corner {
   margin-top: 12px;
 }
 .approval-actions > small {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-right: auto;
 }
 .approval-actions .button {
-  font-size: 10px;
+  font-size: 12px;
   min-height: 30px;
   padding: 6px 10px;
 }
@@ -2019,7 +2019,7 @@ textarea::-webkit-scrollbar-corner {
 }
 .page-heading .eyebrow {
   margin-bottom: 10px;
-  font-size: 10px;
+  font-size: 12px;
 }
 .heading-count {
   display: inline-flex;
@@ -2027,7 +2027,7 @@ textarea::-webkit-scrollbar-corner {
   justify-content: center;
   min-width: 25px;
   height: 23px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   background: var(--surface-shell);
   border: 1px solid var(--surface-shell);
@@ -2054,7 +2054,7 @@ textarea::-webkit-scrollbar-corner {
   z-index: 1;
 }
 .scenario-feature .tag {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 1px;
   background: var(--color-brand-subtle);
   color: var(--color-text-secondary);
@@ -2072,7 +2072,7 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
 }
 .scenario-feature p {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.9;
   color: var(--color-text-secondary);
   margin: 12px 0 19px;
@@ -2082,7 +2082,7 @@ textarea::-webkit-scrollbar-corner {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .scenario-feature-art {
@@ -2158,7 +2158,7 @@ textarea::-webkit-scrollbar-corner {
 }
 .collection-tabs > button > span {
   font-family: monospace;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   background: var(--surface-subtle-bg);
   border-radius: 4px;
@@ -2187,7 +2187,7 @@ textarea::-webkit-scrollbar-corner {
   background: transparent;
   min-height: 33px;
   padding: 6px 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .search-field input::placeholder {
@@ -2249,13 +2249,13 @@ textarea::-webkit-scrollbar-corner {
   align-items: center;
   gap: 7px;
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: 12px;
   margin-left: auto;
   padding: 6px 0 6px 7px;
   white-space: nowrap;
 }
 .page-note {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.9;
   color: var(--color-text-secondary);
   display: flex;
@@ -2305,19 +2305,19 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
 }
 .tools-list h2 code {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 400;
   color: var(--color-text-secondary);
 }
 .tools-list p {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.9;
   color: var(--color-text-secondary);
   margin-top: 7px;
 }
 .tools-list .tag {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 12px;
 }
 .tools-list .scene-icon {
   height: 39px;
@@ -2369,14 +2369,14 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
 }
 .settings-card-heading p {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.8;
   color: var(--color-text-secondary);
   margin-top: 5px;
 }
 .settings-card-heading > .tag {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 12px;
   align-self: flex-start;
   white-space: normal;
 }
@@ -2390,7 +2390,7 @@ textarea::-webkit-scrollbar-corner {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 12px;
   padding: 8px 10px;
   color: var(--color-text-secondary);
   border: 1px solid var(--surface-shell);
@@ -2409,7 +2409,7 @@ textarea::-webkit-scrollbar-corner {
 }
 /* 用 :where() 把治理页表单元素样式的优先级降到 0，避免覆盖 antd 的类样式（仅对原生控件兜底）。 */
 :where(.governance-form label) {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-top: 21px;
 }
@@ -2420,7 +2420,7 @@ textarea::-webkit-scrollbar-corner {
   border-color: var(--input-border);
 }
 .field-hint {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.9;
   color: var(--color-text-secondary);
   margin: 8px 0 4px;
@@ -2429,7 +2429,7 @@ textarea::-webkit-scrollbar-corner {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-success-text);
   margin-left: 9px;
 }
@@ -2437,7 +2437,7 @@ textarea::-webkit-scrollbar-corner {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 10px !important;
+  font-size: 12px !important;
   font-weight: 400;
   margin-top: 12px !important;
   color: var(--color-text-secondary) !important;
@@ -2452,7 +2452,7 @@ textarea::-webkit-scrollbar-corner {
   align-items: center;
   gap: 8px;
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.9;
   padding-top: 35px;
 }
@@ -2468,11 +2468,11 @@ textarea::-webkit-scrollbar-corner {
   align-items: center;
   gap: 8px;
   padding: 13px 12px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .advanced-settings summary > span {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .advanced-settings summary > svg {
@@ -2483,7 +2483,7 @@ textarea::-webkit-scrollbar-corner {
   padding: 0 12px 17px;
 }
 .advanced-settings label {
-  font-size: 10px;
+  font-size: 12px;
   margin-top: 10px;
 }
 .model-form-actions {
@@ -2499,7 +2499,7 @@ textarea::-webkit-scrollbar-corner {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .settings-aside {
@@ -2519,7 +2519,7 @@ textarea::-webkit-scrollbar-corner {
   font-weight: 550;
 }
 .connection-test > p {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.95;
   color: var(--color-text-secondary);
   margin: 15px 0 20px;
@@ -2534,17 +2534,17 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
 }
 .connection-test-idle > span {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   text-align: center;
   line-height: 1.8;
 }
 .connection-test > .button {
-  font-size: 11px;
+  font-size: 12px;
 }
 .connection-test > small {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   line-height: 1.9;
   text-align: center;
@@ -2565,18 +2565,18 @@ textarea::-webkit-scrollbar-corner {
 }
 .connection-test-result strong {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   margin: 9px 0;
 }
 .connection-test-result p {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.8;
   overflow-wrap: anywhere;
 }
 .connection-test-result > span {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   opacity: 0.75;
   margin-top: 11px;
 }
@@ -2590,7 +2590,7 @@ textarea::-webkit-scrollbar-corner {
   margin-top: 14px;
 }
 .model-explanation p {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 2;
   color: var(--color-text-secondary);
   margin: 13px 0 22px;
@@ -2605,7 +2605,7 @@ textarea::-webkit-scrollbar-corner {
   gap: 7px;
 }
 .mini-flow > span {
-  font-size: 10px;
+  font-size: 12px;
   border: 1px solid var(--color-brand-subtle);
   background: var(--surface-subtle-bg);
   border-radius: 4px;
@@ -2624,7 +2624,7 @@ textarea::-webkit-scrollbar-corner {
   border-radius: 7px;
   padding: 13px 16px;
   color: var(--color-text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.9;
   margin-bottom: 24px;
 }
@@ -2633,7 +2633,7 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
 }
 .section-description {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.9;
   color: var(--color-text-secondary);
   margin: 12px 0 23px;
@@ -2652,7 +2652,7 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
 }
 .switch-setting p {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   line-height: 1.9;
   margin-top: 7px;
@@ -2705,13 +2705,13 @@ textarea::-webkit-scrollbar-corner {
 }
 .tool-checkbox strong {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
 }
 .tool-checkbox small {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 400;
   color: var(--color-text-secondary);
   margin-top: 5px;
@@ -2721,7 +2721,7 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
 }
 .tool-checkbox > .tag {
-  font-size: 10px;
+  font-size: 12px;
 }
 .enforced-policy {
   display: flex;
@@ -2735,14 +2735,14 @@ textarea::-webkit-scrollbar-corner {
   color: var(--color-text-secondary);
 }
 .enforced-policy strong {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   font-weight: 500;
   display: block;
   margin-bottom: 5px;
 }
 .enforced-policy p {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.9;
   color: var(--color-text-secondary);
 }
@@ -2759,7 +2759,7 @@ textarea::-webkit-scrollbar-corner {
   border-top: 1px solid var(--surface-shell);
 }
 .settings-footer > span {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .deployment-card dl {
@@ -2772,7 +2772,7 @@ textarea::-webkit-scrollbar-corner {
   gap: 12px;
   border-top: 1px solid var(--surface-shell);
   padding: 12px 0;
-  font-size: 10px;
+  font-size: 12px;
 }
 .deployment-card dt {
   color: var(--color-text-secondary);
@@ -2781,7 +2781,7 @@ textarea::-webkit-scrollbar-corner {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin: 0;
 }
@@ -2797,7 +2797,7 @@ textarea::-webkit-scrollbar-corner {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
 }
@@ -2805,7 +2805,7 @@ textarea::-webkit-scrollbar-corner {
   margin: 17px 0;
   padding-left: 15px;
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 2;
 }
 .deployment-boundaries li {
@@ -2813,7 +2813,7 @@ textarea::-webkit-scrollbar-corner {
   margin-bottom: 9px;
 }
 .deployment-boundaries > p {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   border-top: 1px solid var(--color-brand-subtle);
   line-height: 1.9;
@@ -2842,12 +2842,12 @@ textarea::-webkit-scrollbar-corner {
 }
 .form-alert strong {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   margin-bottom: 5px;
 }
 .form-alert p {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.9;
 }
 /* Audit */
@@ -2864,7 +2864,7 @@ textarea::-webkit-scrollbar-corner {
   background: var(--surface-card);
 }
 .audit-metrics > article > span {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .audit-metrics strong {
@@ -2876,13 +2876,13 @@ textarea::-webkit-scrollbar-corner {
   margin-top: 11px;
 }
 .audit-metrics strong small {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   font-weight: 400;
   margin-left: 7px;
 }
 .audit-metrics p {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-top: 7px;
 }
@@ -2904,7 +2904,7 @@ textarea::-webkit-scrollbar-corner {
   width: 125px;
   min-height: 35px;
   padding: 7px 9px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   border-color: var(--border-default);
 }
@@ -2946,12 +2946,12 @@ table td > strong {
 }
 table td > small {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-top: 6px;
 }
 table td > .tag {
-  font-size: 10px;
+  font-size: 12px;
   padding: 1px 4px;
   margin-left: 6px;
 }
@@ -2988,7 +2988,7 @@ table td > .tag {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin: 0 0 23px;
 }
@@ -3013,19 +3013,19 @@ table td > .tag {
 }
 .snapshot-bar div > span {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .snapshot-bar code {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-info-text);
   margin-top: 5px;
   overflow-wrap: anywhere;
 }
 .snapshot-bar > span {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .trajectory-card {
@@ -3044,7 +3044,7 @@ table td > .tag {
   gap: 22px;
 }
 .trajectory-toolbar .collection-tabs > button {
-  font-size: 11px;
+  font-size: 12px;
   padding-bottom: 17px;
 }
 .trajectory-toolbar .search-field {
@@ -3062,7 +3062,7 @@ table td > .tag {
   list-style: none;
 }
 .trajectory-seq {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   font-family: monospace;
   min-width: 25px;
@@ -3088,18 +3088,18 @@ table td > .tag {
   color: var(--color-agent-type-text);
 }
 .trajectory-event summary > code {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-info-text);
 }
 .trajectory-source {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   border: 1px solid var(--border-default);
   padding: 2px 5px;
   border-radius: 4px;
 }
 .trajectory-event summary > time {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-info-text);
   margin-left: auto;
 }
@@ -3109,7 +3109,7 @@ table td > .tag {
 .trajectory-event pre {
   background: var(--surface-subtle-bg);
   color: var(--color-info-text);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.9;
   padding: 18px;
   margin: 0 20px 18px 62px;
@@ -3158,13 +3158,13 @@ table td > .tag {
   font-weight: 550;
 }
 .drawer > header p {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-top: 10px;
   line-height: 1.9;
 }
 .drawer .eyebrow {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 1.5px;
   color: var(--color-text-secondary);
 }
@@ -3213,7 +3213,7 @@ table td > .tag {
   margin-top: 0;
 }
 .form-section-title > span {
-  font-size: 10px;
+  font-size: 12px;
   font-family: monospace;
   color: var(--color-text-secondary);
   border: 1px solid var(--border-default);
@@ -3251,17 +3251,17 @@ table td > .tag {
   gap: 15px;
   padding: 15px 0;
   border-bottom: 1px solid var(--surface-shell);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .static-form-row strong {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   color: var(--color-text-secondary);
 }
 .static-form-row small {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-top: 4px;
 }
@@ -3276,7 +3276,7 @@ table td > .tag {
   color: var(--color-text-secondary);
 }
 .editor-safety p {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.9;
   color: var(--color-text-secondary);
 }
@@ -3348,7 +3348,7 @@ table td > .tag {
   overflow-wrap: anywhere;
 }
 .file-preview > header p {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-info-text);
   margin-top: 8px;
 }
@@ -3375,17 +3375,17 @@ table td > .tag {
   font-weight: 500;
 }
 .version-entry > div > span {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-info-text);
 }
 .version-entry p {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.8;
   color: var(--color-info-text);
   margin-top: 13px;
 }
 .version-entry > code {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   margin-top: 12px;
   display: block;
@@ -3396,11 +3396,11 @@ table td > .tag {
   padding-top: 12px;
 }
 .version-entry summary {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-info-text);
 }
 .version-entry pre {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.8;
   color: var(--color-info-text);
   max-height: 350px;
@@ -3442,7 +3442,7 @@ table td > .tag {
   margin: auto;
 }
 .login-intro > .eyebrow {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   letter-spacing: 1.6px;
 }
@@ -3500,7 +3500,7 @@ table td > .tag {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 10px;
+  font-size: 12px;
   border: 1px solid var(--border-default);
   padding: 14px 16px;
   border-radius: 11px;
@@ -3533,14 +3533,14 @@ table td > .tag {
   display: flex;
   justify-content: space-between;
   gap: 15px;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.8px;
   color: var(--color-text-secondary);
   white-space: nowrap;
   margin-top: 30px;
 }
 .login-story-footer > span {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.5px;
   color: var(--color-text-secondary);
 }
@@ -3557,7 +3557,7 @@ table td > .tag {
   max-width: 350px;
 }
 .login-form > .tag {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 1px;
   margin-bottom: 22px;
   color: var(--color-text-secondary);
@@ -3588,11 +3588,11 @@ table td > .tag {
   justify-content: center;
   gap: 5px;
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: 12px;
   margin-top: 17px;
 }
 .login-footnote {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 2;
   color: var(--color-text-secondary);
   margin-top: 38px;
@@ -3606,7 +3606,7 @@ table td > .tag {
   left: 0;
   width: 100%;
   text-align: center;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 /* Responsive */
@@ -3656,7 +3656,7 @@ table td > .tag {
     font-size: 12px;
   }
   .suggestion-grid > button > span:not(.suggestion-icon) {
-    font-size: 10px;
+    font-size: 12px;
   }
   .page-content {
     padding: 40px 45px;
@@ -3681,7 +3681,7 @@ table td > .tag {
     gap: 8px;
   }
   .brand > small {
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: 1px;
   }
   .workspace-selector {
@@ -3689,7 +3689,7 @@ table td > .tag {
     gap: 8px;
   }
   .workspace-label {
-    font-size: 10px;
+    font-size: 12px;
   }
   .context-panel {
     width: 263px;
@@ -3701,11 +3701,11 @@ table td > .tag {
     padding-inline: 13px;
   }
   .context-footer {
-    font-size: 10px;
+    font-size: 12px;
     padding-inline: 18px;
   }
   .context-footer > span {
-    font-size: 10px;
+    font-size: 12px;
   }
   .chat-scroll {
     padding-inline: 27px;
@@ -3724,10 +3724,10 @@ table td > .tag {
     min-height: 125px;
   }
   .suggestion-grid strong {
-    font-size: 10px;
+    font-size: 12px;
   }
   .suggestion-grid > button > span:not(.suggestion-icon) {
-    font-size: 10px;
+    font-size: 12px;
   }
   .suggestion-arrow {
     right: 10px;
@@ -3738,10 +3738,10 @@ table td > .tag {
     gap: 9px;
   }
   .connect-model-prompt strong {
-    font-size: 10px;
+    font-size: 12px;
   }
   .connect-model-prompt div > span {
-    font-size: 10px;
+    font-size: 12px;
   }
   .page-content {
     padding: 30px 28px;
@@ -3771,17 +3771,17 @@ table td > .tag {
     font-size: 21px;
   }
   .scenario-feature p {
-    font-size: 10px;
+    font-size: 12px;
   }
   .model-caption {
     max-width: 130px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .settings-section-heading h2 {
     font-size: 13px;
   }
   .advanced-settings summary > span {
-    font-size: 10px;
+    font-size: 12px;
   }
   .login-story {
     padding: 35px 38px;
@@ -3817,10 +3817,10 @@ table td > .tag {
     font-size: 35px;
   }
   .suggestion-grid strong {
-    font-size: 11px;
+    font-size: 12px;
   }
   .suggestion-grid > button > span:not(.suggestion-icon) {
-    font-size: 10px;
+    font-size: 12px;
   }
   .suggestion-grid > button {
     padding: 18px 15px;
@@ -3840,7 +3840,7 @@ table td > .tag {
     gap: 18px;
   }
   .collection-tabs > button {
-    font-size: 11px;
+    font-size: 12px;
   }
   .collection-toolbar {
     gap: 15px;
@@ -3871,7 +3871,7 @@ table td > .tag {
     font-size: 41px;
   }
   .login-intro > p {
-    font-size: 11px;
+    font-size: 12px;
   }
   .orbit-two {
     width: 270px;
@@ -3905,7 +3905,7 @@ table td > .tag {
   }
   .illustration-node {
     padding: 11px 12px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .login-form-area {
     padding-inline: 35px;
@@ -3998,7 +3998,7 @@ table td > .tag {
     font-size: 35px;
   }
   .login-intro > p {
-    font-size: 10px;
+    font-size: 12px;
   }
   .login-form-area {
     padding-inline: 30px;
@@ -4007,7 +4007,7 @@ table td > .tag {
     font-size: 26px;
   }
   .login-story-footer {
-    font-size: 10px;
+    font-size: 12px;
   }
   .login-illustration {
     height: 230px;
@@ -4031,7 +4031,7 @@ table td > .tag {
   }
   .illustration-node {
     padding: 10px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .illustration-node svg {
     height: 18px;
@@ -4098,14 +4098,14 @@ table td > .tag {
   .profile-avatar {
     height: 26px;
     width: 26px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .app-topbar {
     padding-inline: 15px;
     gap: 8px;
   }
   .breadcrumbs {
-    font-size: 10px;
+    font-size: 12px;
     gap: 9px;
   }
   .breadcrumbs > span {
@@ -4121,7 +4121,7 @@ table td > .tag {
     display: none;
   }
   .runtime-indicator {
-    font-size: 10px;
+    font-size: 12px;
     gap: 4px;
   }
   .runtime-indicator > .dot {
@@ -4134,18 +4134,18 @@ table td > .tag {
   .topbar-avatar {
     height: 23px;
     width: 23px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .chat-subbar {
     padding-inline: 15px;
     height: 49px;
   }
   .chat-title strong {
-    font-size: 11px;
+    font-size: 12px;
     max-width: 170px;
   }
   .chat-title .tag {
-    font-size: 10px;
+    font-size: 12px;
   }
   .chat-subbar-actions {
     gap: 3px;
@@ -4174,7 +4174,7 @@ table td > .tag {
     width: 24px;
   }
   .welcome-content .eyebrow {
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: 0.8px;
     margin-bottom: 12px;
   }
@@ -4184,7 +4184,7 @@ table td > .tag {
     letter-spacing: -0.5px;
   }
   .welcome-content > p {
-    font-size: 10px;
+    font-size: 12px;
     margin: 14px 0 24px;
     line-height: 1.9;
   }
@@ -4212,11 +4212,11 @@ table td > .tag {
     width: 18px;
   }
   .suggestion-grid strong {
-    font-size: 10px;
+    font-size: 12px;
     grid-column: 2;
   }
   .suggestion-grid > button > span:not(.suggestion-icon) {
-    font-size: 10px;
+    font-size: 12px;
     grid-column: 2;
     margin: 0;
   }
@@ -4237,15 +4237,15 @@ table td > .tag {
     width: 16px;
   }
   .connect-model-prompt strong {
-    font-size: 10px;
+    font-size: 12px;
   }
   .connect-model-prompt div > span {
-    font-size: 10px;
+    font-size: 12px;
     max-width: 190px;
     line-height: 1.8;
   }
   .connect-model-prompt > a {
-    font-size: 10px;
+    font-size: 12px;
     margin-left: 25px;
   }
   .composer-area {
@@ -4255,7 +4255,7 @@ table td > .tag {
     border-radius: 10px;
   }
   .composer-box > textarea {
-    font-size: 11px;
+    font-size: 12px;
     padding: 13px 13px 5px;
     height: 80px;
     min-height: 73px;
@@ -4268,7 +4268,7 @@ table td > .tag {
     gap: 5px;
   }
   .scenario-trigger {
-    font-size: 10px;
+    font-size: 12px;
     gap: 4px;
     padding: 4px 6px;
     min-height: 25px;
@@ -4301,12 +4301,12 @@ table td > .tag {
     height: 16px;
   }
   .composer-footnote {
-    font-size: 10px;
+    font-size: 12px;
     gap: 7px;
     margin-top: 8px;
   }
   .composer-footnote > span:first-child {
-    font-size: 10px;
+    font-size: 12px;
   }
   .composer-footnote svg {
     width: 9px;
@@ -4322,7 +4322,7 @@ table td > .tag {
     height: 48px;
   }
   .context-tabs > button {
-    font-size: 10px;
+    font-size: 12px;
   }
   .context-content {
     padding: 21px 18px;
@@ -4331,19 +4331,19 @@ table td > .tag {
     font-size: 17px;
   }
   .context-content > p {
-    font-size: 11px;
+    font-size: 12px;
   }
   .context-section > h3 {
-    font-size: 11px;
+    font-size: 12px;
   }
   .context-tool strong {
-    font-size: 10px;
+    font-size: 12px;
   }
   .context-tool small {
-    font-size: 10px;
+    font-size: 12px;
   }
   .boundary-list li {
-    font-size: 10px;
+    font-size: 12px;
   }
   .scenario-popover {
     min-width: 260px;
@@ -4351,10 +4351,10 @@ table td > .tag {
     left: 0;
   }
   .scenario-popover > button strong {
-    font-size: 11px;
+    font-size: 12px;
   }
   .scenario-popover > button div > span {
-    font-size: 10px;
+    font-size: 12px;
     max-width: 185px;
   }
   .message-row {
@@ -4364,18 +4364,18 @@ table td > .tag {
   .message-avatar {
     width: 24px;
     height: 24px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .message-avatar svg {
     width: 15px;
     height: 15px;
   }
   .message-author {
-    font-size: 10px;
+    font-size: 12px;
     margin-bottom: 9px;
   }
   .message-author > span {
-    font-size: 10px;
+    font-size: 12px;
   }
   .user-message-text {
     font-size: 12px;
@@ -4387,11 +4387,11 @@ table td > .tag {
     line-height: 1.95;
   }
   .markdown-body pre {
-    font-size: 10px;
+    font-size: 12px;
     padding: 12px;
   }
   .markdown-body code {
-    font-size: 10px;
+    font-size: 12px;
   }
   .message-row.tool {
     margin-left: 32px;
@@ -4401,23 +4401,23 @@ table td > .tag {
     gap: 8px;
   }
   .tool-card summary strong {
-    font-size: 10px;
+    font-size: 12px;
   }
   .tool-card-details pre {
-    font-size: 10px;
+    font-size: 12px;
   }
   .active-tool {
     margin-left: 32px;
     padding: 11px;
-    font-size: 10px;
+    font-size: 12px;
     gap: 7px;
     flex-wrap: wrap;
   }
   .active-tool strong {
-    font-size: 10px;
+    font-size: 12px;
   }
   .agent-working {
-    font-size: 10px;
+    font-size: 12px;
     gap: 9px;
   }
   .approval-card {
@@ -4434,13 +4434,13 @@ table td > .tag {
     width: 17px;
   }
   .approval-heading strong {
-    font-size: 10px;
+    font-size: 12px;
   }
   .approval-heading p {
-    font-size: 10px;
+    font-size: 12px;
   }
   .approval-heading > .tag {
-    font-size: 10px;
+    font-size: 12px;
   }
   .approval-actions {
     flex-wrap: wrap;
@@ -4448,10 +4448,10 @@ table td > .tag {
   .approval-actions > small {
     width: 100%;
     margin-bottom: 3px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .approval-actions > .button {
-    font-size: 10px;
+    font-size: 12px;
     padding: 5px 8px;
   }
   .page-content {
@@ -4470,22 +4470,22 @@ table td > .tag {
     letter-spacing: -0.5px;
   }
   .page-heading p {
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.9;
     margin-top: 9px;
   }
   .page-heading .eyebrow {
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: 1.5px;
     margin-bottom: 9px;
   }
   .page-heading > .button {
-    font-size: 10px;
+    font-size: 12px;
     padding: 7px 10px;
     min-height: 32px;
   }
   .page-heading > .tag {
-    font-size: 10px;
+    font-size: 12px;
   }
   .scenario-feature {
     padding: 20px;
@@ -4502,14 +4502,14 @@ table td > .tag {
     margin-top: 3px;
   }
   .scenario-feature p {
-    font-size: 10px;
+    font-size: 12px;
     line-height: 2;
   }
   .scenario-feature a {
-    font-size: 10px;
+    font-size: 12px;
   }
   .scenario-feature .tag {
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: 0.7px;
   }
   .collection-toolbar {
@@ -4523,12 +4523,12 @@ table td > .tag {
     overflow: auto;
   }
   .collection-tabs > button {
-    font-size: 10px;
+    font-size: 12px;
     gap: 5px;
     padding: 9px 0 10px;
   }
   .collection-tabs > button > span {
-    font-size: 10px;
+    font-size: 12px;
     min-width: 15px;
     padding-inline: 3px;
   }
@@ -4537,7 +4537,7 @@ table td > .tag {
     min-height: 33px;
   }
   .search-field > input:not([type='checkbox']) {
-    font-size: 10px;
+    font-size: 12px;
     min-height: 31px;
   }
   .scene-icon {
@@ -4545,10 +4545,10 @@ table td > .tag {
     height: 41px;
   }
   .scenario-use {
-    font-size: 10px;
+    font-size: 12px;
   }
   .page-note {
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.95;
     margin-top: 20px;
   }
@@ -4566,14 +4566,14 @@ table td > .tag {
     font-size: 12px;
   }
   .tools-list h2 code {
-    font-size: 10px;
+    font-size: 12px;
   }
   .tools-list > article > div {
     flex: 1;
     min-width: 0;
   }
   .tools-list p {
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.9;
   }
   .tools-list .scene-icon {
@@ -4587,7 +4587,7 @@ table td > .tag {
   }
   .tools-list .tag {
     margin-left: 43px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .settings-layout {
     gap: 17px;
@@ -4604,7 +4604,7 @@ table td > .tag {
     font-size: 14px;
   }
   .settings-card-heading p {
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.9;
   }
   .settings-card-heading > .scene-icon {
@@ -4624,7 +4624,7 @@ table td > .tag {
     margin: 18px 0 22px;
   }
   .provider-presets > button {
-    font-size: 10px;
+    font-size: 12px;
     padding: 7px 8px;
     gap: 4px;
   }
@@ -4637,48 +4637,48 @@ table td > .tag {
     gap: 0;
   }
   :where(.governance-form label) {
-    font-size: 10px;
+    font-size: 12px;
   }
   :where(.governance-form input),
   :where(.governance-form select) {
-    font-size: 11px;
+    font-size: 12px;
   }
   .field-hint {
-    font-size: 10px;
+    font-size: 12px;
   }
   .inline-checkbox {
-    font-size: 10px !important;
+    font-size: 12px !important;
     line-height: 1.9;
   }
   .field-callout {
     padding-top: 14px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .advanced-settings > summary {
-    font-size: 10px;
+    font-size: 12px;
     gap: 7px;
     flex-wrap: wrap;
   }
   .advanced-settings summary > span {
-    font-size: 10px;
+    font-size: 12px;
   }
   .advanced-settings summary > svg {
     width: 12px;
   }
   .advanced-settings label {
-    font-size: 10px;
+    font-size: 12px;
   }
   .model-form-actions {
     gap: 15px;
     flex-wrap: wrap;
   }
   .model-form-actions > .button {
-    font-size: 11px;
+    font-size: 12px;
     width: 100%;
     min-height: 36px;
   }
   .model-form-actions > span {
-    font-size: 10px;
+    font-size: 12px;
   }
   .settings-aside {
     grid-template-columns: 1fr;
@@ -4692,16 +4692,16 @@ table td > .tag {
     height: 17px;
   }
   .connection-test > p {
-    font-size: 10px;
+    font-size: 12px;
   }
   .connection-test > .button {
-    font-size: 10px;
+    font-size: 12px;
   }
   .connection-test > small {
-    font-size: 10px;
+    font-size: 12px;
   }
   .policy-intro {
-    font-size: 10px;
+    font-size: 12px;
     padding: 12px;
     align-items: flex-start;
   }
@@ -4711,29 +4711,29 @@ table td > .tag {
     margin-top: 2px;
   }
   .section-description {
-    font-size: 10px;
+    font-size: 12px;
   }
   .switch-setting {
     gap: 15px;
   }
   .switch-setting strong {
-    font-size: 11px;
+    font-size: 12px;
   }
   .switch-setting p {
-    font-size: 10px;
+    font-size: 12px;
   }
   .tool-checkbox {
     padding: 12px 9px;
     gap: 8px;
   }
   .tool-checkbox strong {
-    font-size: 10px;
+    font-size: 12px;
   }
   .tool-checkbox small {
-    font-size: 10px;
+    font-size: 12px;
   }
   .tool-checkbox > .tag {
-    font-size: 10px;
+    font-size: 12px;
   }
   .tool-checkbox-icon svg {
     width: 16px;
@@ -4745,10 +4745,10 @@ table td > .tag {
     gap: 12px;
   }
   .settings-footer > .button {
-    font-size: 11px;
+    font-size: 12px;
   }
   .settings-footer > span {
-    font-size: 10px;
+    font-size: 12px;
   }
   .audit-metrics {
     gap: 9px;
@@ -4758,7 +4758,7 @@ table td > .tag {
     padding: 15px 10px;
   }
   .audit-metrics > article > span {
-    font-size: 10px;
+    font-size: 12px;
   }
   .audit-metrics strong {
     font-size: 20px;
@@ -4766,12 +4766,12 @@ table td > .tag {
     overflow-wrap: anywhere;
   }
   .audit-metrics strong small {
-    font-size: 10px;
+    font-size: 12px;
     display: block;
     margin: 1px 0 0;
   }
   .audit-metrics p {
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.8;
   }
   .audit-table-card {
@@ -4786,23 +4786,23 @@ table td > .tag {
     width: 100%;
   }
   .audit-toolbar > select {
-    font-size: 10px;
+    font-size: 12px;
     min-height: 32px;
     width: 100%;
   }
   table th {
-    font-size: 10px;
+    font-size: 12px;
     padding: 12px 14px;
   }
   table td {
-    font-size: 10px;
+    font-size: 12px;
     padding: 16px 14px;
   }
   .trajectory-page .page-heading h1 {
     font-size: 19px;
   }
   .trajectory-page .page-heading > .button {
-    font-size: 10px;
+    font-size: 12px;
   }
   .snapshot-bar {
     padding: 13px;
@@ -4818,14 +4818,14 @@ table td > .tag {
     min-width: 0;
   }
   .snapshot-bar code {
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.7;
   }
   .snapshot-bar div > span {
-    font-size: 10px;
+    font-size: 12px;
   }
   .snapshot-bar > span {
-    font-size: 10px;
+    font-size: 12px;
     margin-left: 26px;
   }
   .trajectory-card {
@@ -4841,7 +4841,7 @@ table td > .tag {
     gap: 20px;
   }
   .trajectory-toolbar .collection-tabs > button {
-    font-size: 10px;
+    font-size: 12px;
     padding: 7px 0 11px;
   }
   .trajectory-toolbar .search-field {
@@ -4854,7 +4854,7 @@ table td > .tag {
     flex-wrap: wrap;
   }
   .trajectory-seq {
-    font-size: 10px;
+    font-size: 12px;
     min-width: 18px;
   }
   .source-mark {
@@ -4866,7 +4866,7 @@ table td > .tag {
     width: 12px;
   }
   .trajectory-event summary > code {
-    font-size: 10px;
+    font-size: 12px;
     max-width: 185px;
     overflow-wrap: anywhere;
   }
@@ -4881,7 +4881,7 @@ table td > .tag {
     width: 12px;
   }
   .trajectory-event pre {
-    font-size: 10px;
+    font-size: 12px;
     padding: 12px;
     margin: 0 12px 14px 28px;
   }
@@ -4896,7 +4896,7 @@ table td > .tag {
     font-size: 21px;
   }
   .drawer > header p {
-    font-size: 10px;
+    font-size: 12px;
   }
   .drawer-body {
     padding: 23px;
@@ -4917,7 +4917,7 @@ table td > .tag {
     font-size: 18px;
   }
   .confirm-modal > p {
-    font-size: 11px;
+    font-size: 12px;
   }
   .file-preview > header {
     padding: 19px;
@@ -4959,25 +4959,25 @@ table td > .tag {
     max-width: 380px;
   }
   .login-form > .tag {
-    font-size: 10px;
+    font-size: 12px;
     margin-bottom: 20px;
   }
   .login-form h2 {
     font-size: 28px;
   }
   .login-form > p {
-    font-size: 11px;
+    font-size: 12px;
     margin-bottom: 29px;
   }
   .login-footnote {
-    font-size: 10px;
+    font-size: 12px;
     margin-top: 29px;
   }
   .login-security {
-    font-size: 10px;
+    font-size: 12px;
   }
   .login-version {
-    font-size: 10px;
+    font-size: 12px;
     bottom: 18px;
   }
 }
@@ -5011,7 +5011,7 @@ table td > .tag {
   font-size: 13px;
 }
 .suggestion-grid > button > span:not(.suggestion-icon) {
-  font-size: 11px;
+  font-size: 12px;
 }
 .composer-box > textarea,
 .user-message-text,
@@ -5022,13 +5022,13 @@ table td > .tag {
   font-size: 12px;
 }
 .connect-model-prompt div > span {
-  font-size: 11px;
+  font-size: 12px;
 }
 .composer-footnote {
-  font-size: 10px;
+  font-size: 12px;
 }
 .composer-footnote > span {
-  font-size: 10px;
+  font-size: 12px;
 }
 .page-heading p {
   font-size: 13px;
@@ -5056,7 +5056,7 @@ table td > .tag {
 .field-hint,
 .connection-test > p,
 .section-description {
-  font-size: 11px;
+  font-size: 12px;
 }
 input::placeholder,
 textarea::placeholder {
@@ -5104,46 +5104,46 @@ textarea::placeholder {
 }
 .login-security,
 .login-footnote {
-  font-size: 11px;
+  font-size: 12px;
 }
 .context-footer > span {
-  font-size: 8px;
+  font-size: 12px;
 }
 .panel-eyebrow,
 .eyebrow,
 .welcome-content .eyebrow {
-  font-size: 9px;
+  font-size: 12px;
 }
 .topbar-actions .dot {
   background: var(--color-success-text);
 }
 .runtime-indicator {
-  font-size: 11px;
+  font-size: 12px;
 }
 .recent-item > a {
   font-size: 12px;
 }
 .sidebar-empty {
-  font-size: 11px;
+  font-size: 12px;
 }
 .policy-intro,
 .tool-checkbox small,
 .switch-setting p {
-  font-size: 11px;
+  font-size: 12px;
 }
 .tool-checkbox strong {
   font-size: 12px;
 }
 .context-tool strong,
 .boundary-list li {
-  font-size: 11px;
+  font-size: 12px;
 }
 .context-tool small {
-  font-size: 10px;
+  font-size: 12px;
 }
 @media (max-width: 650px) {
   .runtime-indicator {
-    font-size: 9px;
+    font-size: 12px;
   }
   .welcome-content > p {
     font-size: 12px;
@@ -5155,17 +5155,17 @@ textarea::placeholder {
     font-size: 12px;
   }
   .suggestion-grid > button > span:not(.suggestion-icon) {
-    font-size: 10px;
+    font-size: 12px;
   }
   .welcome-content .eyebrow {
-    font-size: 8px;
+    font-size: 12px;
     letter-spacing: 0.3px;
   }
   .connect-model-prompt strong {
-    font-size: 11px;
+    font-size: 12px;
   }
   .connect-model-prompt div > span {
-    font-size: 10px;
+    font-size: 12px;
   }
   .composer-box > textarea {
     font-size: 13px;
@@ -5173,7 +5173,7 @@ textarea::placeholder {
   .composer-footnote,
   .composer-footnote > span,
   .composer-footnote > span:first-child {
-    font-size: 9px;
+    font-size: 12px;
   }
   .composer-footnote .separator {
     margin-inline: 2px;
@@ -5182,7 +5182,7 @@ textarea::placeholder {
     gap: 5px;
   }
   .scenario-trigger {
-    font-size: 10px;
+    font-size: 12px;
   }
   .scenario-popover {
     width: 267px;
@@ -5194,10 +5194,10 @@ textarea::placeholder {
     font-size: 12px;
   }
   .scenario-use {
-    font-size: 11px;
+    font-size: 12px;
   }
   .page-heading .eyebrow {
-    font-size: 9px;
+    font-size: 12px;
   }
   .page-content {
     padding-inline: 16px;
@@ -5206,29 +5206,29 @@ textarea::placeholder {
     gap: 16px;
   }
   .collection-tabs > button {
-    font-size: 11px;
+    font-size: 12px;
   }
   .collection-tabs > button > span {
-    font-size: 10px;
+    font-size: 12px;
   }
   .provider-presets > button {
-    font-size: 10px;
+    font-size: 12px;
   }
   .model-form-actions > span {
-    font-size: 10px;
+    font-size: 12px;
   }
   :where(.governance-form label) {
     font-size: 12px;
   }
   .field-hint {
-    font-size: 11px;
+    font-size: 12px;
   }
   .tool-checkbox small,
   .switch-setting p {
-    font-size: 10px;
+    font-size: 12px;
   }
   .section-description {
-    font-size: 11px;
+    font-size: 12px;
   }
   .composer-footnote > span:first-child > svg {
     display: none;
@@ -5238,7 +5238,7 @@ textarea::placeholder {
   }
   .login-footnote,
   .login-security {
-    font-size: 10px;
+    font-size: 12px;
   }
   .profile-row {
     padding: 13px 0;

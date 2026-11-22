@@ -851,7 +851,7 @@ async def main():
                 items = geometry["items"]
                 assert all(item["fontWeight"] >= 600 for item in items)
                 assert all(
-                    item["fontSize"] == ("14px" if width > 700 else "11px")
+                    item["fontSize"] == ("14px" if width > 700 else "12px")
                     for item in items
                 )
                 assert all(item["svgIcon"] and not item["emojiIcon"] for item in items)
