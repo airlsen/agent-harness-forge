@@ -339,20 +339,62 @@ textarea:focus-visible {
   margin-bottom: 3px;
   background: transparent;
 }
+/* 时间分组（今天 / 昨天 / 7 天内 / 更早）：比「最近会话」标题更轻 */
+.enterprise-recent-group + .enterprise-recent-group {
+  margin-top: 12px;
+}
+.enterprise-recent-group-label {
+  margin: 0 0 4px;
+  padding: 0 13px;
+  color: var(--text-subtle);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 20px;
+}
 .enterprise-recent-item > a {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-columns: minmax(0, max-content) auto;
+  justify-content: start;
   align-items: center;
   font-size: 12px;
-  padding: 9px 12px;
+  padding: 9px 12px 9px 13px;
   min-height: 38px;
   border: 1px solid transparent;
   color: var(--text-secondary);
-  gap: 12px;
+  gap: 8px;
 }
-.enterprise-recent-item > a > svg,
-.enterprise-recent-item > a > .dot {
-  justify-self: center;
+.enterprise-recent-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 名字后面的状态点：执行中跳动，执行异常为红点；其他状态不显示 */
+.enterprise-recent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.enterprise-recent-dot.running {
+  background: var(--color-success);
+  animation: pulse 1.5s ease infinite;
+}
+.enterprise-recent-dot.error {
+  background: var(--color-danger);
+}
+.enterprise-recent-all {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 0 4px;
+  padding: 8px 13px;
+  border-radius: 6px;
+  color: var(--text-subtle);
+  font-size: 12px;
+}
+.enterprise-recent-all:hover {
+  background: var(--sidebar-nav-active-bg);
+  color: var(--sidebar-nav-active-text);
 }
 .enterprise-recent-item:hover,
 .enterprise-recent-item.selected {
