@@ -52,6 +52,7 @@ app.get('/v1/runtime', async () => ({
     webSearch: true,
     shell: false,
     fork: false,
+    resume: true,
   },
 }));
 app.post<{
@@ -78,6 +79,32 @@ app.post('/v1/sessions', async (req, reply) => {
     return reply.code(422).send({ message: 'bundle and modelConfig are required' });
   setCodeRoot(body.codeRoot);
   return kernel.createSession(
+    body.bundle,
+    body.userCtx,
+    body.modelConfig,
+    body.codeProjects,
+    body.capabilities,
+  );
+});
+// 以原 id 重新装配执行会话：Runner 重启后由控制面按数据库快照重新下发配置，从磁盘会话日志接续上下文。
+// 日志缺失 404、日志无法恢复 410；会话已在内存中时替换配置，下一轮以新配置重启并接续。
+app.post<{
+  Params: { id: string };
+  Body: {
+    bundle: Bundle;
+    userCtx: UserCtx;
+    modelConfig: RuntimeModel;
+    codeProjects?: string[];
+    codeRoot?: string;
+    capabilities?: unknown;
+  };
+}>('/v1/sessions/:id/restore', async (req, reply) => {
+  const body = req.body;
+  if (!body?.bundle || !body?.modelConfig)
+    return reply.code(422).send({ message: 'bundle and modelConfig are required' });
+  setCodeRoot(body.codeRoot);
+  return kernel.restoreSession(
+    req.params.id,
     body.bundle,
     body.userCtx,
     body.modelConfig,

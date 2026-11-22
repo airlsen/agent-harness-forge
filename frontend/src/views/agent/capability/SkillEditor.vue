@@ -281,7 +281,7 @@ async function saveDocument() {
       change_summary: '手动编辑草稿',
     });
     dirty.value = false;
-    session.value = null; // 手动修改后重新建立携带最新文件的助手上下文
+    // 助手会话保持不变：下一轮发送时服务端发现草稿已变化，会以最新草稿重启并接续同一段对话
     await refreshRevisions().catch((err: Error) =>
       app.toast(`草稿已保存，但历史读取失败：${err.message}`, 'error'),
     );
@@ -332,7 +332,6 @@ async function restore(revision: SkillRevision) {
     dirty.value = false;
     fileDraft.value = null;
     previewRevision.value = null;
-    session.value = null;
     lastChange.value = null;
     app.toast(`已将 r${revision.revision} 恢复为草稿`);
     await refreshRevisions();
@@ -458,7 +457,6 @@ async function writeFile(path: string, content: string, summary: string) {
     });
     fileCache.set(fileKey(detail.currentRevisionId, path), content);
     skill.value = detail;
-    session.value = null; // 重建助手会话，让助手读到最新文件
     app.toast(`已保存 ${path}`);
     await selectFile(path);
     await refreshRevisions().catch(() => undefined);
@@ -490,7 +488,6 @@ async function saveFile() {
     // 保留主文档里尚未保存的修改
     skill.value = dirty.value ? { ...detail, content: skill.value.content } : detail;
     if (fileDraft.value?.path === path && fileDraft.value.content === content) fileDraft.value = null;
-    session.value = null;
     await refreshRevisions().catch(() => undefined);
   } catch (err) {
     saveError.value = (err as Error).message;
@@ -519,7 +516,6 @@ async function requestDeleteFile(path: string) {
   try {
     skill.value = await remove(`/skills/${skill.value.id}/files?path=${encodeURIComponent(path)}`);
     if (fileDraft.value?.path === path) fileDraft.value = null;
-    session.value = null;
     app.toast(`已删除 ${path}`);
     await refreshRevisions().catch(() => undefined);
   } catch (err) {

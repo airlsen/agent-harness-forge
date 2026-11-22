@@ -364,6 +364,29 @@ async def test_known_skill_snapshots_are_sent_as_refs_without_reading_files(env,
 
 
 @pytest.mark.asyncio
+async def test_runner_restart_restores_skills_by_backfilling_full_content(env, tmp_path):  # noqa: F811
+    runner = env["runner"]
+    async with env["sessions"]() as db:
+        skill = await add_skill(db, tmp_path, "周报助手", references=[("glossary.md", "术语表")])
+    service = session_module.SessionService()
+    session = await service.create(env["scenario"]["id"], model_id=env["models"]["chat"]["id"])
+    await turn(service, session["id"], "写周报", capabilities=CapabilityChoice(skillIds=[skill.id]))
+    snapshot = runner.created_caps[0]["skills"][0]["snapshot"]
+
+    # Runner 重启：内存会话与 Skill 缓存都没了。恢复请求先只带引用 → 缺内容 → 补发全文再恢复
+    runner.alive = False
+    runner.known_snapshots.clear()
+    await turn(service, session["id"], "继续")
+    assert runner.missing_requests == [[snapshot]]
+    assert len(runner.restored) == 1
+    restored_caps = runner.restored[0][4]
+    assert restored_caps["skills"][0]["files"] == [{"path": "references/glossary.md", "content": "术语表"}]
+    # 恢复后的这一轮只发引用
+    assert "content" not in runner.caps[-1]["skills"][0]
+    assert runner.caps[-1]["skills"][0]["snapshot"] == snapshot
+
+
+@pytest.mark.asyncio
 async def test_skill_files_are_sent_verbatim_and_oversized_files_are_not_truncated(env, tmp_path):  # noqa: F811
     runner = env["runner"]
     large = "汉" * 50_000  # 150 KB UTF-8：旧实现会按字符截断后下发

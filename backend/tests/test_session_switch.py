@@ -33,6 +33,10 @@ class FakeRunner:
         self.caps: list[dict | None] = []
         self.projects = ["alpha", "beta"]
         self.usage = (1000, 100)
+        # alive=False 模拟 Runner 重启（内存会话丢失）；restore_error 模拟会话日志缺失或损坏
+        self.alive = True
+        self.restore_error: HTTPException | None = None
+        self.restored: list[tuple] = []
         # 模拟 Runner 的 Skill 内容缓存：收到过全文的快照才能只发引用；缺少时记录并按 409 拒绝
         self.known_snapshots: set[str] = set()
         self.missing_requests: list[list[str]] = []
@@ -64,7 +68,17 @@ class FakeRunner:
         }
 
     async def call(self, _method, _path, _body=None):
+        if not self.alive:
+            raise HTTPException(404, "执行会话不存在，Runner 可能已重启")
         return {"exists": True, "busy": False}
+
+    async def restore_session(self, runner_id, bundle, _user, config, code_projects=None, capabilities=None):
+        if self.restore_error:
+            raise self.restore_error
+        self.check_skills(capabilities)
+        self.restored.append((runner_id, bundle, config, code_projects, capabilities))
+        self.alive = True
+        return {"sessionId": runner_id}
 
     async def events(self, runner_id, message, model_config=None, code_projects=None, capabilities=None):
         self.check_skills(capabilities)
@@ -451,3 +465,47 @@ async def test_each_turn_records_its_workspace_changes(env, tmp_path, monkeypatc
     assert kinds.index("workspace_changes") < kinds.index("done")
     detail = await service.detail(session["id"])
     assert any(m.get("meta", {}).get("workspaceChanges") for m in detail["messages"])
+
+
+@pytest.mark.asyncio
+async def test_runner_restart_restores_the_same_execution_session_from_its_log(env):
+    service = session_module.SessionService()
+    runner, chat, reasoner = env["runner"], env["models"]["chat"], env["models"]["reasoner"]
+    session = await service.create(env["scenario"]["id"], model_id=chat["id"])
+    await turn(service, session["id"], "第一轮")
+
+    runner.alive = False  # Runner 进程重启
+    await turn(service, session["id"], "第二轮", model_id=reasoner["id"])
+    # 按原 id 与数据库快照恢复，不新建执行会话；本轮切换后的模型一并下发
+    assert len(runner.created) == 1
+    assert [item[0] for item in runner.restored] == ["runner-1"]
+    runner_id, bundle, config, code, caps = runner.restored[0]
+    async with env["sessions"]() as db:
+        row = await db.get(AgentSession, session["id"])
+        assert bundle == row.bundle_snapshot
+    assert config["model"] == "reasoner-v1"
+    assert code == [] and caps == runner.created_caps[0]
+    assert [item[0] for item in runner.turns] == ["runner-1", "runner-1"]
+    detail = await service.detail(session["id"])
+    assert [m["content"] for m in detail["messages"] if m["role"] == "user"] == ["第一轮", "第二轮"]
+
+    # Runner 仍在：不重复恢复
+    await turn(service, session["id"], "第三轮")
+    assert len(runner.restored) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [404, 410])
+async def test_unrecoverable_runner_log_is_rejected_without_recording_the_turn(env, status):
+    service = session_module.SessionService()
+    runner = env["runner"]
+    session = await service.create(env["scenario"]["id"], model_id=env["models"]["chat"]["id"])
+    await turn(service, session["id"], "第一轮")
+    runner.alive = False
+    runner.restore_error = HTTPException(status, "会话日志不存在，无法接续执行上下文")
+    with pytest.raises(HTTPException) as error:
+        await turn(service, session["id"], "第二轮")
+    assert error.value.status_code == 409
+    assert "执行上下文无法恢复" in error.value.detail and "会话日志不存在" in error.value.detail
+    detail = await service.detail(session["id"])
+    assert [m["content"] for m in detail["messages"] if m["role"] == "user"] == ["第一轮"]

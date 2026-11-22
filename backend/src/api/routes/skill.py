@@ -131,7 +131,9 @@ async def authoring_turn(
 
     async def stream():
         try:
-            async for event in skill_service.run_authoring_turn(skill_id, session_id, payload.message):
+            async for event in skill_service.run_authoring_turn(
+                skill_id, session_id, payload.message, settings.admin_username
+            ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as error:
             yield f"data: {json.dumps({'kind': 'error', 'payload': {'message': str(error) or 'Skill 助手执行失败'}}, ensure_ascii=False)}\n\n"

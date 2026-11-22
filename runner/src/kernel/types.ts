@@ -44,6 +44,8 @@ export interface KernelEvent {
 
 export interface AgentKernel {
   createSession(bundle: Bundle, user: UserCtx): Promise<SessionHandle>;
+  /** 以原会话 id 重新装配：Runner 重启后从持久化会话日志接续（resume），或在内存中替换为新配置 */
+  restoreSession(sessionId: string, bundle: Bundle, user: UserCtx): Promise<SessionHandle>;
   sendTurn(sessionId: string, message: string, opts?: TurnOpts): Promise<void>;
   /** 事件流订阅：Event Bridge 与 audit-exporter 挂这里 */
   onEvent(sessionId: string, listener: (e: KernelEvent) => void): () => void;
