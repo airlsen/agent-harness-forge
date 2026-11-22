@@ -52,6 +52,25 @@ const server = http.createServer(async (req, res) => {
     res.end('test fixture authorization failure');
     return;
   }
+  // 模拟 DeepSeek 思考模式：历史里任何调用过工具的 assistant 消息缺少 reasoning_content 都返回 400
+  if (
+    body.model.includes('deepseek') &&
+    body.messages.some(
+      (message) =>
+        message.role === 'assistant' && message.tool_calls?.length && message.reasoning_content === undefined,
+    )
+  ) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        error: {
+          message: 'The reasoning_content in the thinking mode must be passed back to the API.',
+          type: 'invalid_request_error',
+        },
+      }),
+    );
+    return;
+  }
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   const send = (value) => res.write(`data: ${JSON.stringify(value)}\n\n`);
   if (['MAX_TOKENS', 'TRUNCATED', 'FILTERED'].some((value) => instruction.includes(value))) {
@@ -373,12 +392,12 @@ try {
     }),
   );
   events = await turn('PLAIN');
-  check('reasoning from earlier turns is not replayed as provider history', () => {
+  check('reasoning from earlier turns of the same model is replayed (DSH-consistent)', () => {
     const assistant = requests
       .at(-1)
       .messages.find((message) => message.role === 'assistant' && message.content === '思考后的回答');
     assert.ok(assistant, 'earlier answer remains in history');
-    assert.equal(assistant.reasoning_content, undefined);
+    assert.equal(assistant.reasoning_content, '先分析一下。');
   });
   events = await turn('THINK TIME');
   check('reasoning inside the current tool loop is replayed to the gateway', () => {
@@ -388,6 +407,18 @@ try {
     assert.equal(call?.reasoning_content, '需要先查时间。');
   });
   events = await turn('WRITE');
+  check(
+    'reasoning of an earlier tool-call turn is replayed in the next turn (DeepSeek 400 regression)',
+    () => {
+      const call = requests
+        .at(-1)
+        .messages.find(
+          (message) =>
+            message.role === 'assistant' && message.tool_calls?.[0]?.function.name === 'current_time',
+        );
+      assert.equal(call?.reasoning_content, '需要先查时间。');
+    },
+  );
   check('fragmented tool arguments; file writes run directly without approval', () => {
     assert.equal(
       events.some((event) => event.kind === 'approval_required'),
@@ -617,7 +648,11 @@ try {
   });
   events = await turn('HTTP_ERROR');
   check('gateway HTTP failure produces error, not success', () => {
-    assert.ok(events.some((event) => event.kind === 'error'));
+    const error = events.find((event) => event.kind === 'error');
+    assert.ok(error);
+    assert.match(error.payload.message, /HTTP 401/);
+    assert.match(error.payload.message, /凭据/);
+    assert.match(error.payload.message, /test fixture authorization failure/);
     assert.equal(events.at(-1)?.payload.status, 'error');
   });
   for (const [instruction, expected] of [
@@ -654,11 +689,47 @@ try {
     const request = requests[beforeSwitch];
     assert.equal(request.model, 'switched-fixture-model');
     assert.ok(request.messages.some((message) => message.role === 'user' && message.content === 'THINK'));
+    // 上一个模型的思考不交给新模型
+    const earlier = request.messages.find(
+      (message) => message.role === 'assistant' && message.content === '思考后的回答',
+    );
+    assert.equal(earlier?.reasoning_content, undefined);
   });
   events = await turn('PLAIN');
   check('the switched model stays in effect for later turns', () =>
     assert.equal(requests.at(-1).model, 'switched-fixture-model'),
   );
+  const beforeDeepSeek = requests.length;
+  events = await turn('PLAIN', { ...switched, model: 'deepseek-fixture-flash' });
+  check('switching to DeepSeek pads reasoning_content so tool history from other models is accepted', () => {
+    assert.equal(
+      events.some((event) => event.kind === 'error'),
+      false,
+      JSON.stringify(events.find((event) => event.kind === 'error')),
+    );
+    const request = requests[beforeDeepSeek];
+    assert.equal(request.model, 'deepseek-fixture-flash');
+    const assistants = request.messages.filter((message) => message.role === 'assistant');
+    assert.ok(assistants.some((message) => message.tool_calls?.length));
+    assert.ok(assistants.every((message) => typeof message.reasoning_content === 'string'));
+    // 其他模型的思考内容不带过来，只补空字符串
+    assert.equal(assistants.find((message) => message.content === '思考后的回答')?.reasoning_content, '');
+  });
+  events = await turn('THINK TIME');
+  events = await turn('PLAIN');
+  check('DeepSeek keeps working after its own tool-call turn (no 400 on the next message)', () => {
+    assert.equal(
+      events.some((event) => event.kind === 'error'),
+      false,
+    );
+    const call = requests
+      .at(-1)
+      .messages.findLast(
+        (message) =>
+          message.role === 'assistant' && message.tool_calls?.[0]?.function.name === 'current_time',
+      );
+    assert.equal(call?.reasoning_content, '需要先查时间。');
+  });
   const running = kernel.sendTurn(id, 'HOLD');
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {

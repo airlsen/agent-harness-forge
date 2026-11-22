@@ -211,17 +211,29 @@ const visibleText = (content) =>
         .join('\n')
     : String(content ?? '');
 
-function messages(options) {
+/** 同一模型产出的历史思考内容：取自持久化的 reasoning 块（与 DSH 一致），旧会话回退到 replayState。 */
+function ownReasoning(m, model) {
+  if (m.source?.model !== model) return '';
+  const blocks = Array.isArray(m.content) ? m.content.filter((b) => b.type === 'reasoning') : [];
+  if (blocks.length) return blocks.map((b) => String(b.text ?? '')).join('');
+  return m.source?.replayState?.response?.reasoningContent ?? '';
+}
+/** DeepSeek 思考模式：按模型名或网关地址识别（企业网关地址不一定含 deepseek.com）。 */
+const isDeepSeek = (model, baseUrl) =>
+  /deepseek/i.test(String(model ?? '')) || /deepseek/i.test(String(baseUrl ?? ''));
+
+/**
+ * 历史回放与 DSH（dsh-llm-pi-ai 的 OpenAI 兼容序列化）一致：
+ * - 同一模型产出的每条 assistant 消息都原样带回 reasoning_content，不区分轮次、不区分是否调用过工具；
+ *   DeepSeek 规定调用过工具的轮次在之后每次请求都必须带回，否则返回 400。
+ * - 会话内切换模型后，上一个模型的思考不交给新模型；
+ * - 目标是 DeepSeek 时，没有思考内容的 assistant 消息补空字符串（旧会话、切换模型前的历史都能继续）。
+ */
+function messages(options, baseUrl) {
   const out = options.system ? [{ role: 'system', content: options.system }] : [];
   const history = options.messages ?? [];
-  // 思考内容只回放本轮（最后一条用户消息之后，即工具调用循环内）的部分：
-  // 推理模型要求工具循环内带回 reasoning_content，但跨轮回放既浪费上下文，
-  // 也会把上一个模型的思考交给会话内切换后的新模型。
-  let currentTurn = 0;
-  history.forEach((m, index) => {
-    if (m.role === 'user') currentTurn = index;
-  });
-  for (const [index, m] of history.entries()) {
+  const deepseek = isDeepSeek(options.model, baseUrl);
+  for (const m of history) {
     const text = visibleText(m.content);
     if (m.role === 'tool')
       out.push({ role: 'tool', content: text, tool_call_id: m.toolCallId ?? m.source?.callId });
@@ -229,17 +241,44 @@ function messages(options) {
       const calls = (m.content ?? [])
         .filter((b) => b.type === 'tool-call')
         .map((b) => ({ id: b.id, type: 'function', function: { name: b.name, arguments: b.arguments } }));
-      const reasoning = index > currentTurn ? m.source?.replayState?.response?.reasoningContent : undefined;
+      const reasoning = ownReasoning(m, options.model);
       out.push({
         role: 'assistant',
         content: text || null,
         ...(calls.length ? { tool_calls: calls } : {}),
-        ...(reasoning ? { reasoning_content: reasoning } : {}),
+        ...(reasoning || deepseek ? { reasoning_content: reasoning } : {}),
       });
     } else if (['system', 'user', 'developer'].includes(m.role) && text)
       out.push({ role: m.role === 'developer' ? 'system' : m.role, content: text });
   }
   return out;
+}
+/**
+ * 网关非 2xx：带上服务端给出的原因（如 DeepSeek 的 invalid_request_error 说明），只有鉴权失败才提示检查凭据。
+ * 原因截断到 300 字并去掉换行，配置的密钥若被回显则替换掉；读取失败时只报状态码。
+ */
+async function gatewayFailure(response, apiKey) {
+  const status = response.status;
+  let detail = '';
+  try {
+    const raw = await response.text();
+    try {
+      const body = JSON.parse(raw);
+      detail =
+        body?.error?.message ?? body?.message ?? (typeof body?.error === 'string' ? body.error : '') ?? '';
+    } catch {
+      detail = raw;
+    }
+  } catch {
+    detail = '';
+  }
+  detail = String(detail);
+  if (apiKey) detail = detail.split(apiKey).join('***');
+  detail = detail.replace(/\s+/g, ' ').trim().slice(0, 300);
+  if (status === 401 || status === 403)
+    return `模型网关拒绝访问（HTTP ${status}），请检查模型中心的凭据${detail ? `：${detail}` : ''}`;
+  if (status === 404) return `模型网关 HTTP 404，请检查模型中心的地址和模型名${detail ? `：${detail}` : ''}`;
+  return `模型网关 HTTP ${status}${detail ? `：${detail}` : '，请稍后重试或联系管理员检查模型服务'}`;
 }
 class GatewayAdapter extends LlmAdapter {
   constructor(config) {
@@ -272,7 +311,7 @@ class GatewayAdapter extends LlmAdapter {
     const schemas = (options.tools ?? []).filter((t) => permitted.has(t.name));
     const payload = {
       model: options.model,
-      messages: messages(options),
+      messages: messages(options, this.config.baseUrl),
       stream: true,
       stream_options: { include_usage: true },
       max_tokens: options.maxTokens ?? this.config.maxOutputTokens ?? 4096,
@@ -296,8 +335,7 @@ class GatewayAdapter extends LlmAdapter {
         signal,
         redirect: 'error',
       });
-      if (!response.ok)
-        throw new Error(`模型网关 HTTP ${response.status}，请检查模型中心的地址、模型名和凭据`);
+      if (!response.ok) throw new Error(await gatewayFailure(response, this.config.apiKey));
       if (!response.body) throw new Error('模型网关未返回响应流');
       let usage,
         finish = 'stop',
