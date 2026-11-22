@@ -2738,7 +2738,7 @@ onBeforeUnmount(() => {
 .composer-box {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--border-default);
+  border: 2px solid var(--border-default);
   border-radius: 12px;
   background: var(--surface-content);
   transition:
