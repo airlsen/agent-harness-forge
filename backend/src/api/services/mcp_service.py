@@ -18,6 +18,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import space_service
 from ..core.security import decrypt, encrypt
 from ..models.registry import McpServer
 
@@ -407,17 +408,27 @@ async def _probe_stdio(command: str, args: list[str], env: dict[str, str]) -> tu
                 await process.wait()
 
 
-async def import_servers(db: AsyncSession, raw: dict) -> list[dict]:
+async def import_servers(db: AsyncSession, raw: dict, space_id: int | None = None) -> list[dict]:
+    """导入（新建或覆盖同名）MCP 服务。新服务放在当前空间；名称全局唯一，
+    同名服务在其他空间（当前空间看不到）时拒绝，避免覆盖别的空间的配置。"""
     entries = parse_import_config(raw)
     names = [entry["name"] for entry in entries]
     existing = (await db.scalars(select(McpServer).where(McpServer.name.in_(names)))).all()
     by_name = {row.name: row for row in existing}
+    hidden = [row for row in existing if not space_service.is_visible(row.space_id, space_id)]
+    if hidden:
+        spaces = await space_service.space_map(db)
+        labels = "、".join(
+            f"「{row.name}」（{spaces.get(row.space_id, {}).get('name', '其他')}空间）" for row in hidden
+        )
+        raise HTTPException(409, f"MCP 服务名称已被其他空间使用，请换一个名称：{labels}")
+    target = space_service.target_space(space_id)
     result = []
     for entry in entries:
         row = by_name.get(entry["name"])
         server_url = "stdio://local-process" if entry["transport"] == "stdio" else entry["url"]
         if row is None:
-            row = McpServer(name=entry["name"], url=server_url, transport=entry["transport"])
+            row = McpServer(name=entry["name"], url=server_url, transport=entry["transport"], space_id=target)
             db.add(row)
         row.url = server_url
         row.transport = entry["transport"]
@@ -507,6 +518,8 @@ def public_view(row: McpServer) -> dict:
     return {
         "id": row.id,
         "name": row.name,
+        # 所属空间（公共空间 = 1）
+        "spaceId": row.space_id or 1,
         "url": row.url,
         "transport": row.transport,
         "enabled": row.enabled,

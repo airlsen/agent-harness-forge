@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import space_service
 from ..core import security
 from ..models.platform import ModelConnection, PlatformSetting
 from ..models.registry import McpServer
@@ -480,33 +481,78 @@ async def _runtime_web(db: AsyncSession, source: str) -> dict | None:
 # —— 选项与校验 ——
 
 
-async def options(db: AsyncSession) -> dict:
-    """聊天与场景编辑器的能力选项：只列可用的（已发布 Skill、可运行的 MCP、联网状态），不含任何凭据。"""
-    skills = await published_skills(db)
+async def options(db: AsyncSession, space_id: int | None = None) -> dict:
+    """聊天与场景编辑器的能力选项：只列可用的（已发布 Skill、可运行的 MCP、联网状态），不含任何凭据。
+
+    传入当前空间时只列本空间和公共空间的 Skill 与 MCP。
+    """
+    skills = {
+        key: value
+        for key, value in (await published_skills(db)).items()
+        if space_service.is_visible(value[0].space_id, space_id)
+    }
     offline = (
         await db.scalars(
             select(Skill)
-            .where(Skill.published_revision_id.is_(None), Skill.next_published_version > 1)
+            .where(
+                Skill.published_revision_id.is_(None),
+                Skill.next_published_version > 1,
+                space_service.visible_filter(Skill.space_id, space_id),
+            )
             .order_by(Skill.name, Skill.id)
         )
     ).all()
-    servers = (await db.scalars(select(McpServer).order_by(McpServer.name))).all()
+    servers = (
+        await db.scalars(
+            select(McpServer)
+            .where(space_service.visible_filter(McpServer.space_id, space_id))
+            .order_by(McpServer.name)
+        )
+    ).all()
     web = await web_settings_view(db)
+    spaces = await space_service.space_map(db)
+
+    def public(space):
+        return (space or space_service.PUBLIC_SPACE_ID) == space_service.PUBLIC_SPACE_ID
+
     return {
         "skills": [
-            {**skill_ref(skill, revision), "tags": skill.tags or []} for skill, revision in skills.values()
+            {
+                **skill_ref(skill, revision),
+                "tags": skill.tags or [],
+                "spaceId": skill.space_id or space_service.PUBLIC_SPACE_ID,
+                "isPublic": public(skill.space_id),
+            }
+            for skill, revision in skills.values()
         ],
         # 已下线的 Skill 只给名称：场景与聊天里仍勾着它时显示「已下线」，不能再新选
         "offlineSkills": [{"id": row.id, "title": row.name} for row in offline],
-        "mcpServers": [mcp_option(row) for row in servers if mcp_runnable(row)],
+        "mcpServers": [
+            {
+                **mcp_option(row),
+                "spaceId": row.space_id or space_service.PUBLIC_SPACE_ID,
+                "isPublic": public(row.space_id),
+            }
+            for row in servers
+            if mcp_runnable(row)
+        ],
+        "space": spaces.get(space_id) if space_id is not None else None,
         "web": {key: web[key] for key in ("available", "searchReady", "fetchEnabled", "reason", "provider")},
     }
 
 
-async def validate_choice(db: AsyncSession, choice: CapabilityChoice, previous: dict | None = None) -> dict:
-    """新加入的 Skill 必须已发布、MCP 必须可运行；已在选择中的不重复检查（执行前会再次解析）。"""
+async def validate_choice(
+    db: AsyncSession, choice: CapabilityChoice, previous: dict | None = None, space_id: int | None = None
+) -> dict:
+    """新加入的 Skill 必须已发布、MCP 必须可运行；已在选择中的不重复检查（执行前会再次解析）。
+
+    传入会话所在空间时，新加入的 Skill / MCP 还必须属于这个空间或公共空间。
+    """
     previous = previous or EMPTY_SELECTION
     added_skills = [item for item in choice.skillIds if item not in previous["skillIds"]]
+    added_mcp = [item for item in choice.mcpServerIds if item not in previous["mcpServerIds"]]
+    if space_id is not None and (added_skills or added_mcp):
+        await space_service.ensure_caps_visible(db, space_id, added_skills, added_mcp, [])
     if added_skills:
         available = await published_skills(db, added_skills)
         missing = [str(item) for item in added_skills if item not in available]

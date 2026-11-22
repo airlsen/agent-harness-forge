@@ -22,6 +22,7 @@ from .routes import (
     auth,
     model,
     skill,
+    space,
 )
 from .models.platform import PlatformSetting
 from .services.scenario_service import seed_scenarios
@@ -105,6 +106,7 @@ app.include_router(capability.router, prefix="/api/capabilities", tags=["capabil
 app.include_router(registry.router, prefix="/api/registry", tags=["registry"])
 app.include_router(model.router, prefix="/api/models", tags=["models"])
 app.include_router(skill.router, prefix="/api/skills", tags=["skills"])
+app.include_router(space.router, prefix="/api/spaces", tags=["spaces"])
 app.include_router(governance.router, prefix="/api/governance", tags=["governance"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 

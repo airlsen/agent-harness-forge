@@ -20,7 +20,8 @@ from .scenario_assembler import Bundle, apply_current_policy
 from .plugin_service import ensure_bindings_available
 from . import capability_service
 from .capability_service import CapabilityChoice, selection_of
-from .settings_service import environment_ref, get_policy, resolve_session_connection
+from .settings_service import environment_ref, resolve_session_connection
+from .space_service import PUBLIC_SPACE_ID, effective_policy, is_visible, space_brief, space_map
 
 log = logging.getLogger(__name__)
 
@@ -147,9 +148,16 @@ class SessionService:
             raise HTTPException(404, "会话不存在")
         return row
 
-    def view(self, row, segment: AgentSessionModel | None = None, last_active: datetime | None = None):
+    def view(
+        self,
+        row,
+        segment: AgentSessionModel | None = None,
+        last_active: datetime | None = None,
+        spaces: dict | None = None,
+    ):
         meta = row.bundle_snapshot.get("meta", {})
         current = model_ref(segment, row)
+        space_key = getattr(row, "space_id", None) or PUBLIC_SPACE_ID
         return {
             "id": row.id,
             "sessionId": row.id,
@@ -174,6 +182,9 @@ class SessionService:
             "codeProjects": list(row.code_projects or []),
             # 聊天临时选择的扩展能力（与场景绑定取并集）
             "capabilities": selection_of(row.capability_selection),
+            # 所属空间：打开别的空间的会话链接时前端自动切换；「我的会话 · 全部空间」显示空间列
+            "spaceId": space_key,
+            "spaceInfo": (spaces or {}).get(space_key) or space_brief(None),
             "scenarioCapabilities": {
                 "skills": [
                     {key: ref.get(key) for key in ("id", "title", "name", "version")}
@@ -184,9 +195,14 @@ class SessionService:
             },
         }
 
-    async def create(self, scenario_id, *, model_id=None, is_test=False):
+    async def create(self, scenario_id, *, model_id=None, is_test=False, space_id=None):
         async with SessionFactory() as db:
             scenario = await scenario_service.row(db, scenario_id)
+            # 会话所在空间：发起时的当前空间（场景须在本空间或公共）；否则跟随场景所在空间
+            scenario_space = scenario.space_id or PUBLIC_SPACE_ID
+            session_space = (
+                space_id if space_id is not None and is_visible(scenario_space, space_id) else scenario_space
+            )
             # 模型属于本次会话，与场景无关：显式选择优先，否则使用平台默认模型。
             config = await resolve_session_connection(db, model_id)
             chosen_version = (
@@ -197,7 +213,8 @@ class SessionService:
             version = await scenario_service.version(db, scenario, chosen_version)
             payload = ScenarioPayload.model_validate(version.bundle_json["payload"])
             stored_bundle = version.bundle_json.get("bundle")
-            current_policy = await get_policy(db)
+            # 执行策略按会话所在空间收紧：空间关闭的基础工具从 allowedTools 中去掉（只能收紧）
+            current_policy = await effective_policy(db, session_space)
             if stored_bundle:
                 # Scenario versions freeze requested capabilities; current governance remains a ceiling
                 # for new sessions. Existing sessions keep their already-materialized Bundle snapshot.
@@ -224,6 +241,7 @@ class SessionService:
             )
             row = AgentSession(
                 tenant_id="sandbox",
+                space_id=session_space,
                 user_id=settings.admin_username,
                 scenario_id=scenario.id,
                 scenario_version=chosen_version,
@@ -238,13 +256,16 @@ class SessionService:
             db.add(segment)
             await db.commit()
             await db.refresh(row)
-            return self.view(row, segment)
+            return self.view(row, segment, spaces=await space_map(db))
 
-    async def list(self, *, include_tests=False, include_archived=False):
+    async def list(self, *, include_tests=False, include_archived=False, space_id=None):
+        """会话列表；传入 space_id 时只列这个空间的会话（会话不显示公共空间的）。"""
         async with SessionFactory() as db:
             query = select(AgentSession).order_by(AgentSession.id.desc()).limit(150)
             if not include_archived:
                 query = query.where(AgentSession.status != "archived")
+            if space_id is not None:
+                query = query.where(AgentSession.space_id == space_id)
             rows = (await db.scalars(query)).all()
             ids = [row.id for row in rows]
             segments = await current_segments(db, ids)
@@ -256,8 +277,9 @@ class SessionService:
                     .group_by(SessionMessage.session_id)
                 )
                 last_active = dict(latest.all())
+            spaces = await space_map(db)
             return [
-                self.view(row, segments.get(row.id), last_active.get(row.id))
+                self.view(row, segments.get(row.id), last_active.get(row.id), spaces)
                 for row in rows
                 if include_tests or not row.bundle_snapshot.get("meta", {}).get("isTest")
             ]
@@ -304,7 +326,7 @@ class SessionService:
                 .limit(1)
             )
             return {
-                **self.view(row, segments[-1] if segments else None),
+                **self.view(row, segments[-1] if segments else None, spaces=await space_map(db)),
                 "bundle": row.bundle_snapshot,
                 "lastEventSeq": cursor,
                 "models": [segment_view(segment) for segment in segments],
@@ -390,8 +412,9 @@ class SessionService:
                 code = list(row.code_projects or [])
                 # 本轮随消息提交的临时能力（不传沿用已保存的选择）
                 if capabilities is not None:
+                    # 聊天中加入的 Skill / MCP 只能来自会话所在空间和公共空间
                     row.capability_selection = await capability_service.validate_choice(
-                        db, capabilities, selection_of(row.capability_selection)
+                        db, capabilities, selection_of(row.capability_selection), space_id=row.space_id
                     )
                 selection = selection_of(row.capability_selection)
                 runtime_caps, active_caps = await capability_service.resolve(

@@ -2315,6 +2315,8 @@ textarea::-webkit-scrollbar-corner {
 }
 .audit-toolbar > .search-field {
   width: 280px;
+  /* 搜索在左，状态与空间筛选靠右并排 */
+  margin-right: auto;
 }
 .audit-toolbar > select {
   width: 125px;

@@ -483,7 +483,14 @@ async def test_unpublished_skill_stops_everywhere_and_can_be_deleted_after_remov
         await db.commit()
         usage = await skill_service.skill_usage(db, skill_id)
         assert usage == [
-            {"id": scenario["id"], "name": "周报场景", "space": "personal", "published": True, "draft": True}
+            {
+                "id": scenario["id"],
+                "name": "周报场景",
+                "space": "personal",
+                "spaceId": 1,
+                "published": True,
+                "draft": True,
+            }
         ]
 
     service = session_module.SessionService()

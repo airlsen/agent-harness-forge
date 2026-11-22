@@ -11,6 +11,8 @@ export type PluginTool = {
 export type PluginPackage = {
   id: number;
   package: string;
+  /** 所属空间（公共空间 = 1）；同一插件的所有版本一致 */
+  spaceId?: number;
   displayName: string;
   description: string;
   version: string;
@@ -41,6 +43,8 @@ export type PluginPackage = {
 
 export type PluginDetail = {
   id: string;
+  /** 所属空间（公共空间 = 1） */
+  spaceId?: number;
   releases: PluginPackage[];
   scenarios: { id: number; name: string; status: string; version: string; artifactHash: string }[];
   recentCalls: {

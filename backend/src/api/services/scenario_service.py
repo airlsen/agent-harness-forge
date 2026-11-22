@@ -8,6 +8,7 @@ from ..models.platform import PlatformSetting
 from ..schemas.agent_scenario import ScenarioPayload
 from .scenario_assembler import Bundle, ScenarioAssembler
 from .settings_service import get_policy, environment_ref
+from .space_service import PUBLIC_SPACE_ID, attach_space, space_map, target_space, visible_filter
 
 
 def iso(dt):
@@ -41,7 +42,7 @@ class ScenarioService:
             raise HTTPException(409, "场景缺少有效版本")
         return value
 
-    async def view(self, db, row):
+    async def view(self, db, row, spaces=None):
         version = await self.version(db, row)
         published = None
         if row.published_version:
@@ -51,7 +52,7 @@ class ScenarioService:
                 else await self.version(db, row, row.published_version)
             )
         tested = await db.get(PlatformSetting, f"scenario-test:{row.id}:{row.current_version}")
-        return {
+        view = {
             "id": row.id,
             "space": row.space,
             "owner_id": row.owner_id,
@@ -71,23 +72,36 @@ class ScenarioService:
             "updatedAt": iso(row.updated_at),
             "publishedAt": iso(row.published_at) if row.published_version else None,
         }
+        # 所属空间：前端显示「公共」标记、分组与「移动到…」
+        return attach_space(view, row.space_id, spaces if spaces is not None else await space_map(db))
 
-    async def list_mine(self, db, owner_id="admin"):
+    async def list_mine(self, db, owner_id="admin", space_id=None):
+        """场景列表：传入当前空间时只列本空间 + 公共空间的场景。"""
         rows = (
             await db.scalars(
                 select(AgentScenario)
-                .where(AgentScenario.status != "deleted")
+                .where(AgentScenario.status != "deleted", visible_filter(AgentScenario.space_id, space_id))
                 .order_by(AgentScenario.space, AgentScenario.id)
             )
         ).all()
-        return [await self.view(db, row) for row in rows]
+        spaces = await space_map(db)
+        return [await self.view(db, row, spaces) for row in rows]
 
-    async def create(self, db: AsyncSession, owner_id: str, payload: ScenarioPayload, *, official=False):
+    async def create(
+        self, db: AsyncSession, owner_id: str, payload: ScenarioPayload, *, official=False, space_id=None
+    ):
         payload = ScenarioPayload.model_validate(payload.model_dump())
+        # 官方模板放在公共空间；其他场景放在当前空间（未指定时为公共）
+        space = PUBLIC_SPACE_ID if official else target_space(space_id)
         bundle = await self.assembler.compile(
-            db, payload, tenant_policy=await get_policy(db), rendered_prompt=payload.prompt_template
+            db,
+            payload,
+            tenant_policy=await get_policy(db),
+            rendered_prompt=payload.prompt_template,
+            space_id=space,
         )
         row = AgentScenario(
+            space_id=space,
             tenant_id="sandbox",
             owner_id=owner_id,
             space="official" if official else "personal",
@@ -119,7 +133,11 @@ class ScenarioService:
         self.editable(row, owner_id)
         clean = ScenarioPayload.model_validate(payload.model_dump())
         bundle = await self.assembler.compile(
-            db, clean, tenant_policy=await get_policy(db), rendered_prompt=clean.prompt_template
+            db,
+            clean,
+            tenant_policy=await get_policy(db),
+            rendered_prompt=clean.prompt_template,
+            space_id=row.space_id or PUBLIC_SPACE_ID,
         )
         row.name, row.description, row.icon = clean.name.strip(), clean.description, clean.icon
         row.current_version += 1

@@ -19,20 +19,22 @@ from ..services.plugin_service import (
 )
 from ..services.runner_client import runner_client
 from ..models.registry import PluginRegistry
-from ..services.settings_service import TOOLS, list_connections
+from ..services.settings_service import list_connections
+from ..services.space_service import current_space, tool_states, visible_filter
 from ..utils.response import ResponseUtil
 
 router = APIRouter()
 
 
 @router.get("/tools")
-async def tools():
-    return ResponseUtil.ok({"items": TOOLS})
+async def tools(db: AsyncSession = Depends(get_session), space_id: int | None = Depends(current_space)):
+    # 基础工具清单 + 当前空间是否开启、执行策略是否允许（available = 两者都满足）
+    return ResponseUtil.ok({"items": await tool_states(db, space_id)})
 
 
 @router.get("/plugins")
-async def plugins(db: AsyncSession = Depends(get_session)):
-    items, submissions = await list_plugins(db)
+async def plugins(db: AsyncSession = Depends(get_session), space_id: int | None = Depends(current_space)):
+    items, submissions = await list_plugins(db, space_id)
     return ResponseUtil.ok(
         {"items": items, "submissions": submissions, "usageCounts": await plugin_usage_counts(db)}
     )
@@ -98,13 +100,18 @@ async def plugin_default(release_id: int, db: AsyncSession = Depends(get_session
 
 
 @router.post("/plugins/upload")
-async def plugin_upload(filename: str, request: Request, db: AsyncSession = Depends(get_session)):
+async def plugin_upload(
+    filename: str,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+    space_id: int | None = Depends(current_space),
+):
     # 原始 ZIP 直传，避免把二进制塞入 JSON/Base64；不会在控制面执行其中代码。
     declared_size = request.headers.get("content-length")
     if declared_size and declared_size.isdigit() and int(declared_size) > MAX_ARCHIVE_BYTES:
         raise HTTPException(413, "插件包超过 5 MB 限制")
     raw = await request.body()
-    return ResponseUtil.ok(await import_archive(db, filename, raw))
+    return ResponseUtil.ok(await import_archive(db, filename, raw, space_id))
 
 
 @router.post("/plugins/{release_id}/review")
@@ -131,14 +138,21 @@ class McpUpdate(BaseModel):
 
 
 @router.get("/mcp-servers")
-async def mcp_servers(db: AsyncSession = Depends(get_session)):
-    rows = (await db.scalars(select(McpServer).order_by(McpServer.name))).all()
+async def mcp_servers(db: AsyncSession = Depends(get_session), space_id: int | None = Depends(current_space)):
+    # 只列当前空间和公共空间的 MCP 服务
+    rows = (
+        await db.scalars(
+            select(McpServer).where(visible_filter(McpServer.space_id, space_id)).order_by(McpServer.name)
+        )
+    ).all()
     return ResponseUtil.ok({"items": [public_view(row) for row in rows], "available": True, "reason": ""})
 
 
 @router.post("/mcp-servers/import")
-async def mcp_import(payload: McpImport, db: AsyncSession = Depends(get_session)):
-    rows = await import_servers(db, payload.config)
+async def mcp_import(
+    payload: McpImport, db: AsyncSession = Depends(get_session), space_id: int | None = Depends(current_space)
+):
+    rows = await import_servers(db, payload.config, space_id)
     return ResponseUtil.ok({"items": [public_view(row) for row in rows]})
 
 

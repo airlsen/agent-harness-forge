@@ -129,6 +129,10 @@ export const usePlatform = defineStore('platform', {
       const result = await api<{ items: Conversation[] }>('/agent/sessions');
       if (this.authenticated && this.user?.username === identity) this.conversations = result.items;
     },
+    /** 基础工具清单（含当前空间是否开启、执行策略是否允许） */
+    async refreshTools() {
+      this.tools = (await api<{ items: Tool[] }>('/registry/tools')).items;
+    },
     async refreshModelOptions() {
       const models = await api<{ items: ModelOption[]; defaultId: number | null }>('/models/options');
       this.modelOptions = models.items;
