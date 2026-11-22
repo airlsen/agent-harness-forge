@@ -371,17 +371,20 @@ onMounted(load);
                   :loading="testingId === model.id"
                   :disabled="!model.id || changingAvailabilityId === model.id || deletingId === model.id"
                   @click="testModel(model)"
-                  >测试连接</a-button
                 >
+                  <template #icon><Icon name="refresh" :size="14" /></template>测试连接
+                </a-button>
                 <a-button
                   type="primary"
                   size="small"
                   :disabled="testingId === model.id || deletingId === model.id"
                   @click="openEditor(model)"
-                  >编辑</a-button
                 >
+                  <template #icon><Icon name="edit" :size="14" /></template>编辑
+                </a-button>
                 <a-dropdown :trigger="['click']" placement="bottomRight">
                   <a-button
+                    type="text"
                     size="small"
                     :aria-label="`更多操作 ${model.name}`"
                     title="更多操作"
