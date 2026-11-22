@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { api, downloadResponse, remove } from '../../api/client';
-import { confirm } from '../../utils/feedback';
+import { api, downloadResponse } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
 import Icon from '../../components/base/ForgeIcon.vue';
 import CatalogCard from '../../components/catalog/CatalogCard.vue';
@@ -12,13 +11,21 @@ import CatalogGrid from '../../components/catalog/CatalogGrid.vue';
 import CatalogSearch from '../../components/catalog/CatalogSearch.vue';
 import type { SkillSummary } from '../../types/skill';
 import { catalogDate, orderManagedSkills } from '../../utils/catalogOrdering';
+import {
+  SKILL_STATE_LABELS,
+  canDeleteSkill,
+  deleteSkill as confirmDeleteSkill,
+  skillState,
+  unpublishSkill as confirmUnpublishSkill,
+} from '../../utils/skillLifecycle';
 
 const skills = ref<SkillSummary[]>([]);
 const app = usePlatform();
 const downloading = ref<number | null>(null);
-const deleting = ref<number | null>(null);
+// 正在下线或删除的技能
+const changing = ref<number | null>(null);
 const query = ref('');
-const status = ref<'all' | 'draft' | 'published'>('all');
+const status = ref<'all' | 'draft' | 'published' | 'offline'>('all');
 const loading = ref(true);
 const error = ref('');
 
@@ -26,18 +33,24 @@ const visibleSkills = computed(() => {
   const keyword = query.value.trim().toLowerCase();
   return orderManagedSkills(
     skills.value.filter((item) => {
-      const matchesStatus = status.value === 'all' || item.status === status.value;
+      const matchesStatus = status.value === 'all' || filterState(item) === status.value;
       const matchesQuery =
         !keyword || `${item.name} ${item.machineName} ${item.description}`.toLowerCase().includes(keyword);
       return matchesStatus && matchesQuery;
     }),
   );
 });
-const publishedCount = computed(() => skills.value.filter((item) => item.status === 'published').length);
+/** 筛选归类：「有新草稿」归入草稿，已下线单独一类 */
+function filterState(item: SkillSummary) {
+  const state = skillState(item);
+  return state === 'changed' ? 'draft' : state;
+}
+const countOf = (value: string) => skills.value.filter((item) => filterState(item) === value).length;
 const statusOptions = computed(() => [
   { value: 'all' as const, label: '全部', count: skills.value.length },
-  { value: 'draft' as const, label: '草稿', count: skills.value.length - publishedCount.value },
-  { value: 'published' as const, label: '已发布', count: publishedCount.value },
+  { value: 'draft' as const, label: '草稿', count: countOf('draft') },
+  { value: 'published' as const, label: '已发布', count: countOf('published') },
+  { value: 'offline' as const, label: '已下线', count: countOf('offline') },
 ]);
 
 function clearFilters() {
@@ -58,26 +71,31 @@ async function downloadSkill(item: SkillSummary) {
     downloading.value = null;
   }
 }
-async function deleteSkill(item: SkillSummary) {
-  if (item.publishedRevisionId !== null || deleting.value !== null) return;
-  if (
-    !(await confirm({
-      title: `删除草稿“${item.name}”？`,
-      content: '将永久删除该技能、所有修订及参考资料，无法恢复。',
-      okText: '删除草稿',
-      danger: true,
-    }))
-  )
-    return;
-  deleting.value = item.id;
+async function unpublishSkill(item: SkillSummary) {
+  if (changing.value !== null) return;
+  changing.value = item.id;
   try {
-    await remove(`/skills/${item.id}`);
-    skills.value = skills.value.filter((skill) => skill.id !== item.id);
-    app.toast('草稿已删除');
+    const updated = await confirmUnpublishSkill(item);
+    if (!updated) return;
+    skills.value = skills.value.map((skill) => (skill.id === item.id ? updated : skill));
+    app.toast('已下线，可以重新发布或删除');
   } catch (err) {
     app.toast((err as Error).message, 'error');
   } finally {
-    deleting.value = null;
+    changing.value = null;
+  }
+}
+async function deleteSkill(item: SkillSummary) {
+  if (!canDeleteSkill(item) || changing.value !== null) return;
+  changing.value = item.id;
+  try {
+    if (!(await confirmDeleteSkill(item))) return;
+    skills.value = skills.value.filter((skill) => skill.id !== item.id);
+    app.toast('技能已删除');
+  } catch (err) {
+    app.toast((err as Error).message, 'error');
+  } finally {
+    changing.value = null;
   }
 }
 async function load() {
@@ -162,10 +180,8 @@ onMounted(load);
               tone="book"
               :description="item.description"
               placeholder="尚未添加用途说明。"
-              :status="
-                item.status === 'published' ? '已发布' : item.publishedRevisionId ? '有新草稿' : '草稿'
-              "
-              :status-color="item.status === 'published' ? 'success' : undefined"
+              :status="SKILL_STATE_LABELS[skillState(item)]"
+              :status-color="skillState(item) === 'published' ? 'success' : undefined"
             >
               <template #sub>
                 <span class="skill-machine-name" :title="item.machineName">{{
@@ -176,6 +192,9 @@ onMounted(load);
                 <span class="skill-card-meta">修订 r{{ item.revision ?? 1 }}</span>
                 <span v-if="item.publishedVersion" class="skill-card-meta"
                   >已发布 v{{ item.publishedVersion }}</span
+                >
+                <span v-else-if="item.offline && item.lastPublishedVersion" class="skill-card-meta"
+                  >曾发布 v{{ item.lastPublishedVersion }}</span
                 >
                 <span class="skill-card-meta">{{
                   item.publishedRevisionId != null
@@ -192,10 +211,12 @@ onMounted(load);
               <template #footer>
                 <SkillCardActions
                   :name="item.name"
-                  :can-delete="item.publishedRevisionId === null"
-                  :downloading="downloading === item.id"
-                  :disabled="downloading !== null || deleting !== null"
+                  :can-unpublish="item.publishedRevisionId != null"
+                  :can-delete="canDeleteSkill(item)"
+                  :downloading="downloading === item.id || changing === item.id"
+                  :disabled="downloading !== null || changing !== null"
                   @download="downloadSkill(item)"
+                  @unpublish="unpublishSkill(item)"
                   @delete="deleteSkill(item)"
                 >
                   <RouterLink v-slot="{ href, navigate }" :to="`/agent/skills/${item.id}`" custom>

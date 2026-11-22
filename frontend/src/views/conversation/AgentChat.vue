@@ -11,6 +11,7 @@ import { animateComposerArrival, captureComposerOrigin } from '../../utils/compo
 import type { KernelEvent } from '../../types/platform';
 import { useStickToBottom } from '../../utils/useStickToBottom';
 import { buildTurns, latestUnavailable, type ToolCallView, type Turn } from '../../utils/turns';
+import { missingSkillInfo } from '../../utils/skillLifecycle';
 import Icon from '../../components/base/ForgeIcon.vue';
 import Markdown from '../../components/markdown/MarkdownContent.vue';
 import ProcessBlock from '../../components/message/ProcessBlock.vue';
@@ -216,19 +217,20 @@ const extensionSkills = computed(() => {
   ].map((skill) => {
     const option = options.find((item) => item.id === skill.id);
     const name = skill.name || option?.name || '';
-    // 上一轮实际未装配；或临时选择的 Skill 已取消发布，下一轮将被跳过
+    // 上一轮实际未装配；或 Skill 已下线、已删除（场景绑定与临时选择都一样），下一轮将被跳过
     const skippedEntry = skippedItem('skill', skill.id);
     const skipped = Boolean(skippedEntry);
-    const missing = skipped || (skill.source === 'chat' && Boolean(chat.capabilityOptions) && !option);
+    const missing = skipped || (Boolean(chat.capabilityOptions) && !option);
     const origin = skill.source === 'scenario' ? '场景绑定' : '临时选用';
+    const gone = missingSkillInfo(chat.capabilityOptions, skill.id);
     return {
       id: skill.id,
-      title: skill.title || option?.title || `Skill #${skill.id}`,
+      title: skill.title || option?.title || gone.title,
       missing,
       note: skipped
-        ? `上一轮未生效：${skippedEntry?.reason || '已取消发布或已删除'}`
+        ? `上一轮未生效：${skippedEntry?.reason || gone.reason}`
         : missing
-          ? '已取消发布，下一轮将跳过'
+          ? `${gone.reason}，下一轮将跳过`
           : [origin, name ? `/${name}` : ''].filter(Boolean).join(' · '),
       icon: missing ? 'info' : skill.source === 'scenario' ? 'lock' : 'check',
     };

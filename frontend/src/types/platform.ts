@@ -103,6 +103,8 @@ export interface WebAvailability {
 }
 export interface CapabilityOptions {
   skills: SkillOption[];
+  /** 已下线的 Skill（只有名称）：场景或会话里仍勾着时显示「已下线」，不能再新选；旧后端不返回 */
+  offlineSkills?: { id: number; title: string }[];
   mcpServers: McpOption[];
   web: WebAvailability;
 }

@@ -22,6 +22,10 @@ export type SkillSummary = {
   currentRevisionId: number | null;
   publishedRevisionId: number | null;
   publishedVersion: number | null;
+  /** 发布过、但当前没有上线版本（已下线）：可以重新发布或删除 */
+  offline?: boolean;
+  /** 最近一次发布的版本号（下线后仍保留）；从未发布为 null */
+  lastPublishedVersion?: number | null;
   revision: number | null;
   content: string;
   changeSummary: string;
@@ -73,4 +77,15 @@ export type SkillAuthoringMessage = {
 export type SkillAuthoringSession = {
   id: number;
   messages: SkillAuthoringMessage[];
+};
+
+/** 正在使用某个 Skill 的场景（下线、删除前确认用） */
+export type SkillUsageScenario = {
+  id: number;
+  name: string;
+  space: string;
+  /** 场景已发布的版本在用 */
+  published: boolean;
+  /** 场景当前配置在用 */
+  draft: boolean;
 };

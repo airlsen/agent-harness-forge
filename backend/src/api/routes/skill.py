@@ -66,9 +66,21 @@ async def download_skill(
 
 
 @router.delete("/{skill_id}")
-async def delete_skill_draft(skill_id: int, db: AsyncSession = Depends(get_session)):
-    await skill_service.delete_draft(db, skill_id)
+async def delete_skill(skill_id: int, db: AsyncSession = Depends(get_session)):
+    """删除草稿或已下线的技能；上线中的需先下线，仍被场景使用的需先在场景中移除。"""
+    await skill_service.delete_skill(db, skill_id)
     return ResponseUtil.ok({"deleted": True})
+
+
+@router.get("/{skill_id}/usage")
+async def skill_usage(skill_id: int, db: AsyncSession = Depends(get_session)):
+    """正在使用这个技能的场景（下线、删除前确认用）。"""
+    return ResponseUtil.ok({"scenarios": await skill_service.skill_usage(db, skill_id)})
+
+
+@router.post("/{skill_id}/unpublish")
+async def unpublish_skill(skill_id: int, db: AsyncSession = Depends(get_session)):
+    return ResponseUtil.ok(await skill_service.unpublish_skill(db, skill_id))
 
 
 @router.put("/{skill_id}/draft")

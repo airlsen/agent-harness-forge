@@ -120,6 +120,23 @@ async def published_skills(db: AsyncSession, skill_ids: list[int] | None = None)
     return result
 
 
+def skill_unavailable_reason(row: Skill | None) -> str:
+    """Skill 不能使用的原因（用于提示与摘要）：已删除、已下线或尚未发布。"""
+    if row is None:
+        return "已删除"
+    return "已下线" if row.next_published_version > 1 else "尚未发布"
+
+
+async def skill_unavailable_labels(db: AsyncSession, skill_ids: list[int]) -> str:
+    """把不可用的 Skill 编号整理成「名称（原因）」，用于保存场景、选择能力时的报错。"""
+    labels = []
+    for skill_id in skill_ids:
+        row = await db.get(Skill, skill_id)
+        name = row.name if row else f"#{skill_id}"
+        labels.append(f"{name}（{skill_unavailable_reason(row)}）")
+    return "、".join(labels)
+
+
 def skill_ref(skill: Skill, revision: SkillRevision) -> dict:
     """场景 Bundle 里冻结的 Skill 引用：修订不可变，不内联正文与参考资料。"""
     name, description, _ = parse_skill(revision.content)
@@ -139,7 +156,8 @@ async def freeze_scenario_skills(db: AsyncSession, skill_ids: list[int]) -> list
     available = await published_skills(db, skill_ids)
     missing = [str(item) for item in skill_ids if item not in available]
     if missing:
-        raise HTTPException(422, "Skill 不存在或尚未发布：" + "、".join(missing))
+        labels = await skill_unavailable_labels(db, [int(item) for item in missing])
+        raise HTTPException(422, f"以下 Skill 不可用，请先在场景中移除：{labels}")
     return [skill_ref(*available[item]) for item in skill_ids]
 
 
@@ -465,12 +483,21 @@ async def _runtime_web(db: AsyncSession, source: str) -> dict | None:
 async def options(db: AsyncSession) -> dict:
     """聊天与场景编辑器的能力选项：只列可用的（已发布 Skill、可运行的 MCP、联网状态），不含任何凭据。"""
     skills = await published_skills(db)
+    offline = (
+        await db.scalars(
+            select(Skill)
+            .where(Skill.published_revision_id.is_(None), Skill.next_published_version > 1)
+            .order_by(Skill.name, Skill.id)
+        )
+    ).all()
     servers = (await db.scalars(select(McpServer).order_by(McpServer.name))).all()
     web = await web_settings_view(db)
     return {
         "skills": [
             {**skill_ref(skill, revision), "tags": skill.tags or []} for skill, revision in skills.values()
         ],
+        # 已下线的 Skill 只给名称：场景与聊天里仍勾着它时显示「已下线」，不能再新选
+        "offlineSkills": [{"id": row.id, "title": row.name} for row in offline],
         "mcpServers": [mcp_option(row) for row in servers if mcp_runnable(row)],
         "web": {key: web[key] for key in ("available", "searchReady", "fetchEnabled", "reason", "provider")},
     }
@@ -484,7 +511,8 @@ async def validate_choice(db: AsyncSession, choice: CapabilityChoice, previous: 
         available = await published_skills(db, added_skills)
         missing = [str(item) for item in added_skills if item not in available]
         if missing:
-            raise HTTPException(422, "Skill 不存在或尚未发布：" + "、".join(missing))
+            labels = await skill_unavailable_labels(db, [int(item) for item in missing])
+            raise HTTPException(422, f"Skill 不可用：{labels}")
     for server_id in choice.mcpServerIds:
         if server_id in previous["mcpServerIds"]:
             continue
@@ -531,6 +559,18 @@ async def resolve(db: AsyncSession, meta: dict, selection: dict) -> tuple[dict, 
 
     for ref in meta.get("skills") or []:
         scenario_skill_ids.add(ref.get("id"))
+        # 场景冻结在发布时的修订；Skill 下线或删除后从下一轮起跳过，不阻断对话
+        row = await db.get(Skill, ref.get("id"))
+        if row is None or row.published_revision_id is None:
+            unavailable.append(
+                {
+                    "kind": "skill",
+                    "id": ref.get("id"),
+                    "title": ref.get("title", ""),
+                    "reason": skill_unavailable_reason(row),
+                }
+            )
+            continue
         await add_skill(ref, "scenario")
     chat_skill_ids = [item for item in selection["skillIds"] if item not in scenario_skill_ids]
     published = await published_skills(db, chat_skill_ids)
@@ -538,7 +578,15 @@ async def resolve(db: AsyncSession, meta: dict, selection: dict) -> tuple[dict, 
         if skill_id in published:
             await add_skill(skill_ref(*published[skill_id]), "chat")
         else:
-            unavailable.append({"kind": "skill", "id": skill_id, "title": "", "reason": "已取消发布或已删除"})
+            row = await db.get(Skill, skill_id)
+            unavailable.append(
+                {
+                    "kind": "skill",
+                    "id": skill_id,
+                    "title": row.name if row else "",
+                    "reason": skill_unavailable_reason(row),
+                }
+            )
 
     mcp, mcp_view, server_names = [], [], set()
     scenario_ids = [ref.get("id") for ref in meta.get("mcpServers") or []]

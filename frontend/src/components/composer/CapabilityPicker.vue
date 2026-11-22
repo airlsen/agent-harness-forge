@@ -4,6 +4,7 @@ import { MAX_SESSION_MCP, MAX_SESSION_SKILLS, useConversation } from '../../stor
 import { usePlatform } from '../../stores/platform';
 import type { McpOption, SkillOption } from '../../types/platform';
 import Icon from '../base/ForgeIcon.vue';
+import { missingSkillInfo } from '../../utils/skillLifecycle';
 
 /**
  * 聊天输入框的「扩展技能」：临时选用 Skill、MCP 服务与联网搜索，与场景绑定的能力取并集。
@@ -58,7 +59,7 @@ const activeNames = computed(() => {
       (id) =>
         options.value?.skills.find((skill) => skill.id === id)?.title ??
         scenario.value.names.get(`skill-${id}`) ??
-        `Skill #${id}`,
+        missingSkillInfo(options.value, id).title,
     ),
     ...serverIds.map(
       (id) =>
@@ -253,8 +254,8 @@ defineExpose({ close: () => (open.value = false) });
                   @click="flip('skill', id)"
                 >
                   <span class="picker-row-main"
-                    ><b>Skill #{{ id }}</b
-                    ><small>已取消发布，点击移除</small></span
+                    ><b>{{ missingSkillInfo(options, id).title }}</b
+                    ><small>{{ missingSkillInfo(options, id).reason }}，点击移除</small></span
                   ><Icon name="close" :size="14" />
                 </button>
                 <div v-if="!skills.length && !missingSkills.length" class="picker-empty">
