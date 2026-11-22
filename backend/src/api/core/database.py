@@ -157,6 +157,21 @@ async def init_db() -> None:
 
         await conn.run_sync(ensure_session_file_columns)
 
+        # Skill 编辑对话支持选择模型：旧对话保持 NULL，即跟随平台默认模型
+        def ensure_authoring_model_column(sync_conn):
+            from sqlalchemy import inspect, text
+
+            inspector = inspect(sync_conn)
+            if "skill_authoring_session" not in inspector.get_table_names():
+                return
+            existing = {column["name"] for column in inspector.get_columns("skill_authoring_session")}
+            if "model_connection_id" not in existing:
+                sync_conn.execute(
+                    text("ALTER TABLE skill_authoring_session ADD COLUMN model_connection_id INTEGER NULL")
+                )
+
+        await conn.run_sync(ensure_authoring_model_column)
+
         # Existing published rows keep their live version when new revisions are saved.
         def ensure_scenario_published_version(sync_conn):
             from sqlalchemy import inspect, text

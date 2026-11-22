@@ -22,6 +22,13 @@ class SkillFileWrite(BaseModel):
 
 class SkillTurn(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
+    # 从本轮起使用的模型；不传沿用对话当前模型（与工作台一致）
+    modelId: int | None = Field(default=None, gt=0)
+
+
+class SkillAuthoringSessionCreate(BaseModel):
+    # 新对话使用的模型；不传则跟随平台默认模型
+    modelId: int | None = Field(default=None, gt=0)
 
 
 class SkillApprovalDecision(BaseModel):

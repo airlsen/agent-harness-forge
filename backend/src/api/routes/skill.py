@@ -9,7 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
 from ..core.database import get_session
-from ..schemas.skill import SkillApprovalDecision, SkillCreate, SkillDraftUpdate, SkillFileWrite, SkillTurn
+from ..schemas.skill import (
+    SkillApprovalDecision,
+    SkillAuthoringSessionCreate,
+    SkillCreate,
+    SkillDraftUpdate,
+    SkillFileWrite,
+    SkillTurn,
+)
 from ..services import skill_service
 from ..services.runner_client import runner_client
 from ..utils.response import ResponseUtil
@@ -134,9 +141,15 @@ async def latest_authoring_session(skill_id: int, db: AsyncSession = Depends(get
 
 
 @router.post("/{skill_id}/authoring-sessions")
-async def new_authoring_session(skill_id: int, db: AsyncSession = Depends(get_session)):
+async def new_authoring_session(
+    skill_id: int,
+    payload: SkillAuthoringSessionCreate | None = None,
+    db: AsyncSession = Depends(get_session),
+):
     return ResponseUtil.ok(
-        await skill_service.create_authoring_session(db, skill_id, settings.admin_username)
+        await skill_service.create_authoring_session(
+            db, skill_id, settings.admin_username, payload.modelId if payload else None
+        )
     )
 
 
@@ -145,15 +158,19 @@ async def authoring_turn(
     skill_id: int, session_id: int, payload: SkillTurn, db: AsyncSession = Depends(get_session)
 ):
     await skill_service.get_authoring_session(db, skill_id, session_id)
+    if payload.modelId is not None:
+        # 先校验所选模型：不可用时直接返回错误，消息不会被受理
+        await skill_service.ensure_authoring_model(db, payload.modelId)
 
     async def stream():
         try:
             async for event in skill_service.run_authoring_turn(
-                skill_id, session_id, payload.message, settings.admin_username
+                skill_id, session_id, payload.message, settings.admin_username, payload.modelId
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as error:
-            yield f"data: {json.dumps({'kind': 'error', 'payload': {'message': str(error) or 'Skill 助手执行失败'}}, ensure_ascii=False)}\n\n"
+            message = str(error.detail if isinstance(error, HTTPException) else error) or "Skill 助手执行失败"
+            yield f"data: {json.dumps({'kind': 'error', 'payload': {'message': message}}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         stream(),

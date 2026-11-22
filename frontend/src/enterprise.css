@@ -333,10 +333,11 @@ textarea:focus-visible {
   color: var(--text-subtle);
   line-height: 1.9;
 }
+/* 最近会话是供扫读的记录列表，比主导航紧凑：13px 文字、32px 行高、2px 行距。 */
 .enterprise-recent-item {
   border-radius: 6px;
   padding: 0;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
   background: transparent;
 }
 /* 时间分组（今天 / 昨天 / 7 天内 / 更早）：比「最近会话」标题更轻 */
@@ -356,9 +357,10 @@ textarea:focus-visible {
   grid-template-columns: minmax(0, max-content) auto;
   justify-content: start;
   align-items: center;
-  font-size: 12px;
-  padding: 9px 12px 9px 13px;
-  min-height: 38px;
+  font-size: 13px;
+  line-height: 20px;
+  padding: 5px 12px 5px 13px;
+  min-height: 32px;
   border: 1px solid transparent;
   color: var(--text-secondary);
   gap: 8px;
@@ -592,14 +594,47 @@ textarea:focus-visible {
   background: var(--sidebar-nav-hover-bg);
   color: var(--sidebar-nav-hover-text);
 }
-.enterprise-account-menu-label {
-  display: block;
-  padding: 7px 12px 4px;
-  color: var(--text-subtle);
+.enterprise-account-theme {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 4px 6px 4px 12px;
+  color: var(--text-secondary);
   font-size: 12px;
+  line-height: 20px;
 }
-.enterprise-account-check {
-  margin-left: auto;
+.enterprise-account-theme > span {
+  flex: 1;
+}
+.enterprise-theme-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--surface-muted);
+}
+.enterprise-account-menu .enterprise-theme-switch button[role^='menuitem'] {
+  justify-content: center;
+  width: 28px;
+  min-height: 0;
+  height: 26px;
+  padding: 0;
+  border-radius: 5px;
+  color: var(--text-secondary);
+}
+.enterprise-account-menu .enterprise-theme-switch button[role^='menuitem'][aria-checked='true'] {
+  color: var(--sidebar-nav-active-text);
+  background: var(--surface);
+  box-shadow: 0 1px 2px #26334a1f;
+}
+.enterprise-account-menu .enterprise-theme-switch button[role^='menuitem']:not([aria-checked='true']):hover {
+  background: transparent;
+  color: var(--ink);
+}
+.enterprise-account-menu .enterprise-theme-switch button[role^='menuitem']:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 0;
 }
 .enterprise-account-menu-divider {
   height: 1px;
@@ -717,7 +752,6 @@ textarea:focus-visible {
 }
 .enterprise-view .search-field:focus-within {
   border-color: var(--accent-focus);
-  box-shadow: 0 0 0 3px var(--accent-focus-ring);
 }
 .enterprise-view .search-field > input:not([type='checkbox']) {
   color: var(--text-secondary);
@@ -966,11 +1000,10 @@ textarea:focus-visible {
     border-color 0.15s,
     box-shadow 0.15s;
 }
+/* 聚焦只用一层主题色边框，不加外光晕；保留中性投影表现层次 */
 .task-composer:focus-within {
   border-color: var(--accent-focus);
-  box-shadow:
-    0 0 0 3px var(--accent-focus-ring),
-    0 5px 20px #26334a08;
+  box-shadow: 0 5px 20px #26334a08;
 }
 .task-composer-hero {
   padding: 12px 12px 4px;
@@ -3693,6 +3726,12 @@ textarea:focus-visible {
   }
   .enterprise-account-menu button[role^='menuitem'] {
     min-height: 44px;
+  }
+  .enterprise-account-theme {
+    min-height: 44px;
+  }
+  .enterprise-account-menu .enterprise-theme-switch button[role^='menuitem'] {
+    min-height: 0;
   }
   .enterprise-collection-toolbar {
     flex-wrap: wrap;

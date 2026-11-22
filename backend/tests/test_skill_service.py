@@ -778,7 +778,9 @@ async def test_authoring_turn_persists_process_like_the_workbench(tmp_path, monk
             assert update_meta["tool"] == "skill_update_draft" and update_meta["arguments"]["summary"] == "补全步骤"
             assert update_meta["arguments"]["content"].startswith(f"（{len(draft)} 字")
             assert update_meta["revision"]["revisionId"] == revision_event["payload"]["revisionId"]
-            assert turn[5]["meta"] == {"partial": True}
+            # 回复记录本轮所用模型（与工作台一致）
+            assert turn[5]["meta"] == {"partial": True, "modelId": None, "model": "m", "modelName": "m"}
+            assert turn[2]["meta"]["model"] == "m"
             assert view["status"] == "idle"
             rows = (
                 await db.scalars(
@@ -792,5 +794,98 @@ async def test_authoring_turn_persists_process_like_the_workbench(tmp_path, monk
             assert "系统记录：草稿已更新：补全步骤" in history and "xxxxxx" not in history
             assert "助手：我来补全" in history and "先看草稿" not in history
         assert runner.turns == []
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_authoring_conversation_selects_and_switches_model(monkeypatch):
+    """Skill 编辑对话与工作台一致：新对话可选模型，对话中可在两轮之间切换，停用的模型不能选。"""
+    from src.api.models.platform import ModelConnection
+
+    engine, sessions = await _memory_sessions()
+    monkeypatch.setattr(skill_service, "SessionFactory", sessions)
+
+    async def fake_policy(db):
+        return {"maxOutputTokens": 4096}
+
+    monkeypatch.setattr(skill_service, "get_policy", fake_policy)
+    runner = FakeAuthoringRunner(monkeypatch, alive=True)
+    try:
+        async with sessions() as db:
+            db.add_all(
+                [
+                    ModelConnection(
+                        id=1, name="默认模型", base_url="https://a.example", model="model-a", is_default=True
+                    ),
+                    ModelConnection(
+                        id=2, name="推理模型", base_url="https://b.example", model="model-b", context_window=128000
+                    ),
+                    ModelConnection(id=3, name="停用模型", base_url="https://c.example", model="model-c", enabled=False),
+                ]
+            )
+            await db.commit()
+            created = await create_skill(db, "周报", "写周报时使用", None, "tester")
+            skill_id = created["id"]
+
+            # 不选模型：跟随平台默认
+            default_view = await skill_service.create_authoring_session(db, skill_id, "tester")
+            assert default_view["modelId"] is None
+            assert default_view["model"]["model"] == "model-a" and default_view["model"]["available"]
+
+            # 新对话显式选择模型
+            chosen = await skill_service.create_authoring_session(db, skill_id, "tester", 2)
+            assert chosen["modelId"] == 2
+            assert chosen["model"] == {
+                "modelId": 2,
+                "model": "model-b",
+                "modelName": "推理模型",
+                "modelContextWindow": 128000,
+                "available": True,
+            }
+
+            # 停用或不存在的模型不能选
+            for bad in (3, 99):
+                with pytest.raises(HTTPException) as error:
+                    await skill_service.create_authoring_session(db, skill_id, "tester", bad)
+                assert error.value.status_code == 409
+                with pytest.raises(HTTPException):
+                    await skill_service.ensure_authoring_model(db, bad)
+
+        session_id = chosen["id"]
+        [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "第一轮")]
+        assert runner.turns[-1][2]["model"] == "model-b"
+
+        # 对话中切换：本轮起使用新模型，之后不传 modelId 时沿用
+        [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "第二轮", model_id=1)]
+        assert runner.turns[-1][2] == {
+            "baseUrl": "https://a.example",
+            "model": "model-a",
+            "apiKey": "",
+            "contextWindow": 64000,
+        }
+        [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "第三轮")]
+        assert runner.turns[-1][2]["model"] == "model-a"
+
+        # 切换到停用模型被拒绝，且不留下记录、不改变对话模型
+        with pytest.raises(HTTPException):
+            [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "第四轮", model_id=3)]
+
+        async with sessions() as db:
+            view = await skill_service.latest_authoring_session(db, skill_id)
+            assert view["modelId"] == 1
+            users = [m for m in view["messages"] if m["role"] == "user"]
+            assert [m["content"] for m in users] == ["第一轮", "第二轮", "第三轮"]
+            # 每条消息记录本轮模型，供回溯
+            assert [m["meta"]["model"] for m in users] == ["model-b", "model-a", "model-a"]
+            replies = [m for m in view["messages"] if m["role"] == "assistant"]
+            assert [m["meta"]["modelName"] for m in replies] == ["推理模型", "默认模型", "默认模型"]
+
+            # 所选模型之后被停用：对话视图标记为不可用，便于界面提示重新选择
+            row = await db.get(ModelConnection, 1)
+            row.enabled = False
+            await db.commit()
+            stale = await skill_service.latest_authoring_session(db, skill_id)
+            assert stale["model"]["available"] is False and stale["model"]["modelName"] == "默认模型"
     finally:
         await engine.dispose()
