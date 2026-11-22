@@ -129,6 +129,18 @@ const MAX_LISTED_DEPTH = 16;
 /** Runner 会话 id（randomUUID），同时决定磁盘目录名，必须严格校验 */
 const SESSION_ID = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
 const DATA = resolve(process.env.FORGE_RUNNER_DATA_DIR ?? join(ROOT, 'data', 'sessions'));
+/** 读一个非负整数环境变量，未设、非法或为负时回退默认值；显式 0 表示关闭 */
+function nonNegativeInt(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : fallback;
+}
+/** 闲置回收 TTL（秒）：会话超过该时长无交互即回收其 dsh 进程；0 表示关闭 */
+const SESSION_IDLE_TTL_SECONDS = nonNegativeInt(process.env.RUNNER_SESSION_IDLE_TTL_SECONDS, 900);
+/** 存活 dsh 进程（热会话）数量上限：超过时按最久未使用回收，给内存设硬顶；0 表示不设上限 */
+const MAX_WARM_SESSIONS = nonNegativeInt(process.env.RUNNER_MAX_WARM_SESSIONS, 20);
+/** 回收扫描间隔（毫秒） */
+const REAP_INTERVAL_MS = 60_000;
 export interface RuntimeModel {
   baseUrl: string;
   model: string;
@@ -154,6 +166,8 @@ type Entry = {
   code: CodeProject[];
   /** 本轮生效的扩展能力（场景绑定 ∪ 聊天临时选择）；变化时同样重启接续 */
   caps: RuntimeCapabilities;
+  /** 最近一次交互时间戳（毫秒），供闲置回收判断进程是否可回收 */
+  lastActive: number;
 };
 function failure(message: string, statusCode = 400) {
   return Object.assign(new Error(message), { statusCode });
@@ -224,7 +238,15 @@ export class DshKernel implements AgentKernel {
   private turnQueue: Array<{ id: string; resolve: () => void; reject: (error: Error) => void }> = [];
   /** Skill 内容缓存（快照标识 → 内容）：控制面已知 Runner 有这一版时只发快照引用 */
   private skillCache = new SkillContentCache();
-  constructor(private readonly pluginWorker?: PluginWorkerClient) {}
+  /** 闲置回收定时器：空闲超时回收 dsh 进程、热进程超上限时按最久未使用回收 */
+  private reaper: NodeJS.Timeout | null = null;
+  constructor(private readonly pluginWorker?: PluginWorkerClient) {
+    if (SESSION_IDLE_TTL_SECONDS > 0 || MAX_WARM_SESSIONS > 0) {
+      const reaper = setInterval(() => void this.reap(), REAP_INTERVAL_MS);
+      reaper.unref?.();
+      this.reaper = reaper;
+    }
+  }
   get size() {
     return this.sessions.size;
   }
@@ -422,6 +444,7 @@ export class DshKernel implements AgentKernel {
       calls: new Map(),
       code,
       caps,
+      lastActive: Date.now(),
     };
   }
   private handle(entry: Entry): SessionHandle {
@@ -935,6 +958,7 @@ export class DshKernel implements AgentKernel {
     capabilities?: unknown,
   ) {
     const entry = this.entry(id);
+    entry.lastActive = Date.now();
     if (entry.busy) throw failure('会话正在执行，请等待或中止', 409);
     if (this.isQueued(id)) throw failure('会话正在排队等待执行，请稍候', 409);
     if (model !== undefined && !validModel(model)) throw failure('本轮模型配置无效', 422);
@@ -1093,7 +1117,29 @@ export class DshKernel implements AgentKernel {
     await this.interrupt(id);
     this.sessions.delete(id);
   }
+  /** 闲置回收：关掉空闲超时或热进程超上限的会话进程（只杀进程，磁盘日志保留，下次提问自动 resume） */
+  private async reap() {
+    const now = Date.now();
+    const warm: Entry[] = [];
+    const idle: Entry[] = [];
+    for (const entry of this.sessions.values()) {
+      if (entry.busy || this.isQueued(entry.id) || !entry.proc) continue;
+      warm.push(entry);
+      if (SESSION_IDLE_TTL_SECONDS > 0 && now - entry.lastActive > SESSION_IDLE_TTL_SECONDS * 1000)
+        idle.push(entry);
+    }
+    const victims = new Set<Entry>(idle);
+    if (MAX_WARM_SESSIONS > 0 && warm.length > MAX_WARM_SESSIONS) {
+      warm.sort((a, b) => a.lastActive - b.lastActive);
+      for (const entry of warm.slice(0, warm.length - MAX_WARM_SESSIONS)) victims.add(entry);
+    }
+    for (const entry of victims) await this.disposeSession(entry.id);
+  }
   async dispose() {
+    if (this.reaper) {
+      clearInterval(this.reaper);
+      this.reaper = null;
+    }
     await Promise.all([...this.sessions.keys()].map((id) => this.disposeSession(id)));
   }
   private async workspace(id: string) {

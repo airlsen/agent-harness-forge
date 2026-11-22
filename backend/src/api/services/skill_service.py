@@ -64,7 +64,6 @@ WORKBENCH_TOOLS = (
     "workspace_read",
     "workspace_write",
     "bash",
-    "skill_run_script",
 )
 
 # Skill 编写助手的工作方法：仓库内置的 skill-design 元 Skill。
@@ -812,7 +811,6 @@ def authoring_system_prompt(history: str, unavailable: str = "") -> dict:
             "附加文件用 skill_read_file 读取，脚本用 skill_test_script 运行。"
             "需要组合命令、安装依赖、跑生成的测试代码时可以用 bash：最新草稿在会话工作区的 .skill/ 目录（只读副本，随草稿修改自动同步），"
             "例如 python3 .skill/scripts/xxx.py；要改脚本必须用 skill_write_file，不要直接改 .skill/ 里的文件。"
-            "skill_trial 返回 snapshotStale 为 false 时，也可以用 skill 工具按业务会话方式加载。"
             "若当前草稿因文件缺失而无法加载，先说明原因并协助修复。"
             "报告实际执行结果和阻碍。不要发布 Skill。"
         ),
@@ -823,7 +821,6 @@ def authoring_system_prompt(history: str, unavailable: str = "") -> dict:
             "skill_update_draft 会用 content 整体替换草稿：必须提交完整文档，未要求修改的内容原样保留。",
             "用户询问原因或解释内容时只回答，不调用更新工具；只有明确要求修改或创建时才修改草稿。",
             "对话期间维护者可能手动修改草稿或附加文件：每次修改前都重新调用 skill_read_draft，不要沿用之前读到的内容。",
-            "本轮通过 skill_* 改动后，skill、read、skill_run_script 仍是本轮开始时的只读快照：试用新内容用 skill_trial、skill_test_script 或 bash 运行 .skill/ 下的文件，不能将旧快照的执行结果称为新版本测试。",
             "试用产出是“试用文件”，与 Skill 文件分开：生成的报告、测试代码、解析结果等写到会话工作区的 outputs/ 下（workspace_write 或 bash），用户在编辑页「试用文件」中查看；只有用户要求把某个产出沉淀为模板或资料时，才用 skill_write_file 存进 Skill。",
             "调试时自动“修改 → 重测”最多 3 轮，且只在用户明确要求调通、修好或直接改时进行；否则试用发现问题只报告，并询问是否修改。",
         ],
@@ -881,24 +878,9 @@ async def _authoring_runtime(
     _, guides = skill_design_method()
     policy = await get_policy(db)
     max_output_tokens = max(int(policy.get("maxOutputTokens") or 0), AUTHORING_MIN_OUTPUT_TOKENS)
-    # 与业务会话使用同一个 DSH Skill 注册路径；草稿不必发布。始终下发完整内容，
-    # Runner 以修订号和文件哈希物化只读快照，避免跨轮使用旧版正文或附件。
-    from .capability_service import runtime_skill_name, skill_snapshot_id
-
-    front, body = parse_skill_document(revision.content)
-    files, problem = skill_file_snapshot(revision)
-    name = runtime_skill_name(str(front.get("name") or ""), skill.id)
-    runtime_skill = {
-        "name": name,
-        "title": skill.name,
-        "description": str(front.get("description") or skill.description or skill.name)[:1024],
-        "revisionId": revision.id,
-        "source": "chat",
-        "snapshot": skill_snapshot_id(revision.id, revision.content, files),
-        "document": revision.content,
-        "content": body or revision.content,
-        "files": files,
-    }
+    # 编写会话不下发业务 Skill 快照：草稿只通过 skill_* 工具读写，试用走 skill_trial，
+    # 不再让模型在「快照是否过期」上反复协调。文件完整性仍在这里校验，缺文件时提示修复。
+    _, problem = skill_file_snapshot(revision)
     allowed = [
         *AUTHORING_TOOLS,
         *(name for name in WORKBENCH_TOOLS if name in policy.get("allowedTools", [])),
@@ -944,7 +926,7 @@ async def _authoring_runtime(
         "apiKey": connection.get("apiKey", ""),
         "contextWindow": connection.get("contextWindow", 64000),
     }
-    return bundle, model_config, {"skills": [] if problem else [runtime_skill], "mcp": [], "web": None}
+    return bundle, model_config, {"skills": [], "mcp": [], "web": None}
 
 
 def _authoring_user_ctx(created_by: str) -> dict:
@@ -1176,7 +1158,7 @@ async def delete_trial_file(db: AsyncSession, skill_id: int, session_id: int, pa
 
 
 # 这些工具可能在会话工作区产生或删除文件且没有逐次通知：结果返回后同步试用文件（workspace_write 有 files 事件）
-TRIAL_FILE_TOOLS = frozenset({"bash", "skill_test_script", "skill_run_script"})
+TRIAL_FILE_TOOLS = frozenset({"bash", "skill_test_script"})
 
 
 async def sync_trial_files(session_id: int, runner_session_id: str) -> dict | None:

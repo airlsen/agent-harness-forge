@@ -14,8 +14,8 @@ import Markdown from '../../components/markdown/MarkdownContent.vue';
 import ProcessBlock from '../../components/message/ProcessBlock.vue';
 import UserMessageText from '../../components/message/UserMessageText.vue';
 import MarkdownPreview from '../../components/markdown/MarkdownPreview.vue';
-import CodeBlock from '../../components/markdown/CodeBlock.vue';
 import FilePreview from '../../components/file/FilePreview.vue';
+import ChangeReview, { type ReviewFile } from '../../components/file/ChangeReview.vue';
 import ModelSelect from '../../components/composer/ModelSelect.vue';
 import { useCopy } from '../../utils/useCopy';
 import MonacoEditor from '../../components/editor/MonacoEditor.vue';
@@ -1117,6 +1117,62 @@ watch(
     }
   },
 );
+/** 本次修改的逐文件对比：SKILL.md 直接用修改前后的正文，其他文件按修改前后两个修订读取 */
+const reviewFiles = ref<ReviewFile[]>([]);
+const reviewMode = ref<'unified' | 'split'>('unified');
+async function revisionFile(skillId: number, revisionId: number, path: string) {
+  const key = fileKey(revisionId, path);
+  const cached = fileCache.get(key);
+  if (cached !== undefined) return cached;
+  const result = await api<{ content: string }>(
+    `/skills/${skillId}/files/${revisionId}?path=${encodeURIComponent(path)}`,
+  );
+  fileCache.set(key, result.content);
+  return result.content;
+}
+function openChanges() {
+  const change = lastChange.value;
+  const skillId = skill.value?.id;
+  if (!change || !skillId) return;
+  const afterId = change.afterId ?? skill.value?.currentRevisionId ?? null;
+  const existed = new Set(change.before.files.map((file) => file.path));
+  const files: ReviewFile[] = [];
+  if (change.before.content !== change.after || change.files.written.includes(SKILL_MAIN_FILE))
+    files.push({
+      path: SKILL_MAIN_FILE,
+      action: 'modified',
+      load: async () => ({ before: change.before.content, after: change.after }),
+    });
+  for (const path of change.files.written) {
+    if (path === SKILL_MAIN_FILE) continue;
+    files.push({
+      path,
+      action: existed.has(path) ? 'modified' : 'added',
+      load: async () => {
+        if (!afterId) throw new Error('修改后的版本不存在');
+        const [before, after] = await Promise.all([
+          existed.has(path) ? revisionFile(skillId, change.before.id, path) : '',
+          revisionFile(skillId, afterId, path),
+        ]);
+        return { before, after };
+      },
+    });
+  }
+  for (const path of change.files.deleted)
+    if (existed.has(path))
+      files.push({
+        path,
+        action: 'deleted',
+        load: async () => ({ before: await revisionFile(skillId, change.before.id, path), after: '' }),
+      });
+  reviewFiles.value = files;
+  changesOpen.value = true;
+}
+function undoFromChanges() {
+  if (!lastChange.value) return;
+  changesOpen.value = false;
+  void requestRestore(lastChange.value.before);
+}
 const undoAvailable = computed(
   () =>
     lastChange.value &&
@@ -1772,7 +1828,7 @@ onBeforeUnmount(() => {
               <p>{{ assistantChange }}</p>
               <span>SKILL.md</span>
               <div>
-                <button :disabled="!lastChange" @click="changesOpen = true">查看更改</button
+                <button :disabled="!lastChange" @click="openChanges">查看更改</button
                 ><button :disabled="!undoAvailable" @click="lastChange && requestRestore(lastChange.before)">
                   撤销本次
                 </button>
@@ -1955,20 +2011,23 @@ onBeforeUnmount(() => {
         <pre class="history-preview-content"><code>{{ previewRevision.content }}</code></pre>
       </div>
     </a-modal>
-    <a-drawer :open="changesOpen" title="本次修改" :width="760" @close="changesOpen = false"
-      ><template v-if="lastChange"
-        ><template v-if="lastChange.files.written.length || lastChange.files.deleted.length"
-          ><h3>文件</h3>
-          <ul class="change-files">
-            <li v-for="path in lastChange.files.written" :key="`w-${path}`">更新 {{ path }}</li>
-            <li v-for="path in lastChange.files.deleted" :key="`d-${path}`">删除 {{ path }}</li>
-          </ul></template
-        >
-        <h3>SKILL.md 修改前 · r{{ lastChange.before.revision }}</h3>
-        <CodeBlock :code="lastChange.before.content" lang="markdown" />
-        <h3>SKILL.md 修改后</h3>
-        <CodeBlock :code="lastChange.after" lang="markdown" /></template
-    ></a-drawer>
+    <a-drawer
+      :open="changesOpen"
+      :title="lastChange ? `本次修改 · 对比 r${lastChange.before.revision}` : '本次修改'"
+      :width="reviewMode === 'split' ? 'min(1240px, 96vw)' : 'min(920px, 96vw)'"
+      class="skill-changes-drawer"
+      destroy-on-close
+      @close="changesOpen = false"
+    >
+      <ChangeReview v-if="reviewFiles.length" v-model:mode="reviewMode" :files="reviewFiles" />
+      <p v-else class="text-diff-empty">这次没有文件内容变化。</p>
+      <template #footer>
+        <div class="skill-changes-footer">
+          <a-button :disabled="!undoAvailable" @click="undoFromChanges">撤销本次</a-button>
+          <a-button type="primary" @click="changesOpen = false">完成</a-button>
+        </div>
+      </template>
+    </a-drawer>
     <a-modal
       v-model:open="fileDialog.open"
       :title="fileDialog.upload ? `上传到 ${fileDialog.dir}/` : `在 ${fileDialog.dir}/ 新建文件`"
@@ -2338,12 +2397,10 @@ onBeforeUnmount(() => {
     opacity: 1;
   }
 }
-.change-files {
-  margin: 0 0 16px;
-  padding-left: 20px;
-  font-size: 13px;
-  line-height: 1.8;
-  color: var(--color-text-secondary);
+.skill-changes-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .tree-empty {
   color: var(--color-text-tertiary);

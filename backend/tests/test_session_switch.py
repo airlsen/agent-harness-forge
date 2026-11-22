@@ -509,3 +509,33 @@ async def test_unrecoverable_runner_log_is_rejected_without_recording_the_turn(e
     assert "执行上下文无法恢复" in error.value.detail and "会话日志不存在" in error.value.detail
     detail = await service.detail(session["id"])
     assert [m["content"] for m in detail["messages"] if m["role"] == "user"] == ["第一轮"]
+
+
+@pytest.mark.asyncio
+async def test_session_list_reports_last_activity_from_the_latest_message(env):
+    service = session_module.SessionService()
+    older = await service.create(env["scenario"]["id"])
+    newer = await service.create(env["scenario"]["id"])
+    async with env["sessions"]() as db:
+        await db.execute(AgentSession.__table__.update().values(created_at=datetime(2026, 11, 19, 8, 0)))
+        db.add_all(
+            [
+                SessionMessage(
+                    session_id=older["id"], role="user", content="旧", created_at=datetime(2026, 11, 20, 9, 0)
+                ),
+                SessionMessage(
+                    session_id=older["id"],
+                    role="user",
+                    content="今天继续",
+                    created_at=datetime(2026, 11, 22, 21, 5),
+                ),
+            ]
+        )
+        await db.commit()
+
+    items = {item["id"]: item for item in await service.list()}
+    # 三天前创建、今天又聊过：最近活动是最后一条消息的时间；还没聊过的会话退回创建时间
+    assert items[older["id"]]["lastActiveAt"] == "2026-11-22T21:05:00+00:00"
+    assert (
+        items[newer["id"]]["lastActiveAt"] == items[newer["id"]]["createdAt"] == "2026-11-19T08:00:00+00:00"
+    )

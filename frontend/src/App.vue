@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { usePlatform } from './stores/platform';
 import { useConversation } from './stores/conversation';
 import { sessionState } from './utils/presentation';
+import { groupRecentSessions, recentSessionDot } from './utils/recentSessions';
 import Icon from './components/base/ForgeIcon.vue';
 import DialogShell from './components/base/DialogShell.vue';
 import AccountMenu from './components/layout/AccountMenu.vue';
@@ -64,6 +65,9 @@ const isDark = computed(() => {
 });
 const antdThemeConfig = computed(() => (isDark.value ? forgeDarkTheme : forgeLightTheme));
 const isAdministration = computed(() => adminRoutes.includes(route.path));
+// 最近会话按本地日期分组；时钟每分钟走一次，跨过零点时「今天」「昨天」自动更新
+const clock = ref(new Date());
+const recentGroups = computed(() => groupRecentSessions(app.regularConversations, clock.value));
 const navigation = [
   { path: '/agent/workbench', label: '工作台', icon: 'home' },
   { path: '/agent/scenarios', label: '企业场景', icon: 'grid' },
@@ -134,6 +138,7 @@ const unauthorized = () => {
 };
 let timer: ReturnType<typeof setInterval> | null = null;
 let sessionTimer: ReturnType<typeof setInterval> | null = null;
+let clockTimer: ReturnType<typeof setInterval> | null = null;
 let sessionRefreshPending = false;
 onMounted(async () => {
   window.addEventListener('forge:unauthorized', unauthorized);
@@ -150,6 +155,7 @@ onMounted(async () => {
   timer = setInterval(() => {
     if (app.authenticated) void app.refreshRuntime().catch(() => {});
   }, 20000);
+  clockTimer = setInterval(() => (clock.value = new Date()), 60000);
   // Leaving the execution page closes its SSE reader, not the backend task.
   // Refresh only while known runs exist so lists/recents settle without a reload.
   sessionTimer = setInterval(() => {
@@ -171,6 +177,7 @@ onMounted(async () => {
 onUnmounted(() => {
   if (timer) clearInterval(timer);
   if (sessionTimer) clearInterval(sessionTimer);
+  if (clockTimer) clearInterval(clockTimer);
   window.removeEventListener('forge:unauthorized', unauthorized);
   window.removeEventListener('beforeunload', protectDrafts);
   window.removeEventListener('pointerdown', dismissManagementMenu);
@@ -229,24 +236,43 @@ onUnmounted(() => {
               <div v-if="!app.regularConversations.length" class="enterprise-recent-empty">
                 <p>开始对话，记录会留在这里。</p>
               </div>
-              <div
-                v-for="item in app.regularConversations.slice(0, 6)"
-                :key="item.id"
-                :class="[
-                  'recent-item',
-                  'enterprise-recent-item',
-                  { selected: route.params.sessionId === String(item.id) },
-                ]"
+              <section
+                v-for="group in recentGroups"
+                :key="group.label"
+                class="enterprise-recent-group"
+                :aria-label="group.label"
               >
-                <RouterLink
-                  :to="`/agent/chat/${item.id}`"
-                  :title="`${item.title} · ${sessionState(item.status).label}`"
-                  ><span v-if="item.status === 'running'" class="dot pulse"></span
-                  ><Icon v-else :name="sessionState(item.status).icon" :size="14" /><span>{{
-                    item.title
-                  }}</span></RouterLink
+                <h3 class="enterprise-recent-group-label">{{ group.label }}</h3>
+                <div
+                  v-for="item in group.items"
+                  :key="item.id"
+                  :class="[
+                    'recent-item',
+                    'enterprise-recent-item',
+                    { selected: route.params.sessionId === String(item.id) },
+                  ]"
                 >
-              </div>
+                  <RouterLink
+                    :to="`/agent/chat/${item.id}`"
+                    :title="`${item.title} · ${sessionState(item.status).label}`"
+                    ><span class="enterprise-recent-title">{{ item.title }}</span
+                    ><span
+                      v-if="recentSessionDot(item.status)"
+                      :class="['enterprise-recent-dot', recentSessionDot(item.status)]"
+                      role="img"
+                      :aria-label="sessionState(item.status).label"
+                    ></span
+                  ></RouterLink>
+                </div>
+              </section>
+              <RouterLink
+                v-if="app.regularConversations.length"
+                to="/agent/conversations"
+                class="enterprise-recent-all"
+                >查看全部 {{ app.regularConversations.length }} 个会话<Icon
+                  name="arrow-right-line"
+                  :size="14"
+              /></RouterLink>
             </div>
           </div>
           <div class="enterprise-sidebar-footer">
