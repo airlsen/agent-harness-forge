@@ -245,6 +245,10 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
             assert 'skill_run_script' in meta['builtin_tools']
             assert 'bash' not in meta['builtin_tools']
             assert 'skill' in prompt['domain']
+            # 试用 / 调试用 skill_trial 加载最新草稿，调试循环有轮数上限
+            assert 'skill_trial' in meta['builtin_tools']
+            assert 'skill_trial' in prompt['domain']
+            assert any('最多 3 轮' in rule for rule in prompt['safety'])
             assert captured['capabilities']['skills'][0]['document'] == created['content']
             assert captured['capabilities']['skills'][0]['name'] == f"skill-{created['id']}"
             # 企业策略低于 8192 时取 8192

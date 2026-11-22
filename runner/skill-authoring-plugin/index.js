@@ -131,6 +131,8 @@ export async function apply(ctx, config) {
       if (item && typeof item.filename === 'string' && typeof item.content === 'string')
         files.set(`references/${item.filename}`, item.content);
   }
+  // 会话启动时的草稿：与 skill 工具加载的快照一致，用来判断本轮之后是否改过
+  const loaded = { content: draft, files: new Map(files) };
   const fileBytes = (content) => Buffer.byteLength(content, 'utf8');
   const fileList = () => {
     const mentioned = mentionedFiles(draft);
@@ -279,6 +281,40 @@ export async function apply(ctx, config) {
         } finally {
           await rm(root, { recursive: true, force: true });
         }
+      },
+    );
+  }
+  if (allowed.has('skill_trial')) {
+    add(
+      'skill_trial',
+      '加载最新草稿用于试用或调试：返回此刻的 SKILL.md 与附加文件清单，包含本轮刚做的修改。按返回的正文步骤执行试用任务；附加文件用 skill_read_file 读取，脚本用 skill_test_script 运行。不修改草稿。',
+      {},
+      [],
+      async () => {
+        const check = checkSkillDocument(draft, [...files.keys()]);
+        const front = draft.replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n---(?:\n|$)/)?.[1] ?? '';
+        // 草稿或文件与会话启动时（skill 工具加载的快照）不同：skill / read / skill_run_script 仍是旧版本
+        const stale =
+          draft !== loaded.content ||
+          files.size !== loaded.files.size ||
+          [...files].some(([path, content]) => loaded.files.get(path) !== content);
+        return {
+          name: frontField(front, 'name') ?? '',
+          title: frontField(front, 'title') ?? config.name ?? '',
+          description: frontField(front, 'description') ?? '',
+          document: draft,
+          files: fileList(),
+          errors: check.errors,
+          snapshotStale: stale,
+          howTo: [
+            '把用户给的任务当作业务会话的输入，按 document 的步骤逐步执行，不要跳步或替 Skill 补规则',
+            '正文让读 references/、assets/ 文件时用 skill_read_file；让运行 scripts/ 脚本时用 skill_test_script',
+            stale
+              ? '本轮已修改过草稿：skill、read、skill_run_script 仍指向会话开始时的旧快照，试用新内容时不要用它们'
+              : '草稿与 skill 工具加载的快照一致，也可以用 skill 工具按业务会话方式加载',
+            '结束时说明：试用输入、每步实际结果、卡住的地方，以及问题出在 Skill 写法还是输入 / 环境',
+          ],
+        };
       },
     );
   }
