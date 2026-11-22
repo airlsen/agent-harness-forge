@@ -575,6 +575,24 @@ async function startSession() {
     app.toast((err as Error).message, 'error');
   }
 }
+async function copyMessage(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    app.toast('已复制到剪贴板');
+  } catch {
+    app.toast('剪贴板访问被浏览器拒绝，请手动选择内容复制', 'info');
+  }
+}
+/** 与工作台一致：把消息以 Markdown 引用块追加到输入框末尾 */
+function quoteMessage(text: string) {
+  const quote = text
+    .trim()
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
+  prompt.value = `${prompt.value.trimEnd()}${prompt.value.trim() ? '\n\n' : ''}${quote}\n\n`;
+  void nextTick(() => promptInput.value?.focus());
+}
 function useStarterPrompt(text: string) {
   prompt.value = text;
   void nextTick(() => promptInput.value?.focus());
@@ -1303,9 +1321,29 @@ onBeforeUnmount(() => {
               </button>
             </div>
             <template v-for="turn in turns" :key="turn.key">
-              <article v-if="turn.user" class="chat-message user">
-                <UserMessageText :text="turn.user.content" />
-              </article>
+              <div v-if="turn.user" class="chat-user">
+                <article class="chat-message user">
+                  <UserMessageText :text="turn.user.content" />
+                </article>
+                <div class="message-action-bar" aria-label="用户消息操作">
+                  <button
+                    type="button"
+                    aria-label="复制消息"
+                    title="复制消息"
+                    @click="copyMessage(turn.user.content)"
+                  >
+                    <Icon name="ri-file-copy-line" :size="16" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="引用消息"
+                    title="引用到输入框"
+                    @click="quoteMessage(turn.user.content)"
+                  >
+                    <Icon name="ri-chat-1-line" :size="16" />
+                  </button>
+                </div>
+              </div>
               <article v-if="turn.steps.length || turn.running" class="chat-message assistant">
                 <div class="assistant-label">
                   <span class="assistant-icon"><Icon name="sparkles" :size="14" /></span>助手
@@ -1321,9 +1359,23 @@ onBeforeUnmount(() => {
                     class="stream-cursor"
                   ></span>
                 </section>
-                <span v-if="!turn.running && turn.answer.some((step) => step.partial)" class="message-partial"
-                  >执行未完成时保留的部分输出</span
+                <div
+                  v-if="!turn.running && turn.answer.some((step) => step.text)"
+                  class="message-action-bar"
+                  aria-label="助手回复操作"
                 >
+                  <span v-if="turn.answer.some((step) => step.partial)" class="message-partial"
+                    >执行未完成时保留的部分输出</span
+                  >
+                  <button
+                    type="button"
+                    aria-label="复制回复"
+                    title="复制回复"
+                    @click="copyMessage(turn.answer.map((step) => step.text).join('\n\n'))"
+                  >
+                    <Icon name="ri-file-copy-line" :size="16" />
+                  </button>
+                </div>
                 <div v-if="turnWaiting(turn)" class="agent-working compact" role="status">
                   <span class="thinking-dots"><i></i><i></i><i></i></span
                   ><span>{{
@@ -1411,13 +1463,11 @@ onBeforeUnmount(() => {
                 /></a-button>
               </div>
             </div>
-            <p class="composer-hint">
+            <p v-if="busy" class="composer-hint">
               {{
-                busy
-                  ? queuePosition
-                    ? `排队中 · 第 ${queuePosition} 位，完成后可继续发送`
-                    : '助手处理中，完成后可继续发送'
-                  : 'Enter 发送 · Shift+Enter 换行'
+                queuePosition
+                  ? `排队中 · 第 ${queuePosition} 位，完成后可继续发送`
+                  : '助手处理中，完成后可继续发送'
               }}
             </p>
           </form>
@@ -2071,6 +2121,18 @@ onBeforeUnmount(() => {
   border-radius: 7px;
   color: var(--sidebar-nav-active-text);
   background: var(--sidebar-nav-active-bg);
+}
+.chat-user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-bottom: 14px;
+}
+.chat-user > .chat-message.user {
+  margin-bottom: 0;
+}
+.chat-message.assistant .message-action-bar {
+  margin-top: 2px;
 }
 .chat-message.user {
   width: fit-content;
