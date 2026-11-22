@@ -106,6 +106,8 @@ const WEB_SEARCH_KEY_ENV = 'FORGE_WEB_SEARCH_API_KEY';
 const MCP_TOOL_TIMEOUT_MS = 60000;
 /** 清单上限：远高于插件的 100 个文件配额；达到上限时标记 truncated，控制面不会据此删除记录 */
 export const MAX_LISTED_FILES = 1000;
+/** Runner 会话 id（randomUUID），同时决定磁盘目录名，必须严格校验 */
+const SESSION_ID = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
 const DATA = resolve(process.env.FORGE_RUNNER_DATA_DIR ?? join(ROOT, 'data', 'sessions'));
 export interface RuntimeModel {
   baseUrl: string;
@@ -165,8 +167,29 @@ export function modelFingerprint(model: RuntimeModel) {
     .digest('hex');
 }
 
+/**
+ * 助手修改草稿后同步 Bundle 中的草稿快照：dsh 进程之后因出错、中止、切换模型等原因重启时，
+ * 编写插件从 Bundle 重新加载草稿，必须拿到最新内容，而不是会话创建时的旧草稿。
+ */
+export function syncSkillDraft(bundle: Bundle, change: any) {
+  type Draft = { content?: string; files?: Array<{ path: string; content: string }> };
+  const draft = bundle.meta?.skillAuthoring as Draft | undefined;
+  if (!draft || !change || typeof change !== 'object') return;
+  const path = typeof change.path === 'string' ? change.path : '';
+  if (change.action === 'write_file' && path && typeof change.content === 'string') {
+    const files = (draft.files ?? []).filter((file) => file.path !== path);
+    draft.files = [...files, { path, content: change.content }];
+  } else if (change.action === 'delete_file' && path) {
+    draft.files = (draft.files ?? []).filter((file) => file.path !== path);
+  } else if ((change.action ?? 'update_draft') === 'update_draft' && typeof change.content === 'string') {
+    draft.content = change.content;
+  }
+}
+
 export class DshKernel implements AgentKernel {
   private sessions = new Map<string, Entry>();
+  /** 正在从磁盘日志恢复的会话：并发恢复同一 id 时复用同一任务，避免启动两个 dsh 进程争用日志。 */
+  private restoring = new Map<string, Promise<SessionHandle>>();
   /** 正在执行（busy）的会话数：容量按它计，而不是按存活会话总数。 */
   private activeTurns = 0;
   /** 排队等待并发额度的回合；先进先出，容量释放后依次放行。 */
@@ -221,11 +244,94 @@ export class DshKernel implements AgentKernel {
     codeProjects?: unknown,
     capabilities?: unknown,
   ): Promise<SessionHandle> {
+    const { code, caps } = this.validateSession(bundle, model, codeProjects, capabilities);
+    const id = randomUUID();
+    const entry = this.newEntry(id, bundle, model!, code, caps, false);
+    this.sessions.set(id, entry);
+    try {
+      await this.boot(entry);
+    } catch (error) {
+      await entry.proc?.dispose();
+      this.sessions.delete(id);
+      throw error;
+    }
+    return this.handle(entry);
+  }
+  /**
+   * 以原会话 id 重新装配执行会话（控制面调用，配置由控制面按数据库快照重新下发）：
+   * - 内存中不存在（Runner 重启过）：确认磁盘上的 dsh 会话日志存在，启动 dsh 并 session/resume 接续，
+   *   之后的对话与重启前完全连续；日志缺失 404，日志无法恢复 410，均不会创建替代会话。
+   * - 内存中已存在：替换为新配置（例如 Skill 草稿被手动修改），下一轮以新配置重启并接续同一份日志。
+   */
+  async restoreSession(
+    id: string,
+    bundle: Bundle,
+    _user: UserCtx,
+    model?: RuntimeModel,
+    codeProjects?: unknown,
+    capabilities?: unknown,
+  ): Promise<SessionHandle> {
+    if (!SESSION_ID.test(id)) throw failure('会话标识无效', 422);
+    const { code, caps } = this.validateSession(bundle, model, codeProjects, capabilities);
+    const pending = this.restoring.get(id);
+    if (pending) return pending;
+    const current = this.sessions.get(id);
+    if (current) {
+      if (current.busy || this.isQueued(id)) throw failure('会话正在执行，请等待本轮结束', 409);
+      const previous = current.proc;
+      current.proc = null;
+      await previous?.dispose();
+      Object.assign(current, { bundle, model: model!, code, caps });
+      return this.handle(current);
+    }
+    const task = this.hydrate(id, bundle, model!, code, caps);
+    this.restoring.set(id, task);
+    try {
+      return await task;
+    } finally {
+      this.restoring.delete(id);
+    }
+  }
+  private async hydrate(
+    id: string,
+    bundle: Bundle,
+    model: RuntimeModel,
+    code: CodeProject[],
+    caps: RuntimeCapabilities,
+  ): Promise<SessionHandle> {
+    let logged = false;
+    try {
+      logged = (await readdir(join(DATA, id, 'session-log'))).length > 0;
+    } catch {
+      logged = false;
+    }
+    if (!logged) throw failure('会话日志不存在，无法接续执行上下文', 404);
+    const entry = this.newEntry(id, bundle, model, code, caps, true);
+    this.sessions.set(id, entry);
+    try {
+      await this.boot(entry);
+    } catch (error) {
+      await entry.proc?.dispose();
+      this.sessions.delete(id);
+      const reason = error instanceof Error ? error.message : String(error);
+      // 配置类错误（模型、插件、能力）原样返回；其余视为日志不可恢复
+      if ((error as any)?.statusCode) throw error;
+      throw failure(`会话日志无法恢复：${reason}`, 410);
+    }
+    return this.handle(entry);
+  }
+  /** 创建与恢复共用的装配校验：插件白名单、受管插件工具、模型、关联代码与扩展能力。 */
+  private validateSession(
+    bundle: Bundle,
+    model: RuntimeModel | undefined,
+    codeProjects: unknown,
+    capabilities: unknown,
+  ) {
     if (!validModel(model)) throw failure('请先在模型中心配置真实模型网关', 422);
     const code = resolveCodeProjects(codeProjects);
     const caps = resolveCapabilities(capabilities);
     const approvedPlugins = new Set(['forge-runtime', 'skill-authoring', 'forge-plugin-bridge']);
-    if (!Array.isArray(bundle.plugin_mounts) || bundle.plugin_mounts.some((p) => !approvedPlugins.has(p)))
+    if (!Array.isArray(bundle?.plugin_mounts) || bundle.plugin_mounts.some((p) => !approvedPlugins.has(p)))
       throw failure('包含未审核的插件', 422);
     if (bundle.plugin_mounts.includes('skill-authoring') && !bundle.meta?.skillAuthoring)
       throw failure('Skill 编辑插件缺少当前 Skill 草稿上下文', 422);
@@ -244,8 +350,17 @@ export class DshKernel implements AgentKernel {
       pluginTools.some((name) => !boundToolNames.includes(name))
     )
       throw failure('插件工具装配信息无效', 422);
-    const id = randomUUID();
-    const entry: Entry = {
+    return { code, caps };
+  }
+  private newEntry(
+    id: string,
+    bundle: Bundle,
+    model: RuntimeModel,
+    code: CodeProject[],
+    caps: RuntimeCapabilities,
+    hasHistory: boolean,
+  ): Entry {
+    return {
       id,
       bundle,
       model,
@@ -254,7 +369,7 @@ export class DshKernel implements AgentKernel {
       listeners: new Set(),
       seq: 0,
       busy: false,
-      hasHistory: false,
+      hasHistory,
       error: null,
       workspace: join(DATA, id, 'workspace'),
       pending: new Map(),
@@ -262,18 +377,12 @@ export class DshKernel implements AgentKernel {
       code,
       caps,
     };
-    this.sessions.set(id, entry);
-    try {
-      await this.boot(entry);
-    } catch (error) {
-      await entry.proc?.dispose();
-      this.sessions.delete(id);
-      throw error;
-    }
+  }
+  private handle(entry: Entry): SessionHandle {
     return {
-      sessionId: id,
+      sessionId: entry.id,
       forgeSessionId: 0,
-      bundleHash: createHash('sha256').update(JSON.stringify(bundle)).digest('hex'),
+      bundleHash: createHash('sha256').update(JSON.stringify(entry.bundle)).digest('hex'),
     };
   }
   private async boot(entry: Entry) {
@@ -593,8 +702,10 @@ export class DshKernel implements AgentKernel {
       entry.error = params.message;
       this.emit(entry, 'error', params);
     } else if (method === 'forge.policy') this.emit(entry, 'policy_decision', params, 'tools');
-    else if (method === 'forge.skill_revision') this.emit(entry, 'skill_revision', params, 'tools');
-    else if (method === 'forge.plugin_loaded') this.emit(entry, 'plugin_loaded', params, 'tools');
+    else if (method === 'forge.skill_revision') {
+      syncSkillDraft(entry.bundle, params);
+      this.emit(entry, 'skill_revision', params, 'tools');
+    } else if (method === 'forge.plugin_loaded') this.emit(entry, 'plugin_loaded', params, 'tools');
     else if (method === 'forge.skills_loaded') this.emit(entry, 'skills_loaded', params, 'tools');
     else if (method === 'forge.plugin_call') this.emit(entry, 'plugin_call', params, 'tools');
     else if (method === 'forge.artifact') this.emit(entry, 'files', { files: [params] }, 'tools');
@@ -867,8 +978,7 @@ export class DshKernel implements AgentKernel {
     await Promise.all([...this.sessions.keys()].map((id) => this.disposeSession(id)));
   }
   private async workspace(id: string) {
-    if (!/^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(id))
-      throw failure('会话标识无效', 422);
+    if (!SESSION_ID.test(id)) throw failure('会话标识无效', 422);
     const root = join(DATA, id, 'workspace');
     try {
       if (!(await lstat(root)).isDirectory()) throw new Error();

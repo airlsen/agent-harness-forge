@@ -27,7 +27,8 @@ await writeFile(join(codeRoot, 'alpha', '.git', 'refs', 'heads', 'main'), 'a'.re
 await writeFile(join(codeRoot, 'beta', 'lib', 'beta.py'), 'BETA_MARKER = True\n');
 await writeFile(join(dir, 'outside.txt'), 'outside-sentinel\n');
 await symlink(join(dir, 'outside.txt'), join(codeRoot, 'alpha', 'escape.txt'));
-const { DshKernel, compactionConfig, BASE_TOOLS, SEARCH_TOOLS } = await import('../src/kernel/dsh-kernel.ts');
+const { DshKernel, compactionConfig, syncSkillDraft, BASE_TOOLS, SEARCH_TOOLS } =
+  await import('../src/kernel/dsh-kernel.ts');
 const kernel = new DshKernel(),
   requests = [],
   checks = [];
@@ -690,6 +691,89 @@ try {
   assert.equal(await restarted.readFile(id, 'report.md'), '# Integration fixture\n');
   check('artifacts remain readable after archive and Runner reconstruction', () =>
     assert.equal(kernel.size, 0),
+  );
+  // Runner 重启：新内核内存为空，按原 id 与控制面快照恢复后，必须从磁盘会话日志接续完整上下文
+  const fixtureModel = (name) => ({
+    baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+    model: name,
+    apiKey: 'test-key-do-not-use',
+    contextWindow: 64000,
+  });
+  const userCtx = { tenantId: 'test', userId: 'test', roles: [] };
+  await assert.rejects(
+    () => restarted.sendTurn(id, 'PLAIN'),
+    (error) => error.statusCode === 404,
+  );
+  await assert.rejects(
+    () =>
+      restarted.restoreSession('00000000-0000-4000-8000-000000000000', bundle, userCtx, fixtureModel('m')),
+    (error) => error.statusCode === 404,
+  );
+  await assert.rejects(
+    () => restarted.restoreSession('../escape', bundle, userCtx, fixtureModel('m')),
+    (error) => error.statusCode === 422,
+  );
+  await assert.rejects(
+    () => restarted.restoreSession(id, bundle, userCtx, { model: 'missing-base-url' }),
+    (error) => error.statusCode === 422,
+  );
+  const [restoredHandle, concurrentHandle] = await Promise.all([
+    restarted.restoreSession(id, bundle, userCtx, fixtureModel('restored-fixture-model')),
+    restarted.restoreSession(id, bundle, userCtx, fixtureModel('restored-fixture-model')),
+  ]);
+  const restartedEvents = [];
+  restarted.onEvent(id, (event) => restartedEvents.push(event));
+  const beforeRestore = requests.length;
+  await restarted.sendTurn(id, 'PLAIN');
+  check('restoreSession resumes the persisted dsh log after a Runner restart (same id, full history)', () => {
+    assert.equal(restoredHandle.sessionId, id);
+    assert.equal(concurrentHandle.sessionId, id);
+    assert.equal(restarted.size, 1);
+    assert.ok(restartedEvents.some((event) => event.kind === 'message'));
+    const request = requests[beforeRestore];
+    assert.equal(request.model, 'restored-fixture-model');
+    for (const earlier of ['THINK', 'AFTER_INTERRUPT'])
+      assert.ok(
+        request.messages.some((message) => message.role === 'user' && message.content === earlier),
+        `history keeps ${earlier}`,
+      );
+  });
+  // 已在内存中：替换为新配置，下一轮以新配置重启并接续同一份日志
+  await restarted.restoreSession(id, bundle, userCtx, fixtureModel('reconfigured-fixture-model'));
+  const beforeReconfigure = requests.length;
+  await restarted.sendTurn(id, 'PLAIN');
+  check('restoreSession on a live session swaps the config and resumes on the next turn', () => {
+    const request = requests[beforeReconfigure];
+    assert.equal(request.model, 'reconfigured-fixture-model');
+    assert.ok(
+      request.messages.some((message) => message.role === 'user' && message.content === 'AFTER_INTERRUPT'),
+    );
+  });
+  await restarted.disposeSession(id);
+  // 日志目录存在但内容无法恢复：返回 410，且不留下半成品会话（控制面据此走降级）
+  const corruptId = '11111111-1111-4111-8111-111111111111';
+  await mkdir(join(dir, 'sessions', corruptId, 'session-log'), { recursive: true });
+  await writeFile(join(dir, 'sessions', corruptId, 'session-log', 'garbage.jsonl'), 'not a dsh log\n');
+  await assert.rejects(
+    () => restarted.restoreSession(corruptId, bundle, userCtx, fixtureModel('m')),
+    (error) => error.statusCode === 410,
+  );
+  check('unrecoverable session log fails with 410 and leaves no half-restored session', () =>
+    assert.equal(restarted.has(corruptId), false),
+  );
+  const authoring = {
+    meta: { skillAuthoring: { content: 'v1', files: [{ path: 'references/a.md', content: 'a1' }] } },
+  };
+  syncSkillDraft(authoring, { action: 'update_draft', content: 'v2', summary: 's' });
+  syncSkillDraft(authoring, { action: 'write_file', path: 'references/a.md', content: 'a2' });
+  syncSkillDraft(authoring, { action: 'write_file', path: 'scripts/run.py', content: 'print(1)' });
+  syncSkillDraft(authoring, { action: 'delete_file', path: 'references/a.md' });
+  syncSkillDraft({ meta: {} }, { action: 'update_draft', content: 'ignored' });
+  check('agent draft edits keep the bundle snapshot current for later dsh restarts', () =>
+    assert.deepEqual(authoring.meta.skillAuthoring, {
+      content: 'v2',
+      files: [{ path: 'scripts/run.py', content: 'print(1)' }],
+    }),
   );
   await restarted.purgeWorkspace(id);
   const purgedList = await restarted.listFiles(id);
