@@ -88,6 +88,14 @@ interface TurnReceipt {
   codeProjects?: string[];
   capabilities?: CapabilityChoice;
 }
+function copyDraft(draft: TaskDraft): TaskDraft {
+  return {
+    ...draft,
+    attachments: draft.attachments.map((file) => ({ ...file })),
+    codeProjects: [...draft.codeProjects],
+    capabilities: copyCapabilities(draft.capabilities),
+  };
+}
 function sameDraft(left: TaskDraft, right: TaskDraft) {
   return (
     left.id === right.id &&
@@ -147,6 +155,11 @@ export const useConversation = defineStore('conversation', {
     liveText: '',
     liveReasoning: '',
     sending: false,
+    /**
+     * 已发出、尚未被服务端受理的消息：立即显示在对话里（「正在准备…」），受理后换成正式消息；
+     * 失败时标为「发送失败」，内容放回输入框。只在当前页面显示，不改变 current / messages。
+     */
+    outgoing: null as null | { content: string; failed: boolean; draft: TaskDraft },
     loading: false,
     runError: '',
     connectionWarning: '',
@@ -175,6 +188,7 @@ export const useConversation = defineStore('conversation', {
       Boolean(
         state.input.trim() ||
         state.draftAttachments.length ||
+        (state.outgoing && !state.outgoing.failed) ||
         Object.entries(state.drafts).some(
           ([key, draft]) =>
             (key !== state.draftKey || state.loading || (key !== 'new' && !state.current)) &&
@@ -189,6 +203,9 @@ export const useConversation = defineStore('conversation', {
     },
     snapshotDraft(): TaskDraft {
       if (!this.draftId) this.draftId = ++this.draftSequence;
+      // 提交中的内容已从输入框移到对话里，但在受理前仍属于这份草稿（离开再回来、失败重试都要用到）。
+      const sending = this.outgoing;
+      if (sending && !sending.failed && sending.draft.id === this.draftId) return copyDraft(sending.draft);
       return {
         id: this.draftId,
         input: this.input,
@@ -230,6 +247,7 @@ export const useConversation = defineStore('conversation', {
       this.connectionWarning = '';
       this.queue = null;
       this.sending = false;
+      this.outgoing = null;
       this.loading = false;
       this.input = '';
       this.draftAttachments = [];
@@ -281,6 +299,7 @@ export const useConversation = defineStore('conversation', {
       return platform.defaultModelId ?? platform.modelOptions[0]?.id ?? null;
     },
     prepareStart() {
+      if (this.outgoing?.failed) this.outgoing = null;
       // Returning home parks this session's reply, not its execution. A new-task draft
       // is independent of every existing conversation and never inherits their context.
       if (this.current || this.loading || this.draftKey !== 'new') {
@@ -451,6 +470,12 @@ export const useConversation = defineStore('conversation', {
       this.connectionWarning = '';
       this.liveText = '';
       this.liveReasoning = '';
+      // 先把消息显示出来、清空输入框；新会话的创建与受理在后台进行（首轮约 1–2 秒）。
+      this.outgoing = { content: message, failed: false, draft: copyDraft(submittedDraft) };
+      this.input = '';
+      this.draftAttachments = [];
+      ++this.draftRevision;
+      let accepted = false;
       try {
         const prepared = preparedSessions.get(submittedDraft.id);
         if (prepared && pendingTurns.has(prepared.id))
@@ -503,6 +528,8 @@ export const useConversation = defineStore('conversation', {
         this.draftCapabilities = copyCapabilities(this.current.capabilities);
         if (receipt.model) this.applyModel(receipt.model);
         this.selectedModelId = this.sessionModel(this.selectedModelId);
+        accepted = true;
+        this.outgoing = null;
         this.messages.push({
           id: receipt.messageId,
           role: 'user',
@@ -513,8 +540,20 @@ export const useConversation = defineStore('conversation', {
         this.follow(session.id, receipt.cursor);
         await platform.refreshSessions();
         return generation === openGeneration ? session.id : null;
+      } catch (error) {
+        // 未受理：标为「发送失败」，把文字和附件放回输入框（离开过本页则草稿已另存，不再回填）。
+        if (!accepted && generation === openGeneration && this.outgoing) {
+          this.outgoing = { ...this.outgoing, failed: true };
+          this.input = submittedDraft.input;
+          this.draftAttachments = submittedDraft.attachments.map((file) => ({ ...file }));
+          ++this.draftRevision;
+        }
+        throw error;
       } finally {
-        if (generation === openGeneration) this.sending = false;
+        if (generation === openGeneration) {
+          this.sending = false;
+          if (this.outgoing && !this.outgoing.failed) this.outgoing = null;
+        }
       }
     },
     /** 读取代码根目录下可关联的项目；失败时保留上次结果并抛出错误 */

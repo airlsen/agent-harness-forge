@@ -413,6 +413,68 @@ try {
   );
 
   reset();
+  chat.input = 'Show me right away';
+  chat.draftAttachments.push({ name: 'notes.txt', content: 'Attached' });
+  createGate = deferred();
+  const optimistic = chat.submit();
+  // 发送的同一刻：消息已在对话里显示，输入框已清空，但会话尚未出现
+  assert.equal(chat.outgoing.failed, false);
+  assert.match(chat.outgoing.content, /^Show me right away\n\n附件：notes.txt/);
+  assert.equal(chat.input, '');
+  assert.deepEqual(chat.draftAttachments, []);
+  assert.equal(chat.current, null);
+  assert.equal(chat.messages.length, 0);
+  assert.equal(chat.hasUnsentDrafts, true);
+  assert.equal(chat.requestNewConversation(), false); // the in-flight text still counts as the draft
+  chat.pendingNewConversation = null;
+  chat.prepareStart(); // entering the chat page without an id keeps the pending message
+  assert.equal(chat.outgoing.content.startsWith('Show me right away'), true);
+  createGate.resolve();
+  const optimisticId = await optimistic;
+  assert.equal(chat.outgoing, null);
+  assert.equal(chat.current.id, optimisticId);
+  assert.equal(chat.messages.length, 1);
+  assert.equal(chat.input, '');
+  passed('a sent message is shown immediately and replaced by the accepted message on receipt');
+
+  reset();
+  chat.input = 'Fails before acceptance';
+  chat.draftAttachments.push({ name: 'keep.txt', content: 'Keep me' });
+  turnGate = deferred();
+  failTurn = true;
+  const failing = chat.submit();
+  await until(() => count(/\/turns$/, 'POST') === 1);
+  assert.equal(chat.input, '');
+  turnGate.resolve();
+  await assert.rejects(failing, /Unit fixture request failed/);
+  assert.equal(chat.outgoing.failed, true);
+  assert.equal(chat.input, 'Fails before acceptance');
+  assert.equal(chat.draftAttachments[0].content, 'Keep me');
+  assert.equal(chat.hasUnsentDrafts, true);
+  const resent = await chat.submit();
+  assert.equal(chat.outgoing, null); // retrying replaces the failed message
+  assert.equal(chat.current.id, resent);
+  assert.equal(chat.messages.length, 1);
+  passed('a failed send is marked as failed and puts the text and files back into the composer');
+
+  reset();
+  chat.input = 'Leave while sending';
+  turnGate = deferred();
+  failTurn = true;
+  const leaving = chat.submit();
+  await until(() => count(/\/turns$/, 'POST') === 1);
+  chat.prepareStart();
+  await chat.open(11);
+  assert.equal(chat.outgoing, null);
+  chat.prepareStart();
+  assert.equal(chat.input, 'Leave while sending'); // the parked draft keeps the in-flight text
+  turnGate.resolve();
+  await assert.rejects(leaving, /Unit fixture request failed/);
+  assert.equal(chat.outgoing, null); // a failure after leaving does not touch the new view
+  assert.equal(chat.input, 'Leave while sending');
+  passed('leaving during a send parks the text as the draft and a later failure does not touch the new view');
+
+  reset();
   chat.input = 'First turn with a pending replacement dialog';
   turnGate = deferred();
   const firstTurn = chat.submit();

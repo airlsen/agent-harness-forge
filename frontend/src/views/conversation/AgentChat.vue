@@ -115,7 +115,7 @@ const selectedTools = computed(() => {
   );
   return app.tools.filter((t) => names.has(t.name));
 });
-const welcome = computed(() => !chat.messages.length && !loadError.value);
+const welcome = computed(() => !chat.messages.length && !chat.outgoing && !loadError.value);
 const processEvents = computed(() =>
   chat.events.filter((e) =>
     [
@@ -152,16 +152,27 @@ const pendingTools = computed<ToolCallView[]>(() =>
           pending: true,
         })),
 );
+/** 已发出、尚未受理的消息在对话中的临时编号（受理后换成服务端记录） */
+const OUTGOING_ID = 'outgoing';
 const turns = computed(() =>
-  buildTurns(chat.messages, {
-    running: chat.running,
-    reasoning: chat.liveReasoning,
-    text: chat.liveText,
-    activeTools: pendingTools.value,
-  }),
+  buildTurns(
+    chat.outgoing
+      ? [...chat.messages, { id: OUTGOING_ID, role: 'user', content: chat.outgoing.content, meta: {} }]
+      : chat.messages,
+    {
+      running: chat.running,
+      reasoning: chat.liveReasoning,
+      text: chat.liveText,
+      activeTools: pendingTools.value,
+    },
+  ),
 );
+const isOutgoing = (turn: Turn) => turn.key === OUTGOING_ID;
+const sendFailed = (turn: Turn) => isOutgoing(turn) && Boolean(chat.outgoing?.failed);
 /** 最近一轮实际未生效的扩展能力：在「能力」面板逐项标记，并在面板按钮上提示数量 */
-const lastUnavailable = computed(() => (chat.current ? latestUnavailable(turns.value) : []));
+const lastUnavailable = computed(() =>
+  chat.current ? latestUnavailable(turns.value.filter((turn) => !isOutgoing(turn))) : [],
+);
 function skippedItem(kind: 'skill' | 'mcp' | 'web', id: number | null = null) {
   return lastUnavailable.value.find((item) => item.kind === kind && (kind === 'web' || item.id === id));
 }
@@ -447,9 +458,19 @@ watch(
     }
   },
 );
+// 在本页的新会话中发送：欢迎页立即换成对话（消息先显示），输入框随之移到底部。
+watch(
+  () => Boolean(chat.outgoing && !chat.outgoing.failed && !chat.current),
+  async (sending) => {
+    if (!sending || route.params.sessionId) return;
+    const origin = captureComposerOrigin();
+    await nextTick();
+    animateComposerArrival(origin);
+  },
+);
 // 发送消息后总是回到底部：即使之前向上翻看了历史，也要看到刚发出的消息与后续回复
 watch(
-  () => [chat.sending, chat.messages.filter((message) => message.role === 'user').length] as const,
+  () => [chat.sending, turns.value.filter((turn) => turn.user).length] as const,
   async ([sending, users], [wasSending, previousUsers]) => {
     if ((sending && !wasSending) || users > previousUsers) {
       stickToBottom.value = true;
@@ -629,9 +650,12 @@ async function quoteMessage(text: string) {
                     <Icon name="ri-chat-1-line" :size="16" />
                   </button>
                 </div>
+                <div v-if="sendFailed(turn)" class="message-send-failed" role="alert">
+                  <Icon name="info" :size="14" />发送失败，内容已放回输入框
+                </div>
               </div>
             </div>
-            <div class="message-row assistant">
+            <div v-if="!sendFailed(turn)" class="message-row assistant">
               <span class="message-avatar agent"><Icon name="sparkles" :size="18" /></span>
               <div class="message-main">
                 <div class="message-author">
@@ -655,7 +679,9 @@ async function quoteMessage(text: string) {
                 </section>
                 <div v-if="turnWaiting(turn)" class="agent-working compact" role="status">
                   <span class="thinking-dots"><i></i><i></i><i></i></span
-                  ><span>{{ turn.steps.length ? '正在继续…' : '正在处理这项工作' }}</span>
+                  ><span>{{
+                    isOutgoing(turn) ? '正在准备…' : turn.steps.length ? '正在继续…' : '正在处理这项工作'
+                  }}</span>
                 </div>
                 <div
                   v-if="turn.deliverables.length"
