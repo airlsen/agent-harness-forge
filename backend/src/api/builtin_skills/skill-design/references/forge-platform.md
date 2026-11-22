@@ -42,4 +42,4 @@
 - 文件名：英文字母或数字开头，只能包含字母、数字、点、下划线、短横线
 - 数量和大小：最多 20 个文件，单个不超过 120KB，合计不超过 512KB；业务会话中只读
 - 编写会话可用 skill_test_script 在隔离环境试运行脚本；部署环境未提供隔离运行能力时会拒绝执行
-- Skill 工作台可同时使用草稿编辑工具和当前草稿的 skill / read / skill_run_script。skill_test_script 只检查单个脚本，不代表完整 Skill 已完成任务
+- Skill 工作台用 skill_trial 加载最新草稿试用（包含本轮刚做的修改），附加文件用 skill_read_file 读取、脚本用 skill_test_script 运行；skill / read / skill_run_script 是本轮开始时的快照，本轮改过草稿后不再代表最新版本。skill_test_script 只检查单个脚本，不代表完整 Skill 已完成任务

@@ -52,9 +52,18 @@ try {
       'skill_write_file',
       'skill_delete_file',
       'skill_test_script',
+      'skill_trial',
     ],
   });
-  assert.equal(tools.size, 9);
+  assert.equal(tools.size, 10);
+  // 试用加载：未修改时与启动快照一致
+  const trial = tools.get('skill_trial');
+  const fresh = await trial.execute({});
+  assert.equal(fresh.name, 'support');
+  assert.equal(fresh.description, 'Help customers');
+  assert.equal(fresh.snapshotStale, false);
+  assert.deepEqual(fresh.files, [{ path: 'references/notes.md', bytes: 19, mentioned: false }]);
+  assert.ok(fresh.document.includes('Check details.'));
   assert.equal((await tools.get('skill_read_draft').execute({})).skillId, 4);
   assert.deepEqual((await tools.get('skill_list_files').execute({})).files, [
     { path: 'references/notes.md', bytes: 19, mentioned: false },
@@ -80,6 +89,13 @@ try {
   assert.equal(events[0].params.summary, 'Improve steps');
   assert.equal((await tools.get('skill_read_draft').execute({})).content.endsWith('# Updated'), true);
   await assert.rejects(() => tools.get('skill_update_draft').execute({ content: 'x'.repeat(64001) }), /64 KB/);
+  // 本轮修改后：试用拿到的是最新草稿，并标明 skill 工具快照已过期；试用本身不发修订事件
+  const afterEdit = await trial.execute({});
+  assert.ok(afterEdit.document.endsWith('# Updated'));
+  assert.equal(afterEdit.description, 'Help');
+  assert.equal(afterEdit.snapshotStale, true);
+  assert.ok(afterEdit.howTo.some((item) => item.includes('旧快照')));
+  assert.equal(events.length, 1);
 
   // 格式不合格的草稿不保存、不发事件，错误返回给模型修正
   await assert.rejects(

@@ -29,6 +29,7 @@ export const BUILTIN_TOOL_TITLES: Record<string, string> = {
   skill_read_guide: '查阅写作指南',
   skill_validate_draft: '校验草稿',
   skill_test_script: '试运行脚本',
+  skill_trial: '试用最新草稿',
   skill_update_draft: '更新 SKILL.md',
   skill_revision: '更新草稿',
 };
