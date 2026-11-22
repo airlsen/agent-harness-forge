@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { usePlatform } from '../../stores/platform';
-import Icon from '../../components/ForgeIcon.vue';
+import Icon from '../../components/base/ForgeIcon.vue';
 
 const app = usePlatform();
 const refreshing = ref(false);

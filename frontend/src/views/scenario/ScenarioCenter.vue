@@ -10,7 +10,7 @@ import { formatDate, isAvailableScenario, scenarioSource, scenarioState } from '
 import { catalogDate, orderScenarios, scenarioPublished } from '../../utils/catalogOrdering';
 import type { Scenario, ScenarioPayload } from '../../types/platform';
 import type { PluginPackage } from '../../types/plugin';
-import Icon from '../../components/ForgeIcon.vue';
+import Icon from '../../components/base/ForgeIcon.vue';
 import { drawerA11y } from '../../utils/overlay';
 import CatalogCard from '../../components/catalog/CatalogCard.vue';
 import CatalogEmpty from '../../components/catalog/CatalogEmpty.vue';

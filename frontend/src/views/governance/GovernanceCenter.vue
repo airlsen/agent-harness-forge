@@ -5,7 +5,7 @@ import { api, post, put } from '../../api/client';
 import { formatBytes } from '../../utils/presentation';
 import { usePlatform } from '../../stores/platform';
 import type { Tool, WebSearchSettings } from '../../types/platform';
-import Icon from '../../components/ForgeIcon.vue';
+import Icon from '../../components/base/ForgeIcon.vue';
 const app = usePlatform(),
   saving = ref(false),
   loaded = ref(false);

@@ -8,15 +8,15 @@ import {
   useRouter,
 } from 'vue-router';
 import { api, apiFetch, post, put, remove } from '../../api/client';
-import Icon from '../../components/ForgeIcon.vue';
+import Icon from '../../components/base/ForgeIcon.vue';
 import CatalogEmpty from '../../components/catalog/CatalogEmpty.vue';
-import Markdown from '../../components/MarkdownContent.vue';
-import ProcessBlock from '../../components/ProcessBlock.vue';
-import UserMessageText from '../../components/UserMessageText.vue';
-import { MarkdownPreview } from '../../components/common';
-import CodeBlock from '../../components/CodeBlock.vue';
+import Markdown from '../../components/markdown/MarkdownContent.vue';
+import ProcessBlock from '../../components/message/ProcessBlock.vue';
+import UserMessageText from '../../components/message/UserMessageText.vue';
+import MarkdownPreview from '../../components/markdown/MarkdownPreview.vue';
+import CodeBlock from '../../components/markdown/CodeBlock.vue';
 import { useCopy } from '../../utils/useCopy';
-import MonacoEditor from '../../components/MonacoEditor.vue';
+import MonacoEditor from '../../components/editor/MonacoEditor.vue';
 import { loadMonaco } from '../../utils/monaco';
 import { lexer } from 'marked';
 import { readSkillDocument, updateSkillMetadata, initialSkillDocument } from '../../utils/skillDocument';

@@ -1,5 +1,5 @@
 <script lang="ts">
-import { MERMAID_CONFIG } from '../utils/vizTheme';
+import { MERMAID_CONFIG } from '../../utils/vizTheme';
 
 /** mermaid 懒加载单例与全局渲染序号（模块级，跨组件实例共享，避免临时节点 id 冲突） */
 let mermaidReady: Promise<typeof import('mermaid').default> | null = null;
@@ -16,11 +16,11 @@ function getMermaid() {
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import { sanitizeDiagramSvg } from '../utils/sanitizeSvg';
+import { sanitizeDiagramSvg } from '../../utils/sanitizeSvg';
 import CodeBlock from './CodeBlock.vue';
-import DialogShell from './DialogShell.vue';
-import { useCopy } from '../utils/useCopy';
-import Icon from './ForgeIcon.vue';
+import DialogShell from '../base/DialogShell.vue';
+import { useCopy } from '../../utils/useCopy';
+import Icon from '../base/ForgeIcon.vue';
 
 const props = withDefaults(defineProps<{ code: string; closed: boolean; live?: boolean }>(), {
   live: false,

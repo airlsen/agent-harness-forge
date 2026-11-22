@@ -12,7 +12,7 @@ import type { PublishedSkillSummary } from '../../types/skill';
 import type { PluginPackage } from '../../types/plugin';
 import { Empty } from 'ant-design-vue';
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
-import Icon from '../../components/ForgeIcon.vue';
+import Icon from '../../components/base/ForgeIcon.vue';
 import CatalogCard from '../../components/catalog/CatalogCard.vue';
 import SkillCardActions from '../../components/catalog/SkillCardActions.vue';
 import ToolDescription from '../../components/catalog/ToolDescription.vue';

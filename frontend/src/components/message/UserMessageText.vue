@@ -6,7 +6,7 @@
  * 正文用 v-text 输出：pre-wrap 下模板里的缩进空白会显示出来。
  */
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import Icon from './ForgeIcon.vue';
+import Icon from '../base/ForgeIcon.vue';
 
 const props = withDefaults(defineProps<{ text: string; maxLines?: number }>(), { maxLines: 5 });
 const root = ref<HTMLElement | null>(null);

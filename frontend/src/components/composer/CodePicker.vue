@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
-import { MAX_CODE_PROJECTS, useConversation } from '../stores/conversation';
-import { usePlatform } from '../stores/platform';
-import type { CodeProject } from '../types/platform';
-import Icon from './ForgeIcon.vue';
+import { MAX_CODE_PROJECTS, useConversation } from '../../stores/conversation';
+import { usePlatform } from '../../stores/platform';
+import type { CodeProject } from '../../types/platform';
+import Icon from '../base/ForgeIcon.vue';
 
 /**
  * 聊天输入框的「关联代码」：从代码根目录下的项目中多选，模型只读搜索与分析。

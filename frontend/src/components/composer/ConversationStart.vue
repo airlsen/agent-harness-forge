@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
-import { usePlatform } from '../stores/platform';
-import { useConversation } from '../stores/conversation';
-import type { Scenario } from '../types/platform';
-import Icon from './ForgeIcon.vue';
+import { usePlatform } from '../../stores/platform';
+import { useConversation } from '../../stores/conversation';
+import type { Scenario } from '../../types/platform';
+import Icon from '../base/ForgeIcon.vue';
 import TaskComposer from './TaskComposer.vue';
 
 const emit = defineEmits<{ submitted: [id: number] }>();

@@ -2,8 +2,8 @@
 import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { api, downloadResponse } from '../../api/client';
-import Icon from '../../components/ForgeIcon.vue';
-import Markdown from '../../components/MarkdownContent.vue';
+import Icon from '../../components/base/ForgeIcon.vue';
+import Markdown from '../../components/markdown/MarkdownContent.vue';
 import { usePlatform } from '../../stores/platform';
 import type { PublishedSkillDetail } from '../../types/skill';
 import { formatBytes } from '../../utils/presentation';

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import Icon from './ForgeIcon.vue';
+import Icon from '../base/ForgeIcon.vue';
 import {
   CHANGE_LABELS,
   changeLineTotals,
@@ -8,7 +8,7 @@ import {
   fileDir,
   type FileChange,
   type WorkspaceChanges,
-} from '../utils/files';
+} from '../../utils/files';
 
 /** 本轮工作区改动：折叠摘要（新增/修改/删除与行数），展开后逐文件查看对比或打开当前文件。 */
 const props = defineProps<{ changes: WorkspaceChanges; existing: Set<string> }>();

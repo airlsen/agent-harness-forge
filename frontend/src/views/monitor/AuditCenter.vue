@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { api } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
 import type { Conversation } from '../../types/platform';
-import Icon from '../../components/ForgeIcon.vue';
+import Icon from '../../components/base/ForgeIcon.vue';
 const app = usePlatform(),
   rows = ref<Conversation[]>([]),
   query = ref(''),

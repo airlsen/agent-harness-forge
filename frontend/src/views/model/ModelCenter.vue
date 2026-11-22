@@ -6,7 +6,7 @@ import { api, post, put, remove } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
 import { confirm } from '../../utils/feedback';
 import type { ModelConnection } from '../../types/platform';
-import Icon from '../../components/ForgeIcon.vue';
+import Icon from '../../components/base/ForgeIcon.vue';
 import CatalogEmpty from '../../components/catalog/CatalogEmpty.vue';
 import { drawerA11y } from '../../utils/overlay';
 

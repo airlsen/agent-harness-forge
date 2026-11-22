@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type VNode } from 'vue';
 import { useRouter } from 'vue-router';
-import { useConversation } from '../stores/conversation';
-import { usePlatform } from '../stores/platform';
-import { isAvailableScenario } from '../utils/presentation';
-import Icon from './ForgeIcon.vue';
+import { useConversation } from '../../stores/conversation';
+import { usePlatform } from '../../stores/platform';
+import { isAvailableScenario } from '../../utils/presentation';
+import Icon from '../base/ForgeIcon.vue';
 import ModelPicker from './ModelPicker.vue';
 import CodePicker from './CodePicker.vue';
 import CapabilityPicker from './CapabilityPicker.vue';

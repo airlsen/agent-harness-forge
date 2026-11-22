@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router';
 import { api, downloadResponse } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
 import type { KernelEvent, SessionDetail } from '../../types/platform';
-import Icon from '../../components/ForgeIcon.vue';
+import Icon from '../../components/base/ForgeIcon.vue';
 const app = usePlatform(),
   route = useRoute(),
   detail = ref<SessionDetail | null>(null),

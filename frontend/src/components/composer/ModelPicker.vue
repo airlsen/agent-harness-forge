@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch, type VNode } from 'vue';
-import { useConversation } from '../stores/conversation';
-import { usePlatform } from '../stores/platform';
-import type { ModelOption } from '../types/platform';
-import { contextPressure, tokenLabel } from '../utils/modelContext';
-import Icon from './ForgeIcon.vue';
+import { useConversation } from '../../stores/conversation';
+import { usePlatform } from '../../stores/platform';
+import type { ModelOption } from '../../types/platform';
+import { contextPressure, tokenLabel } from '../../utils/modelContext';
+import Icon from '../base/ForgeIcon.vue';
 
 /**
  * 聊天输入框的模型选择。模型属于本次会话、与场景无关：

@@ -20,13 +20,42 @@
 
 旧的 `/agent/chat/:sessionId` 等深链接保留，不改变认证或 API 路径。
 
+## 目录结构
+
+页面按功能模块放在 `src/views/<模块>/`，与侧边栏对应；页面网址仍以 `/agent/...` 开头，路由在 `src/main.ts`。
+
+| 页面模块 `views/` | 内容 |
+|---|---|
+| `login/` | 登录 |
+| `workbench/` | 工作台 |
+| `conversation/` | 会话对话页、我的会话、执行过程 |
+| `scenario/` | 企业场景 |
+| `capability/` | 技能管理、插件详情、已发布技能详情 |
+| `skill/` | 我的技能、Skill 编辑器 |
+| `model/` | 模型连接 |
+| `governance/` | 执行策略 |
+| `monitor/` | 运行状态、运行审计 |
+
+可复用组件放在 `src/components/<分组>/`，按用途分组：
+
+| 组件分组 `components/` | 内容 |
+|---|---|
+| `base/` | 到处都用的基础件：`ForgeIcon`（图标）、`DialogShell`（弹窗外壳） |
+| `layout/` | 平台外壳：`AccountMenu`、`AppFeedbackBridge` |
+| `composer/` | 工作台与会话共用的输入区：`ConversationStart`、`TaskComposer` 及模型/技能/代码选择器 |
+| `message/` | 会话消息：用户消息、执行过程、工具调用、本轮修改 |
+| `markdown/` | 内容渲染：Markdown、代码块、流程图、图表、JSON（见 `markdown/README.md`） |
+| `file/` | 文件卡片、文件树、文件预览、文件对比 |
+| `editor/` | Monaco 代码编辑器（见 `editor/MonacoEditor.md`） |
+| `catalog/` | 目录卡片页共用：卡片、网格、搜索、筛选、空状态 |
+
 ## 代码分工
 
 - `App.vue`：常驻企业导航、管理区导航、左下角操作帮助；不再渲染全局顶栏。存在运行中会话时每 3 秒同步会话列表状态，防止离开 SSE 页后状态滞留。
-- `components/AccountMenu.vue`：头像账号菜单；鼠标悬停、点击及键盘打开，手机首触可用，Esc/外部点击/切页关闭；退出仍由 `App.vue` 清空会话草稿后调用原认证接口。
-- `components/ConversationStart.vue`：工作台与空白新会话共用唯一标题、居中输入、真实场景建议与必要的模型配置提示。
-- `components/TaskComposer.vue`：首页/会话共用输入、场景选择、文本附件和发送，拒绝空提交、二进制文本和超限附件。
-- `components/DialogShell.vue`、`utils/focus.ts`：遮罩、Esc、Tab 焦点约束与焦点返回；真正的模态弹层同时将应用背景设为 inert / aria-hidden，关闭时恢复原状态；这些焦点约束仅用于弹窗和按需详情，不把常驻主导航当作模态抽屉。
+- `components/layout/AccountMenu.vue`：头像账号菜单；鼠标悬停、点击及键盘打开，手机首触可用，Esc/外部点击/切页关闭；退出仍由 `App.vue` 清空会话草稿后调用原认证接口。
+- `components/composer/ConversationStart.vue`：工作台与空白新会话共用唯一标题、居中输入、真实场景建议与必要的模型配置提示。
+- `components/composer/TaskComposer.vue`：首页/会话共用输入、场景选择、文本附件和发送，拒绝空提交、二进制文本和超限附件。
+- `components/base/DialogShell.vue`、`utils/focus.ts`：遮罩、Esc、Tab 焦点约束与焦点返回；真正的模态弹层同时将应用背景设为 inert / aria-hidden，关闭时恢复原状态；这些焦点约束仅用于弹窗和按需详情，不把常驻主导航当作模态抽屉。
 - `utils/presentation.ts`：统一状态/日期/文件尺寸，`idle` 只显示“可继续”，不等于成功。
 - `stores/conversation.ts`：真实 SSE、接收后原子交接、会话级草稿停放、显式新建确认；提交/读取代际校验，迟到响应不能污染新草稿；附件读取跟随草稿版本，重新打开提交中的会话等待真实回执后再回读。
 - `style.css`：既有管理表单、Markdown 与基础业务样式。

@@ -1,6 +1,11 @@
-# 公共展示组件
+# 内容渲染组件（markdown）
 
-置于 `components/common` 下，遵循系统品牌色系。
+把 Markdown、代码、流程图、图表、JSON 渲染成好看的内容，遵循系统品牌色系。
+
+- `MarkdownContent.vue` — 会话消息、执行过程、已发布技能详情里的 Markdown 渲染
+- `MarkdownPreview.vue` — 文件预览、Skill 编辑器预览里的 Markdown 文档渲染（见下）
+- `CodeBlock.vue` / `MermaidBlock.vue` / `ChartBlock.vue` — 代码块、流程图、Vega 图表
+- `JsonPreview.vue` — JSON 预览（见下，暂未接入页面）
 
 ## 组件
 
@@ -16,7 +21,8 @@
 
 ```vue
 <script setup lang="ts">
-import { MarkdownPreview, JsonPreview } from '@/components/common';
+import MarkdownPreview from '../../components/markdown/MarkdownPreview.vue';
+import JsonPreview from '../../components/markdown/JsonPreview.vue';
 </script>
 
 <template>

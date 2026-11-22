@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import { isolateModalBackground, trapTabKey } from '../utils/focus';
+import { isolateModalBackground, trapTabKey } from '../../utils/focus';
 
 withDefaults(defineProps<{ label: string; variant?: 'drawer' | 'modal'; panelClass?: string }>(), {
   variant: 'drawer',

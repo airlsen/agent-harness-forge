@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
-import { MAX_SESSION_MCP, MAX_SESSION_SKILLS, useConversation } from '../stores/conversation';
-import { usePlatform } from '../stores/platform';
-import type { McpOption, SkillOption } from '../types/platform';
-import Icon from './ForgeIcon.vue';
+import { MAX_SESSION_MCP, MAX_SESSION_SKILLS, useConversation } from '../../stores/conversation';
+import { usePlatform } from '../../stores/platform';
+import type { McpOption, SkillOption } from '../../types/platform';
+import Icon from '../base/ForgeIcon.vue';
 
 /**
  * 聊天输入框的「扩展技能」：临时选用 Skill、MCP 服务与联网搜索，与场景绑定的能力取并集。

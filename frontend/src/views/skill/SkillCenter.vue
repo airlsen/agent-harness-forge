@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { api, downloadResponse, remove } from '../../api/client';
 import { confirm } from '../../utils/feedback';
 import { usePlatform } from '../../stores/platform';
-import Icon from '../../components/ForgeIcon.vue';
+import Icon from '../../components/base/ForgeIcon.vue';
 import CatalogCard from '../../components/catalog/CatalogCard.vue';
 import SkillCardActions from '../../components/catalog/SkillCardActions.vue';
 import CatalogEmpty from '../../components/catalog/CatalogEmpty.vue';

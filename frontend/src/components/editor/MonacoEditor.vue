@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type * as Monaco from 'monaco-editor/editor';
-import { loadMonaco } from '../utils/monaco';
-import { minimalTextEdit } from '../utils/editorTextEdit';
+import { loadMonaco } from '../../utils/monaco';
+import { minimalTextEdit } from '../../utils/editorTextEdit';
 
 const props = withDefaults(
   defineProps<{

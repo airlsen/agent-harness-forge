@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import DialogShell from './DialogShell.vue';
-import Icon from './ForgeIcon.vue';
-import Markdown from './MarkdownContent.vue';
-import { MarkdownPreview } from './common';
-import { apiBlob, saveBlob } from '../api/client';
-import { formatBytes } from '../utils/presentation';
+import DialogShell from '../base/DialogShell.vue';
+import Icon from '../base/ForgeIcon.vue';
+import Markdown from '../markdown/MarkdownContent.vue';
+import MarkdownPreview from '../markdown/MarkdownPreview.vue';
+import { apiBlob, saveBlob } from '../../api/client';
+import { formatBytes } from '../../utils/presentation';
 import {
   HIGHLIGHT_LIMIT,
   KIND_META,
@@ -18,7 +18,7 @@ import {
   parseDelimited,
   rawFileUrl,
   type FileRef,
-} from '../utils/files';
+} from '../../utils/files';
 
 /**
  * 会话文件预览：按原始字节读取后分类型渲染。

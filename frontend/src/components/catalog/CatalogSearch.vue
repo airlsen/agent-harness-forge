@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Icon from '../ForgeIcon.vue';
+import Icon from '../base/ForgeIcon.vue';
 
 /** 目录搜索框：antd Input 默认外观（圆角 / 边框 / 聚焦光圈），只定宽度。 */
 defineProps<{ placeholder?: string }>();

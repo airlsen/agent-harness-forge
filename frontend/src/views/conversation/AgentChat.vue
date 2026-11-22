@@ -10,17 +10,17 @@ import { confirm } from '../../utils/feedback';
 import { animateComposerArrival, captureComposerOrigin } from '../../utils/composerTransition';
 import type { KernelEvent } from '../../types/platform';
 import { buildTurns, latestUnavailable, type ToolCallView, type Turn } from '../../utils/turns';
-import Icon from '../../components/ForgeIcon.vue';
-import Markdown from '../../components/MarkdownContent.vue';
-import ProcessBlock from '../../components/ProcessBlock.vue';
-import UserMessageText from '../../components/UserMessageText.vue';
-import TaskComposer from '../../components/TaskComposer.vue';
-import ConversationStart from '../../components/ConversationStart.vue';
-import FileCard from '../../components/FileCard.vue';
-import FilePreview from '../../components/FilePreview.vue';
-import FileTree from '../../components/FileTree.vue';
-import FileDiff from '../../components/FileDiff.vue';
-import TurnChanges from '../../components/TurnChanges.vue';
+import Icon from '../../components/base/ForgeIcon.vue';
+import Markdown from '../../components/markdown/MarkdownContent.vue';
+import ProcessBlock from '../../components/message/ProcessBlock.vue';
+import UserMessageText from '../../components/message/UserMessageText.vue';
+import TaskComposer from '../../components/composer/TaskComposer.vue';
+import ConversationStart from '../../components/composer/ConversationStart.vue';
+import FileCard from '../../components/file/FileCard.vue';
+import FilePreview from '../../components/file/FilePreview.vue';
+import FileTree from '../../components/file/FileTree.vue';
+import FileDiff from '../../components/file/FileDiff.vue';
+import TurnChanges from '../../components/message/TurnChanges.vue';
 import {
   builtinToolTitle,
   archiveUrl,

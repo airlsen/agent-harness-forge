@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import DialogShell from './DialogShell.vue';
-import Icon from './ForgeIcon.vue';
-import { api } from '../api/client';
-import { formatBytes } from '../utils/presentation';
+import DialogShell from '../base/DialogShell.vue';
+import Icon from '../base/ForgeIcon.vue';
+import { api } from '../../api/client';
+import { formatBytes } from '../../utils/presentation';
 import {
   CHANGE_LABELS,
   changeDiffUrl,
   parseUnifiedDiff,
   type ChangeAction,
   type FileChange,
-} from '../utils/files';
+} from '../../utils/files';
 
 /** 单个文件在某一轮的改动对比（unified diff，带新旧行号）；二进制或过大文件只显示大小变化。 */
 const props = defineProps<{ sessionId: number; change: FileChange }>();

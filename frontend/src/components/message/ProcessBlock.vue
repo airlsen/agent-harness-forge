@@ -7,11 +7,11 @@
  * 不依赖具体会话：工作台与 Skill 编写助手共用；waiting 表示进行中的调用正在等待用户确认。
  */
 import { computed, nextTick, ref, watch } from 'vue';
-import { usePlatform } from '../stores/platform';
-import { processStats, processSummary, type TurnStep } from '../utils/turns';
-import { builtinToolTitle } from '../utils/files';
-import Icon from './ForgeIcon.vue';
-import Markdown from './MarkdownContent.vue';
+import { usePlatform } from '../../stores/platform';
+import { processStats, processSummary, type TurnStep } from '../../utils/turns';
+import { builtinToolTitle } from '../../utils/files';
+import Icon from '../base/ForgeIcon.vue';
+import Markdown from '../markdown/MarkdownContent.vue';
 import ToolCallGroup from './ToolCallGroup.vue';
 
 const props = defineProps<{ steps: TurnStep[]; active: boolean; waiting?: boolean }>();

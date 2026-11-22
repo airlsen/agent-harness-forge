@@ -2,7 +2,7 @@
 /**
  * MarkdownPreview — 公共 Markdown 文档预览（默认黄色主题 · highlight.js 版）
  * 特性：GFM/换行/代码高亮(hl.js)/表格/引用/任务列表/链接/图片/数学占位/Mermaid/Vega/流式光标/行号
- * 放置：frontend/src/components/common，与 JsonPreview 同级公共组件
+ * 放置：frontend/src/components/markdown，与 MarkdownContent、JsonPreview 同级
  *
  * 用法：
  * <MarkdownPreview :content="md" streaming show-line-numbers enable-mermaid />
@@ -13,9 +13,9 @@ import { Marked, Renderer, type Token, type Tokens } from 'marked';
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/atom-one-dark.css';
-import CodeBlock from '../CodeBlock.vue';
-import MermaidBlock from '../MermaidBlock.vue';
-import ChartBlock from '../ChartBlock.vue';
+import CodeBlock from './CodeBlock.vue';
+import MermaidBlock from './MermaidBlock.vue';
+import ChartBlock from './ChartBlock.vue';
 import { useCopy } from '../../utils/useCopy';
 
 interface Props {

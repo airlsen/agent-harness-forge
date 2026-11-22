@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * JsonPreview — 公共 JSON 美化预览组件（黄色主题）
- * 与 MarkdownPreview 同级，位于 components/common
+ * 与 MarkdownPreview 同级，位于 components/markdown
  * 能力：折叠/展开、类型徽标、统计、搜索高亮、复制、全展/收起
  * 主题：黄色系 #eab308，与 MarkdownPreview 保持一致
  */

@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-import Icon from './ForgeIcon.vue';
+import Icon from '../base/ForgeIcon.vue';
 
 type ThemePreference = 'system' | 'light' | 'dark';
 const themeOptions: { value: ThemePreference; label: string; icon: string }[] = [
