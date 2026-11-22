@@ -20,7 +20,6 @@ class Settings(BaseSettings):
     preview_header_auth: bool = False
     serve_frontend: bool = True
     frontend_dist: Path = ROOT / "frontend" / "dist"
-    session_idle_ttl_seconds: int = 1800
     approval_timeout_seconds: int = 120
     max_message_chars: int = 64000
     cors_origins: list[str] = []

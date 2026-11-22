@@ -475,6 +475,11 @@ export const useConversation = defineStore('conversation', {
         const appliedCaps = this.current?.capabilities ?? emptyCapabilities();
         const sendCode = !sameList(submittedDraft.codeProjects, appliedCode);
         const sendCaps = !sameCapabilities(submittedDraft.capabilities, appliedCaps);
+        // 乐观 UI：先把用户消息与「正在工作」占位显示出来，再等待受理回执，消除首条消息冷启动的体感。
+        const wasNew = !this.current;
+        const optimisticId = `pending-${session.id}-${Date.now()}`;
+        this.current = session;
+        this.messages.push({ id: optimisticId, role: 'user', content: message, meta: {} });
         const pending = post<TurnReceipt>(`/agent/sessions/${session.id}/turns`, {
           message,
           ...(turnModelId !== null ? { modelId: turnModelId } : {}),
@@ -485,8 +490,19 @@ export const useConversation = defineStore('conversation', {
         let receipt;
         try {
           receipt = await pending;
+        } catch (error) {
+          // 受理失败：撤回乐观展示的用户消息；输入由调用方保留在输入框。
+          this.messages = this.messages.filter((item) => item.id !== optimisticId);
+          if (wasNew) this.current = null;
+          throw error;
         } finally {
           if (pendingTurns.get(session.id) === pending) pendingTurns.delete(session.id);
+        }
+        // 受理成功：临时消息换成后端回执的真实 messageId 与 meta，供后续事件按 id 关联。
+        const optimistic = this.messages.find((item) => item.id === optimisticId);
+        if (optimistic) {
+          optimistic.id = receipt.messageId;
+          optimistic.meta = receipt.messageMeta ?? {};
         }
         // A late accepted turn consumes only its own draft, never a newer task or reply.
         this.consumeDraft(originKey, submittedDraft);
@@ -494,7 +510,6 @@ export const useConversation = defineStore('conversation', {
           await platform.refreshSessions();
           return null;
         }
-        this.current = session;
         this.draftKey = `session:${session.id}`;
         if (receipt.codeProjects) this.current.codeProjects = receipt.codeProjects;
         if (receipt.capabilities) this.current.capabilities = receipt.capabilities;
@@ -503,12 +518,6 @@ export const useConversation = defineStore('conversation', {
         this.draftCapabilities = copyCapabilities(this.current.capabilities);
         if (receipt.model) this.applyModel(receipt.model);
         this.selectedModelId = this.sessionModel(this.selectedModelId);
-        this.messages.push({
-          id: receipt.messageId,
-          role: 'user',
-          content: message,
-          meta: receipt.messageMeta ?? {},
-        });
         this.current.status = 'running';
         this.follow(session.id, receipt.cursor);
         await platform.refreshSessions();

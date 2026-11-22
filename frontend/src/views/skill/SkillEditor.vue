@@ -683,11 +683,12 @@ function updateContent(value: string) {
   }
   scheduleSave();
 }
-async function startSession() {
+async function startSession(preserveMessages = false) {
   if (!skill.value) return;
   try {
     session.value = await post<SkillAuthoringSession>(`/skills/${skill.value.id}/authoring-sessions`);
-    messages.value = session.value.messages ?? [];
+    // 发送首条消息时已乐观推入用户消息，建会话期间不要用空的会话消息覆盖它。
+    if (!preserveMessages) messages.value = session.value.messages ?? [];
   } catch (err) {
     app.toast((err as Error).message, 'error');
   }
@@ -754,16 +755,16 @@ async function send() {
   const previousRevision = skill.value.revision;
   const before = revisions.value.find((revision) => revision.id === skill.value?.currentRevisionId);
   prompt.value = '';
+  // 乐观 UI：先把用户消息与「正在工作」占位显示出来，再建会话/发起请求，消除首条消息冷启动体感。
+  chatStick.value = true;
+  messages.value.push({ id: pendingId, role: 'user', content: text });
+  streaming.value = true;
   try {
-    if (!session.value) await startSession();
+    if (!session.value) await startSession(true);
     if (!session.value || !skill.value) {
       if (!prompt.value) prompt.value = text;
       return;
     }
-    // 发送即回到最新，跟随本轮输出
-    chatStick.value = true;
-    messages.value.push({ id: pendingId, role: 'user', content: text });
-    streaming.value = true;
     const response = await apiFetch(
       `/api/skills/${skill.value.id}/authoring-sessions/${session.value.id}/turns`,
       {
