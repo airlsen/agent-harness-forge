@@ -221,7 +221,7 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
         captured['capabilities'] = capabilities
         return {'sessionId': f'runner-{len(captured)}'}
 
-    policy = {'maxOutputTokens': 4096, 'allowedTools': ['workspace_read', 'skill_run_script', 'bash']}
+    policy = {'maxOutputTokens': 4096, 'allowedTools': ['workspace_read', 'bash']}
 
     async def fake_policy(db):
         return dict(policy)
@@ -242,7 +242,6 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
             assert 'skill_read_guide' in meta['builtin_tools']
             assert meta['policy']['allowedTools'] == meta['builtin_tools']
             assert 'workspace_read' in meta['builtin_tools']
-            assert 'skill_run_script' in meta['builtin_tools']
             # 平台策略允许 bash 时编辑会话也开放：最新草稿在 .skill/，产出写到 outputs/（试用文件）
             assert 'bash' in meta['builtin_tools']
             assert '.skill/' in prompt['domain']
@@ -252,8 +251,8 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
             assert 'skill_trial' in meta['builtin_tools']
             assert 'skill_trial' in prompt['domain']
             assert any('最多 3 轮' in rule for rule in prompt['safety'])
-            assert captured['capabilities']['skills'][0]['document'] == created['content']
-            assert captured['capabilities']['skills'][0]['name'] == f"skill-{created['id']}"
+            # 编写会话不下发业务 Skill 快照
+            assert captured['capabilities']['skills'] == []
             # 企业策略低于 8192 时取 8192
             assert meta['policy']['maxOutputTokens'] == 8192
             authoring = meta['skillAuthoring']
@@ -455,7 +454,7 @@ async def test_manual_draft_edit_swaps_the_latest_draft_into_the_same_session(mo
 
 
 @pytest.mark.asyncio
-async def test_agent_edit_refreshes_same_session_skill_snapshot_on_next_turn(monkeypatch):
+async def test_agent_edit_refreshes_same_session_draft_on_next_turn(monkeypatch):
     engine, sessions = await _memory_sessions()
     monkeypatch.setattr(skill_service, "SessionFactory", sessions)
     _fake_model(monkeypatch)
@@ -481,9 +480,9 @@ async def test_agent_edit_refreshes_same_session_skill_snapshot_on_next_turn(mon
         monkeypatch.setattr(skill_service.runner_client, "events", runner.events)
         [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "按新版试用")]
         assert runner.restored[0][0] == "r1"
-        snapshot = runner.restored[0][2]["skills"][0]
-        assert snapshot["document"] == changed
-        assert snapshot["revisionId"] != loaded_revision
+        draft = runner.restored[0][1]["meta"]["skillAuthoring"]
+        assert draft["content"] == changed
+        assert draft["revisionId"] != loaded_revision
         assert runner.turns[0][0] == "r1"
     finally:
         await engine.dispose()
@@ -506,7 +505,7 @@ async def test_existing_editor_session_upgrades_to_workbench_without_new_convers
         assert len(runner.restored) == 1
         assert runner.restored[0][0] == "r1"
         assert runner.restored[0][1]["policy_ref"].startswith("skill-workbench-v1-")
-        assert len(runner.restored[0][2]["skills"]) == 1
+        assert len(runner.restored[0][2]["skills"]) == 0
         assert runner.created == []
     finally:
         await engine.dispose()

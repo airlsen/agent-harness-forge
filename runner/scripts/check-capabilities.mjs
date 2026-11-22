@@ -248,19 +248,18 @@ await check('session toolset adds skill/read, web tools and granted MCP tools on
   const plain = resolveCapabilities({ skills: [{ ...skill, files: [] }] });
   assert.equal(sessionToolset({ policy: { allowedTools: [] } }, false, plain).read, false);
 });
-await check('Skill workbench exposes editing and draft execution in one DSH toolset', () => {
-  const draft = resolveCapabilities({ skills: [{ ...skill, files: [{ path: 'scripts/check.py', content: 'print(1)' }] }] });
+await check('Skill workbench exposes editing tools only — no business skill snapshot', () => {
+  // 编写会话不下发业务 Skill 快照（capabilities.skills 为空），因此不开放 skill / read / skill_run_script
   const workbench = sessionToolset(
-    { builtin_tools: ['skill_update_draft', 'skill_read_draft', 'skill_run_script'],
-      policy: { allowedTools: ['skill_update_draft', 'skill_read_draft', 'skill_run_script'] } },
-    false, draft,
+    { builtin_tools: ['skill_update_draft', 'skill_read_draft'],
+      policy: { allowedTools: ['skill_update_draft', 'skill_read_draft'] } },
+    false, resolveCapabilities({ skills: [] }),
   );
   assert.ok(workbench.allowed.includes('skill_update_draft'));
-  assert.ok(workbench.allowed.includes('skill'));
-  assert.ok(workbench.allowed.includes('read'));
-  assert.ok(workbench.allowed.includes('skill_run_script'));
-  // 脚本与 bash 同等对待：直接执行，不逐次确认
-  assert.ok(!workbench.approval.includes('skill_run_script'));
+  assert.ok(workbench.allowed.includes('skill_read_draft'));
+  assert.ok(!workbench.allowed.includes('skill'));
+  assert.ok(!workbench.allowed.includes('read'));
+  assert.ok(!workbench.allowed.includes('skill_run_script'));
   assert.ok(!workbench.allowed.includes('bash'));
 });
 await check('summary records revision and snapshot but never leaks skill bodies, credentials, commands or env', () => {
