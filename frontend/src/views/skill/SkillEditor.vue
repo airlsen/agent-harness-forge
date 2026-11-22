@@ -91,6 +91,10 @@ const live = reactive(emptyAuthoringLive());
 const streaming = ref(false);
 // 本轮已被助手接手（收到第一条事件，含排队）：发送按钮换成「中止执行」，与工作台一致
 const turnStarted = ref(false);
+// 消息已显示、正在保存草稿或启动编写会话（首轮约 1–2 秒），服务端尚未受理：显示「正在准备…」
+const preparing = ref(false);
+// 未受理就失败的消息：保留在对话里标为「发送失败」，内容已放回输入框；下次发送时移除
+const failedMessageId = ref<string | null>(null);
 const stopping = ref(false);
 let stopRequested = false;
 const assistantChange = ref('');
@@ -247,7 +251,7 @@ async function loadSkill(options: { focusAssistant?: boolean; quiet?: boolean } 
           // 服务端已分配正式消息 ID，直接替换本轮的临时消息。
           session.value = latestSession;
           messages.value = latestSession?.messages ?? [];
-        } else if (!busy.value && !session.value) {
+        } else if (!busy.value && !preparing.value && !session.value) {
           // 首次打开时恢复会话；发送过程中不让旧请求覆盖刚创建的新会话。
           session.value = latestSession;
           messages.value = latestSession?.messages ?? [];
@@ -733,11 +737,12 @@ function updateContent(value: string) {
   }
   scheduleSave();
 }
-async function startSession() {
+async function startSession(keep: SkillAuthoringMessage[] = []) {
   if (!skill.value) return;
   try {
     session.value = await post<SkillAuthoringSession>(`/skills/${skill.value.id}/authoring-sessions`);
-    messages.value = session.value.messages ?? [];
+    // keep：发送时已先显示的本轮消息，新会话的历史读回后仍排在最后
+    messages.value = [...(session.value.messages ?? []), ...keep];
   } catch (err) {
     app.toast((err as Error).message, 'error');
   }
@@ -769,6 +774,7 @@ const canSend = computed(
     !!prompt.value.trim() &&
     !!skill.value &&
     !busy.value &&
+    !preparing.value &&
     !saving.value &&
     !publishing.value &&
     !fileBusy.value &&
@@ -781,12 +787,39 @@ function onPromptKeydown(event: KeyboardEvent) {
 }
 async function send() {
   if (!canSend.value || !skill.value) return;
+  const text = prompt.value;
+  const pendingId = `pending-${Date.now()}`;
+  // 先把消息显示出来（「正在准备…」）、清空输入框；保存草稿与启动会话在后台进行
+  if (failedMessageId.value)
+    messages.value = messages.value.filter((message) => message.id !== failedMessageId.value);
+  failedMessageId.value = null;
+  prompt.value = '';
+  chatStick.value = true;
+  messages.value.push({ id: pendingId, role: 'user', content: text });
+  preparing.value = true;
+  streaming.value = true;
+  let accepted = false;
+  /** 未受理：消息标为「发送失败」，文字放回输入框（输入框已有新内容时不覆盖） */
+  const markFailed = () => {
+    const failedId = `failed-${pendingId}`;
+    messages.value = messages.value.filter(
+      (message) => !String(message.id).startsWith(pendingId) && message.id !== failedId,
+    );
+    messages.value.push({ id: failedId, role: 'user', content: text });
+    failedMessageId.value = failedId;
+    if (!prompt.value) prompt.value = text;
+  };
   if (isNew.value && skill.value.name === '') {
-    const title = prompt.value.trim().split('\n')[0]!.slice(0, 40);
+    const title = text.trim().split('\n')[0]!.slice(0, 40);
     skill.value.content = updateSkillMetadata(skill.value.content, title, title, 'my-skill');
     dirty.value = true;
   }
-  if (!(await ensureSaved())) return;
+  if (!(await ensureSaved()) || !skill.value) {
+    markFailed();
+    preparing.value = false;
+    streaming.value = false;
+    return;
+  }
   busy.value = true;
   turnStarted.value = false;
   stopRequested = false;
@@ -796,24 +829,15 @@ async function send() {
   Object.assign(live, emptyAuthoringLive());
   queuePosition.value = 0;
   approvals.value = [];
-  const text = prompt.value;
-  const pendingId = `pending-${Date.now()}`;
   // 本轮流式追加的消息使用临时 ID（以 pendingId 开头），结束后由服务端记录替换
   let liveSeq = 0;
   const nextId = () => `${pendingId}-${++liveSeq}`;
   const previousRevision = skill.value.revision;
   const before = revisions.value.find((revision) => revision.id === skill.value?.currentRevisionId);
-  prompt.value = '';
   try {
-    if (!session.value) await startSession();
-    if (!session.value || !skill.value) {
-      if (!prompt.value) prompt.value = text;
-      return;
-    }
-    // 发送即回到最新，跟随本轮输出
-    chatStick.value = true;
-    messages.value.push({ id: pendingId, role: 'user', content: text });
-    streaming.value = true;
+    if (!session.value)
+      await startSession(messages.value.filter((message) => String(message.id).startsWith(pendingId)));
+    if (!session.value || !skill.value) return; // 在 finally 中标为「发送失败」
     const response = await apiFetch(
       `/api/skills/${skill.value.id}/authoring-sessions/${session.value.id}/turns`,
       {
@@ -823,6 +847,8 @@ async function send() {
       },
     );
     if (!response.ok) throw new Error((await response.json()).message ?? '助手请求失败');
+    accepted = true;
+    preparing.value = false;
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -880,6 +906,9 @@ async function send() {
   } finally {
     // 请求失败或历史读取失败时也不能把临时消息永远留在列表里。
     messages.value = messages.value.filter((message) => !String(message.id).startsWith(pendingId));
+    // 未受理的失败（含上面重新读取历史之后）：仍在对话里显示「发送失败」
+    if (!accepted && !stopRequested) markFailed();
+    preparing.value = false;
     Object.assign(live, emptyAuthoringLive());
     streaming.value = false;
     queuePosition.value = 0;
@@ -943,7 +972,10 @@ onBeforeRouteUpdate((to) => {
   ) {
     return true;
   }
-  if ((saving.value || busy.value || fileBusy.value) && Number(to.params.id) !== skill.value?.id) {
+  if (
+    (saving.value || busy.value || preparing.value || fileBusy.value) &&
+    Number(to.params.id) !== skill.value?.id
+  ) {
     app.toast('请等待当前操作完成后再离开。', 'info');
     return false;
   }
@@ -958,7 +990,7 @@ onBeforeRouteLeave((to) => {
   ) {
     return true;
   }
-  if (saving.value || busy.value || fileBusy.value) {
+  if (saving.value || busy.value || preparing.value || fileBusy.value) {
     app.toast('请等待当前操作完成后再离开。', 'info');
     return false;
   }
@@ -1586,7 +1618,7 @@ onBeforeUnmount(() => {
                 class="icon-action"
                 title="新建对话（保留当前草稿）"
                 aria-label="新建对话"
-                :disabled="busy || saving || isNew"
+                :disabled="busy || preparing || saving || isNew"
                 @click="startSession()"
               >
                 <Icon name="plus" :size="15" /></button
@@ -1622,6 +1654,9 @@ onBeforeUnmount(() => {
                 <article class="chat-message user">
                   <UserMessageText :text="turn.user.content" />
                 </article>
+                <div v-if="turn.key === failedMessageId" class="message-send-failed" role="alert">
+                  <Icon name="info" :size="14" />发送失败，内容已放回输入框
+                </div>
                 <div class="message-action-bar" aria-label="用户消息操作">
                   <button
                     type="button"
@@ -1678,11 +1713,13 @@ onBeforeUnmount(() => {
                 <div v-if="turnWaiting(turn)" class="agent-working compact" role="status">
                   <span class="thinking-dots"><i></i><i></i><i></i></span
                   ><span>{{
-                    queuePosition
-                      ? `排队中 · 第 ${queuePosition} 位，等待执行额度…`
-                      : turn.steps.length
-                        ? '正在继续…'
-                        : '正在处理当前草稿…'
+                    preparing
+                      ? '正在准备…'
+                      : queuePosition
+                        ? `排队中 · 第 ${queuePosition} 位，等待执行额度…`
+                        : turn.steps.length
+                          ? '正在继续…'
+                          : '正在处理当前草稿…'
                   }}</span>
                 </div>
               </article>
@@ -1771,12 +1808,12 @@ onBeforeUnmount(() => {
                   type="primary"
                   shape="circle"
                   html-type="submit"
-                  :loading="busy"
-                  :disabled="!canSend && !busy"
+                  :loading="busy || preparing"
+                  :disabled="!canSend && !busy && !preparing"
                   aria-label="发送"
                   title="发送 · Enter"
                 >
-                  <Icon v-if="!busy" name="ri-arrow-up-line" :size="18" />
+                  <Icon v-if="!busy && !preparing" name="ri-arrow-up-line" :size="18" />
                 </a-button>
               </div>
             </div>

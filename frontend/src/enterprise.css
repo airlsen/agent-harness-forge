@@ -2633,6 +2633,15 @@ textarea:focus-visible {
 .enterprise-chat .user-message-block .user-message-text {
   max-width: 100%;
 }
+/* 尚未受理就失败的消息：内容已放回输入框（工作台对话与 Skill 编写助手共用） */
+:is(.enterprise-chat, .process-host) .message-send-failed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  color: var(--color-danger-text);
+  font-size: 12px;
+}
 /* 消息下方的复制、引用按钮：工作台对话与 Skill 编写助手（.process-host）共用 */
 :is(.enterprise-chat, .process-host) .message-action-bar {
   display: flex;
