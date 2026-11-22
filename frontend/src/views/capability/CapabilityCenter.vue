@@ -1354,35 +1354,7 @@ onMounted(load);
   font-size: 13px;
   line-height: 1.7;
 }
-.capability-panels {
-  margin-top: 24px;
-}
-.capability-panels :deep(.ant-collapse-header) {
-  align-items: center;
-  padding-inline: 0;
-}
-.capability-panels :deep(.ant-collapse-content-box) {
-  padding-inline: 0;
-}
-.capability-panel-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--color-text-primary);
-  font-size: 14px;
-  font-weight: 600;
-}
-.capability-panel-title :deep(.ant-tag) {
-  margin: 0;
-  font-weight: 500;
-}
-.capability-panel-title small {
-  color: var(--color-text-tertiary);
-  font-size: 12px;
-  font-weight: 400;
-}
-.plugin-submission-list,
-.runtime-component-list {
+.plugin-submission-list {
   padding: 0 16px;
   background: var(--surface-card);
   border: 1px solid var(--border-default);
@@ -1627,21 +1599,9 @@ onMounted(load);
 .tool-technical-detail :deep(.ant-collapse-content-box) {
   padding-inline: 0;
 }
-.tool-technical-detail code,
-.component-descriptions code {
+.tool-technical-detail code {
   font-size: 12px;
   overflow-wrap: anywhere;
-}
-.component-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.component-tags :deep(.ant-tag) {
-  margin: 0;
-}
-.component-boundary {
-  margin-top: 16px;
 }
 
 @media (max-width: 620px) {

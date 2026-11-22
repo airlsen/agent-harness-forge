@@ -2425,12 +2425,6 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
   white-space: nowrap;
 }
-.files-note-inline {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: right;
-}
 .files-note {
   display: none;
 }
@@ -3009,9 +3003,6 @@ onBeforeUnmount(() => {
   }
   .studio-name {
     max-width: 150px;
-  }
-  .document-hint {
-    display: none;
   }
   .document-preview {
     padding: 20px 16px;
