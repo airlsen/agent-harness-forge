@@ -3095,7 +3095,10 @@ table td > .tag {
   min-width: 200px;
 }
 .trajectory-event {
-  border-bottom: 1px solid var(--surface-subtle-bg);
+  border-bottom: 1px solid var(--border-default);
+}
+.trajectory-event:last-child {
+  border-bottom: 0;
 }
 .trajectory-event summary {
   display: flex;
