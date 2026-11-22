@@ -1,5 +1,6 @@
 import json
 from typing import Literal
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -166,3 +167,47 @@ async def resolve_authoring_approval(
         decision.model_dump(),
     )
     return ResponseUtil.ok({"ticketId": ticket_id, "action": decision.action})
+
+
+def _attachment_name(name: str) -> str:
+    return f"attachment; filename*=UTF-8''{quote(name or 'file', safe='')}"
+
+
+@router.get("/{skill_id}/authoring-sessions/{session_id}/files")
+async def trial_files(
+    skill_id: int, session_id: int, refresh: bool = Query(False), db: AsyncSession = Depends(get_session)
+):
+    """试用文件清单：编辑对话的会话工作区文件（来自服务端存储，Runner 重启后依然可用）。"""
+    return ResponseUtil.ok(await skill_service.trial_files(db, skill_id, session_id, refresh))
+
+
+@router.get("/{skill_id}/authoring-sessions/{session_id}/files/raw")
+async def trial_file_raw(
+    skill_id: int,
+    session_id: int,
+    path: str = Query(min_length=1, max_length=256),
+    db: AsyncSession = Depends(get_session),
+):
+    """试用文件原始字节：与会话文件一致，始终以附件形式返回并附带 sandbox CSP。"""
+    content, media_type = await skill_service.trial_file_raw(db, skill_id, session_id, path)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": _attachment_name(path.rsplit("/", 1)[-1]),
+            "Content-Security-Policy": "sandbox; default-src 'none'",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.delete("/{skill_id}/authoring-sessions/{session_id}/files")
+async def delete_trial_file(
+    skill_id: int,
+    session_id: int,
+    path: str = Query(min_length=1, max_length=256),
+    db: AsyncSession = Depends(get_session),
+):
+    await skill_service.delete_trial_file(db, skill_id, session_id, path)
+    return ResponseUtil.ok({"deleted": path})

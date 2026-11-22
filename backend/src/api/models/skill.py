@@ -1,7 +1,7 @@
 """Skill catalog, immutable revisions, DSH authoring sessions and durable messages."""
 
 from datetime import datetime
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 from ..core.database import Base
 
@@ -66,4 +66,27 @@ class SkillAuthoringMessage(Base):
     role: Mapped[str] = mapped_column(String(20))  # user/assistant/tool/system
     content: Mapped[str] = mapped_column(Text)
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class SkillAuthoringFile(Base):
+    """试用文件：Skill 编辑对话的会话工作区文件（试用产出、脚本输出），同步到服务端存储。
+
+    与 Skill 目录（SKILL.md 与附加文件）分开：不进入修订、不随发布；内容按 SHA-256 存在会话文件存储中。
+    runner_session_id 记录文件来自哪个执行会话：执行会话重建后旧工作区的文件仍保留，不会被新的空清单删掉。
+    """
+
+    __tablename__ = "skill_authoring_file"
+    __table_args__ = (UniqueConstraint("authoring_session_id", "path", name="uq_skill_authoring_file_path"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    authoring_session_id: Mapped[int] = mapped_column(
+        ForeignKey("skill_authoring_session.id", ondelete="CASCADE"), index=True
+    )
+    runner_session_id: Mapped[str] = mapped_column(String(80), default="")
+    path: Mapped[str] = mapped_column(String(256))
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+    bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    mime: Mapped[str] = mapped_column(String(128), default="application/octet-stream")
+    modified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

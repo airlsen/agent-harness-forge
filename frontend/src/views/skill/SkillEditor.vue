@@ -7,7 +7,7 @@ import {
   useRoute,
   useRouter,
 } from 'vue-router';
-import { api, apiFetch, post, put, remove } from '../../api/client';
+import { api, apiBlob, apiFetch, post, put, remove, saveBlob } from '../../api/client';
 import Icon from '../../components/base/ForgeIcon.vue';
 import CatalogEmpty from '../../components/catalog/CatalogEmpty.vue';
 import Markdown from '../../components/markdown/MarkdownContent.vue';
@@ -15,6 +15,7 @@ import ProcessBlock from '../../components/message/ProcessBlock.vue';
 import UserMessageText from '../../components/message/UserMessageText.vue';
 import MarkdownPreview from '../../components/markdown/MarkdownPreview.vue';
 import CodeBlock from '../../components/markdown/CodeBlock.vue';
+import FilePreview from '../../components/file/FilePreview.vue';
 import { useCopy } from '../../utils/useCopy';
 import MonacoEditor from '../../components/editor/MonacoEditor.vue';
 import { loadMonaco } from '../../utils/monaco';
@@ -23,6 +24,7 @@ import { readSkillDocument, updateSkillMetadata, initialSkillDocument } from '..
 import { usePlatform } from '../../stores/platform';
 import { confirm } from '../../utils/feedback';
 import {
+  SKILL_FILE_DIRS,
   SKILL_MAIN_FILE,
   acceptFor,
   capacityError,
@@ -38,6 +40,15 @@ import {
   type SkillFileDir,
 } from '../../utils/skillFiles';
 import { formatBytes } from '../../utils/presentation';
+import {
+  fileDir,
+  fileName,
+  previewable,
+  trialFileUrl,
+  trialFilesUrl,
+  trialRawUrl,
+  type FileRef,
+} from '../../utils/files';
 import { buildTurns, type Turn } from '../../utils/turns';
 import {
   applyAuthoringEvent,
@@ -554,6 +565,106 @@ async function requestDeleteFile(path: string) {
     fileBusy.value = false;
   }
 }
+
+// ---------- 试用文件：本次对话的会话工作区（试用产出、脚本输出 outputs/），不属于 Skill、不随发布 ----------
+const trialFiles = ref<FileRef[]>([]);
+const trialOpen = ref(true);
+const trialBusy = ref('');
+const trialPreview = ref<FileRef | null>(null);
+let trialRequest = 0;
+/** 按所在目录分组，最近更新的目录在前；脚本输出目录名形如 parse-20261122-101530 */
+const trialGroups = computed(() => {
+  const groups = new Map<string, { dir: string; files: FileRef[]; latest: string }>();
+  for (const file of trialFiles.value) {
+    const dir = fileDir(file.path);
+    const group = groups.get(dir) ?? { dir, files: [], latest: '' };
+    group.files.push(file);
+    if ((file.modifiedAt ?? '') > group.latest) group.latest = file.modifiedAt ?? '';
+    groups.set(dir, group);
+  }
+  return [...groups.values()].sort((a, b) => b.latest.localeCompare(a.latest) || a.dir.localeCompare(b.dir));
+});
+async function loadTrialFiles(refresh = false) {
+  const current = session.value;
+  if (!skill.value || !current) {
+    trialFiles.value = [];
+    return;
+  }
+  const request = ++trialRequest;
+  try {
+    const result = await api<{ items: FileRef[] }>(trialFilesUrl(skill.value.id, current.id, refresh));
+    if (request === trialRequest && session.value?.id === current.id) trialFiles.value = result.items;
+  } catch (err) {
+    if (refresh && request === trialRequest) app.toast((err as Error).message, 'error');
+  }
+}
+// 切换或新建对话时换成该对话的试用文件
+watch(
+  () => session.value?.id,
+  () => {
+    trialPreview.value = null;
+    void loadTrialFiles();
+  },
+);
+function trialUrl(path: string) {
+  return trialRawUrl(skill.value?.id ?? 0, session.value?.id ?? 0, path);
+}
+function openTrialFile(file: FileRef) {
+  if (previewable(file)) trialPreview.value = file;
+  else void downloadTrialFile(file);
+}
+async function downloadTrialFile(file: FileRef) {
+  trialBusy.value = file.path;
+  try {
+    saveBlob(await apiBlob(trialUrl(file.path)), fileName(file.path));
+  } catch (err) {
+    app.toast((err as Error).message, 'error');
+  } finally {
+    trialBusy.value = '';
+  }
+}
+/** 存入 Skill 的目标目录：脚本放 scripts/，其余优先作为模板样例放 assets/ */
+function trialTargetDir(path: string): SkillFileDir | null {
+  const name = fileName(path).toLowerCase();
+  const fits = (dir: SkillFileDir) =>
+    SKILL_FILE_DIRS.find((item) => item.dir === dir)!.extensions.some((ext) => name.endsWith(ext));
+  return (['scripts', 'assets', 'references'] as const).find(fits) ?? null;
+}
+/** 把试用文件存入 Skill：沿用上传流程（文件名整理、重名确认、容量校验），生成新的草稿修订 */
+async function saveTrialToSkill(file: FileRef) {
+  const dir = trialTargetDir(file.path);
+  if (!dir || !canEditFiles()) return;
+  trialBusy.value = file.path;
+  try {
+    const blob = await apiBlob(trialUrl(file.path));
+    openDirs.value[dir] = true;
+    await uploadFile(dir, new File([blob], fileName(file.path)));
+  } catch (err) {
+    app.toast((err as Error).message, 'error');
+  } finally {
+    trialBusy.value = '';
+  }
+}
+async function deleteTrialFile(file: FileRef) {
+  if (!skill.value || !session.value || busy.value) return;
+  const ok = await confirm({
+    title: `删除试用文件 ${fileName(file.path)}？`,
+    content: '只删除本次对话工作区中的这个文件，不影响 Skill 文件。删除后无法恢复。',
+    okText: '删除',
+    danger: true,
+  });
+  if (!ok || !skill.value || !session.value) return;
+  trialBusy.value = file.path;
+  try {
+    await remove(trialFileUrl(skill.value.id, session.value.id, file.path));
+    trialFiles.value = trialFiles.value.filter((item) => item.path !== file.path);
+    if (trialPreview.value?.path === file.path) trialPreview.value = null;
+  } catch (err) {
+    app.toast((err as Error).message, 'error');
+  } finally {
+    trialBusy.value = '';
+  }
+}
 function updateContent(value: string) {
   if (!skill.value) return;
   skill.value.content = value;
@@ -675,12 +786,15 @@ async function send() {
           approvals.value.push(event.payload as WorkbenchApproval);
         } else if (event.kind === 'approval_resolved') {
           approvals.value = approvals.value.filter((item) => item.ticketId !== event.payload?.ticketId);
+        } else if (event.kind === 'trial_files') {
+          void loadTrialFiles();
         } else if (event.kind === 'skill_revision' && event.payload?.path) {
           changes.push({ action: event.payload.action ?? 'update_draft', path: String(event.payload.path) });
         } else if (event.kind === 'error') throw new Error(event.payload?.message ?? 'Skill 助手执行失败');
       }
     }
     await loadSkill({ quiet: true });
+    void loadTrialFiles();
     if (skill.value?.revision && skill.value.revision !== previousRevision) {
       const summary = summarizeAssistantChanges(changes);
       assistantChange.value = summary.text || '已更新草稿，尚未发布。';
@@ -696,6 +810,7 @@ async function send() {
   } catch (err) {
     const message = (err as Error).message;
     if (skill.value) await loadSkill({ quiet: true });
+    void loadTrialFiles();
     if (!prompt.value) prompt.value = text;
     app.toast(message, 'error');
   } finally {
@@ -1167,6 +1282,80 @@ onBeforeUnmount(() => {
               </template>
             </template>
           </nav>
+          <section v-if="session" class="trial-files" aria-label="试用文件">
+            <div class="folder-line">
+              <button
+                class="file-row folder-row"
+                :aria-expanded="trialOpen"
+                title="本次对话中试用、运行脚本产生的文件，不属于 Skill，不随发布"
+                @click="trialOpen = !trialOpen"
+              >
+                <span class="folder-caret">{{ trialOpen ? '⌄' : '›' }}</span><Icon
+                  name="folder-line"
+                  :size="15"
+                /><span>试用文件 · 本次对话</span
+                ><small v-if="trialFiles.length" class="folder-count">{{ trialFiles.length }}</small>
+              </button>
+              <div class="folder-actions">
+                <button
+                  class="icon-action"
+                  title="刷新试用文件"
+                  aria-label="刷新试用文件"
+                  @click="loadTrialFiles(true)"
+                >
+                  <Icon name="refresh-line" :size="14" />
+                </button>
+              </div>
+            </div>
+            <template v-if="trialOpen">
+              <template v-for="group in trialGroups" :key="group.dir">
+                <p v-if="group.dir" class="trial-dir" :title="group.dir">{{ group.dir }}/</p>
+                <div v-for="file in group.files" :key="file.path" class="file-line trial-line">
+                  <button
+                    class="file-row reference-row"
+                    :title="`${file.path} · ${formatBytes(file.bytes)}${previewable(file) ? '' : ' · 点击下载'}`"
+                    :disabled="trialBusy === file.path"
+                    @click="openTrialFile(file)"
+                  >
+                    <Icon name="file" :size="14" /><span>{{ fileName(file.path) }}</span>
+                  </button>
+                  <div class="trial-actions">
+                    <button
+                      class="icon-action"
+                      :title="`下载 ${fileName(file.path)}`"
+                      :aria-label="`下载 ${file.path}`"
+                      :disabled="trialBusy === file.path"
+                      @click="downloadTrialFile(file)"
+                    >
+                      <Icon name="download" :size="13" />
+                    </button>
+                    <button
+                      v-if="trialTargetDir(file.path)"
+                      class="icon-action"
+                      :title="`存入 Skill 的 ${trialTargetDir(file.path)}/`"
+                      :aria-label="`把 ${file.path} 存入 Skill`"
+                      :disabled="isNew || busy || saving || publishing || fileBusy || trialBusy === file.path"
+                      @click="saveTrialToSkill(file)"
+                    >
+                      <Icon name="save-line" :size="13" />
+                    </button>
+                    <button
+                      class="icon-action"
+                      :title="`删除 ${fileName(file.path)}`"
+                      :aria-label="`删除试用文件 ${file.path}`"
+                      :disabled="busy || trialBusy === file.path"
+                      @click="deleteTrialFile(file)"
+                    >
+                      <Icon name="delete-bin-line" :size="13" />
+                    </button>
+                  </div>
+                </div>
+              </template>
+              <p v-if="!trialFiles.length" class="tree-empty folder-empty">
+                试用和运行脚本的产出会出现在这里
+              </p>
+            </template>
+          </section>
           <div class="files-footer">
             <span class="files-count">共 {{ totalFiles }} 个文件</span>
           </div>
@@ -1600,6 +1789,13 @@ onBeforeUnmount(() => {
         show-icon
       />
     </a-modal>
+    <FilePreview
+      v-if="trialPreview && session"
+      :key="trialPreview.path"
+      :file="trialPreview"
+      :raw-url="trialUrl(trialPreview.path)"
+      @close="trialPreview = null"
+    />
   </main>
 </template>
 
@@ -1897,6 +2093,40 @@ onBeforeUnmount(() => {
 .folder-empty {
   margin: 0;
   padding: 2px 10px 6px 28px;
+}
+/* 试用文件：本次对话的会话工作区，与上方 Skill 文件分隔，内容多时自身滚动 */
+.trial-files {
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 6px 10px;
+  border-top: 1px solid var(--border-light);
+}
+.trial-dir {
+  margin: 4px 0 0;
+  padding: 2px 10px 2px 28px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+}
+.trial-actions {
+  display: flex;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.trial-line:hover .trial-actions,
+.trial-line:focus-within .trial-actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .trial-actions {
+    opacity: 1;
+  }
 }
 .change-files {
   margin: 0 0 16px;

@@ -23,8 +23,9 @@ import {
 /**
  * 会话文件预览：按原始字节读取后分类型渲染。
  * 模型生成的 HTML 放进无同源权限的 sandbox iframe；SVG 以 <img> 渲染（不会执行其中脚本）。
+ * 默认读取业务会话文件；传入 rawUrl 时按它读取（如 Skill 编辑页的试用文件）。
  */
-const props = defineProps<{ sessionId: number; file: FileRef }>();
+const props = defineProps<{ sessionId?: number; file: FileRef; rawUrl?: string }>();
 const emit = defineEmits<{ close: [] }>();
 
 const kind = computed(() => fileKind(props.file.path, props.file.mime));
@@ -50,7 +51,7 @@ async function load() {
   loading.value = true;
   error.value = '';
   try {
-    const data = await apiBlob(rawFileUrl(props.sessionId, props.file.path));
+    const data = await apiBlob(props.rawUrl || rawFileUrl(props.sessionId ?? 0, props.file.path));
     if (!alive) return;
     blob.value = data;
     if (isTextKind(kind.value)) text.value = await data.text();

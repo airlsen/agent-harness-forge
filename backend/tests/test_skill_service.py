@@ -221,7 +221,7 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
         captured['capabilities'] = capabilities
         return {'sessionId': f'runner-{len(captured)}'}
 
-    policy = {'maxOutputTokens': 4096, 'allowedTools': ['workspace_read', 'skill_run_script']}
+    policy = {'maxOutputTokens': 4096, 'allowedTools': ['workspace_read', 'skill_run_script', 'bash']}
 
     async def fake_policy(db):
         return dict(policy)
@@ -243,7 +243,10 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
             assert meta['policy']['allowedTools'] == meta['builtin_tools']
             assert 'workspace_read' in meta['builtin_tools']
             assert 'skill_run_script' in meta['builtin_tools']
-            assert 'bash' not in meta['builtin_tools']
+            # 平台策略允许 bash 时编辑会话也开放：最新草稿在 .skill/，产出写到 outputs/（试用文件）
+            assert 'bash' in meta['builtin_tools']
+            assert '.skill/' in prompt['domain']
+            assert any('outputs/' in rule and '试用文件' in rule for rule in prompt['safety'])
             assert 'skill' in prompt['domain']
             # 试用 / 调试用 skill_trial 加载最新草稿，调试循环有轮数上限
             assert 'skill_trial' in meta['builtin_tools']
@@ -446,6 +449,7 @@ async def test_manual_draft_edit_swaps_the_latest_draft_into_the_same_session(mo
         assert len(runner.restored) == 2
         assert "current_time" in runner.restored[-1][1]["meta"]["policy"]["allowedTools"]
         assert "skill_run_script" not in runner.restored[-1][1]["meta"]["policy"]["allowedTools"]
+        assert "bash" not in runner.restored[-1][1]["meta"]["policy"]["allowedTools"]  # 仍以平台策略为上限
     finally:
         await engine.dispose()
 

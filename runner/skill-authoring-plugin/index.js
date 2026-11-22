@@ -1,11 +1,13 @@
 /**
- * Narrow DSH extension for authoring exactly one Skill draft. No filesystem, shell, or network tools.
+ * Skill 编写工具：只操作当前打开的一个 Skill 草稿。
  * 草稿 = SKILL.md + references/、assets/、scripts/ 下的文件（内存副本）；每次修改通过 forge.skill_revision 通知控制面落库。
+ * 有会话工作区时，最新草稿同步镜像到工作区的 .skill/（只读文件），供 bash 运行脚本、跑测试；
+ * 镜像只是副本，修改草稿仍要通过 skill_* 工具。脚本产出写到工作区 outputs/，随会话文件同步给用户。
  */
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { lstat, mkdtemp, mkdir, readdir, writeFile, rm, rmdir, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { runSkillScript } from '../skill-script-runtime/index.js';
+import { dirname, join, resolve, sep } from 'node:path';
+import { OUTPUTS_DIR, runSkillScript, sandboxMode } from '../skill-script-runtime/index.js';
 const notify = (method, params) =>
   process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n');
 
@@ -24,6 +26,8 @@ const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
 export const MAX_FILE_BYTES = 120000;
 export const MAX_FILES = 20;
 export const MAX_TOTAL_BYTES = 512000;
+/** 工作区中的草稿镜像目录（隐藏目录：不出现在会话文件清单，也不能被 workspace_write 覆盖） */
+export const MIRROR_DIR = '.skill';
 // 正文中的文件引用：references/x.md、assets/x.json、scripts/x.py
 const FILE_MENTION = /(?<![A-Za-z0-9_./-])((?:references|assets|scripts)\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)/g;
 
@@ -116,6 +120,43 @@ export function checkSkillDocument(content, paths = []) {
   return { valid: errors.length === 0, errors, warnings };
 }
 
+/**
+ * 把草稿写成工作区里的 .skill/ 目录：SKILL.md + 附加文件，文件只读；删除草稿里已不存在的文件。
+ * 返回镜像目录的绝对路径。workspace 不存在或越界时抛错，由调用方决定是否忽略。
+ */
+export async function writeDraftMirror(workspace, document, files) {
+  const root = resolve(workspace);
+  const dir = join(root, MIRROR_DIR);
+  try {
+    if ((await lstat(dir)).isSymbolicLink()) await unlink(dir);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const wanted = new Map([['SKILL.md', document], ...files]);
+  // 清理已删除的文件与目录（只认 SKILL.md 和三个附加目录，其余一律移除）
+  for (const item of await readdir(dir, { withFileTypes: true })) {
+    const full = join(dir, item.name);
+    if (item.isDirectory() && !item.isSymbolicLink() && Object.hasOwn(FILE_DIRS, item.name)) {
+      for (const child of await readdir(full, { withFileTypes: true }))
+        if (!wanted.has(`${item.name}/${child.name}`) || !child.isFile())
+          await rm(join(full, child.name), { recursive: true, force: true });
+      if (!(await readdir(full)).length) await rmdir(full).catch(() => {});
+    } else if (!(item.name === 'SKILL.md' && item.isFile())) {
+      await rm(full, { recursive: true, force: true });
+    }
+  }
+  for (const [path, content] of wanted) {
+    const target = join(dir, path);
+    if (!target.startsWith(dir + sep)) continue;
+    await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+    // 文件只读：先删除再写入，避免 bash 误改镜像后与草稿不一致
+    await rm(target, { force: true });
+    await writeFile(target, content, { mode: 0o400 });
+  }
+  return dir;
+}
+
 export async function apply(ctx, config) {
   if (!Number.isInteger(config.skillId) || typeof config.content !== 'string')
     throw new Error('Skill authoring context is invalid');
@@ -133,6 +174,20 @@ export async function apply(ctx, config) {
   }
   // 会话启动时的草稿：与 skill 工具加载的快照一致，用来判断本轮之后是否改过
   const loaded = { content: draft, files: new Map(files) };
+  const workspace = typeof config.workspace === 'string' && config.workspace ? resolve(config.workspace) : '';
+  let mirrorDir = '';
+  let mirrorError = '';
+  // 镜像失败不影响编辑：只在试用结果里说明，bash 运行脚本前需要重新同步
+  const syncMirror = async () => {
+    if (!workspace) return;
+    try {
+      mirrorDir = await writeDraftMirror(workspace, draft, files);
+      mirrorError = '';
+    } catch (error) {
+      mirrorError = `草稿镜像写入失败：${error?.message ?? error}`;
+    }
+  };
+  await syncMirror();
   const fileBytes = (content) => Buffer.byteLength(content, 'utf8');
   const fileList = () => {
     const mentioned = mentionedFiles(draft);
@@ -208,6 +263,7 @@ export async function apply(ctx, config) {
         files.set(path, next);
         const changeSummary = String(summary ?? '').slice(0, 500);
         notify('forge.skill_revision', { action: 'write_file', path, content: next, summary: changeSummary });
+        await syncMirror();
         return {
           saved: true,
           path,
@@ -231,6 +287,7 @@ export async function apply(ctx, config) {
         files.delete(path);
         const changeSummary = String(summary ?? '').slice(0, 500);
         notify('forge.skill_revision', { action: 'delete_file', path, summary: changeSummary });
+        await syncMirror();
         return {
           deleted: true,
           path,
@@ -261,15 +318,22 @@ export async function apply(ctx, config) {
       async () => checkSkillDocument(draft, [...files.keys()]),
     );
   }
+  const bashAllowed = allowed.has('bash');
   if (allowed.has('skill_test_script')) {
     add(
       'skill_test_script',
-      '在隔离环境中试运行当前草稿 scripts/ 下的脚本；只读取草稿文件，不修改草稿，也不调用业务系统或网络。',
+      workspace
+        ? `试运行当前草稿 scripts/ 下的脚本（用最新草稿，包含本轮修改），不修改草稿。脚本在会话工作区的 ${OUTPUTS_DIR}/<脚本名>-<时间>/ 下运行，写出的文件保留在那里，用户可在「试用文件」中查看；结果返回退出码、stdout、stderr、产出文件清单，以及是否在隔离环境中运行。脚本可通过环境变量 FORGE_SKILL_DIR 找到 Skill 目录。`
+        : '试运行当前草稿 scripts/ 下的脚本；只读取草稿文件，不修改草稿。结果返回退出码、stdout、stderr。',
       { path: { type: 'string' }, args: { type: 'array', items: { type: 'string' } } },
       ['path'],
       async ({ path, args }) => {
         const safePath = validateFilePath(path);
         if (!safePath.startsWith('scripts/') || !files.has(safePath)) throw new Error(`脚本不存在：${path}`);
+        const options = workspace ? { outputRoot: workspace } : {};
+        await syncMirror();
+        if (mirrorDir) return runSkillScript(mirrorDir, safePath, args ?? [], options);
+        // 没有工作区或镜像写入失败：写到临时目录运行
         const root = await mkdtemp(join(tmpdir(), 'forge-skill-draft-'));
         try {
           for (const [file, content] of files) {
@@ -277,7 +341,7 @@ export async function apply(ctx, config) {
             await mkdir(dirname(target), { recursive: true });
             await writeFile(target, content, { mode: 0o400 });
           }
-          return await runSkillScript(root, safePath, args ?? []);
+          return await runSkillScript(root, safePath, args ?? [], options);
         } finally {
           await rm(root, { recursive: true, force: true });
         }
@@ -287,10 +351,13 @@ export async function apply(ctx, config) {
   if (allowed.has('skill_trial')) {
     add(
       'skill_trial',
-      '加载最新草稿用于试用或调试：返回此刻的 SKILL.md 与附加文件清单，包含本轮刚做的修改。按返回的正文步骤执行试用任务；附加文件用 skill_read_file 读取，脚本用 skill_test_script 运行。不修改草稿。',
+      '加载最新草稿用于试用或调试：返回此刻的 SKILL.md 与附加文件清单，包含本轮刚做的修改，并同步工作区里的草稿镜像。按返回的正文步骤执行试用任务；附加文件用 skill_read_file 读取，脚本用 skill_test_script 运行' +
+        (bashAllowed ? '，需要组合命令、安装依赖或跑测试时也可以用 bash。' : '。') +
+        '不修改草稿。',
       {},
       [],
       async () => {
+        await syncMirror();
         const check = checkSkillDocument(draft, [...files.keys()]);
         const front = draft.replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n---(?:\n|$)/)?.[1] ?? '';
         // 草稿或文件与会话启动时（skill 工具加载的快照）不同：skill / read / skill_run_script 仍是旧版本
@@ -298,6 +365,7 @@ export async function apply(ctx, config) {
           draft !== loaded.content ||
           files.size !== loaded.files.size ||
           [...files].some(([path, content]) => loaded.files.get(path) !== content);
+        const hasScripts = [...files.keys()].some((path) => path.startsWith('scripts/'));
         return {
           name: frontField(front, 'name') ?? '',
           title: frontField(front, 'title') ?? config.name ?? '',
@@ -306,13 +374,29 @@ export async function apply(ctx, config) {
           files: fileList(),
           errors: check.errors,
           snapshotStale: stale,
+          ...(workspace
+            ? {
+                workspaceDraft: mirrorDir
+                  ? { dir: MIRROR_DIR, absolutePath: mirrorDir, readOnly: true }
+                  : { error: mirrorError || '草稿镜像不可用' },
+                outputsDir: OUTPUTS_DIR,
+              }
+            : {}),
+          scriptSandbox: sandboxMode(),
           howTo: [
             '把用户给的任务当作业务会话的输入，按 document 的步骤逐步执行，不要跳步或替 Skill 补规则',
-            '正文让读 references/、assets/ 文件时用 skill_read_file；让运行 scripts/ 脚本时用 skill_test_script',
+            '正文让读 references/、assets/ 文件时用 skill_read_file；让运行 scripts/ 脚本时用 skill_test_script，它会在 outputs/<脚本名>-<时间>/ 下运行并保留产出',
+            ...(bashAllowed && workspace && mirrorDir
+              ? [
+                  `需要 bash 时：最新草稿在工作区 ${MIRROR_DIR}/ 下（只读副本，例如 python3 ${MIRROR_DIR}/scripts/xxx.py），要改脚本必须用 skill_write_file，改完镜像自动同步`,
+                  `bash 产生的文件写到 ${OUTPUTS_DIR}/ 下（例如 ${OUTPUTS_DIR}/pytest-run/），不要写进 ${MIRROR_DIR}/`,
+                ]
+              : []),
+            ...(hasScripts && !bashAllowed ? ['本会话没有开放 bash，只能用 skill_test_script 运行脚本'] : []),
             stale
               ? '本轮已修改过草稿：skill、read、skill_run_script 仍指向会话开始时的旧快照，试用新内容时不要用它们'
               : '草稿与 skill 工具加载的快照一致，也可以用 skill 工具按业务会话方式加载',
-            '结束时说明：试用输入、每步实际结果、卡住的地方，以及问题出在 Skill 写法还是输入 / 环境',
+            '结束时说明：试用输入、每步实际结果、卡住的地方，以及问题出在 Skill 写法还是输入 / 环境；有产出文件时说明路径',
           ],
         };
       },
@@ -333,6 +417,7 @@ export async function apply(ctx, config) {
         draft = next;
         // 只发送正文：文件清单由控制面沿用上一修订，避免覆盖期间手动上传的文件
         notify('forge.skill_revision', { action: 'update_draft', content: draft, summary: changeSummary });
+        await syncMirror();
         return { saved: true, summary: changeSummary, characters: draft.length, warnings: check.warnings };
       },
     );

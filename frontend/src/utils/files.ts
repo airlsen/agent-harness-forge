@@ -293,6 +293,24 @@ export function archiveUrl(sessionId: number, dir = '') {
   const base = `/agent/sessions/${sessionId}/files/archive`;
   return dir ? `${base}?dir=${encodeURIComponent(dir)}` : base;
 }
+
+// ---------- Skill 编辑对话的试用文件 ----------
+
+/** 试用文件：Skill 编辑对话会话工作区的文件（试用产出、脚本输出），与 Skill 目录分开，不随发布 */
+export function trialFilesUrl(skillId: number, sessionId: number, refresh = false) {
+  const base = `/skills/${skillId}/authoring-sessions/${sessionId}/files`;
+  return refresh ? `${base}?refresh=true` : base;
+}
+export function trialFileUrl(skillId: number, sessionId: number, path: string) {
+  return `/skills/${skillId}/authoring-sessions/${sessionId}/files?path=${encodeURIComponent(path)}`;
+}
+export function trialRawUrl(skillId: number, sessionId: number, path: string) {
+  return `/skills/${skillId}/authoring-sessions/${sessionId}/files/raw?path=${encodeURIComponent(path)}`;
+}
+export function trialSaveUrl(skillId: number, sessionId: number) {
+  return `/skills/${skillId}/authoring-sessions/${sessionId}/files/save`;
+}
+
 export function fileUrl(sessionId: number, path: string) {
   return `/agent/sessions/${sessionId}/files?path=${encodeURIComponent(path)}`;
 }

@@ -437,6 +437,8 @@ export class DshKernel implements AgentKernel {
           config: {
             ...((entry.bundle.meta?.skillAuthoring as Record<string, unknown>) ?? {}),
             allowedTools: toolset.allowed,
+            // 会话工作区：草稿镜像写到其中的 .skill/（供 bash 运行），脚本产出写到 outputs/
+            workspace: entry.workspace,
           },
         }
       : null;
@@ -445,6 +447,8 @@ export class DshKernel implements AgentKernel {
           id: 'skill-scripts',
           name: pathToFileURL(join(ROOT, 'skill-scripts-plugin', 'index.js')).href,
           config: {
+            // 脚本在会话工作区的 outputs/<脚本名>-<时间>/ 下运行，产出随会话文件同步
+            workspace: entry.workspace,
             skills: entry.caps.skills.filter((skill) => skill.files.some((file) => file.path.startsWith('scripts/')))
               .map((skill) => ({
                 name: skill.name,
