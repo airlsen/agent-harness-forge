@@ -121,6 +121,38 @@ watch(
   () => route.path,
   () => closeManagementMenu(),
 );
+// 左侧菜单收起 / 展开：收起为图标栏。用户手动选择后记住（本地存储）；
+// 未选择过时窄于 1060px 默认收起；窄于 700px 固定收起（不显示切换按钮）。
+type SidebarPreference = 'collapsed' | 'expanded';
+const SIDEBAR_STORAGE_KEY = 'forge-sidebar';
+const narrowQuery = window.matchMedia('(max-width: 700px)');
+const compactQuery = window.matchMedia('(max-width: 1060px)');
+const sidebarNarrow = ref(narrowQuery.matches);
+const sidebarCompact = ref(compactQuery.matches);
+const sidebarPreference = ref<SidebarPreference | null>(readSidebarPreference());
+function readSidebarPreference(): SidebarPreference | null {
+  const stored = localStorage.getItem(SIDEBAR_STORAGE_KEY);
+  return stored === 'collapsed' || stored === 'expanded' ? stored : null;
+}
+const sidebarCollapsed = computed(
+  () =>
+    sidebarNarrow.value ||
+    (sidebarPreference.value ? sidebarPreference.value === 'collapsed' : sidebarCompact.value),
+);
+function toggleSidebar() {
+  sidebarPreference.value = sidebarCollapsed.value ? 'expanded' : 'collapsed';
+  localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarPreference.value);
+  closeManagementMenu();
+}
+const syncSidebarWidth = () => {
+  sidebarNarrow.value = narrowQuery.matches;
+  sidebarCompact.value = compactQuery.matches;
+};
+watch(
+  sidebarCollapsed,
+  (collapsed) => document.documentElement.classList.toggle('sidebar-collapsed', collapsed),
+  { immediate: true },
+);
 function newChat() {
   if (chat.requestNewConversation()) void router.push('/agent/chat');
 }
@@ -170,6 +202,8 @@ onMounted(async () => {
   window.addEventListener('pointerdown', dismissManagementMenu);
   window.addEventListener('keydown', handleNavigationKeydown);
   darkQuery.addEventListener('change', syncSystemDark);
+  narrowQuery.addEventListener('change', syncSidebarWidth);
+  compactQuery.addEventListener('change', syncSidebarWidth);
   try {
     await app.checkAuth();
     if (app.authenticated) {
@@ -211,6 +245,9 @@ onUnmounted(() => {
   window.removeEventListener('pointerdown', dismissManagementMenu);
   window.removeEventListener('keydown', handleNavigationKeydown);
   darkQuery.removeEventListener('change', syncSystemDark);
+  narrowQuery.removeEventListener('change', syncSidebarWidth);
+  compactQuery.removeEventListener('change', syncSidebarWidth);
+  document.documentElement.classList.remove('sidebar-collapsed');
   chat.disconnect();
 });
 </script>
@@ -233,8 +270,23 @@ onUnmounted(() => {
                 ><small>企业智能体平台</small></span
               >
             </RouterLink>
+            <button
+              v-if="!sidebarNarrow"
+              type="button"
+              class="enterprise-sidebar-toggle"
+              :aria-label="sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
+              :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
+              :aria-expanded="!sidebarCollapsed"
+              @click="toggleSidebar"
+            >
+              <Icon name="sidebar" :size="18" />
+            </button>
           </div>
-          <button class="enterprise-new-chat" @click="newChat">
+          <button
+            class="enterprise-new-chat"
+            :title="sidebarCollapsed ? '新建会话' : undefined"
+            @click="newChat"
+          >
             <Icon name="plus" :size="18" /><span>新建会话</span><Icon name="edit" :size="15" />
           </button>
           <div class="enterprise-sidebar-content">
@@ -244,6 +296,7 @@ onUnmounted(() => {
                 :key="item.path"
                 :to="item.path"
                 :aria-label="item.label"
+                :title="sidebarCollapsed ? item.label : undefined"
                 :class="{
                   'is-active':
                     route.path === item.path ||
@@ -308,6 +361,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 :class="['enterprise-management-link', { selected: isAdministration }]"
+                :title="sidebarCollapsed ? '平台管理' : undefined"
                 :aria-expanded="managementOpen"
                 aria-controls="platform-management-menu"
                 aria-haspopup="true"

@@ -2431,12 +2431,6 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
   white-space: nowrap;
 }
-.files-note-inline {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: right;
-}
 .files-note {
   display: none;
 }
@@ -2744,7 +2738,7 @@ onBeforeUnmount(() => {
 .composer-box {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--border-default);
+  border: 2px solid var(--border-default);
   border-radius: 12px;
   background: var(--surface-content);
   transition:
@@ -3015,9 +3009,6 @@ onBeforeUnmount(() => {
   }
   .studio-name {
     max-width: 150px;
-  }
-  .document-hint {
-    display: none;
   }
   .document-preview {
     padding: 20px 16px;

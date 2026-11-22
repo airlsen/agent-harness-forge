@@ -147,6 +147,24 @@ textarea:focus-visible {
   align-items: center;
   gap: 10px;
 }
+.enterprise-sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  color: var(--text-secondary);
+}
+.enterprise-sidebar-toggle:hover {
+  color: var(--sidebar-nav-hover-text);
+  background: var(--sidebar-nav-hover-bg);
+}
+.enterprise-sidebar-toggle:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
 .brand-mark {
   display: grid;
   place-items: center;
@@ -777,12 +795,6 @@ textarea:focus-visible {
   gap: 9px;
   flex-shrink: 0;
 }
-.enterprise-view .heading-count {
-  color: var(--text-secondary);
-  background: var(--surface-subtle);
-  border-color: var(--line);
-  height: 24px;
-}
 .enterprise-view .enterprise-collection-toolbar {
   padding-bottom: 0;
   border-bottom: 1px solid var(--line);
@@ -876,26 +888,6 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-.inline-empty {
-  border: 1px dashed var(--line);
-  border-radius: 8px;
-  padding: 25px;
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  color: var(--text-secondary);
-}
-.inline-empty strong {
-  font-size: 13px;
-  font-weight: 500;
-}
-.inline-empty p {
-  font-size: 12px;
-  margin-top: 6px;
-}
-.inline-empty > a {
-  margin-left: auto;
 }
 /* A single dialogue-first start, shared by the workbench and new conversations. */
 .workbench-page {
@@ -1059,7 +1051,7 @@ textarea:focus-visible {
 /* Shared composer, reused by home and execution view. */
 .task-composer {
   position: relative;
-  border: 1px solid var(--line);
+  border: 2px solid var(--border-default);
   background: var(--surface-card);
   border-radius: 18px;
   padding: 12px 12px 4px;
@@ -1075,7 +1067,6 @@ textarea:focus-visible {
 }
 .task-composer-hero {
   padding: 12px 12px 4px;
-  border-color: var(--line);
   box-shadow: 0 8px 30px #26334a0a;
   border-radius: 20px;
 }
@@ -1703,25 +1694,6 @@ textarea:focus-visible {
   max-height: 350px;
   overflow: auto;
 }
-.resource-metadata {
-  margin: 12px 0 20px;
-}
-.resource-metadata > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 15px;
-  padding: 9px 0;
-  font-size: 12px;
-}
-.resource-metadata dt {
-  color: var(--text-subtle);
-}
-.resource-metadata dd {
-  color: var(--text-subtle);
-  margin: 0;
-  overflow-wrap: anywhere;
-}
 .capability-example {
   padding: 16px;
   border-left: 2px solid var(--border-strong);
@@ -1932,154 +1904,6 @@ textarea:focus-visible {
   .conversations-search-actions .catalog-search {
     flex: 1 1 100%;
   }
-}
-/* Management entry and guide. */
-.management-banner {
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-line);
-  border-radius: 9px;
-  padding: 25px;
-  display: flex;
-  align-items: center;
-  gap: 17px;
-  margin-bottom: 24px;
-}
-.management-banner-icon {
-  width: 52px;
-  height: 52px;
-  border: 1px solid var(--accent-line);
-  border-radius: 12px;
-  background: var(--accent-soft);
-  color: var(--accent-ink);
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-}
-.management-banner h2 {
-  color: var(--accent-ink);
-  font-size: 18px;
-  font-weight: 500;
-}
-.management-banner p {
-  font-size: 12px;
-  line-height: 1.9;
-  margin-top: 9px;
-  color: var(--accent-ink);
-}
-.management-card-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-}
-.management-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  padding: 23px 23px 0;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: #fff;
-  min-width: 0;
-}
-.management-card:hover {
-  border-color: var(--accent-line);
-}
-.management-card > .tag {
-  position: absolute;
-  right: 20px;
-  top: 24px;
-}
-.management-card h2 {
-  color: var(--ink);
-  font-size: 17px;
-  margin: 23px 0 10px;
-}
-.management-card p {
-  font-size: 12px;
-  line-height: 1.9;
-  color: var(--text-secondary);
-  flex: 1;
-}
-.management-card footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-top: 1px solid var(--line);
-  padding: 16px 0;
-  margin-top: 25px;
-  color: var(--text-subtle);
-  font-size: 12px;
-  gap: 10px;
-}
-.management-card footer > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.management-section {
-  margin-top: 32px;
-}
-.management-section > div > h2 {
-  font-size: 15px;
-  color: var(--ink);
-}
-.management-section > div > p {
-  font-size: 12px;
-  margin-top: 8px;
-  color: var(--text-secondary);
-}
-.management-resource-links {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-top: 18px;
-}
-.management-resource-links > a {
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: #fff;
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  padding: 20px;
-  color: var(--text-secondary);
-}
-.management-resource-links strong {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink);
-}
-.management-resource-links small {
-  display: block;
-  font-size: 12px;
-  color: var(--text-subtle);
-  margin-top: 5px;
-}
-.management-resource-links > a > svg:last-child {
-  margin-left: auto;
-}
-.release-boundary {
-  display: flex;
-  align-items: flex-start;
-  gap: 13px;
-  background: var(--color-brand-muted);
-  border: 1px solid var(--color-brand-subtle);
-  border-radius: 8px;
-  padding: 20px;
-  margin-top: 28px;
-  color: var(--color-warning-text);
-}
-.release-boundary strong {
-  font-size: 13px;
-  color: var(--color-warning-text);
-  font-weight: 500;
-}
-.release-boundary p {
-  font-size: 12px;
-  line-height: 1.9;
-  color: var(--color-warning-text);
-  margin-top: 7px;
 }
 /* Model management follows the same density and semantic tokens as capability cards. */
 .model-management-heading {
@@ -2858,12 +2682,6 @@ textarea:focus-visible {
 .enterprise-chat .diagram-error {
   color: var(--color-warning-text);
 }
-.enterprise-chat .step-label {
-  color: var(--text-secondary);
-}
-.enterprise-chat .thinking-done > summary:hover {
-  color: var(--ink);
-}
 /* 过程块与工具调用：工作台对话与 Skill 编写助手（.process-host）共用同一套配色 */
 :is(.enterprise-chat, .process-host) .process-header {
   color: var(--text-secondary);
@@ -3305,9 +3123,6 @@ textarea:focus-visible {
 .drawer .eyebrow {
   color: var(--text-subtle);
 }
-.drawer-body {
-  padding: 25px 28px;
-}
 .drawer .detail-block h3 {
   color: var(--ink);
   font-size: 13px;
@@ -3318,20 +3133,6 @@ textarea:focus-visible {
   line-height: 1.9;
 }
 .drawer .detail-block > code {
-  color: var(--text-secondary);
-}
-:where(.drawer-body label) {
-  color: var(--text-subtle);
-  font-size: 12px;
-}
-:where(.drawer-body input:not([type='checkbox'])),
-:where(.drawer-body textarea) {
-  color: var(--text-secondary);
-  border-color: var(--line);
-  font-size: 13px;
-}
-:where(.drawer-body input::placeholder),
-:where(.drawer-body textarea::placeholder) {
   color: var(--text-secondary);
 }
 :where(.drawer input:not([type='checkbox']):focus),
@@ -3384,15 +3185,6 @@ textarea:focus-visible {
 .drawer .static-form-row strong,
 .drawer .static-form-row small {
   color: var(--ink);
-}
-.drawer .editor-safety {
-  border-color: var(--color-brand-subtle);
-  background: var(--color-brand-muted);
-  color: var(--color-warning-text);
-}
-.drawer .editor-safety p {
-  color: var(--color-warning-text);
-  font-size: 12px;
 }
 .drawer > footer {
   border-top-color: var(--line);
@@ -3596,8 +3388,7 @@ textarea:focus-visible {
   --copy-secondary: var(--text-secondary);
   --copy-tertiary: var(--text-subtle);
 }
-.enterprise-view .page-heading p,
-.management-banner p {
+.enterprise-view .page-heading p {
   color: var(--text-secondary);
 }
 .enterprise-chat .markdown-body {
@@ -3650,20 +3441,6 @@ textarea:focus-visible {
   }
 }
 @media (max-width: 1060px) {
-  .management-card-grid {
-    gap: 13px;
-  }
-  .management-card {
-    padding: 19px 17px 0;
-  }
-  .management-card p {
-    font-size: 12px;
-  }
-  .management-card > .tag {
-    right: 16px;
-    top: 22px;
-    font-size: 12px;
-  }
   .runtime-status-grid {
     grid-template-columns: 1fr;
   }
@@ -3716,88 +3493,94 @@ textarea:focus-visible {
     max-width: 330px;
   }
 }
+/* 侧栏收起为图标栏：手动收起、窄于 1060px 默认收起（可手动展开）、窄于 700px 固定收起。
+   由 App.vue 在 <html> 上切换 .sidebar-collapsed。 */
+:root.sidebar-collapsed {
+  --sidebar: 92px;
+}
+.sidebar-collapsed .enterprise-sidebar {
+  --sidebar-gutter: 7px;
+}
+.sidebar-collapsed .enterprise-brand-row {
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 0;
+  margin-bottom: 20px;
+}
+.sidebar-collapsed .enterprise-brand > span:last-child {
+  display: none;
+}
+.sidebar-collapsed .enterprise-sidebar .enterprise-primary > a,
+.sidebar-collapsed .enterprise-new-chat,
+.sidebar-collapsed .enterprise-management-link {
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+  justify-items: center;
+  gap: 5px;
+  min-height: 66px;
+  padding: 9px 4px;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}
+.sidebar-collapsed .enterprise-new-chat {
+  margin-bottom: 16px;
+}
+.sidebar-collapsed .enterprise-new-chat > svg:last-child,
+.sidebar-collapsed .enterprise-management-link > svg:last-child,
+.sidebar-collapsed .enterprise-recent-heading,
+.sidebar-collapsed .enterprise-recents {
+  display: none;
+}
+.sidebar-collapsed .enterprise-sidebar .enterprise-primary .nav-count {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  min-width: 15px;
+  padding: 0 3px;
+  font-size: 12px;
+  line-height: 14px;
+}
+.sidebar-collapsed .enterprise-sidebar-footer {
+  padding-top: 12px;
+}
+.sidebar-collapsed .enterprise-management-nav {
+  width: 100%;
+}
+.sidebar-collapsed .enterprise-management-popover {
+  position: fixed;
+  bottom: 12px;
+  left: calc(var(--sidebar) + 10px);
+  width: min(248px, calc(100vw - var(--sidebar) - 20px));
+}
+.sidebar-collapsed .enterprise-profile {
+  padding: 9px 0;
+  margin-top: 10px;
+}
+.sidebar-collapsed .enterprise-account-trigger {
+  flex-direction: column;
+  justify-content: center;
+  min-height: 66px;
+  gap: 5px;
+  padding: 7px 3px;
+  text-align: center;
+}
+.sidebar-collapsed .enterprise-account-identity {
+  max-width: 100%;
+}
+.sidebar-collapsed .enterprise-account-identity small {
+  display: none;
+}
+.sidebar-collapsed .enterprise-account-identity strong {
+  font-size: 12px;
+  text-align: center;
+}
 @media (max-width: 700px) {
   :root {
-    --sidebar: 92px;
     --page-padding-top: 28px;
     --page-padding-x: 24px;
     --page-title-size: 26px;
-  }
-  .enterprise-sidebar {
-    --sidebar-gutter: 7px;
-  }
-  .enterprise-brand-row {
-    justify-content: center;
-    padding: 0;
-    margin-bottom: 20px;
-  }
-  .enterprise-brand > span:last-child {
-    display: none;
-  }
-  .enterprise-sidebar .enterprise-primary > a,
-  .enterprise-new-chat,
-  .enterprise-management-link {
-    grid-template-columns: minmax(0, 1fr);
-    justify-content: stretch;
-    justify-items: center;
-    gap: 5px;
-    min-height: 66px;
-    padding: 9px 4px;
-    font-size: 12px;
-    line-height: 16px;
-    text-align: center;
-  }
-  .enterprise-new-chat {
-    margin-bottom: 16px;
-  }
-  .enterprise-new-chat > svg:last-child,
-  .enterprise-management-link > svg:last-child,
-  .enterprise-recent-heading,
-  .enterprise-recents {
-    display: none;
-  }
-  .enterprise-sidebar .enterprise-primary .nav-count {
-    position: absolute;
-    top: 5px;
-    right: 6px;
-    min-width: 15px;
-    padding: 0 3px;
-    font-size: 12px;
-    line-height: 14px;
-  }
-  .enterprise-sidebar-footer {
-    padding-top: 12px;
-  }
-  .enterprise-management-nav {
-    width: 100%;
-  }
-  .enterprise-management-popover {
-    position: fixed;
-    bottom: 12px;
-    left: calc(var(--sidebar) + 10px);
-    width: min(248px, calc(100vw - var(--sidebar) - 20px));
-  }
-  .enterprise-profile {
-    padding: 9px 0;
-    margin-top: 10px;
-  }
-  .enterprise-account-trigger {
-    flex-direction: column;
-    justify-content: center;
-    min-height: 66px;
-    gap: 5px;
-    padding: 7px 3px;
-    text-align: center;
-  }
-  .enterprise-account-identity {
-    max-width: 100%;
-  }
-  .enterprise-account-identity small {
-    display: none;
-  }
-  .enterprise-account-identity strong {
-    font-size: 12px;
-    text-align: center;
   }
   .enterprise-account-menu button[role^='menuitem'] {
     min-height: 44px;
@@ -3821,30 +3604,6 @@ textarea:focus-visible {
   .enterprise-view .search-field {
     width: 100%;
     margin-bottom: 13px;
-  }
-  .management-card-grid {
-    grid-template-columns: 1fr;
-  }
-  .management-card {
-    padding: 23px 23px 0;
-  }
-  .management-card h2 {
-    margin-top: 18px;
-  }
-  .management-card p {
-    font-size: 12px;
-  }
-  .management-resource-links {
-    grid-template-columns: 1fr;
-  }
-  .management-banner {
-    padding: 22px 19px;
-  }
-  .management-banner h2 {
-    font-size: 16px;
-  }
-  .management-banner p {
-    font-size: 12px;
   }
   .enterprise-chat .chat-title > strong {
     max-width: 215px;
@@ -3985,32 +3744,6 @@ textarea:focus-visible {
   .enterprise-empty p {
     font-size: 12px;
   }
-  .management-banner {
-    align-items: flex-start;
-    padding: 20px 16px;
-    gap: 12px;
-  }
-  .management-banner-icon {
-    width: 40px;
-    height: 40px;
-  }
-  .management-banner h2 {
-    font-size: 15px;
-    line-height: 1.8;
-  }
-  .management-banner p {
-    font-size: 12px;
-  }
-  .release-boundary {
-    padding: 17px 15px;
-    gap: 10px;
-  }
-  .release-boundary strong {
-    font-size: 12px;
-  }
-  .release-boundary p {
-    font-size: 12px;
-  }
   /* Keep a long immutable hash readable beside a persistent phone sidebar. */
   .trajectory-page .snapshot-bar {
     display: grid;
@@ -4137,9 +3870,6 @@ textarea:focus-visible {
   }
   .drawer > header h2 {
     font-size: 21px;
-  }
-  .drawer-body {
-    padding: 22px 21px;
   }
   .drawer > footer {
     padding: 17px 21px;
