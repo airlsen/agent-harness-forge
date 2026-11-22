@@ -71,7 +71,7 @@ const navigation = [
   { path: '/agent/conversations', label: '我的会话', icon: 'message' },
 ];
 const management = [
-  { path: '/agent/models', label: '模型连接', icon: 'cpu' },
+  { path: '/agent/models', label: '模型连接', icon: 'model' },
   { path: '/agent/governance', label: '执行策略', icon: 'shield' },
   { path: '/agent/runtime', label: '运行状态', icon: 'server' },
   { path: '/agent/audit', label: '运行审计', icon: 'activity' },

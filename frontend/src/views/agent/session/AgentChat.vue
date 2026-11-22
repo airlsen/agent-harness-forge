@@ -996,7 +996,7 @@ async function quoteMessage(text: string) {
                       : event.kind === 'message'
                         ? 'message'
                         : event.kind === 'model_switched'
-                          ? 'cpu'
+                          ? 'model'
                           : event.kind === 'workspace_changes'
                             ? 'folder'
                             : 'wrench'

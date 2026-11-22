@@ -182,11 +182,18 @@ defineProps<{
   gap: 4px;
   margin-right: auto;
 }
-/* icon 插槽里是 ForgeIcon 裸 <svg>，不是 .anticon，antd 不会补图标与文字的间距 */
+/*
+ * 卡片按钮统一规范（以企业场景「开始」为准）：size="small"（24px），左侧 14px 图标；
+ * 主操作 type="primary"，次要操作 type="text"；「更多」为无边框图标按钮（16px 图标）。
+ * icon 插槽里是 ForgeIcon 裸 <svg>，不是 .anticon，antd 不会补图标与文字的间距。
+ */
 .catalog-card-footer :deep(.ant-btn) {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+.catalog-card-footer :deep(.ant-btn > svg) {
+  flex-shrink: 0;
 }
 .catalog-card-footer :deep(.ant-btn-text:not(:disabled)) {
   color: var(--color-text-secondary);

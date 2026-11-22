@@ -25,14 +25,14 @@ function onMenuClick(info: MenuInfo) {
     <slot />
     <a-dropdown :trigger="['click']" placement="bottomRight">
       <a-button
-        class="skill-card-more"
+        type="text"
         size="small"
         :aria-label="`更多操作：${name}`"
         title="更多操作"
         :disabled="disabled"
         :loading="downloading"
       >
-        <Icon v-if="!downloading" name="more" :size="20" />
+        <template #icon><Icon v-if="!downloading" name="more" :size="16" /></template>
       </a-button>
       <template #overlay>
         <a-menu @click="onMenuClick">
@@ -54,23 +54,7 @@ function onMenuClick(info: MenuInfo) {
   gap: 4px;
   flex-shrink: 0;
 }
-.skill-card-actions :deep(.ant-btn) {
-  display: inline-flex;
-  height: 32px;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-}
-.skill-card-more {
-  width: 34px;
-  padding: 0;
-}
-.skill-card-more:not(:disabled):hover,
-.skill-card-more:not(:disabled):focus-visible {
-  color: var(--color-brand-active);
-  background: var(--color-brand-subtle);
-  border-color: var(--color-brand);
-}
+/* 按钮尺寸、图标与间距沿用 CatalogCard 底栏的统一规范，这里不再单独设置 */
 .ant-dropdown-menu-item svg {
   margin-right: 8px;
   vertical-align: -2px;

@@ -468,7 +468,9 @@ async function versions(scenario: Scenario) {
           </template>
           <!-- 使用目录：详情（文字按钮）+ 开始（主题色主按钮，图标在左） -->
           <template v-if="!maintenance" #footer>
-            <a-button type="text" size="small" @click="openDetail(scenario)">详情</a-button>
+            <a-button type="text" size="small" @click="openDetail(scenario)">
+              <template #icon><Icon name="information-line" :size="14" /></template>详情
+            </a-button>
             <a-button type="primary" size="small" @click="useScenario(scenario)">
               <template #icon
                 ><Icon :name="isAvailableScenario(scenario) ? 'play' : 'eye'" :size="14"

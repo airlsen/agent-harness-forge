@@ -267,7 +267,7 @@ onMounted(load);
       <div class="page-heading catalog-page-heading model-management-heading">
         <div class="catalog-heading-copy">
           <span class="catalog-kicker"
-            ><span class="catalog-kicker-mark"><Icon name="cpu" :size="12" /></span>MODEL CONNECTIONS</span
+            ><span class="catalog-kicker-mark"><Icon name="model" :size="12" /></span>MODEL CONNECTIONS</span
           >
           <h1>模型管理</h1>
           <p>管理聊天模型及其连接状态。</p>
@@ -291,7 +291,7 @@ onMounted(load);
       </a-alert>
       <CatalogEmpty
         v-else-if="!models.length"
-        icon="cpu"
+        icon="model"
         title="还没有模型配置"
         description="添加模型后即可在聊天中选择。"
       >
@@ -310,7 +310,7 @@ onMounted(load);
             :class="['model-management-card', { 'is-disabled': !model.enabled }]"
           >
             <header class="model-card-heading">
-              <span class="model-card-icon"><Icon name="cpu" :size="20" /></span>
+              <span class="model-card-icon"><Icon name="model" :size="20" /></span>
               <div class="model-card-copy">
                 <h2 :title="model.name">{{ model.name }}</h2>
                 <p :title="model.model">{{ model.model }}</p>
@@ -371,17 +371,20 @@ onMounted(load);
                   :loading="testingId === model.id"
                   :disabled="!model.id || changingAvailabilityId === model.id || deletingId === model.id"
                   @click="testModel(model)"
-                  >测试连接</a-button
                 >
+                  <template #icon><Icon name="refresh" :size="14" /></template>测试连接
+                </a-button>
                 <a-button
                   type="primary"
                   size="small"
                   :disabled="testingId === model.id || deletingId === model.id"
                   @click="openEditor(model)"
-                  >编辑</a-button
                 >
+                  <template #icon><Icon name="edit" :size="14" /></template>编辑
+                </a-button>
                 <a-dropdown :trigger="['click']" placement="bottomRight">
                   <a-button
+                    type="text"
                     size="small"
                     :aria-label="`更多操作 ${model.name}`"
                     title="更多操作"

@@ -2071,6 +2071,10 @@ textarea:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
+}
+.model-card-actions .ant-btn > svg {
+  flex-shrink: 0;
 }
 .model-management-card.is-disabled .model-card-icon {
   color: var(--color-text-tertiary);

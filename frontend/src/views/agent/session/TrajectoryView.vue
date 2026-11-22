@@ -121,7 +121,7 @@ onMounted(load);
                   event.source === 'tools'
                     ? 'wrench'
                     : event.source === 'llm'
-                      ? 'cpu'
+                      ? 'model'
                       : event.source === 'agent'
                         ? 'sparkles'
                         : 'settings'

@@ -612,9 +612,9 @@ onMounted(load);
             :status-color="tool.permission === 'read' ? 'success' : 'warning'"
           >
             <template #footer>
-              <a-button type="text" size="small" :aria-label="`查看${tool.title}详情`" @click="detail = tool"
-                >详情</a-button
-              >
+              <a-button type="text" size="small" :aria-label="`查看${tool.title}详情`" @click="detail = tool">
+                <template #icon><Icon name="information-line" :size="14" /></template>详情
+              </a-button>
             </template>
           </CatalogCard>
         </CatalogGrid>
@@ -697,7 +697,9 @@ onMounted(load);
                 </div>
               </div>
               <RouterLink v-slot="{ href, navigate }" :to="pluginPath(row.plugin.package)" custom>
-                <a-button type="primary" size="small" :href="href" @click="navigate">查看</a-button>
+                <a-button type="primary" size="small" :href="href" @click="navigate">
+                  <template #icon><Icon name="eye" :size="14" /></template>查看
+                </a-button>
               </RouterLink>
             </article>
           </div>
@@ -777,15 +779,17 @@ onMounted(load);
                 :loading="mcpTesting.has(server.id)"
                 :disabled="mcpTesting.has(server.id)"
                 @click="testMcp(server)"
-                >测试连接</a-button
               >
+                <template #icon><Icon name="refresh" :size="14" /></template>测试连接
+              </a-button>
               <a-button
                 type="primary"
                 size="small"
                 :disabled="!server.tools.length"
                 @click="openMcpTools(server)"
-                >工具</a-button
               >
+                <template #icon><Icon name="wrench" :size="14" /></template>工具
+              </a-button>
               <a-dropdown :trigger="['click']" placement="bottomRight">
                 <a-button type="text" size="small" :aria-label="`更多操作 ${server.name}`" title="更多操作">
                   <template #icon><Icon name="more" :size="16" /></template>
@@ -866,8 +870,9 @@ onMounted(load);
                     :href="href"
                     :aria-label="`查看已发布技能 ${skill.name}`"
                     @click="navigate"
-                    >查看</a-button
                   >
+                    <template #icon><Icon name="eye" :size="14" /></template>查看
+                  </a-button>
                 </RouterLink>
               </SkillCardActions>
             </template>
@@ -1221,6 +1226,11 @@ onMounted(load);
   border: 1px solid var(--border-default);
   border-radius: 8px;
   background: var(--surface-card);
+}
+.plugin-maintenance-item :deep(.ant-btn) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .plugin-maintenance-item:hover,
 .plugin-maintenance-item:has(:focus-visible) {
