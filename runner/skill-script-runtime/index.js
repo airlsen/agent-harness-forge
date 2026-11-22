@@ -4,7 +4,8 @@
  * - 运行方式由 FORGE_SKILL_SCRIPT_SANDBOX 决定：
  *   auto（默认）宿主有可用的 bubblewrap 时隔离运行，否则直接用解释器运行；
  *   bwrap 只允许隔离运行，不可用时报错；none 一律直接运行。
- *   隔离运行时 Skill 目录只读挂载到 /skill/current、无网络；直接运行时没有这些限制。
+ *   隔离运行时 Skill 目录只读挂载到 /skill/current，可联网（接口测试等脚本需要访问外部服务）；
+ *   直接运行时没有这些限制。
  * - 工作目录：传入 outputRoot（会话工作区）时，脚本在 outputs/<脚本名>-<时间>/ 下运行，
  *   跑完保留其中的文件（会话文件同步后用户可见）；没有产出时删除空目录。未传时使用临时目录，跑完删除。
  * - 两种方式都提供 FORGE_SKILL_DIR（Skill 目录）与 FORGE_OUTPUT_DIR（工作目录）环境变量。
@@ -141,9 +142,13 @@ function runIsolated(root, path, args, work, nodeScript) {
   const links = ['/bin', '/lib', '/lib64']
     .filter((dir) => existsSync(dir) && lstatSync(dir).isSymbolicLink())
     .flatMap((dir) => ['--symlink', readlinkSync(dir), dir]);
+  // 联网：保留宿主网络，并只读挂载域名解析与 HTTPS 根证书（不存在的路径跳过）
+  const network = [
+    '/etc/resolv.conf', '/etc/hosts', '/etc/nsswitch.conf', '/etc/ssl', '/etc/ca-certificates', '/etc/pki',
+  ].flatMap((file) => ['--ro-bind-try', file, file]);
   const command = [
-    '--die-with-parent', '--new-session', '--unshare-all',
-    ...mounts, ...links, ...(nodeScript ? ['--ro-bind', process.execPath, '/node'] : []),
+    '--die-with-parent', '--new-session', '--unshare-all', '--share-net',
+    ...mounts, ...links, ...network, ...(nodeScript ? ['--ro-bind', process.execPath, '/node'] : []),
     '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp',
     '--dir', '/skill', '--ro-bind', root, '/skill/current', '--bind', work, '/work',
     '--chdir', '/work', '--', interpreter, `/skill/current/${path}`, ...args,
