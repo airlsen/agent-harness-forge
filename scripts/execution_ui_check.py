@@ -70,11 +70,11 @@ async def check_execution_ui(
             await expect(page.locator(".conversation-start-surface")).to_have_count(1)
             await expect(page.locator("h1")).to_have_text("今天要完成什么工作？")
             await expect(page.locator(".enterprise-composer-area")).to_have_count(0)
-            await page.locator(".scenario-trigger").click()
+            await page.locator(".scenario-select").click()
             await (
-                page.locator(".scenario-popover>button")
+                page.locator(".scenario-select-popup .task-select-option-copy strong")
                 .filter(has_text="文档与报告")
-                .click()
+                .first.click()
             )
             await page.get_by_label("任务输入").fill("HOLD reconnect fixture")
             await page.get_by_role("button", name="发送任务", exact=True).click()
@@ -132,15 +132,19 @@ async def check_execution_ui(
             await expect(page.locator(".context-panel")).to_have_count(0)
             await page.get_by_role("button", name="查看结果", exact=True).click()
             async with page.expect_response(
-                lambda response: "/file?path=result.md" in response.url
+                lambda response: "/files/raw?path=result.md" in response.url
             ) as file_response:
-                await page.get_by_role("button", name="result.md").click()
+                await (
+                    page.locator(".context-panel .file-card-main")
+                    .filter(has_text="result.md")
+                    .click()
+                )
             fetched_file = await file_response.value
             await fetched_file.finished()
             assert fetched_file.status == 200
-            await expect(page.get_by_role("dialog", name="产物预览")).to_be_visible()
-            await expect(page.locator(".file-preview>pre")).to_contain_text(
-                "# API integration fixture"
+            await expect(page.get_by_role("dialog", name="文件预览")).to_be_visible()
+            await expect(page.locator(".file-preview-body")).to_contain_text(
+                "API integration fixture"
             )
             async with page.expect_download() as captured:
                 await page.get_by_role("button", name="下载文件", exact=True).click()
@@ -299,7 +303,7 @@ async def check_execution_ui(
                 "workbench composer submits real text attachments and opens the created conversation"
             )
             await page.set_viewport_size({"width": 390, "height": 844})
-            await page.get_by_role("button", name="查看过程", exact=True).click()
+            await page.get_by_role("button", name="查看能力", exact=True).click()
             await expect(page.locator(".context-panel")).to_have_attribute(
                 "aria-modal", "true"
             )
@@ -318,12 +322,14 @@ async def check_execution_ui(
                 "调用 2 个工具"
             )
             await page.get_by_role("button", name="查看结果", exact=True).click()
-            result_file = page.locator(".file-card-main").filter(has_text="result.md")
+            result_file = page.locator(".context-panel .file-card-main").filter(
+                has_text="result.md"
+            )
             await expect(result_file).to_be_visible()
             await result_file.click()
-            await expect(page.get_by_role("dialog", name="产物预览")).to_be_visible()
-            await expect(page.locator(".file-preview>pre")).to_contain_text(
-                "# API integration fixture"
+            await expect(page.get_by_role("dialog", name="文件预览")).to_be_visible()
+            await expect(page.locator(".file-preview-body")).to_contain_text(
+                "API integration fixture"
             )
             await page.keyboard.press("Escape")
             passed(
@@ -388,9 +394,7 @@ async def check_execution_ui(
                 "Independent task draft on the workbench"
             )
             await expect(page.locator(".attachment-chips")).to_contain_text("start.txt")
-            await expect(page.locator(".scenario-trigger")).to_contain_text(
-                "分析与决策"
-            )
+            await expect(page.locator(".scenario-select")).to_contain_text("分析与决策")
             assert len(interrupts) == interrupts_before_home
             passed(
                 "workbench task and two conversation reply drafts restore their own text/files/scenario only, with no context mixing or interrupt request"
@@ -419,15 +423,13 @@ async def check_execution_ui(
             )
             await page.get_by_role("link", name="我的会话", exact=True).click()
             await page.get_by_label("搜索会话").fill("enterprise workbench fixture")
-            await expect(page.locator(".conversation-table-row")).to_have_count(1)
             await expect(
-                page.locator(".conversation-table-row .session-state")
+                page.locator(".conversation-table tbody tr.ant-table-row")
+            ).to_have_count(1)
+            await expect(
+                page.locator(".conversation-table tbody .session-state")
             ).to_have_text("可继续")
-            await (
-                page.locator(".conversation-table-actions")
-                .get_by_role("link", name="打开", exact=True)
-                .click()
-            )
+            await page.locator(".conversation-table-title").click()
             await expect(page.locator(".message-row.user")).to_have_count(1)
             await expect(page.get_by_label("任务输入")).to_have_value(
                 "Unsent draft for this conversation only"
@@ -490,16 +492,12 @@ async def check_execution_ui(
             await page.get_by_role("button", name="刷新会话").click()
             # The HOLD turn is accepted in the background and settles independently.
             await expect(
-                page.locator(".conversation-table-row .session-state")
+                page.locator(".conversation-table tbody .session-state")
             ).to_have_text("执行中")
             await expect(
                 page.locator(".conversation-table-actions button")
             ).to_be_disabled()
-            await (
-                page.locator(".conversation-table-actions")
-                .get_by_role("link", name="打开", exact=True)
-                .click()
-            )
+            await page.locator(".conversation-table-title").click()
             await expect(page.locator(".message-row.assistant")).to_have_count(
                 2, timeout=10000
             )
@@ -509,17 +507,19 @@ async def check_execution_ui(
             # the fixture holds for 8s, then the background list polls every 3s.
             # Allow for that response plus one legitimate poll interval.
             await expect(
-                page.locator(".conversation-table-row .session-state")
+                page.locator(".conversation-table tbody .session-state")
             ).to_have_text("可继续", timeout=20000)
             await expect(
                 page.locator(".conversation-table-actions button")
             ).to_be_enabled()
             await page.locator(".conversation-table-actions button").click()
             await expect(
-                page.get_by_role("dialog", name="归档会话确认")
+                page.get_by_role("dialog", name="归档会话", exact=True)
             ).to_be_visible()
             await page.get_by_role("button", name="确认归档", exact=True).click()
-            await expect(page.locator(".conversation-table-row")).to_have_count(0)
+            await expect(
+                page.locator(".conversation-table tbody tr.ant-table-row")
+            ).to_have_count(0)
             passed(
                 "running sessions cannot be archived; settled-session confirmation really archives the record"
             )
@@ -577,7 +577,7 @@ async def check_execution_ui(
                         "listReads": list_reads,
                         "apiState": api_state,
                         "sessionStates": await page.locator(
-                            ".conversation-table-row .session-state"
+                            ".conversation-table tbody .session-state"
                         ).all_text_contents(),
                         "pendingApprovalCards": await page.locator(
                             ".approval-card"
