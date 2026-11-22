@@ -9,6 +9,7 @@ from sqlalchemy import JSON, BigInteger, DateTime, Float, Integer, String, Text,
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.database import Base
+from .space import space_column
 
 
 class PluginRegistry(Base):
@@ -19,6 +20,8 @@ class PluginRegistry(Base):
     # 保留 package 以兼容 P0 已落库记录，并让同一插件的多个不可变版本可并存。
     package: Mapped[str] = mapped_column(String(128), index=True)
     plugin_id: Mapped[str] = mapped_column(String(128), default="", index=True)
+    # 所属空间（公共空间 = 1）
+    space_id: Mapped[int] = space_column()
     version: Mapped[str] = mapped_column(String(32))
     display_name: Mapped[str] = mapped_column(String(128), default="")
     description: Mapped[str] = mapped_column(String(512), default="")
@@ -50,6 +53,8 @@ class McpServer(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(96), unique=True, index=True)
+    # 所属空间（公共空间 = 1）
+    space_id: Mapped[int] = space_column()
     url: Mapped[str] = mapped_column(String(2048))
     transport: Mapped[str] = mapped_column(String(24), default="streamable-http")
     headers_encrypted: Mapped[str] = mapped_column(Text, default="")

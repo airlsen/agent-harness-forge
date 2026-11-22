@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router';
 import { usePlatform } from '../../stores/platform';
 import { useConversation } from '../../stores/conversation';
+import { useSpace } from '../../stores/space';
 import { downloadResponse } from '../../api/client';
 import { formatBytes, sessionState } from '../../utils/presentation';
 import { trapTabKey } from '../../utils/focus';
@@ -37,6 +38,7 @@ import {
 
 const app = usePlatform();
 const chat = useConversation();
+const space = useSpace();
 const route = useRoute();
 const router = useRouter();
 const messagesPane = ref<HTMLElement | null>(null);
@@ -431,8 +433,12 @@ async function loadSession(value: unknown) {
     return;
   }
   try {
-    if (value && Number(value) !== chat.current?.id) await chat.open(Number(value));
-    else if (value && chat.current?.status === 'running')
+    if (value && Number(value) !== chat.current?.id) {
+      await chat.open(Number(value));
+      // 打开别的空间的会话（链接、全部空间列表）：自动切到会话所在空间，留在本页
+      if (generation === routeGeneration && chat.current?.id === Number(value))
+        await space.follow(chat.current.spaceId, '（会话所在空间）');
+    } else if (value && chat.current?.status === 'running')
       chat.follow(Number(value), chat.events.at(-1)?.seq ?? 0);
     else if (!value) chat.prepareStart();
     if (generation === routeGeneration) await scrollToBottom();

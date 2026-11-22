@@ -9,6 +9,8 @@ import CatalogEmpty from '../../components/catalog/CatalogEmpty.vue';
 import CatalogFilter from '../../components/catalog/CatalogFilter.vue';
 import CatalogGrid from '../../components/catalog/CatalogGrid.vue';
 import CatalogSearch from '../../components/catalog/CatalogSearch.vue';
+import SpaceTag from '../../components/space/SpaceTag.vue';
+import MoveSpaceDialog from '../../components/space/MoveSpaceDialog.vue';
 import type { SkillSummary } from '../../types/skill';
 import { catalogDate, orderManagedSkills } from '../../utils/catalogOrdering';
 import {
@@ -98,6 +100,12 @@ async function deleteSkill(item: SkillSummary) {
     changing.value = null;
   }
 }
+// 移动到其他空间
+const moving = ref<SkillSummary | null>(null);
+async function moved() {
+  moving.value = null;
+  await load();
+}
 async function load() {
   loading.value = true;
   error.value = '';
@@ -183,6 +191,7 @@ onMounted(load);
               :status="SKILL_STATE_LABELS[skillState(item)]"
               :status-color="skillState(item) === 'published' ? 'success' : undefined"
             >
+              <template #badge><SpaceTag :space-id="item.spaceId" /></template>
               <template #sub>
                 <span class="skill-machine-name" :title="item.machineName">{{
                   item.machineName || `skill-${item.id}`
@@ -213,11 +222,13 @@ onMounted(load);
                   :name="item.name"
                   :can-unpublish="item.publishedRevisionId != null"
                   :can-delete="canDeleteSkill(item)"
+                  can-move
                   :downloading="downloading === item.id || changing === item.id"
                   :disabled="downloading !== null || changing !== null"
                   @download="downloadSkill(item)"
                   @unpublish="unpublishSkill(item)"
                   @delete="deleteSkill(item)"
+                  @move="moving = item"
                 >
                   <RouterLink v-slot="{ href, navigate }" :to="`/agent/skills/${item.id}`" custom>
                     <a-button
@@ -245,6 +256,15 @@ onMounted(load);
         </template>
       </template>
     </div>
+    <MoveSpaceDialog
+      :open="Boolean(moving)"
+      kind="skill"
+      :resource-id="moving?.id ?? null"
+      :name="moving?.name ?? ''"
+      :space-id="moving?.spaceId"
+      @close="moving = null"
+      @moved="moved"
+    />
   </main>
 </template>
 

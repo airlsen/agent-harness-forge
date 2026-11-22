@@ -552,7 +552,7 @@ textarea:focus-visible {
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;
-  width: 216px;
+  width: 232px;
   max-width: calc(100vw - 24px);
   padding: 5px;
   border: 1px solid var(--line);
@@ -635,6 +635,74 @@ textarea:focus-visible {
 .enterprise-account-menu .enterprise-theme-switch button[role^='menuitem']:focus-visible {
   outline: 2px solid var(--accent-focus);
   outline-offset: 0;
+}
+/* 账号按钮第二行：当前空间（色块 + 名称） */
+.enterprise-account-identity small.enterprise-account-space {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.enterprise-account-space > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.enterprise-space-heading {
+  padding: 6px 12px 2px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.enterprise-space-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 6px;
+  padding: 0 8px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-secondary);
+}
+.enterprise-space-search:focus-within {
+  border-color: var(--border-focus);
+}
+.enterprise-space-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+}
+.enterprise-space-options.scroll {
+  max-height: 232px;
+  overflow-y: auto;
+}
+.enterprise-account-menu button.enterprise-space-option {
+  min-height: 34px;
+  padding: 7px 12px;
+}
+.enterprise-account-menu button.enterprise-space-option > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.enterprise-account-menu button.enterprise-space-option[aria-checked='true'] {
+  color: var(--ink);
+  background: transparent;
+  font-weight: 600;
+}
+.enterprise-account-menu button.enterprise-space-option[aria-checked='true'] > svg:last-child {
+  color: var(--color-brand);
+}
+.enterprise-space-empty {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 .enterprise-account-menu-divider {
   height: 1px;
@@ -1703,6 +1771,13 @@ textarea:focus-visible {
 }
 .conversations-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
   color: var(--scenario-selection-text);
+}
+.conversations-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
 }
 .conversations-results {
   color: var(--text-secondary);

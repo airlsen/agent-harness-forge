@@ -6,19 +6,27 @@ from ..core.database import get_session
 from ..core.config import settings
 from ..schemas.agent_scenario import CreateScenarioRequest, UpdateScenarioRequest
 from ..services.scenario_service import scenario_service
+from ..services.space_service import current_space
 from ..utils.response import ResponseUtil
 
 router = APIRouter()
 
 
 @router.get("")
-async def list_scenarios(db: AsyncSession = Depends(get_session)):
-    return ResponseUtil.ok(await scenario_service.list_mine(db, settings.admin_username))
+async def list_scenarios(
+    db: AsyncSession = Depends(get_session), space_id: int | None = Depends(current_space)
+):
+    return ResponseUtil.ok(await scenario_service.list_mine(db, settings.admin_username, space_id))
 
 
 @router.post("")
-async def create_scenario(req: CreateScenarioRequest, db: AsyncSession = Depends(get_session)):
-    return ResponseUtil.ok(await scenario_service.create(db, settings.admin_username, req))
+async def create_scenario(
+    req: CreateScenarioRequest,
+    db: AsyncSession = Depends(get_session),
+    space_id: int | None = Depends(current_space),
+):
+    # 创建在当前空间（新建对话框里可改目标空间，前端以请求头传入）
+    return ResponseUtil.ok(await scenario_service.create(db, settings.admin_username, req, space_id=space_id))
 
 
 @router.get("/{scenario_id}")
@@ -45,12 +53,18 @@ async def versions(scenario_id: int, db: AsyncSession = Depends(get_session)):
 
 
 @router.post("/{scenario_id}/copy")
-async def copy_scenario(scenario_id: int, db: AsyncSession = Depends(get_session)):
+async def copy_scenario(
+    scenario_id: int, db: AsyncSession = Depends(get_session), space_id: int | None = Depends(current_space)
+):
     original = await scenario_service.view(db, await scenario_service.row(db, scenario_id))
     payload = CreateScenarioRequest.model_validate(
         {**original["payload"], "name": original["payload"]["name"] + " · 副本"}
     )
-    return ResponseUtil.ok(await scenario_service.create(db, settings.admin_username, payload))
+    # 副本放在当前空间；没有当前空间时与原场景同一空间
+    target = space_id if space_id is not None else original["spaceId"]
+    return ResponseUtil.ok(
+        await scenario_service.create(db, settings.admin_username, payload, space_id=target)
+    )
 
 
 @router.post("/{scenario_id}/run-test")

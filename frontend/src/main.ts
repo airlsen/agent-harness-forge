@@ -16,6 +16,7 @@ import SkillEditor from './views/skill/SkillEditor.vue';
 import PublishedSkillView from './views/capability/PublishedSkillView.vue';
 import PluginDetailView from './views/capability/PluginDetailView.vue';
 import TrajectoryView from './views/conversation/TrajectoryView.vue';
+import SpaceCenter from './views/space/SpaceCenter.vue';
 import './style.css';
 import './enterprise.css';
 import './styles/tokens.scss';
@@ -42,6 +43,7 @@ const router = createRouter({
     { path: '/agent/governance', component: GovernanceCenter, meta: { title: '执行策略' } },
     { path: '/agent/runtime', component: RuntimeStatus, meta: { title: '运行状态' } },
     { path: '/agent/audit', component: AuditCenter, meta: { title: '运行审计' } },
+    { path: '/agent/spaces', component: SpaceCenter, meta: { title: '空间管理' } },
     { path: '/agent/trajectory/:sessionId', component: TrajectoryView, meta: { title: '执行过程' } },
     { path: '/:pathMatch(.*)*', redirect: '/agent/workbench' },
   ],

@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router';
 
 import Icon from '../base/ForgeIcon.vue';
+import SpaceMark from '../space/SpaceMark.vue';
+import { INLINE_SPACE_LIMIT, useSpace } from '../../stores/space';
 
 type ThemePreference = 'system' | 'light' | 'dark';
 const themeOptions: { value: ThemePreference; label: string; icon: string }[] = [
@@ -13,7 +15,31 @@ const themeOptions: { value: ThemePreference; label: string; icon: string }[] = 
 const props = withDefaults(defineProps<{ username: string; theme: ThemePreference; busy?: boolean }>(), {
   busy: false,
 });
-const emit = defineEmits<{ 'change-theme': [value: ThemePreference]; help: []; logout: [] }>();
+const emit = defineEmits<{
+  'change-theme': [value: ThemePreference];
+  help: [];
+  logout: [];
+  /** 选择了另一个空间（由外层决定是否需要离开当前页面） */
+  'switch-space': [id: number];
+  'manage-spaces': [];
+}>();
+const space = useSpace();
+// 空间较多时显示搜索框，列表区域限高滚动
+const spaceQuery = ref('');
+const searchable = computed(() => space.spaces.length > INLINE_SPACE_LIMIT);
+const shownSpaces = computed(() => {
+  const keyword = spaceQuery.value.trim().toLowerCase();
+  const items = space.sorted;
+  return keyword ? items.filter((item) => item.name.toLowerCase().includes(keyword)) : items;
+});
+function chooseSpace(id: number) {
+  close(true);
+  if (id !== space.currentId) emit('switch-space', id);
+}
+function manageSpaces() {
+  close(false);
+  emit('manage-spaces');
+}
 const route = useRoute();
 const root = ref<HTMLElement | null>(null);
 const trigger = ref<HTMLButtonElement | null>(null);
@@ -37,6 +63,7 @@ function cancelTimers() {
 }
 function close(restoreFocus = false) {
   cancelTimers();
+  spaceQuery.value = '';
   open.value = false;
   pinned.value = false;
   if (restoreFocus && !trigger.value?.closest('[inert]')) trigger.value?.focus();
@@ -47,7 +74,12 @@ async function showWithFocus() {
   open.value = true;
   pinned.value = true;
   await nextTick();
-  if (active && open.value) menuItems()[0]?.focus();
+  if (!active || !open.value) return;
+  // 焦点落在当前空间上，方向键可直接切换
+  (
+    root.value?.querySelector<HTMLButtonElement>('.enterprise-space-option[aria-checked="true"]') ??
+    menuItems()[0]
+  )?.focus();
 }
 function toggle() {
   // Clicking an already-hovered avatar pins its menu, rather than hiding it.
@@ -123,6 +155,13 @@ function signOut() {
   emit('logout');
 }
 watch([() => route.fullPath, () => props.busy], () => close());
+// 打开菜单时刷新空间列表（别人可能刚新建或删除了空间）；悬停频繁开合时 30 秒内只读一次
+let spacesLoadedAt = 0;
+watch(open, (value) => {
+  if (!value || Date.now() - spacesLoadedAt < 30000) return;
+  spacesLoadedAt = Date.now();
+  void space.load().catch(() => {});
+});
 onMounted(() => {
   document.addEventListener('pointerdown', outside);
   document.addEventListener('focusin', outside);
@@ -143,19 +182,22 @@ onBeforeUnmount(() => {
       type="button"
       class="enterprise-account-trigger"
       :disabled="busy"
-      :aria-label="`${username}，${busy ? '正在退出登录' : '账号菜单'}`"
+      :aria-label="`${username}，${busy ? '正在退出登录' : '账号菜单'}，当前空间：${space.current.name}`"
       aria-haspopup="menu"
       :aria-expanded="open"
       :aria-controls="open ? 'enterprise-account-menu' : undefined"
       @click="toggle"
-      @keydown.down.prevent="showWithFocus"
       @keydown.up.prevent="showWithFocus"
     >
       <span class="enterprise-avatar" aria-hidden="true">
         <span v-if="busy" class="loader small"></span><template v-else>{{ avatar }}</template>
       </span>
       <span class="enterprise-account-identity">
-        <strong>{{ username }}</strong><small>当前管理员账号</small>
+        <strong>{{ username }}</strong><small
+          class="enterprise-account-space"
+          :title="`当前空间：${space.current.name}`"
+          ><SpaceMark :space="space.current" :size="14" /><span>{{ space.current.name }}</span></small
+        >
       </span>
     </button>
     <div
@@ -166,6 +208,33 @@ onBeforeUnmount(() => {
       aria-label="账号操作"
       @keydown="menuKeyboard"
     >
+      <!-- 空间：当前空间打勾；空间较多时出现搜索框，列表限高滚动 -->
+      <div class="enterprise-space-heading">空间</div>
+      <label v-if="searchable" class="enterprise-space-search">
+        <Icon name="search" :size="14" />
+        <input v-model="spaceQuery" type="search" placeholder="搜索空间" aria-label="搜索空间" />
+      </label>
+      <div :class="['enterprise-space-options', { scroll: searchable }]" role="group" aria-label="切换空间">
+        <button
+          v-for="item in shownSpaces"
+          :key="item.id"
+          type="button"
+          role="menuitemradio"
+          class="enterprise-space-option"
+          :aria-checked="item.id === space.currentId"
+          tabindex="-1"
+          :title="item.description || item.name"
+          @click="chooseSpace(item.id)"
+        >
+          <SpaceMark :space="item" :size="18" /><span>{{ item.name }}</span
+          ><Icon v-if="item.id === space.currentId" name="check" :size="15" />
+        </button>
+        <p v-if="!shownSpaces.length" class="enterprise-space-empty">没有匹配的空间</p>
+      </div>
+      <button type="button" role="menuitem" tabindex="-1" @click="manageSpaces">
+        <Icon name="settings" :size="16" /><span>管理空间</span>
+      </button>
+      <div class="enterprise-account-menu-divider"></div>
       <!-- 外观只占一行：左侧标题，右侧三段切换（跟随系统 / 浅色 / 深色） -->
       <div class="enterprise-account-theme" role="group" aria-label="外观">
         <Icon name="contrast" :size="16" /><span>外观</span>

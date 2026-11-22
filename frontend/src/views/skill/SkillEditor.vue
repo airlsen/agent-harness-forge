@@ -23,6 +23,7 @@ import { loadMonaco } from '../../utils/monaco';
 import { lexer } from 'marked';
 import { readSkillDocument, updateSkillMetadata, initialSkillDocument } from '../../utils/skillDocument';
 import { usePlatform } from '../../stores/platform';
+import { PUBLIC_SPACE_ID, useSpace } from '../../stores/space';
 import { confirm } from '../../utils/feedback';
 import { deleteSkill, skillState, unpublishSkill } from '../../utils/skillLifecycle';
 import {
@@ -67,6 +68,7 @@ import type {
 } from '../../types/skill';
 
 const route = useRoute();
+const space = useSpace();
 const router = useRouter();
 const isNew = computed(() => !route.params.id);
 const app = usePlatform();
@@ -144,7 +146,8 @@ const canPublish = computed(() =>
 const saveState = computed(() => {
   if (saveError.value) return '保存失败';
   if (saving.value || savingFile.value) return '保存中…';
-  if (isNew.value) return '尚未保存';
+  // 新 Skill 保存到当前空间（名称不能与本空间、公共空间的 Skill 重名）
+  if (isNew.value) return `尚未保存 · 将放入「${space.current.name}」`;
   if (dirty.value || fileDirty.value) return '有未保存修改';
   return skill.value?.updatedAt ? `已保存 · ${formatDate(skill.value.updatedAt)}` : '草稿已保存';
 });
@@ -236,6 +239,9 @@ async function loadSkill(options: { focusAssistant?: boolean; quiet?: boolean } 
     const detail = await api<SkillDetail>(`/skills/${id}`);
     if (request !== loadRequest) return;
     skill.value = detail;
+    // 从链接打开别的空间的 Skill：自动切到它所在的空间（留在本页）
+    if (detail.spaceId && detail.spaceId !== PUBLIC_SPACE_ID && detail.spaceId !== space.currentId)
+      void space.follow(detail.spaceId, '（Skill 所在空间）');
     saveError.value = '';
     metadataError.value = '';
     if (!options.quiet) {

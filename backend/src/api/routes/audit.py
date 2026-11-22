@@ -6,8 +6,11 @@ router = APIRouter()
 
 
 @router.get("/sessions")
-async def sessions(query: str = "", scenario_id: int | None = None, status: str | None = None):
-    rows = await session_service.list(include_tests=True, include_archived=True)
+async def sessions(
+    query: str = "", scenario_id: int | None = None, status: str | None = None, space_id: int | None = None
+):
+    # 审计是全局的：默认全部空间，可按空间筛选
+    rows = await session_service.list(include_tests=True, include_archived=True, space_id=space_id)
     if query:
         rows = [r for r in rows if query.lower() in (r["title"] + r["scenarioName"] + str(r["id"])).lower()]
     if scenario_id:

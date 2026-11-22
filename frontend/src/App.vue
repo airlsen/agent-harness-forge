@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { usePlatform } from './stores/platform';
 import { useConversation } from './stores/conversation';
+import { useSpace } from './stores/space';
 import { sessionState } from './utils/presentation';
 import { groupRecentSessions, recentSessionDot } from './utils/recentSessions';
 import Icon from './components/base/ForgeIcon.vue';
@@ -17,6 +18,7 @@ import { drawerA11y } from './utils/overlay';
 
 const app = usePlatform();
 const chat = useConversation();
+const space = useSpace();
 const route = useRoute();
 const router = useRouter();
 const help = ref(false);
@@ -33,7 +35,7 @@ function helpAfterOpenChange(open: boolean) {
 const loggingOut = ref(false);
 const managementOpen = ref(false);
 const managementMenu = ref<HTMLElement | null>(null);
-const adminRoutes = ['/agent/models', '/agent/governance', '/agent/runtime', '/agent/audit'];
+const adminRoutes = ['/agent/models', '/agent/governance', '/agent/runtime', '/agent/audit', '/agent/spaces'];
 // 主题外观：跟随系统 / 浅色 / 深色，持久化到本地存储。
 type ThemePreference = 'system' | 'light' | 'dark';
 const THEME_STORAGE_KEY = 'forge-theme';
@@ -79,7 +81,29 @@ const management = [
   { path: '/agent/governance', label: '执行策略', icon: 'shield' },
   { path: '/agent/runtime', label: '运行状态', icon: 'server' },
   { path: '/agent/audit', label: '运行审计', icon: 'activity' },
+  { path: '/agent/spaces', label: '空间管理', icon: 'stack-line' },
 ];
+/**
+ * 手动切换空间。打开的是某条具体内容（会话、插件、Skill 详情）时，它可能不属于新空间，
+ * 回到对应的列表页；其余页面原地刷新为新空间的内容。
+ */
+function detailFallback(path: string): string | null {
+  if (path.startsWith('/agent/chat/')) return '/agent/workbench';
+  if (path.startsWith('/agent/trajectory/')) return '/agent/conversations';
+  if (path.startsWith('/agent/capabilities/plugins/')) return '/agent/capabilities?tab=plugins';
+  if (path.startsWith('/agent/capabilities/skills/')) return '/agent/capabilities?tab=skills';
+  if (/^\/agent\/skills\/\d+/.test(path)) return '/agent/skills';
+  return null;
+}
+async function switchSpace(id: number) {
+  const fallback = detailFallback(route.path);
+  if (fallback) await router.push(fallback);
+  else if (route.path === '/agent/chat' && !chat.current) chat.prepareStart();
+  await space.switchTo(id);
+}
+function manageSpaces() {
+  void router.push('/agent/spaces');
+}
 function closeManagementMenu() {
   managementOpen.value = false;
 }
@@ -148,7 +172,11 @@ onMounted(async () => {
   darkQuery.addEventListener('change', syncSystemDark);
   try {
     await app.checkAuth();
-    if (app.authenticated) await app.initialize();
+    if (app.authenticated) {
+      await app.initialize();
+      // 记住的空间可能已被删除：load 会回到公共空间并重新读取数据
+      await space.load();
+    }
   } catch (error) {
     app.toast((error as Error).message, 'error');
   }
@@ -314,12 +342,17 @@ onUnmounted(() => {
               @change-theme="setTheme"
               @help="help = true"
               @logout="logout"
+              @switch-space="switchSpace"
+              @manage-spaces="manageSpaces"
             />
           </div>
         </aside>
         <div class="app-body enterprise-body">
           <div v-if="app.loading" class="global-progress"></div>
-          <div id="main-content" class="enterprise-view" tabindex="-1"><RouterView /></div>
+          <div id="main-content" class="enterprise-view" tabindex="-1">
+            <!-- 切换空间后页面重新挂载，读取新空间的内容 -->
+            <RouterView v-slot="{ Component }"><component :is="Component" :key="space.version" /></RouterView>
+          </div>
         </div>
         <DialogShell
           v-if="chat.pendingNewConversation"

@@ -188,6 +188,17 @@
   --input-border-focus: var(--border-focus);
   --input-bg-disabled: var(--neutral-100);
 
+  /* Space identity squares：空间色块（只给色块上色，配白字；明暗主题共用） */
+  --space-orange: #e2772e;
+  --space-blue: #3b7be0;
+  --space-green: #23985f;
+  --space-purple: #8159e0;
+  --space-red: #dc4a4f;
+  --space-cyan: #0e9aab;
+  --space-yellow: #c18f14;
+  --space-pink: #d64f8f;
+  --space-gray: #8a94a6;
+
   /* Table roles */
   --table-header-bg: var(--neutral-50);
   --table-header-fg: var(--neutral-600);

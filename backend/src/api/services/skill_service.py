@@ -28,7 +28,9 @@ from ..models.skill import (
 )
 from ..services.runner_client import ensure_session, runner_client
 from .file_service import file_service
+from . import space_service
 from .settings_service import get_connection, get_policy
+from ..models.space import PUBLIC_SPACE_ID
 from .skill_files import (
     MAX_FILE_BYTES,
     MAX_FILES,
@@ -207,6 +209,8 @@ def _skill_view(
     return {
         "id": row.id,
         "name": row.name,
+        # 所属空间（公共空间 = 1）
+        "spaceId": row.space_id or PUBLIC_SPACE_ID,
         "machineName": _machine_name(revision),
         "publishedMachineName": _machine_name(published_revision),
         "publishedName": published_metadata.get("title") or (row.name if published_revision else ""),
@@ -252,8 +256,15 @@ async def get_skill(db: AsyncSession, skill_id: int) -> Skill:
     return row
 
 
-async def list_skills(db: AsyncSession) -> list[dict]:
-    rows = (await db.scalars(select(Skill).order_by(Skill.updated_at.desc(), Skill.id.desc()))).all()
+async def list_skills(db: AsyncSession, space_id: int | None = None) -> list[dict]:
+    """技能列表；传入当前空间时只列本空间和公共空间的。"""
+    rows = (
+        await db.scalars(
+            select(Skill)
+            .where(space_service.visible_filter(Skill.space_id, space_id))
+            .order_by(Skill.updated_at.desc(), Skill.id.desc())
+        )
+    ).all()
     result = []
     for row in rows:
         current = await _current_revision(db, row)
@@ -271,11 +282,12 @@ async def skill_detail(db: AsyncSession, skill_id: int) -> dict:
     return _skill_view(row, revision, published)
 
 
-async def list_published_skills(db: AsyncSession) -> list[dict]:
+async def list_published_skills(db: AsyncSession, space_id: int | None = None) -> list[dict]:
     rows = (
         await db.execute(
             select(Skill, SkillRevision)
             .join(SkillRevision, Skill.published_revision_id == SkillRevision.id)
+            .where(space_service.visible_filter(Skill.space_id, space_id))
             .order_by(SkillRevision.created_at.desc(), SkillRevision.id.desc())
         )
     ).all()
@@ -285,6 +297,7 @@ async def list_published_skills(db: AsyncSession) -> list[dict]:
         items.append(
             {
                 "id": skill.id,
+                "spaceId": skill.space_id or PUBLIC_SPACE_ID,
                 "name": metadata.get("title") or _machine_name(revision) or f"skill-{skill.id}",
                 "machineName": _machine_name(revision),
                 "description": metadata.get("description") or "",
@@ -412,6 +425,7 @@ async def skill_usage(db: AsyncSession, skill_id: int) -> list[dict]:
                     "id": row.id,
                     "name": row.name,
                     "space": row.space,
+                    "spaceId": row.space_id or PUBLIC_SPACE_ID,
                     # 已发布版本在用：下线后这个场景的新对话不再使用该 Skill
                     "published": bool(row.published_version) and row.published_version in bound,
                     # 当前配置在用：需在场景中取消勾选后才能保存
@@ -487,12 +501,19 @@ async def revisions(db: AsyncSession, skill_id: int) -> list[dict]:
 
 
 async def create_skill(
-    db: AsyncSession, name: str, description: str, content: str | None, created_by: str
+    db: AsyncSession,
+    name: str,
+    description: str,
+    content: str | None,
+    created_by: str,
+    space_id: int | None = None,
 ) -> dict:
     name, description = name.strip(), description.strip()
     if not name:
         raise HTTPException(422, "Skill 名称不能为空")
-    row = Skill(name=name, description=description, status="draft", tags=[])
+    space = space_service.target_space(space_id)
+    await space_service.require_space(db, space)
+    row = Skill(name=name, description=description, status="draft", tags=[], space_id=space)
     db.add(row)
     await db.flush()
     source = content if content is not None else _default_content(row.id, name, description)
@@ -500,6 +521,8 @@ async def create_skill(
     if errors:
         raise HTTPException(422, "；".join(errors))
     sync_skill_metadata(row, source)
+    # 同一空间里能同时看到的 Skill 不能重名（本空间 + 公共；放进公共时与所有空间比较）
+    await space_service.ensure_skill_name_free(db, row.name, space, row.id)
     revision = SkillRevision(
         skill_id=row.id,
         revision=1,
@@ -531,7 +554,17 @@ async def add_revision(
     errors = validate_content(content)
     if errors:
         raise HTTPException(422, "；".join(errors))
+    previous_name, previous_description = skill.name, skill.description
     sync_skill_metadata(skill, content)
+    if skill.name.strip().casefold() != previous_name.strip().casefold():
+        # 改名：不能和本空间、公共空间（公共 Skill 则是任何空间）的 Skill 重名
+        try:
+            await space_service.ensure_skill_name_free(
+                db, skill.name, skill.space_id or PUBLIC_SPACE_ID, skill.id
+            )
+        except HTTPException:
+            skill.name, skill.description = previous_name, previous_description
+            raise
     old = await _current_revision(db, skill)
     reference_files = skill_files(files if files is not None else (old.reference_files if old else []))
     revision = SkillRevision(

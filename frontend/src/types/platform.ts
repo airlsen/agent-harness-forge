@@ -18,9 +18,48 @@ export interface ScenarioPayload {
   execution_mode: 'standard';
   input_schema?: Record<string, unknown> | null;
 }
+/** 空间色块颜色键；公共空间为 gray */
+export type SpaceColor = 'orange' | 'blue' | 'green' | 'purple' | 'red' | 'cyan' | 'yellow' | 'pink' | 'gray';
+/** 列表与详情里附带的所属空间 */
+export interface SpaceBrief {
+  id: number;
+  name: string;
+  color: SpaceColor;
+  isPublic: boolean;
+}
+export interface SpaceCounts {
+  scenarios: number;
+  skills: number;
+  mcp: number;
+  plugins: number;
+  sessions: number;
+}
+export interface Space extends SpaceBrief {
+  description: string;
+  counts: SpaceCounts;
+  disabledTools: string[];
+  createdAt: string | null;
+}
+/** 可移动到别的空间的内容 */
+export type SpaceResourceKind = 'scenario' | 'skill' | 'mcp' | 'plugin';
+export interface MoveCheck {
+  kind: SpaceResourceKind;
+  id: string;
+  name: string;
+  from: SpaceBrief;
+  to: SpaceBrief;
+  /** 移走后会受影响的其他空间场景，或场景依赖的、目标空间里用不到的内容 */
+  blockers: { kind: string; id: number | string; name: string; spaceName?: string }[];
+  /** Skill 重名 */
+  conflicts: { id: number; name: string; conflictId: number; conflictSpace: string }[];
+}
 export interface Scenario {
   id: number;
+  /** official 为预置只读模板，personal 为我的场景；所属空间见 spaceId */
   space: 'official' | 'personal';
+  /** 所属空间（公共空间 = 1）；旧后端不返回 */
+  spaceId?: number;
+  spaceInfo?: SpaceBrief;
   owner_id: string;
   status: 'template' | 'draft' | 'published';
   current_version: number;
@@ -64,6 +103,9 @@ export interface Conversation {
   capabilities?: CapabilityChoice;
   /** 场景绑定的扩展能力（会话创建时冻结） */
   scenarioCapabilities?: ScenarioCapabilities;
+  /** 会话所在空间（公共空间 = 1）；旧后端不返回 */
+  spaceId?: number;
+  spaceInfo?: SpaceBrief;
 }
 /** 聊天临时选择的扩展能力 */
 export interface CapabilityChoice {
@@ -87,6 +129,9 @@ export interface SkillOption {
   name: string;
   description: string;
   tags?: string[];
+  spaceId?: number;
+  /** 公共空间的内容（在本空间显示「公共」标记） */
+  isPublic?: boolean;
 }
 /** 可在会话中运行的 MCP 服务（已启用、连接测试通过） */
 export interface McpOption {
@@ -95,6 +140,8 @@ export interface McpOption {
   transport: 'stdio' | 'streamable-http';
   description: string;
   tools: { name: string; description: string; permission: 'read' | 'approval' }[];
+  spaceId?: number;
+  isPublic?: boolean;
 }
 export interface WebAvailability {
   available: boolean;
@@ -213,6 +260,12 @@ export interface Tool {
   description: string;
   permission: string;
   icon: string;
+  /** 执行策略是否允许（旧后端不返回，视为允许） */
+  policyAllowed?: boolean;
+  /** 当前空间是否开启（默认开启） */
+  spaceEnabled?: boolean;
+  /** 真正可用：执行策略允许 且 当前空间开启 */
+  available?: boolean;
 }
 export interface ModelConnection {
   id?: number;

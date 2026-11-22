@@ -276,7 +276,10 @@ async function save() {
             <h2>工具与审批</h2>
           </div>
           <p class="section-description">
-            勾选的工具是所有会话的能力上限：基础工具默认对每个会话开放，场景声明的其他工具也须在此授权；关联代码同样不能越过这里的设置。
+            勾选的工具是所有会话的能力上限：基础工具默认对每个会话开放，场景声明的其他工具也须在此授权；关联代码同样不能越过这里的设置。各空间还可以在<RouterLink
+              to="/agent/spaces"
+              >空间管理</RouterLink
+            >中进一步关闭基础工具，但不能开启这里未勾选的工具。
           </p>
           <div class="policy-tool-list">
             <label v-for="tool in app.tools" :key="tool.name" class="tool-checkbox" :title="tool.description"

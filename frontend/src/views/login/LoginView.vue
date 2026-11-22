@@ -2,6 +2,7 @@
 import { reactive, ref } from 'vue';
 import type { Rule } from 'ant-design-vue/es/form';
 import { usePlatform } from '../../stores/platform';
+import { useSpace } from '../../stores/space';
 import Icon from '../../components/base/ForgeIcon.vue';
 
 const app = usePlatform();
@@ -21,6 +22,10 @@ async function login() {
   error.value = '';
   try {
     await app.login(form.username, form.password);
+    // 读取空间列表；记住的空间已被删除时回到公共空间
+    await useSpace()
+      .load()
+      .catch(() => {});
   } catch (e) {
     error.value = (e as Error).message;
   } finally {

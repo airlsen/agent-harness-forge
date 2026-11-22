@@ -4,6 +4,9 @@ import { useRoute, RouterLink } from 'vue-router';
 import { api } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
 import type { PluginDetail, PluginPackage } from '../../types/plugin';
+import SpaceTag from '../../components/space/SpaceTag.vue';
+import MoveSpaceDialog from '../../components/space/MoveSpaceDialog.vue';
+import { PUBLIC_SPACE_ID, useSpace } from '../../stores/space';
 
 const route = useRoute();
 const app = usePlatform();
@@ -14,6 +17,9 @@ const busy = ref<number | null>(null);
 const testTool = ref<Record<number, string>>({});
 const testArgs = ref<Record<number, string>>({});
 const testResults = ref<Record<number, string>>({});
+const space = useSpace();
+const moveOpen = ref(false);
+const pluginSpace = computed(() => space.byId(detail.value?.spaceId ?? PUBLIC_SPACE_ID));
 const current = computed(() =>
   detail.value?.releases.find((item) => item.isDefault && item.enabled && item.auditStatus === 'approved'),
 );
@@ -25,6 +31,10 @@ async function load() {
     detail.value = await api<PluginDetail>(
       `/registry/plugins/${encodeURIComponent(String(route.params.id))}`,
     );
+    // 从链接打开别的空间的插件：自动切到它所在的空间
+    const owner = detail.value.spaceId;
+    if (owner && owner !== PUBLIC_SPACE_ID && owner !== space.currentId)
+      void space.follow(owner, '（插件所在空间）');
     for (const release of detail.value.releases) {
       testTool.value[release.id] ??= release.tools.find((tool) => tool.permission === 'read')?.name ?? '';
       testArgs.value[release.id] ??= '{}';
@@ -103,8 +113,14 @@ watch(() => route.params.id, load, { immediate: true });
     <template v-if="detail">
       <header class="plugin-heading">
         <div>
-          <small>受管业务插件 · {{ detail.id }}</small>
-          <h1>{{ current?.displayName ?? detail.releases[0]?.displayName }}</h1>
+          <small
+            >受管业务插件 · {{ detail.id
+            }}<template v-if="pluginSpace"> · 所在空间 {{ pluginSpace.name }}</template></small
+          >
+          <h1>
+            {{ current?.displayName ?? detail.releases[0]?.displayName }}
+            <SpaceTag :space-id="detail.spaceId" />
+          </h1>
           <p>{{ current?.description ?? detail.releases[0]?.description }}</p>
         </div>
         <div class="plugin-heading-actions">
@@ -114,6 +130,7 @@ watch(() => route.params.id, load, { immediate: true });
           <RouterLink v-if="current" v-slot="{ href, navigate }" to="/agent/scenarios" custom>
             <a-button size="small" :href="href" @click="navigate">前往场景授权</a-button>
           </RouterLink>
+          <a-button size="small" @click="moveOpen = true">移动到其他空间</a-button>
         </div>
       </header>
 
@@ -235,6 +252,16 @@ watch(() => route.params.id, load, { immediate: true });
         </div>
       </section>
     </template>
+    <MoveSpaceDialog
+      v-if="detail"
+      :open="moveOpen"
+      kind="plugin"
+      :resource-id="detail.id"
+      :name="current?.displayName ?? detail.releases[0]?.displayName ?? detail.id"
+      :space-id="detail.spaceId"
+      @close="moveOpen = false"
+      @moved="load"
+    />
   </main>
 </template>
 

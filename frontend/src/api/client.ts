@@ -9,6 +9,21 @@ try {
 } catch {
   // 某些 sandbox 同时禁止 Cookie 和 Web Storage；仍允许内存内登录，本次刷新后需重新登录。
 }
+// 当前空间：所有 API 请求都带上，后端据此过滤列表（本空间 + 公共）并决定新建内容放在哪里。
+// 刷新后从本地存储恢复（只存空间编号与名称，不含业务内容）。
+export const SPACE_STORAGE_KEY = 'forge.space.v1';
+export const SPACE_HEADER = 'X-Forge-Space';
+// 未选择过空间时使用公共空间（编号 1）
+let spaceId: number | null = 1;
+try {
+  const saved = JSON.parse(localStorage.getItem(SPACE_STORAGE_KEY) ?? 'null');
+  if (Number.isInteger(saved?.id) && saved.id > 0) spaceId = saved.id;
+} catch {
+  // 本地存储不可用时使用公共空间
+}
+export function setSpaceHeader(value: number | null) {
+  spaceId = value;
+}
 export function setCsrf(value: string) {
   csrf = value;
 }
@@ -34,6 +49,7 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
   if (!url.startsWith('/api/')) throw new Error('只允许访问同源 Forge API');
   const headers = new Headers(options.headers);
   if (preview) headers.set('X-Forge-Session', preview.token);
+  if (spaceId && !headers.has(SPACE_HEADER)) headers.set(SPACE_HEADER, String(spaceId));
   if (!['GET', 'HEAD'].includes((options.method ?? 'GET').toUpperCase()) && csrf)
     headers.set('X-Forge-CSRF', csrf);
   const response = await fetch(url, {
