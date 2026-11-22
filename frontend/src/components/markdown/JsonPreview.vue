@@ -313,7 +313,7 @@ const JsonNode = defineComponent({
       }
       .jp-meta {
         color: var(--color-text-tertiary);
-        font-size: 11px;
+        font-size: 12px;
         background: #fff;
         border: 1px solid var(--jp-primary-border);
         padding: 2px 8px;
@@ -414,7 +414,7 @@ const JsonNode = defineComponent({
         height: 14px;
         display: grid;
         place-items: center;
-        font-size: 9px;
+        font-size: 12px;
         color: var(--jp-primary-hover);
         transition: transform 0.18s;
         flex-shrink: 0;
@@ -431,7 +431,7 @@ const JsonNode = defineComponent({
         font-size: 12.5px;
       }
       .jp-type {
-        font-size: 10px;
+        font-size: 12px;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.4px;
@@ -449,7 +449,7 @@ const JsonNode = defineComponent({
       .jp-preview {
         color: var(--color-text-tertiary);
         font-style: italic;
-        font-size: 11px;
+        font-size: 12px;
         background: var(--surface-muted);
         padding: 1px 6px;
         border-radius: 6px;
@@ -468,7 +468,7 @@ const JsonNode = defineComponent({
           background: #fff;
           color: var(--jp-primary-hover);
           cursor: pointer;
-          font-size: 11px;
+          font-size: 12px;
         }
       }
       &:hover .jp-actions {
@@ -513,7 +513,7 @@ const JsonNode = defineComponent({
     bottom: 12px;
     background: var(--jp-primary);
     color: #422006;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     padding: 6px 10px;
     border-radius: 999px;

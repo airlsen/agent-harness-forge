@@ -125,7 +125,7 @@ export const VEGA_CONFIG: Exclude<EmbedOptions['config'], string | undefined> = 
   axis: {
     labelColor: '#58616f',
     titleColor: '#58616f',
-    labelFontSize: 11,
+    labelFontSize: 12,
     titleFontSize: 12,
     titleFontWeight: 500,
     domainColor: '#e3e7ed',

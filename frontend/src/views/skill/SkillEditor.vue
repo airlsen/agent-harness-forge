@@ -1666,7 +1666,7 @@ onBeforeUnmount(() => {
 .studio-status,
 .save-state {
   color: var(--color-text-tertiary);
-  font-size: 12px;
+  font-size: 13px;
 }
 .topbar-actions {
   display: flex;
@@ -1687,7 +1687,7 @@ onBeforeUnmount(() => {
   padding: 8px 20px;
   color: var(--color-error);
   background: var(--color-error-bg);
-  font-size: 12px;
+  font-size: 13px;
 }
 .failed {
   color: var(--color-error);
@@ -1741,7 +1741,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 8px;
   border-bottom: none;
-  font-size: 12px;
+  font-size: 13px;
   background: transparent;
 }
 .pane-header > div {
@@ -1752,7 +1752,7 @@ onBeforeUnmount(() => {
 }
 .pane-header strong {
   font-weight: 600;
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: 0.02em;
 }
 .studio-files .pane-header {
@@ -1796,7 +1796,7 @@ onBeforeUnmount(() => {
   padding: 6px 10px;
   text-align: left;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 14px;
 }
 .file-row > span {
   overflow: hidden;
@@ -1825,13 +1825,13 @@ onBeforeUnmount(() => {
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-tertiary);
-  font-size: 10px;
+  font-size: 12px;
 }
 .folder-caret {
   width: 12px;
   text-align: center;
   color: var(--color-text-tertiary);
-  font-size: 11px;
+  font-size: 12px;
   flex-shrink: 0;
 }
 .folder-count {
@@ -1841,7 +1841,7 @@ onBeforeUnmount(() => {
   padding: 2px 7px;
   min-width: 20px;
   text-align: center;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .reference-row {
@@ -1907,7 +1907,7 @@ onBeforeUnmount(() => {
 }
 .tree-empty {
   color: var(--color-text-tertiary);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.8;
   padding: 10px;
 }
@@ -1919,7 +1919,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 8px 12px;
   background: var(--surface-shell);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-tertiary);
   border-top: none;
 }
@@ -1962,7 +1962,7 @@ onBeforeUnmount(() => {
   color: var(--color-text-primary);
 }
 .readonly-label {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-tertiary);
   flex-shrink: 0;
   background: var(--surface-shell);
@@ -1991,7 +1991,7 @@ onBeforeUnmount(() => {
 .view-switch button {
   padding: 3px 12px;
   line-height: 20px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--color-text-secondary);
   border-radius: 4px;
   background: transparent;
@@ -2050,7 +2050,7 @@ onBeforeUnmount(() => {
 }
 .document-empty button {
   color: var(--color-brand);
-  font-size: 12px;
+  font-size: 13px;
 }
 .chat-heading {
   display: flex;
@@ -2075,7 +2075,7 @@ onBeforeUnmount(() => {
   margin-bottom: 10px;
 }
 .chat-empty p {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--color-text-secondary);
   line-height: 1.8;
   margin-bottom: 20px;
@@ -2085,7 +2085,7 @@ onBeforeUnmount(() => {
   width: 100%;
   padding: 10px 0;
   text-align: left;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.8;
   color: var(--color-text-secondary);
   border-top: none;
@@ -2165,7 +2165,7 @@ onBeforeUnmount(() => {
 .change-summary {
   border-left: 2px solid var(--color-brand);
   padding: 8px 0 8px 12px;
-  font-size: 12px;
+  font-size: 13px;
   background: var(--surface-shell);
   border-radius: 0 8px 8px 0;
 }
@@ -2179,7 +2179,7 @@ onBeforeUnmount(() => {
 .change-summary button {
   padding: 8px 12px 0 0;
   color: var(--color-brand);
-  font-size: 12px;
+  font-size: 13px;
 }
 .skill-approval {
   flex-shrink: 0;
@@ -2250,7 +2250,7 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   resize: none;
   background: transparent;
@@ -2313,7 +2313,7 @@ onBeforeUnmount(() => {
 .composer-hint {
   margin: 6px 4px 0;
   color: var(--color-text-tertiary);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.4;
 }
 .history-list {
@@ -2326,7 +2326,7 @@ onBeforeUnmount(() => {
   padding: 12px;
   border-radius: 8px;
   background: var(--surface-content);
-  font-size: 13px;
+  font-size: 14px;
   transition: background-color 0.15s;
 }
 .history-row:hover,
@@ -2359,7 +2359,7 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   color: var(--color-text-secondary);
   background: var(--surface-shell);
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .history-tag-published {

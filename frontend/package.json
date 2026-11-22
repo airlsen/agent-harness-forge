@@ -11,6 +11,7 @@
     "test": "node scripts/check-themes.mjs && node scripts/check-conversation-drafts.mjs && node scripts/check-turns.mjs && node scripts/check-markdown-blocks.mjs && node scripts/check-files.mjs && node scripts/check-skill-document.mjs && node scripts/check-skill-files.mjs && node scripts/check-skill-authoring.mjs && node scripts/check-monaco-editor.mjs && node scripts/check-catalog-order.mjs",
     "check:icons": "node ../scripts/check-ui-icons.mjs",
     "check:colors": "node ../scripts/check-ui-colors.mjs",
+    "check:fonts": "node ../scripts/check-ui-font-sizes.mjs",
     "check:antd-tokens": "node ../scripts/check-antd-tokens.mjs"
   },
   "dependencies": {
