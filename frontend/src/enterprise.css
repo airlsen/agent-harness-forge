@@ -147,6 +147,24 @@ textarea:focus-visible {
   align-items: center;
   gap: 10px;
 }
+.enterprise-sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  color: var(--text-secondary);
+}
+.enterprise-sidebar-toggle:hover {
+  color: var(--sidebar-nav-hover-text);
+  background: var(--sidebar-nav-hover-bg);
+}
+.enterprise-sidebar-toggle:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
 .brand-mark {
   display: grid;
   place-items: center;
@@ -3640,88 +3658,94 @@ textarea:focus-visible {
     max-width: 330px;
   }
 }
+/* 侧栏收起为图标栏：手动收起、窄于 1060px 默认收起（可手动展开）、窄于 700px 固定收起。
+   由 App.vue 在 <html> 上切换 .sidebar-collapsed。 */
+:root.sidebar-collapsed {
+  --sidebar: 92px;
+}
+.sidebar-collapsed .enterprise-sidebar {
+  --sidebar-gutter: 7px;
+}
+.sidebar-collapsed .enterprise-brand-row {
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 0;
+  margin-bottom: 20px;
+}
+.sidebar-collapsed .enterprise-brand > span:last-child {
+  display: none;
+}
+.sidebar-collapsed .enterprise-sidebar .enterprise-primary > a,
+.sidebar-collapsed .enterprise-new-chat,
+.sidebar-collapsed .enterprise-management-link {
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+  justify-items: center;
+  gap: 5px;
+  min-height: 66px;
+  padding: 9px 4px;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}
+.sidebar-collapsed .enterprise-new-chat {
+  margin-bottom: 16px;
+}
+.sidebar-collapsed .enterprise-new-chat > svg:last-child,
+.sidebar-collapsed .enterprise-management-link > svg:last-child,
+.sidebar-collapsed .enterprise-recent-heading,
+.sidebar-collapsed .enterprise-recents {
+  display: none;
+}
+.sidebar-collapsed .enterprise-sidebar .enterprise-primary .nav-count {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  min-width: 15px;
+  padding: 0 3px;
+  font-size: 12px;
+  line-height: 14px;
+}
+.sidebar-collapsed .enterprise-sidebar-footer {
+  padding-top: 12px;
+}
+.sidebar-collapsed .enterprise-management-nav {
+  width: 100%;
+}
+.sidebar-collapsed .enterprise-management-popover {
+  position: fixed;
+  bottom: 12px;
+  left: calc(var(--sidebar) + 10px);
+  width: min(248px, calc(100vw - var(--sidebar) - 20px));
+}
+.sidebar-collapsed .enterprise-profile {
+  padding: 9px 0;
+  margin-top: 10px;
+}
+.sidebar-collapsed .enterprise-account-trigger {
+  flex-direction: column;
+  justify-content: center;
+  min-height: 66px;
+  gap: 5px;
+  padding: 7px 3px;
+  text-align: center;
+}
+.sidebar-collapsed .enterprise-account-identity {
+  max-width: 100%;
+}
+.sidebar-collapsed .enterprise-account-identity small {
+  display: none;
+}
+.sidebar-collapsed .enterprise-account-identity strong {
+  font-size: 12px;
+  text-align: center;
+}
 @media (max-width: 700px) {
   :root {
-    --sidebar: 92px;
     --page-padding-top: 28px;
     --page-padding-x: 24px;
     --page-title-size: 26px;
-  }
-  .enterprise-sidebar {
-    --sidebar-gutter: 7px;
-  }
-  .enterprise-brand-row {
-    justify-content: center;
-    padding: 0;
-    margin-bottom: 20px;
-  }
-  .enterprise-brand > span:last-child {
-    display: none;
-  }
-  .enterprise-sidebar .enterprise-primary > a,
-  .enterprise-new-chat,
-  .enterprise-management-link {
-    grid-template-columns: minmax(0, 1fr);
-    justify-content: stretch;
-    justify-items: center;
-    gap: 5px;
-    min-height: 66px;
-    padding: 9px 4px;
-    font-size: 12px;
-    line-height: 16px;
-    text-align: center;
-  }
-  .enterprise-new-chat {
-    margin-bottom: 16px;
-  }
-  .enterprise-new-chat > svg:last-child,
-  .enterprise-management-link > svg:last-child,
-  .enterprise-recent-heading,
-  .enterprise-recents {
-    display: none;
-  }
-  .enterprise-sidebar .enterprise-primary .nav-count {
-    position: absolute;
-    top: 5px;
-    right: 6px;
-    min-width: 15px;
-    padding: 0 3px;
-    font-size: 12px;
-    line-height: 14px;
-  }
-  .enterprise-sidebar-footer {
-    padding-top: 12px;
-  }
-  .enterprise-management-nav {
-    width: 100%;
-  }
-  .enterprise-management-popover {
-    position: fixed;
-    bottom: 12px;
-    left: calc(var(--sidebar) + 10px);
-    width: min(248px, calc(100vw - var(--sidebar) - 20px));
-  }
-  .enterprise-profile {
-    padding: 9px 0;
-    margin-top: 10px;
-  }
-  .enterprise-account-trigger {
-    flex-direction: column;
-    justify-content: center;
-    min-height: 66px;
-    gap: 5px;
-    padding: 7px 3px;
-    text-align: center;
-  }
-  .enterprise-account-identity {
-    max-width: 100%;
-  }
-  .enterprise-account-identity small {
-    display: none;
-  }
-  .enterprise-account-identity strong {
-    font-size: 12px;
-    text-align: center;
   }
   .enterprise-account-menu button[role^='menuitem'] {
     min-height: 44px;
