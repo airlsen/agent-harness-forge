@@ -172,8 +172,6 @@ export async function apply(ctx, config) {
       if (item && typeof item.filename === 'string' && typeof item.content === 'string')
         files.set(`references/${item.filename}`, item.content);
   }
-  // 会话启动时的草稿：与 skill 工具加载的快照一致，用来判断本轮之后是否改过
-  const loaded = { content: draft, files: new Map(files) };
   const workspace = typeof config.workspace === 'string' && config.workspace ? resolve(config.workspace) : '';
   let mirrorDir = '';
   let mirrorError = '';
@@ -360,11 +358,6 @@ export async function apply(ctx, config) {
         await syncMirror();
         const check = checkSkillDocument(draft, [...files.keys()]);
         const front = draft.replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n---(?:\n|$)/)?.[1] ?? '';
-        // 草稿或文件与会话启动时（skill 工具加载的快照）不同：skill / read / skill_run_script 仍是旧版本
-        const stale =
-          draft !== loaded.content ||
-          files.size !== loaded.files.size ||
-          [...files].some(([path, content]) => loaded.files.get(path) !== content);
         const hasScripts = [...files.keys()].some((path) => path.startsWith('scripts/'));
         return {
           name: frontField(front, 'name') ?? '',
@@ -373,7 +366,6 @@ export async function apply(ctx, config) {
           document: draft,
           files: fileList(),
           errors: check.errors,
-          snapshotStale: stale,
           ...(workspace
             ? {
                 workspaceDraft: mirrorDir
@@ -393,9 +385,6 @@ export async function apply(ctx, config) {
                 ]
               : []),
             ...(hasScripts && !bashAllowed ? ['本会话没有开放 bash，只能用 skill_test_script 运行脚本'] : []),
-            stale
-              ? '本轮已修改过草稿：skill、read、skill_run_script 仍指向会话开始时的旧快照，试用新内容时不要用它们'
-              : '草稿与 skill 工具加载的快照一致，也可以用 skill 工具按业务会话方式加载',
             '结束时说明：试用输入、每步实际结果、卡住的地方，以及问题出在 Skill 写法还是输入 / 环境；有产出文件时说明路径',
           ],
         };
