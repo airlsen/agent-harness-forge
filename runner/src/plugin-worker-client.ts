@@ -60,7 +60,11 @@ export class PluginWorkerClient {
     return `${encoded}.${signature}`;
   }
 
-  async test(binding: Record<string, unknown>, tool: string, args: Record<string, unknown>): Promise<unknown> {
+  async test(
+    binding: Record<string, unknown>,
+    tool: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> {
     const response = await fetch(`${this.url}/v1/invoke`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

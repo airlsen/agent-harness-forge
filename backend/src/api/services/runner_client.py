@@ -159,7 +159,13 @@ class RunnerClient:
 
 
 async def ensure_session(
-    client, runner_session_id, bundle, user_ctx, model_config, code_projects=None, capabilities=None,
+    client,
+    runner_session_id,
+    bundle,
+    user_ctx,
+    model_config,
+    code_projects=None,
+    capabilities=None,
     expected_policy_ref=None,
 ) -> bool:
     """确保执行会话可用：仍在 Runner 内存中直接返回 False；Runner 重启过则按快照从会话日志恢复并返回 True。

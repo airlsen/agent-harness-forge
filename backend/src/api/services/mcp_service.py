@@ -518,7 +518,9 @@ def public_view(row: McpServer) -> dict:
         "createdAt": (
             row.created_at.replace(tzinfo=timezone.utc).isoformat()
             if row.created_at and row.created_at.tzinfo is None
-            else row.created_at.isoformat() if row.created_at else None
+            else row.created_at.isoformat()
+            if row.created_at
+            else None
         ),
         "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
     }

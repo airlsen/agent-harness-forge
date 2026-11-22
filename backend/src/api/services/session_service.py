@@ -401,7 +401,13 @@ class SessionService:
                     # Runner 重启后按会话快照重新装配，从磁盘会话日志接续完整上下文（dsh session/resume）
                     async def ensure(caps):
                         return await ensure_session(
-                            runner_client, row.runner_session_id, row.bundle_snapshot, user_ctx, runtime, code, caps
+                            runner_client,
+                            row.runner_session_id,
+                            row.bundle_snapshot,
+                            user_ctx,
+                            runtime,
+                            code,
+                            caps,
                         )
 
                     try:
@@ -423,6 +429,7 @@ class SessionService:
                             ) from error
                         raise
                 else:
+
                     async def create(caps):
                         return await runner_client.create_session(
                             row.bundle_snapshot, user_ctx, runtime, code, caps

@@ -263,7 +263,9 @@ async def expand_skills(db: AsyncSession, caps: dict, snapshots: list[str]) -> d
                 problem = "内容与记录的版本不一致"
             if problem:
                 forget_snapshots(skill["snapshot"])
-                raise HTTPException(409, f"Skill「{skill.get('title') or skill['name']}」暂不可用：{problem}，请重新发送消息")
+                raise HTTPException(
+                    409, f"Skill「{skill.get('title') or skill['name']}」暂不可用：{problem}，请重新发送消息"
+                )
             skill = {**skill, **_skill_content(revision.content, files)}
         skills.append(skill)
     return {**caps, "skills": skills}

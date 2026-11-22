@@ -60,7 +60,10 @@ responses.update(
         "/api/skills/1": skill,
         "/api/skills/1/revisions": {"items": revisions},
         "/api/skills/1/authoring-session/latest": None,
-        "/api/skills/1/files/2": {"path": "references/guide.md", "content": "# 参考资料\n\n示例内容"},
+        "/api/skills/1/files/2": {
+            "path": "references/guide.md",
+            "content": "# 参考资料\n\n示例内容",
+        },
     }
 )
 

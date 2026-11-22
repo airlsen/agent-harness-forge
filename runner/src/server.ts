@@ -61,7 +61,9 @@ app.post<{
   const { binding, tool, arguments: args } = req.body ?? {};
   if (!binding || binding.runtime !== 'forge-remote-worker-v1' || !Array.isArray(binding.tools))
     return reply.code(422).send({ message: '插件试运行配置无效' });
-  const selected = (binding.tools as Array<{ name: string; permission: string }>).find((item) => item.name === tool);
+  const selected = (binding.tools as Array<{ name: string; permission: string }>).find(
+    (item) => item.name === tool,
+  );
   if (!selected || selected.permission !== 'read' || !args || typeof args !== 'object' || Array.isArray(args))
     return reply.code(422).send({ message: '试运行仅支持已声明的只读工具与 JSON 参数' });
   return { result: await pluginWorker.test(binding, tool, args) };

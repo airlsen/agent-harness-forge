@@ -117,10 +117,10 @@ function truncateCmd(cmd) {
 }
 
 /**
- * 对 bash 命令行进行三级安全门控分类：
- * - 'deny': 红色通道，硬性拦截高危破坏、提权、探测凭据、恶意网络外联
- * - 'allow': 绿色通道，只读查看与安全 Git 操作，自动放行无需审批
- * - 'ask': 黄色通道，修改、写操作、编译运行等，必须经由用户审批
+ * 对 bash 命令行进行安全门控分类（deny-list-only）：
+ * - 'deny': 硬性拦截高危破坏、提权、探测凭据与密钥、对外部地址的网络请求
+ * - 'allow': 其余命令（只读查看、写文件、编译运行等）自动放行
+ * 调用方仍兼容 'ask'（交给用户确认），目前分类器不再返回该级别。
  */
 export function classifyBashCommand(cmd) {
   if (typeof cmd !== 'string' || !cmd.trim()) {
@@ -152,11 +152,7 @@ export function classifyBashCommand(cmd) {
   const readsDotEnv =
     /\b(cat|head|tail|more|less)\b/i.test(clean) &&
     /\.env(?!\.(?:example|sample|template|dist)\b)/i.test(clean);
-  if (
-    readsSensitive ||
-    readsDotEnv ||
-    /(^|\s)(printenv|env)(\s|$)/i.test(clean)
-  ) {
+  if (readsSensitive || readsDotEnv || /(^|\s)(printenv|env)(\s|$)/i.test(clean)) {
     return { level: 'deny', reason: '安全策略禁止读取系统凭据、密钥与敏感文件' };
   }
 
@@ -684,7 +680,7 @@ export async function apply(ctx, config) {
         return { kind: 'deny', reason: 'Forge 工具白名单拒绝' };
       }
 
-      // 2. bash 工具三级门控分流：红通道拦截(deny)、绿通道放行(allow)、黄通道审批(ask)
+      // 2. bash 门控：危险命令拦截(deny)，其余放行(allow)；ask 分支保留兼容，分类器目前不返回
       if (exec.name === 'bash') {
         const classification = classifyBashCommand(exec.arguments?.command);
         notify('forge.policy', {
