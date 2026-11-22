@@ -50,6 +50,7 @@ import {
   type FileRef,
 } from '../../utils/files';
 import { buildTurns, type Turn } from '../../utils/turns';
+import { useStickToBottom } from '../../utils/useStickToBottom';
 import {
   applyAuthoringEvent,
   authoringChatMessages,
@@ -101,8 +102,9 @@ const turns = computed(() =>
   buildTurns(authoringChatMessages(messages.value), authoringLiveTurn(live, streaming.value)),
 );
 /** 过程块是否处于进行中：运行中且最终回答尚未开始流式输出 */
-function processActive(turn: Turn) {
-  return turn.running && !turn.answer.some((step) => step.live);
+/** 过程块之后的正文是否正在流式输出（过程块头部据此显示「正在回复」） */
+function answerStreaming(turn: Turn) {
+  return turn.running && turn.answer.some((step) => step.live);
 }
 /** 运行中、但没有过程块可承载进度提示时（尚无输出，或回答已结束、等待后续）显示等待提示 */
 function turnWaiting(turn: Turn) {
@@ -752,6 +754,8 @@ async function send() {
       if (!prompt.value) prompt.value = text;
       return;
     }
+    // 发送即回到最新，跟随本轮输出
+    chatStick.value = true;
     messages.value.push({ id: pendingId, role: 'user', content: text });
     streaming.value = true;
     const response = await apiFetch(
@@ -913,6 +917,13 @@ const lastChange = ref<{
   files: { written: string[]; deleted: string[] };
 } | null>(null);
 const chatLog = ref<HTMLElement>();
+// 跟随最新：与工作台相同，只有用户自己往上翻才停止，内容高度变化时自动贴底
+const {
+  stick: chatStick,
+  onScroll: trackChatScroll,
+  follow: followChat,
+  jumpToLatest: jumpChatToLatest,
+} = useStickToBottom(chatLog);
 const treeWidth = ref(240);
 const chatWidth = ref(380);
 const totalFiles = computed(() => 1 + (skill.value?.files.length ?? 0));
@@ -1088,12 +1099,13 @@ watch(
   [() => messages.value.length, () => live.text, () => live.reasoning, () => live.tools.length],
   async () => {
     await nextTick();
-    chatLog.value?.scrollTo({ top: chatLog.value.scrollHeight });
+    followChat();
   },
 );
 watch(
   () => route.params.id,
   () => {
+    chatStick.value = true;
     selectedPath.value = SKILL_MAIN_FILE;
     fileDraft.value = null;
     fileCache.clear();
@@ -1495,7 +1507,7 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </header>
-          <div ref="chatLog" class="chat-log process-host" aria-live="polite">
+          <div ref="chatLog" class="chat-log process-host" aria-live="polite" @scroll="trackChatScroll">
             <div v-if="!messages.length && !busy" class="chat-empty">
               <h2>想{{ isNew ? '创建' : '修改' }}什么技能？</h2>
               <p>
@@ -1540,7 +1552,9 @@ onBeforeUnmount(() => {
                 <ProcessBlock
                   v-if="turn.process.length"
                   :steps="turn.process"
-                  :active="processActive(turn)"
+                  :active="turn.running"
+                  :waiting="approvals.length > 0"
+                  :writing="answerStreaming(turn)"
                 />
                 <section v-for="step in turn.answer" :key="step.key" class="step-text">
                   <Markdown :text="step.text" :live="step.live" /><span
@@ -1587,6 +1601,11 @@ onBeforeUnmount(() => {
                 </button>
               </div>
             </div>
+          </div>
+          <div v-if="!chatStick && messages.length" class="chat-jump-anchor">
+            <button type="button" class="jump-to-latest" @click="jumpChatToLatest">
+              <Icon name="arrowDown" :size="14" />回到最新
+            </button>
           </div>
           <div v-for="approval in approvals" :key="approval.ticketId" class="skill-approval" role="alert">
             <strong>{{ approval.tool }} · 等待确认</strong>
@@ -2110,7 +2129,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--color-text-tertiary);
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--font-mono, monospace);
 }
 .trial-actions {
@@ -2295,6 +2314,16 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: auto;
   padding: 20px 18px;
+}
+/* 「回到最新」悬浮在消息区底部，不占位、不推动输入框 */
+.chat-jump-anchor {
+  position: relative;
+  height: 0;
+}
+.chat-jump-anchor .jump-to-latest {
+  top: auto;
+  bottom: 10px;
+  z-index: 2;
 }
 .chat-empty {
   text-align: center;

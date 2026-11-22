@@ -2711,9 +2711,13 @@ textarea:focus-visible {
 :is(.enterprise-chat, .process-host) .process-note {
   color: var(--text-secondary);
 }
-:is(.enterprise-chat, .process-host) .step-thinking-text {
+:is(.enterprise-chat, .process-host) .step-thinking-text,
+:is(.enterprise-chat, .process-host) .process-live {
   color: var(--text-secondary);
   border-left-color: var(--line);
+}
+:is(.enterprise-chat, .process-host) .process-live-tool-head strong {
+  color: var(--ink);
 }
 :is(.enterprise-chat, .process-host) .tool-group-header {
   color: var(--text-secondary);

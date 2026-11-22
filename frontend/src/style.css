@@ -1719,9 +1719,52 @@ textarea::-webkit-scrollbar-corner {
 .process-block .tool-group.flat {
   margin: 0;
 }
-.process-block .process-current {
+/* 运行中的「当前动态」：思考文字或当前这一个调用，固定三行高度，步骤切换时不伸缩 */
+.process-live {
   margin-top: 7px;
-  max-height: 7.2em;
+  height: 5.4em;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--color-text-secondary);
+  border-left: 2px solid var(--surface-shell);
+  padding-left: 12px;
+  overflow: hidden;
+}
+.process-live-thinking {
+  height: 100%;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.process-live-tool-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.process-live-tool-head strong {
+  font-weight: 500;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.process-live-state {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.process-live-state.error {
+  color: var(--color-warning-text);
+}
+.process-live-args {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 .process-block .tool-group.flat {
   margin-top: 6px;
