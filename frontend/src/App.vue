@@ -8,7 +8,7 @@ import Icon from './components/ForgeIcon.vue';
 import DialogShell from './components/DialogShell.vue';
 import AccountMenu from './components/AccountMenu.vue';
 import AppFeedbackBridge from './components/AppFeedbackBridge.vue';
-import LoginView from './views/LoginView.vue';
+import LoginView from './views/login/LoginView.vue';
 import { App as AntApp, ConfigProvider } from 'ant-design-vue';
 import zhCN from 'ant-design-vue/es/locale/zh_CN';
 import { forgeDarkTheme, forgeLightTheme } from './theme/antd';

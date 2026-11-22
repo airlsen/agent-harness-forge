@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import type { Rule } from 'ant-design-vue/es/form';
-import { api, post, put } from '../../../api/client';
-import { formatBytes } from '../../../utils/presentation';
-import { usePlatform } from '../../../stores/platform';
-import type { Tool, WebSearchSettings } from '../../../types/platform';
-import Icon from '../../../components/ForgeIcon.vue';
+import { api, post, put } from '../../api/client';
+import { formatBytes } from '../../utils/presentation';
+import { usePlatform } from '../../stores/platform';
+import type { Tool, WebSearchSettings } from '../../types/platform';
+import Icon from '../../components/ForgeIcon.vue';
 const app = usePlatform(),
   saving = ref(false),
   loaded = ref(false);

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { useConversation } from '../../../stores/conversation';
-import ConversationStart from '../../../components/ConversationStart.vue';
-import { animateComposerArrival, captureComposerOrigin } from '../../../utils/composerTransition';
+import { useConversation } from '../../stores/conversation';
+import ConversationStart from '../../components/ConversationStart.vue';
+import { animateComposerArrival, captureComposerOrigin } from '../../utils/composerTransition';
 
 const router = useRouter();
 const chat = useConversation();

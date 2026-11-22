@@ -1,26 +1,26 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api, apiFetch, downloadResponse } from '../../../api/client';
-import { formatBytes } from '../../../utils/presentation';
-import { catalogDate, orderByCreated, orderPublishedSkills } from '../../../utils/catalogOrdering';
-import { confirm } from '../../../utils/feedback';
-import { usePlatform } from '../../../stores/platform';
-import { useConversation } from '../../../stores/conversation';
-import type { Scenario, Tool } from '../../../types/platform';
-import type { PublishedSkillSummary } from '../../../types/skill';
-import type { PluginPackage } from '../../../types/plugin';
+import { api, apiFetch, downloadResponse } from '../../api/client';
+import { formatBytes } from '../../utils/presentation';
+import { catalogDate, orderByCreated, orderPublishedSkills } from '../../utils/catalogOrdering';
+import { confirm } from '../../utils/feedback';
+import { usePlatform } from '../../stores/platform';
+import { useConversation } from '../../stores/conversation';
+import type { Scenario, Tool } from '../../types/platform';
+import type { PublishedSkillSummary } from '../../types/skill';
+import type { PluginPackage } from '../../types/plugin';
 import { Empty } from 'ant-design-vue';
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
-import Icon from '../../../components/ForgeIcon.vue';
-import CatalogCard from '../../../components/catalog/CatalogCard.vue';
-import SkillCardActions from '../../../components/catalog/SkillCardActions.vue';
-import ToolDescription from '../../../components/catalog/ToolDescription.vue';
-import CatalogFilter from '../../../components/catalog/CatalogFilter.vue';
-import CatalogGrid from '../../../components/catalog/CatalogGrid.vue';
-import CatalogSearch from '../../../components/catalog/CatalogSearch.vue';
-import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
-import { drawerA11y, useRetained } from '../../../utils/overlay';
+import Icon from '../../components/ForgeIcon.vue';
+import CatalogCard from '../../components/catalog/CatalogCard.vue';
+import SkillCardActions from '../../components/catalog/SkillCardActions.vue';
+import ToolDescription from '../../components/catalog/ToolDescription.vue';
+import CatalogFilter from '../../components/catalog/CatalogFilter.vue';
+import CatalogGrid from '../../components/catalog/CatalogGrid.vue';
+import CatalogSearch from '../../components/catalog/CatalogSearch.vue';
+import CatalogEmpty from '../../components/catalog/CatalogEmpty.vue';
+import { drawerA11y, useRetained } from '../../utils/overlay';
 
 type RuntimeComponent = PluginPackage;
 type McpServer = {

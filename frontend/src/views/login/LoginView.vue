@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
 import type { Rule } from 'ant-design-vue/es/form';
-import { usePlatform } from '../stores/platform';
-import Icon from '../components/ForgeIcon.vue';
+import { usePlatform } from '../../stores/platform';
+import Icon from '../../components/ForgeIcon.vue';
 
 const app = usePlatform();
 const form = reactive({ username: 'admin', password: '' });

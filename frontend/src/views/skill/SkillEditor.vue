@@ -7,21 +7,21 @@ import {
   useRoute,
   useRouter,
 } from 'vue-router';
-import { api, apiFetch, post, put, remove } from '../../../api/client';
-import Icon from '../../../components/ForgeIcon.vue';
-import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
-import Markdown from '../../../components/MarkdownContent.vue';
-import ProcessBlock from '../../../components/ProcessBlock.vue';
-import UserMessageText from '../../../components/UserMessageText.vue';
-import { MarkdownPreview } from '../../../components/common';
-import CodeBlock from '../../../components/CodeBlock.vue';
-import { useCopy } from '../../../utils/useCopy';
-import MonacoEditor from '../../../components/MonacoEditor.vue';
-import { loadMonaco } from '../../../utils/monaco';
+import { api, apiFetch, post, put, remove } from '../../api/client';
+import Icon from '../../components/ForgeIcon.vue';
+import CatalogEmpty from '../../components/catalog/CatalogEmpty.vue';
+import Markdown from '../../components/MarkdownContent.vue';
+import ProcessBlock from '../../components/ProcessBlock.vue';
+import UserMessageText from '../../components/UserMessageText.vue';
+import { MarkdownPreview } from '../../components/common';
+import CodeBlock from '../../components/CodeBlock.vue';
+import { useCopy } from '../../utils/useCopy';
+import MonacoEditor from '../../components/MonacoEditor.vue';
+import { loadMonaco } from '../../utils/monaco';
 import { lexer } from 'marked';
-import { readSkillDocument, updateSkillMetadata, initialSkillDocument } from '../../../utils/skillDocument';
-import { usePlatform } from '../../../stores/platform';
-import { confirm } from '../../../utils/feedback';
+import { readSkillDocument, updateSkillMetadata, initialSkillDocument } from '../../utils/skillDocument';
+import { usePlatform } from '../../stores/platform';
+import { confirm } from '../../utils/feedback';
 import {
   SKILL_MAIN_FILE,
   acceptFor,
@@ -36,21 +36,21 @@ import {
   summarizeAssistantChanges,
   type AssistantFileChange,
   type SkillFileDir,
-} from '../../../utils/skillFiles';
-import { formatBytes } from '../../../utils/presentation';
-import { buildTurns, type Turn } from '../../../utils/turns';
+} from '../../utils/skillFiles';
+import { formatBytes } from '../../utils/presentation';
+import { buildTurns, type Turn } from '../../utils/turns';
 import {
   applyAuthoringEvent,
   authoringChatMessages,
   authoringLiveTurn,
   emptyAuthoringLive,
-} from '../../../utils/skillAuthoring';
+} from '../../utils/skillAuthoring';
 import type {
   SkillAuthoringMessage,
   SkillAuthoringSession,
   SkillDetail,
   SkillRevision,
-} from '../../../types/skill';
+} from '../../types/skill';
 
 const route = useRoute();
 const router = useRouter();

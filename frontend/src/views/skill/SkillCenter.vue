@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { api, downloadResponse, remove } from '../../../api/client';
-import { confirm } from '../../../utils/feedback';
-import { usePlatform } from '../../../stores/platform';
-import Icon from '../../../components/ForgeIcon.vue';
-import CatalogCard from '../../../components/catalog/CatalogCard.vue';
-import SkillCardActions from '../../../components/catalog/SkillCardActions.vue';
-import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
-import CatalogFilter from '../../../components/catalog/CatalogFilter.vue';
-import CatalogGrid from '../../../components/catalog/CatalogGrid.vue';
-import CatalogSearch from '../../../components/catalog/CatalogSearch.vue';
-import type { SkillSummary } from '../../../types/skill';
-import { catalogDate, orderManagedSkills } from '../../../utils/catalogOrdering';
+import { api, downloadResponse, remove } from '../../api/client';
+import { confirm } from '../../utils/feedback';
+import { usePlatform } from '../../stores/platform';
+import Icon from '../../components/ForgeIcon.vue';
+import CatalogCard from '../../components/catalog/CatalogCard.vue';
+import SkillCardActions from '../../components/catalog/SkillCardActions.vue';
+import CatalogEmpty from '../../components/catalog/CatalogEmpty.vue';
+import CatalogFilter from '../../components/catalog/CatalogFilter.vue';
+import CatalogGrid from '../../components/catalog/CatalogGrid.vue';
+import CatalogSearch from '../../components/catalog/CatalogSearch.vue';
+import type { SkillSummary } from '../../types/skill';
+import { catalogDate, orderManagedSkills } from '../../utils/catalogOrdering';
 
 const skills = ref<SkillSummary[]>([]);
 const app = usePlatform();

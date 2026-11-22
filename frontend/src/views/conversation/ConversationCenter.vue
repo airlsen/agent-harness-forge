@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { usePlatform } from '../../../stores/platform';
-import { useConversation } from '../../../stores/conversation';
-import { remove } from '../../../api/client';
-import { formatDate, sessionMatches, sessionState } from '../../../utils/presentation';
-import type { Conversation } from '../../../types/platform';
-import Icon from '../../../components/ForgeIcon.vue';
-import CatalogSearch from '../../../components/catalog/CatalogSearch.vue';
+import { usePlatform } from '../../stores/platform';
+import { useConversation } from '../../stores/conversation';
+import { remove } from '../../api/client';
+import { formatDate, sessionMatches, sessionState } from '../../utils/presentation';
+import type { Conversation } from '../../types/platform';
+import Icon from '../../components/ForgeIcon.vue';
+import CatalogSearch from '../../components/catalog/CatalogSearch.vue';
 
 const app = usePlatform();
 const chat = useConversation();

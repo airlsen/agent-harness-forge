@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { api, downloadResponse } from '../../../api/client';
-import Icon from '../../../components/ForgeIcon.vue';
-import Markdown from '../../../components/MarkdownContent.vue';
-import { usePlatform } from '../../../stores/platform';
-import type { PublishedSkillDetail } from '../../../types/skill';
-import { formatBytes } from '../../../utils/presentation';
+import { api, downloadResponse } from '../../api/client';
+import Icon from '../../components/ForgeIcon.vue';
+import Markdown from '../../components/MarkdownContent.vue';
+import { usePlatform } from '../../stores/platform';
+import type { PublishedSkillDetail } from '../../types/skill';
+import { formatBytes } from '../../utils/presentation';
 
 const route = useRoute();
 const app = usePlatform();

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRoute, RouterLink } from 'vue-router';
-import { api } from '../../../api/client';
-import { usePlatform } from '../../../stores/platform';
-import type { PluginDetail, PluginPackage } from '../../../types/plugin';
+import { api } from '../../api/client';
+import { usePlatform } from '../../stores/platform';
+import type { PluginDetail, PluginPackage } from '../../types/plugin';
 
 const route = useRoute();
 const app = usePlatform();
