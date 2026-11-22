@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from pathlib import Path
 from playwright.async_api import async_playwright, expect
 
@@ -81,6 +82,8 @@ async def check_execution_ui(
             await expect(
                 page.locator(".message-author").filter(has_text="正在工作")
             ).to_be_visible()
+            # 消息先显示（「正在准备…」），会话受理后地址才换成会话编号
+            await expect(page).to_have_url(re.compile(r".*/agent/chat/\d+$"))
             sid = page.url.rsplit("/", 1)[-1]
             assert sid.isdigit(), page.url
             await expect(page.locator(".conversation-start-surface")).to_have_count(0)
@@ -288,6 +291,7 @@ async def check_execution_ui(
             )
             await page.get_by_role("button", name="发送任务", exact=True).click()
             await expect(page.get_by_role("button", name="允许本次")).to_be_visible()
+            await expect(page).to_have_url(re.compile(r".*/agent/chat/\d+$"))
             home_sid = page.url.rsplit("/", 1)[-1]
             assert home_sid.isdigit() and home_sid != sid
             assert len(session_creates) == creates_before_choice + 1
