@@ -24,6 +24,15 @@ bash scripts/start-runner.sh
 
 默认端口9000 / 容量4。每个活跃会话占一个 dsh 进程，归档释放。没有完成 20 会话负载验收或闲置自动回收。
 
+## 运行限额
+
+| 项 | 默认 | 说明 |
+| --- | --- | --- |
+| 整轮执行上限 | 30 分钟 | 环境变量 `RUNNER_TURN_TIMEOUT_SECONDS`（最少 60 秒）；一轮可包含多次模型请求与工具调用，超时后自动停止，可继续对话 |
+| 单次模型请求 / 输出上限 | 300 秒 / 16384 tokens | 平台策略（治理中心）下发；输出上限不超过模型上下文窗口的一半 |
+| bash 单条命令 / Skill 脚本单次 | 5 分钟 | 直接执行，仅拦截少数高危命令（见 `classifyBashCommand`） |
+| 工作区文件 | 单文件 10 MB、1000 个、总量 200 MB | 只约束 `workspace_write`；`workspace_read` 超过 256000 字符时分段返回 |
+
 ## 实际限制
 
 仅 `current_time / workspace_list / workspace_read / workspace_write`；可写工作区的会话另开放 `workspace_present`（把工作区文件声明为交付物，界面在该轮回复下展示文件卡片）。`workspace_write` 支持 `encoding: "base64"` 保存二进制文件；`GET /v1/sessions/:id/raw` 按原始字节读取任意类型文件供预览与下载。原生 shell、原生文件和工作目录工具在业务 patch 禁用，业务白名单进一步限制可见与可执行工具。不允许外部插件安装；这不是容器级隔离。

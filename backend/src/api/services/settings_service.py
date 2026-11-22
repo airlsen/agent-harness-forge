@@ -46,14 +46,14 @@ TOOLS = [
     {
         "name": "bash",
         "title": "终端命令执行",
-        "description": "受控执行终端与 Git 命令；只读命令自动放行，修改或编译命令须经用户审批。",
+        "description": "在会话工作区执行终端命令（运行脚本、编译、Git 等），直接执行无需确认；仅拦截少数高危命令。",
         "permission": "write",
         "icon": "terminal",
     },
     {
         "name": "skill_run_script",
         "title": "运行 Skill 脚本",
-        "description": "在隔离环境中运行当前会话授权的 Skill 脚本，每次调用都需确认。",
+        "description": "运行当前会话授权的 Skill 自带脚本，直接执行无需确认；单次最长 5 分钟。",
         "permission": "write",
         "icon": "terminal",
     },
@@ -63,8 +63,8 @@ DEFAULT_POLICY = {
     "allowedTools": [x["name"] for x in TOOLS],
     # 明确的企业策略面；* 表示当前企业允许已审核插件声明的工具，场景仍须逐项授权。
     "allowedPluginTools": ["*"],
-    "maxOutputTokens": 4096,
-    "requestTimeoutSeconds": 120,
+    "maxOutputTokens": 16384,
+    "requestTimeoutSeconds": 300,
     "approvalTimeoutSeconds": 120,
     # 会话文件保留天数（从会话最后一次活动起算），0 表示永久保留；对所有会话即时生效
     "fileRetentionDays": 30,
@@ -118,8 +118,9 @@ class ModelAvailabilityInput(BaseModel):
 class PolicyInput(BaseModel):
     allowedTools: list[str] = Field(default_factory=lambda: list(DEFAULT_POLICY["allowedTools"]))
     allowedPluginTools: list[str] = Field(default_factory=lambda: list(DEFAULT_POLICY["allowedPluginTools"]))
-    maxOutputTokens: int = Field(default=4096, ge=256, le=16384)
-    requestTimeoutSeconds: int = Field(default=120, ge=15, le=300)
+    maxOutputTokens: int = Field(default=16384, ge=256, le=65536)
+    # 上限 600 秒：控制面读取 Runner 事件流的空闲超时为 660 秒，单次请求不能超过它
+    requestTimeoutSeconds: int = Field(default=300, ge=15, le=600)
     approvalTimeoutSeconds: int = Field(default=120, ge=15, le=600)
     fileRetentionDays: int = Field(default=30, ge=0, le=3650)
 

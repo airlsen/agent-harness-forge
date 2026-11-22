@@ -337,7 +337,7 @@ class FakeAuthoringRunner:
         policy = {
             "allowedTools": skill_service.AUTHORING_TOOLS,
             "maxOutputTokens": 8192,
-            "requestTimeoutSeconds": 120,
+            "requestTimeoutSeconds": 300,
             "approvalTimeoutSeconds": 120,
         }
         digest = hashlib.sha256(json.dumps(policy, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:12]

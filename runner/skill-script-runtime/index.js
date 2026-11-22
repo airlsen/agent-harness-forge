@@ -18,7 +18,8 @@ import { basename, join, resolve, sep } from 'node:path';
 
 const SCRIPT = /^scripts\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(?:py|js|sh)$/;
 const MAX_OUTPUT = 64_000;
-const TIMEOUT_MS = 10_000;
+/** 单次运行上限：与 bash 命令一致的 5 分钟 */
+const TIMEOUT_MS = 300_000;
 /** 返回给模型的产出文件清单上限（文件本身全部保留在工作区） */
 const MAX_LISTED_OUTPUTS = 50;
 export const OUTPUTS_DIR = 'outputs';
@@ -89,7 +90,7 @@ async function listOutputs(dir, prefix) {
   return { files, total };
 }
 
-/** 启动解释器并收集输出（10 秒、64 KB 上限）；bwrap 自身报错时抛出 SandboxUnavailable */
+/** 启动解释器并收集输出（5 分钟、64 KB 上限）；bwrap 自身报错时抛出 SandboxUnavailable */
 function execute(command, args, options, sandboxed) {
   return new Promise((resolveResult, reject) => {
     const child = spawn(command, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -122,7 +123,7 @@ function execute(command, args, options, sandboxed) {
     });
     child.once('close', (code) => {
       clearTimeout(timer);
-      if (timedOut) return reject(new Error('脚本运行超过 10 秒，已终止'));
+      if (timedOut) return reject(new Error(`脚本运行超过 ${TIMEOUT_MS / 60000} 分钟，已终止`));
       if (overLimit) return reject(new Error('脚本输出超过 64 KB，已终止'));
       // bwrap 自身失败（如宿主禁止创建命名空间）时 stderr 以 "bwrap:" 开头，脚本并没有运行
       if (sandboxed && code !== 0 && /^bwrap:/m.test(stderr) && !stdout)

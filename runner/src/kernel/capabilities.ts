@@ -3,9 +3,9 @@
  *
  * - Skill：只是文本。Runner 把正文注册为 DSH 运行时 Skill（dsh-skill 注册表 + dsh-tool-skill 的 skill 工具），
  *   并把完整原文（SKILL.md）与 references/、assets/、scripts/ 写成按「修订号-内容哈希」命名的只读快照目录
- *   （会话工作区之外）；脚本经单独工具隔离运行并逐次审批；用户可在消息中用 /名称 直接调用。
+ *   （会话工作区之外）；脚本经单独工具运行（与 bash 一样直接执行）；用户可在消息中用 /名称 直接调用。
  * - MCP：每个服务挂一个 dsh-mcp-client；凭据只在本轮配置里出现，不写入 Bundle。
- *   工具按 mcp__<server>__<tool> 命名，只有控制面允许的工具进入白名单，需确认的工具逐次审批。
+ *   工具按 mcp__<server>__<tool> 命名，只有控制面允许的工具进入白名单，默认直接执行。
  * - 联网：dsh-web + DeepSeek 搜索提供方 + HTTP 抓取，由 dsh-tool-web 提供 web_search / web_fetch。
  *
  * 任一变化（含凭据）都以新配置重启 dsh 并接续会话，和关联代码、模型切换一致：下一轮生效。

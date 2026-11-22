@@ -31,8 +31,8 @@ session = {
 policy = {
     "allowedTools": ["workspace_read"],
     "allowedPluginTools": ["*"],
-    "maxOutputTokens": 4096,
-    "requestTimeoutSeconds": 120,
+    "maxOutputTokens": 16384,
+    "requestTimeoutSeconds": 300,
     "approvalTimeoutSeconds": 120,
     "fileRetentionDays": 30,
 }

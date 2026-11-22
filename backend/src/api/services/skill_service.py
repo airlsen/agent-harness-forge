@@ -780,7 +780,7 @@ async def _authoring_runtime(
     runtime_policy = {
         "allowedTools": allowed,
         "maxOutputTokens": max_output_tokens,
-        "requestTimeoutSeconds": policy.get("requestTimeoutSeconds", 120),
+        "requestTimeoutSeconds": policy.get("requestTimeoutSeconds", 300),
         "approvalTimeoutSeconds": policy.get("approvalTimeoutSeconds", 120),
     }
     policy_digest = hashlib.sha256(

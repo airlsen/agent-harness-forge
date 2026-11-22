@@ -27,8 +27,15 @@ await writeFile(join(codeRoot, 'alpha', '.git', 'refs', 'heads', 'main'), 'a'.re
 await writeFile(join(codeRoot, 'beta', 'lib', 'beta.py'), 'BETA_MARKER = True\n');
 await writeFile(join(dir, 'outside.txt'), 'outside-sentinel\n');
 await symlink(join(dir, 'outside.txt'), join(codeRoot, 'alpha', 'escape.txt'));
-const { DshKernel, compactionConfig, syncSkillDraft, BASE_TOOLS, SEARCH_TOOLS } =
-  await import('../src/kernel/dsh-kernel.ts');
+const {
+  DshKernel,
+  compactionConfig,
+  effectiveOutputTokens,
+  turnTimeoutSeconds,
+  syncSkillDraft,
+  BASE_TOOLS,
+  SEARCH_TOOLS,
+} = await import('../src/kernel/dsh-kernel.ts');
 const kernel = new DshKernel(),
   requests = [],
   checks = [];
@@ -330,14 +337,31 @@ try {
     await kernel.sendTurn(id, text, undefined, model, codeProjects);
     return allEvents.slice(start);
   }
+  check('a whole turn may run 30 minutes by default; env overrides with a 60s floor', () => {
+    assert.equal(turnTimeoutSeconds({}), 1800);
+    assert.equal(turnTimeoutSeconds({ RUNNER_TURN_TIMEOUT_SECONDS: '3600' }), 3600);
+    assert.equal(turnTimeoutSeconds({ RUNNER_TURN_TIMEOUT_SECONDS: '5' }), 60);
+    assert.equal(turnTimeoutSeconds({ RUNNER_TURN_TIMEOUT_SECONDS: 'abc' }), 1800);
+  });
+  check('output cap follows policy but never exceeds half the context window', () => {
+    assert.equal(effectiveOutputTokens(64000, undefined), 16384);
+    assert.equal(effectiveOutputTokens(128000, 65536), 64000);
+    assert.equal(effectiveOutputTokens(8192, 16384), 4096);
+    assert.equal(effectiveOutputTokens(1000000, 4096), 4096);
+  });
   check('compaction budget fits every common context window (dsh compaction-basic formula)', () => {
-    for (const [window, output] of [
+    for (let [window, output] of [
       [8192, 4096],
       [32000, 4096],
       [64000, 4096],
       [128000, 8192],
       [1000000, 8192],
+      [8192, 16384],
+      [32000, 16384],
+      [64000, 16384],
+      [128000, 65536],
     ]) {
+      output = effectiveOutputTokens(window, output);
       const { headroomTokens, maxTokens } = compactionConfig(window, output);
       const budget = window - output;
       const threshold = Math.floor(Math.min(window * 0.8, budget - headroomTokens));

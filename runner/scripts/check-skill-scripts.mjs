@@ -17,7 +17,8 @@ try {
   const caps = resolveCapabilities({ skills });
   const enabled = sessionToolset({ policy: { allowedTools: ['skill_run_script'] } }, false, caps);
   assert.ok(enabled.allowed.includes('skill_run_script'));
-  assert.deepEqual(enabled.approval, ['skill_run_script']);
+  // 与 bash 同等对待：直接执行，不进入逐次确认清单
+  assert.deepEqual(enabled.approval, []);
   assert.ok(!sessionToolset({ policy: { allowedTools: [] } }, false, caps).allowed.includes('skill_run_script'));
   const tools = new Map();
   const dispose = await apply({ tools: { register(tool) { tools.set(tool.name, tool); return () => tools.delete(tool.name); } } }, {
@@ -67,7 +68,7 @@ try {
   assert.equal(empty.outputDir, null);
   assert.deepEqual(empty.outputs, []);
   assert.equal((await readdir(join(workspace, OUTPUTS_DIR))).length, 2);
-  console.log('PASS Skill 脚本授权、审批上限、运行方式配置与 outputs/ 产出保留');
+  console.log('PASS Skill 脚本授权、免确认执行、运行方式配置与 outputs/ 产出保留');
 } finally {
   await rm(root, { recursive: true, force: true });
 }
