@@ -15,6 +15,7 @@ from src.api.models.platform import PlatformSetting, SessionMessage
 from src.api.routes.agent_scenario import publish
 from src.api.schemas.agent_scenario import ScenarioPayload
 from src.api.services import session_service as session_module
+from src.api.services.runner_client import SkillContentRequired
 from src.api.services import settings_service
 from src.api.services.scenario_service import scenario_service
 from src.api.services.settings_service import ModelInput, create_connection, set_connection_availability
@@ -36,8 +37,24 @@ class FakeRunner:
         self.alive = True
         self.restore_error: HTTPException | None = None
         self.restored: list[tuple] = []
+        # 模拟 Runner 的 Skill 内容缓存：收到过全文的快照才能只发引用；缺少时记录并按 409 拒绝
+        self.known_snapshots: set[str] = set()
+        self.missing_requests: list[list[str]] = []
+
+    def check_skills(self, capabilities):
+        skills = (capabilities or {}).get("skills") or []
+        missing = [
+            skill["snapshot"]
+            for skill in skills
+            if "content" not in skill and skill.get("snapshot") not in self.known_snapshots
+        ]
+        if missing:
+            self.missing_requests.append(missing)
+            raise SkillContentRequired(missing)
+        self.known_snapshots.update(skill["snapshot"] for skill in skills if skill.get("snapshot"))
 
     async def create_session(self, _bundle, _user, config, code_projects=None, capabilities=None):
+        self.check_skills(capabilities)
         self.created.append(config)
         self.created_code.append(code_projects)
         self.created_caps.append(capabilities)
@@ -58,11 +75,13 @@ class FakeRunner:
     async def restore_session(self, runner_id, bundle, _user, config, code_projects=None, capabilities=None):
         if self.restore_error:
             raise self.restore_error
+        self.check_skills(capabilities)
         self.restored.append((runner_id, bundle, config, code_projects, capabilities))
         self.alive = True
         return {"sessionId": runner_id}
 
     async def events(self, runner_id, message, model_config=None, code_projects=None, capabilities=None):
+        self.check_skills(capabilities)
         self.turns.append((runner_id, message, model_config))
         self.code.append(code_projects)
         self.caps.append(capabilities)

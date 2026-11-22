@@ -108,7 +108,16 @@ export interface CapabilityOptions {
 }
 /** 本轮生效的扩展能力摘要（用户消息 meta.capabilities） */
 export interface ActiveCapabilities {
-  skills: { id: number; name: string; title: string; version?: number | null; source: 'scenario' | 'chat' }[];
+  skills: {
+    id: number;
+    name: string;
+    title: string;
+    version?: number | null;
+    /** 本轮实际装配的 Skill 修订与 Runner 快照目录名（<修订号>-<内容哈希>） */
+    revisionId?: number;
+    snapshot?: string;
+    source: 'scenario' | 'chat';
+  }[];
   mcp: {
     id: number;
     name: string;
@@ -119,7 +128,8 @@ export interface ActiveCapabilities {
     approvalTools: number;
   }[];
   web: { search: boolean; fetch: boolean; source: 'scenario' | 'chat' } | null;
-  unavailable: { kind: 'skill' | 'mcp' | 'web'; id: number | null; title: string }[];
+  /** 本轮跳过的能力；reason 为具体原因（如 Skill 缺少附加文件），旧消息没有 */
+  unavailable: { kind: 'skill' | 'mcp' | 'web'; id: number | null; title: string; reason?: string }[];
 }
 /** 平台联网搜索设置（密钥不回传） */
 export interface WebSearchSettings {

@@ -14,7 +14,7 @@ from ..models.platform import PlatformSetting, SessionMessage
 from ..models.approval_ticket import ApprovalTicket
 from ..schemas.agent_scenario import ScenarioPayload
 from .file_service import file_service
-from .runner_client import ensure_session, runner_client
+from .runner_client import SkillContentRequired, ensure_session, runner_client
 from .scenario_service import scenario_service, iso
 from .scenario_assembler import Bundle, apply_current_policy
 from .plugin_service import ensure_bindings_available
@@ -399,16 +399,22 @@ class SessionService:
                 }
                 if row.runner_session_id:
                     # Runner 重启后按会话快照重新装配，从磁盘会话日志接续完整上下文（dsh session/resume）
-                    try:
-                        await ensure_session(
-                            runner_client,
-                            row.runner_session_id,
-                            row.bundle_snapshot,
-                            user_ctx,
-                            runtime,
-                            code,
-                            runtime_caps,
+                    async def ensure(caps):
+                        return await ensure_session(
+                            runner_client, row.runner_session_id, row.bundle_snapshot, user_ctx, runtime, code, caps
                         )
+
+                    try:
+                        try:
+                            restored = await ensure(runtime_caps)
+                        except SkillContentRequired as missing:
+                            # 重启后的 Runner 没有 Skill 缓存：补发全文后重试恢复
+                            restored = await ensure(
+                                await capability_service.expand_skills(db, runtime_caps, missing.snapshots)
+                            )
+                        if restored:
+                            # 恢复后的会话已持有全部内容，本轮执行只需快照引用
+                            runtime_caps = capability_service.as_refs(runtime_caps)
                     except HTTPException as error:
                         if error.status_code in (404, 410):
                             raise HTTPException(
@@ -417,13 +423,20 @@ class SessionService:
                             ) from error
                         raise
                 else:
-                    handle = await runner_client.create_session(
-                        row.bundle_snapshot,
-                        user_ctx,
-                        runtime,
-                        code,
-                        runtime_caps,
-                    )
+                    async def create(caps):
+                        return await runner_client.create_session(
+                            row.bundle_snapshot, user_ctx, runtime, code, caps
+                        )
+
+                    try:
+                        handle = await create(runtime_caps)
+                    except SkillContentRequired as missing:
+                        # Runner 没有部分 Skill 快照（重启或缓存淘汰）：补发这些 Skill 的全文，重试一次
+                        handle = await create(
+                            await capability_service.expand_skills(db, runtime_caps, missing.snapshots)
+                        )
+                    # 新建的 Runner 会话已持有全部内容，本轮执行只需快照引用
+                    runtime_caps = capability_service.as_refs(runtime_caps)
                     row.runner_session_id, row.runner_id = handle["sessionId"], "local-runner"
                     row.workspace_uri = "session://" + handle["sessionId"]
                 cursor = (
@@ -504,6 +517,20 @@ class SessionService:
                 "capabilities": selection,
                 "activeCapabilities": active_caps,
             }
+
+    @staticmethod
+    async def runner_events(runner_id, message, runtime, code_projects, capabilities):
+        """转发 Runner 事件流。Skill 通常只带快照引用；Runner 缺少内容时（在产生任何事件之前返回 409），
+        补发这些 Skill 的全文并重试一次。"""
+        try:
+            async for event in runner_client.events(runner_id, message, runtime, code_projects, capabilities):
+                yield event
+            return
+        except SkillContentRequired as missing:
+            async with SessionFactory() as db:
+                capabilities = await capability_service.expand_skills(db, capabilities, missing.snapshots)
+        async for event in runner_client.events(runner_id, message, runtime, code_projects, capabilities):
+            yield event
 
     async def pump(
         self, session_id, runner_id, message, cursor, runtime, turn, code_projects=None, capabilities=None
@@ -618,7 +645,7 @@ class SessionService:
         try:
             await persist("session", {"sessionId": session_id, "workspaceUri": "session://" + runner_id})
             # 每轮下发完整的关联代码列表（空列表表示不关联），Runner 与数据库始终一致
-            async for event in runner_client.events(
+            async for event in self.runner_events(
                 runner_id,
                 message,
                 runtime,

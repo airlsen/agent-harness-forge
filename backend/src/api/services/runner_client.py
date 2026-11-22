@@ -7,6 +7,34 @@ import httpx
 from fastapi import HTTPException
 from ..core.config import settings
 
+SKILL_CONTENT_REQUIRED = "SKILL_CONTENT_REQUIRED"
+
+
+class SkillContentRequired(HTTPException):
+    """Runner 没有某些 Skill 快照的内容（重启或缓存淘汰）：调用方补发这些 Skill 的全文后重试一次。
+
+    补发后仍缺（不应发生）时不再重试，按 502 报告给用户。
+    """
+
+    def __init__(self, snapshots: list[str]):
+        super().__init__(502, "执行内核缺少 Skill 内容，请重新发送消息")
+        self.snapshots = snapshots
+
+
+def missing_skills(response: httpx.Response) -> list[str] | None:
+    if response.status_code != 409:
+        return None
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    snapshots = body.get("missingSkills")
+    if body.get("code") != SKILL_CONTENT_REQUIRED or not isinstance(snapshots, list):
+        return None
+    return [item for item in snapshots if isinstance(item, str)]
+
 
 class RunnerClient:
     # 执行策略中设置的关联代码目录（空 = Runner 的 FORGE_CODE_ROOT）；启动时从数据库加载，保存时更新，随请求下发
@@ -24,6 +52,8 @@ class RunnerClient:
         try:
             async with self.client() as client:
                 response = await client.request(method, path, json=body)
+                if (snapshots := missing_skills(response)) is not None:
+                    raise SkillContentRequired(snapshots)
                 if response.status_code >= 400:
                     try:
                         message = response.json().get("message", "Runner 请求失败")
@@ -102,6 +132,7 @@ class RunnerClient:
         capabilities: dict | None = None,
     ):
         # 每轮都下发当前模型配置、关联代码与扩展能力：Runner 比对后，任一变化都以新配置重启并接续会话。
+        # Skill 通常只带快照引用；Runner 缺内容时抛出 SkillContentRequired（在产生任何事件之前）。
         body = {
             "message": message,
             **({"modelConfig": model_config} if model_config else {}),
@@ -115,6 +146,8 @@ class RunnerClient:
             ) as response:
                 if response.status_code != 200:
                     await response.aread()
+                    if (snapshots := missing_skills(response)) is not None:
+                        raise SkillContentRequired(snapshots)
                     try:
                         error = response.json().get("message", "执行请求失败")
                     except ValueError:

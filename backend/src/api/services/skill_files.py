@@ -96,4 +96,5 @@ def storage_path(data_dir: Path, skill_id: int, entry: dict) -> Path:
 
 
 def read_entry(data_dir: Path, skill_id: int, entry: dict) -> str:
-    return storage_path(data_dir, skill_id, entry).read_text(encoding="utf-8")
+    """按字节读取并解码：不做换行转换（read_text 会把 \\r\\n 变成 \\n），保证运行时快照与导出逐字节一致。"""
+    return storage_path(data_dir, skill_id, entry).read_bytes().decode("utf-8")

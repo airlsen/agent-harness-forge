@@ -1,6 +1,6 @@
 /** 业务内核：独立 dsh 进程、真实模型出口、受限文件工具、逐次审批。 */
 import { randomUUID, createHash } from 'node:crypto';
-import { mkdir, writeFile, readFile, readdir, lstat, rm, rmdir, unlink } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, readdir, lstat, rename, rm, rmdir, unlink } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DshProcess } from './dsh-process.js';
@@ -9,6 +9,8 @@ import { buildSystemPrompt } from './system-prompt.js';
 import { projectOverview, resolveCodeProjects, sameProjects, type CodeProject } from './code-projects.js';
 import {
   EMPTY_CAPABILITIES,
+  SKILL_SNAPSHOT,
+  SkillContentCache,
   WEB_SEARCH_PROVIDERS,
   capabilityFingerprint,
   capabilitySummary,
@@ -194,9 +196,24 @@ export class DshKernel implements AgentKernel {
   private activeTurns = 0;
   /** 排队等待并发额度的回合；先进先出，容量释放后依次放行。 */
   private turnQueue: Array<{ id: string; resolve: () => void; reject: (error: Error) => void }> = [];
+  /** Skill 内容缓存（快照标识 → 内容）：控制面已知 Runner 有这一版时只发快照引用 */
+  private skillCache = new SkillContentCache();
   constructor(private readonly pluginWorker?: PluginWorkerClient) {}
   get size() {
     return this.sessions.size;
+  }
+  /**
+   * 解析一轮的扩展能力：只带快照引用的 Skill 先从本会话当前能力、再从进程内缓存取内容；
+   * 都没有时抛出 409 + missingSkills，控制面补发全文后重试。解析结果记入缓存。
+   */
+  resolveTurnCapabilities(raw: unknown, sessionId?: string): RuntimeCapabilities {
+    const current = sessionId ? this.sessions.get(sessionId)?.caps.skills : undefined;
+    const caps = resolveCapabilities(
+      raw,
+      (snapshot) => current?.find((skill) => skill.snapshot === snapshot) ?? this.skillCache.get(snapshot),
+    );
+    this.skillCache.remember(caps.skills);
+    return caps;
   }
   get capacity() {
     return Math.max(1, Number(process.env.RUNNER_MAX_SESSIONS ?? 4));
@@ -329,7 +346,7 @@ export class DshKernel implements AgentKernel {
   ) {
     if (!validModel(model)) throw failure('请先在模型中心配置真实模型网关', 422);
     const code = resolveCodeProjects(codeProjects);
-    const caps = resolveCapabilities(capabilities);
+    const caps = this.resolveTurnCapabilities(capabilities);
     const approvedPlugins = new Set(['forge-runtime', 'skill-authoring', 'forge-plugin-bridge']);
     if (!Array.isArray(bundle?.plugin_mounts) || bundle.plugin_mounts.some((p) => !approvedPlugins.has(p)))
       throw failure('包含未审核的插件', 422);
@@ -593,27 +610,57 @@ export class DshKernel implements AgentKernel {
     if (entry.hasHistory) await timeout(proc.request('session/resume', { sessionId: entry.id }), 15000);
   }
   /**
-   * 物化 Skill 目录：DATA/<id>/skills/<name>/{references,assets,scripts}/<file>（只读），每次启动整体重建，
-   * 已移除的 Skill 不留下文件。正文不落盘（以运行时 Skill 注册），返回 Skill 名 → Skill 根目录，
-   * 正文中的相对路径（如 references/rules.md）按这个目录解析。
+   * 物化 Skill 快照目录：DATA/<id>/skills/<name>/<修订号>-<内容哈希>/，内容与控制面修订逐字节一致：
+   * SKILL.md（完整原文，旧控制面未下发原文时不写）+ references/、assets/、scripts/ 附加文件，文件只读（0400）。
+   *
+   * - 每个 Skill 都有目录（即使只有 SKILL.md），skill 工具的 resourceBase 始终是这个目录；
+   * - 先写临时目录再原子改名，已存在的同名快照直接复用（名字由内容哈希决定，内容必然相同）；
+   * - 不再每次启动整体删除：旧修订的快照留在磁盘上，接续会话时历史里的旧路径仍可追溯，
+   *   但只读根只包含本次装配的快照目录，模型无法再读取旧快照。快照与会话日志一样留在会话数据目录
+   *   DATA/<id>/ 中（不属于工作区，不受产物保留期清理影响；单个 Skill 最大约 576 KB）。
+   * 返回 Skill 名 → 快照目录；正文中的相对路径（如 references/rules.md）按这个目录解析。
    */
   private async materializeSkills(entry: Entry) {
     const root = join(DATA, entry.id, 'skills');
-    await rm(root, { recursive: true, force: true });
     const dirs: Record<string, string> = {};
     for (const skill of entry.caps.skills) {
-      if (!skill.files.length) continue;
-      const dir = join(root, skill.name);
-      for (const file of skill.files) {
-        // 路径已由 SKILL_FILE_PATH 校验为允许的单层目录，这里再确认不越出 Skill 目录
-        const target = join(dir, file.path);
-        if (!target.startsWith(dir + sep)) throw new Error(`Skill 文件路径无效：${file.path}`);
-        await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-        await writeFile(target, file.content, { mode: 0o400 });
+      const snapshot = skill.snapshot;
+      const parent = join(root, skill.name);
+      const dir = join(parent, snapshot);
+      await mkdir(parent, { recursive: true, mode: 0o700 });
+      await this.pruneSkillParent(parent);
+      if (!(await isDirectory(dir))) {
+        const staging = join(parent, `.staging-${randomUUID()}`);
+        try {
+          await mkdir(staging, { mode: 0o700 });
+          const files = [
+            ...(skill.document !== undefined ? [{ path: 'SKILL.md', content: skill.document }] : []),
+            ...skill.files,
+          ];
+          for (const file of files) {
+            // 路径已由 SKILL_FILE_PATH 校验为允许的单层目录，这里再确认不越出 Skill 目录
+            const target = join(staging, file.path);
+            if (!target.startsWith(staging + sep)) throw new Error(`Skill 文件路径无效：${file.path}`);
+            await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+            await writeFile(target, file.content, { mode: 0o400, flag: 'wx' });
+          }
+          await rename(staging, dir);
+        } catch (error: any) {
+          await rm(staging, { recursive: true, force: true });
+          // 目标快照已由此前的启动写好（同名即同内容）：直接复用
+          if (!['EEXIST', 'ENOTEMPTY'].includes(error?.code) || !(await isDirectory(dir))) throw error;
+        }
       }
       dirs[skill.name] = dir;
     }
     return dirs;
+  }
+  /** 清理中断留下的临时目录与旧版本 Runner 的平铺目录（references/ 等直接放在 Skill 名下）；快照目录保留 */
+  private async pruneSkillParent(parent: string) {
+    for (const name of await readdir(parent)) {
+      if (SKILL_SNAPSHOT.test(name)) continue;
+      await rm(join(parent, name), { recursive: true, force: true });
+    }
   }
   /** 扩展能力对应的 DSH 插件行：Skill 注册表与加载工具、每个 MCP 服务一个客户端、联网服务与工具 */
   private capabilityRows(entry: Entry, skillDirs: Record<string, string>) {
@@ -631,7 +678,7 @@ export class DshKernel implements AgentKernel {
               description: skill.description,
               ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
               content: skill.content,
-              ...(skillDirs[skill.name] ? { dir: skillDirs[skill.name] } : {}),
+              dir: skillDirs[skill.name],
             })),
           },
         },
@@ -824,7 +871,7 @@ export class DshKernel implements AgentKernel {
     // 不传表示沿用当前关联；传入则必须全部存在（与模型配置一样在执行前校验）
     const code = codeProjects === undefined ? entry.code : resolveCodeProjects(codeProjects);
     // 扩展能力同理：不传沿用，传入即本轮生效的完整集合
-    const caps = capabilities === undefined ? entry.caps : resolveCapabilities(capabilities);
+    const caps = capabilities === undefined ? entry.caps : this.resolveTurnCapabilities(capabilities, id);
     // 并发额度：超出容量时排队等待，而不是直接拒绝；等待期间被中止会抛出并给出 error + done。
     try {
       await this.acquireTurn(id, entry);
@@ -1071,6 +1118,13 @@ export class DshKernel implements AgentKernel {
     const { full, stat } = await this.workspaceFile(id, path);
     if (stat.size > MAX_RAW_BYTES) throw failure('文件过大，无法读取', 413);
     return { data: await readFile(full), mime: mimeType(full), bytes: stat.size };
+  }
+}
+async function isDirectory(path: string) {
+  try {
+    return (await lstat(path)).isDirectory();
+  } catch {
+    return false;
   }
 }
 function timeout<T>(promise: Promise<T>, ms: number) {
