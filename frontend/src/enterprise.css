@@ -1094,8 +1094,8 @@ textarea:focus-visible {
   color: var(--ink);
   background: var(--surface-hover);
 }
-.task-composer .task-send,
-.task-composer .stop-button {
+:is(.task-composer, .chat-composer) .task-send,
+:is(.task-composer, .chat-composer) .stop-button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1114,26 +1114,30 @@ textarea:focus-visible {
     box-shadow 0.15s;
 }
 /* The app-wide Ant button reset uses !important; the composer is an intentional exception. */
-.task-composer .task-send.ant-btn {
+:is(.task-composer, .chat-composer) .task-send.ant-btn {
   border-radius: 50% !important;
 }
-.task-composer .task-send:not(:disabled):hover,
-.task-composer .stop-button:hover {
+:is(.task-composer, .chat-composer) .task-send:not(:disabled):hover,
+:is(.task-composer, .chat-composer) .stop-button:not(:disabled):hover {
   background: var(--accent-solid-hover);
 }
-.task-composer .task-send:disabled {
+:is(.task-composer, .chat-composer) .task-send:disabled {
   opacity: 1;
   border-color: transparent;
   background: var(--scenario-selection-bg);
   color: var(--scenario-selection-text);
 }
-.task-composer .stop-button > span {
+:is(.task-composer, .chat-composer) .stop-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+:is(.task-composer, .chat-composer) .stop-button > span {
   width: 10px;
   height: 10px;
   border-radius: 2px;
   background: currentColor;
 }
-.task-composer .stop-button:focus-visible,
+:is(.task-composer, .chat-composer) .stop-button:focus-visible,
 .task-composer .model-trigger:focus-visible,
 .conversation-scenario-chip:focus-visible {
   outline: 2px solid var(--accent-focus);
@@ -3744,8 +3748,8 @@ textarea:focus-visible {
   .task-composer-hero #task-input {
     min-height: 103px;
   }
-  .task-composer .task-send,
-  .task-composer .stop-button {
+  :is(.task-composer, .chat-composer) .task-send,
+  :is(.task-composer, .chat-composer) .stop-button {
     flex-basis: 44px;
     width: 44px;
     height: 44px;

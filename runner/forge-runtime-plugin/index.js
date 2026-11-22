@@ -174,7 +174,8 @@ function otherSessionAccess(command, workspace) {
  * - 提权与切换用户（sudo/su/pkexec/doas，仅当作为命令出现）
  * - 平台自身的密钥（data/encryption.key、data/auth.json）与其他会话的数据目录
  * - 输出全部环境变量（printenv、不带参数的 env、/proc/<pid>/environ）：模型密钥在 Runner 进程环境中
- * - 重定向写入 /etc、/boot
+ * - 重定向写入 /etc、/boot；通过网络管道下载后直接执行脚本（curl … | sh）
+ * curl/wget 等网络请求（含外部地址）不拦截。
  * workspace 为当前会话工作区（用于放行本会话自己的数据目录）。调用方仍兼容 'ask'，分类器不再返回该级别。
  */
 export function classifyBashCommand(cmd, { workspace } = {}) {
@@ -201,6 +202,10 @@ export function classifyBashCommand(cmd, { workspace } = {}) {
   }
   if (ENV_DUMP.test(clean)) {
     return { level: 'deny', reason: '安全策略禁止输出全部环境变量' };
+  }
+  // 通过网络管道直接下载并执行脚本；curl/wget 本身（含外部地址）不拦截
+  if (/(curl|wget)[\s\S]*\|\s*(ba|z|k|c)?sh\b/i.test(clean)) {
+    return { level: 'deny', reason: '安全策略禁止通过网络管道直接下载并执行脚本' };
   }
   if (/>\s*\/(?:etc|boot)\//i.test(clean)) {
     return { level: 'deny', reason: '安全策略禁止向系统核心路径重定向写入' };

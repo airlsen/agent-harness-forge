@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.api.core.database import Base
 from src.api.models.skill import Skill, SkillAuthoringMessage, SkillAuthoringSession, SkillRevision
-from src.api.routes.skill import resolve_authoring_approval
+from src.api.routes.skill import interrupt_authoring_turn, resolve_authoring_approval
 from src.api.schemas.skill import SkillApprovalDecision
 from src.api.services import skill_service
 from src.api.services.skill_service import (
@@ -541,6 +541,37 @@ async def test_workbench_approval_is_bound_to_active_editor_session(monkeypatch)
             assert calls == [
                 ("POST", f"/v1/sessions/r1/approvals/{ticket}/resolve", {"action": "deny"})
             ]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_stop_interrupts_only_a_running_editor_turn(monkeypatch):
+    engine, sessions = await _memory_sessions()
+    calls = []
+
+    async def fake_call(method, path, body=None):
+        calls.append((method, path, body))
+        if len(calls) > 1:
+            raise HTTPException(404, "执行会话不存在")
+        return {"ok": True}
+
+    from src.api.routes import skill as skill_route
+
+    monkeypatch.setattr(skill_route.runner_client, "call", fake_call)
+    try:
+        skill_id, session_id = await _authoring_fixture(sessions)
+        async with sessions() as db:
+            idle = await interrupt_authoring_turn(skill_id, session_id, db)
+            assert idle.data == {"interrupted": False} and not calls
+            session = await skill_service.get_authoring_session(db, skill_id, session_id)
+            session.status = "running"
+            await db.commit()
+            stopped = await interrupt_authoring_turn(skill_id, session_id, db)
+            assert stopped.data == {"interrupted": True}
+            assert calls == [("POST", "/v1/sessions/r1/interrupt", None)]
+            # Runner 已不认识这个会话（例如刚重启）时不报错
+            await interrupt_authoring_turn(skill_id, session_id, db)
     finally:
         await engine.dispose()
 

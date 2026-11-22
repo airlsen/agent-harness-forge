@@ -86,6 +86,10 @@ const prompt = ref('');
 const live = reactive(emptyAuthoringLive());
 // 本轮用户消息已加入列表、正在等待或接收助手输出（busy 还包括发送前的保存与建会话）
 const streaming = ref(false);
+// 本轮已被助手接手（收到第一条事件，含排队）：发送按钮换成「中止执行」，与工作台一致
+const turnStarted = ref(false);
+const stopping = ref(false);
+let stopRequested = false;
 const assistantChange = ref('');
 // 本轮排队等待并发额度的位次；0 表示未排队。
 const queuePosition = ref(0);
@@ -734,6 +738,8 @@ async function send() {
   }
   if (!(await ensureSaved())) return;
   busy.value = true;
+  turnStarted.value = false;
+  stopRequested = false;
   assistantChange.value = '';
   assistantFiles.value = [];
   const changes: AssistantFileChange[] = [];
@@ -780,6 +786,7 @@ async function send() {
         const line = block.split('\n').find((item) => item.startsWith('data: '));
         if (!line) continue;
         const event = JSON.parse(line.slice(6));
+        turnStarted.value = true;
         if (applyAuthoringEvent(live, messages.value, event, nextId)) {
           queuePosition.value = 0;
         } else if (event.kind === 'queued') {
@@ -815,8 +822,11 @@ async function send() {
     const message = (err as Error).message;
     if (skill.value) await loadSkill({ quiet: true });
     void loadTrialFiles();
-    if (!prompt.value) prompt.value = text;
-    app.toast(message, 'error');
+    // 用户主动中止：消息已发出并保留在对话里，不回填输入框，也不当作错误提示
+    if (!stopRequested) {
+      if (!prompt.value) prompt.value = text;
+      app.toast(message, 'error');
+    }
   } finally {
     // 请求失败或历史读取失败时也不能把临时消息永远留在列表里。
     messages.value = messages.value.filter((message) => !String(message.id).startsWith(pendingId));
@@ -824,7 +834,23 @@ async function send() {
     streaming.value = false;
     queuePosition.value = 0;
     approvals.value = [];
+    turnStarted.value = false;
     busy.value = false;
+  }
+}
+
+/** 中止当前这一轮（与工作台「中止执行」一致）；已输出的内容保留在对话里。 */
+async function stop() {
+  if (!skill.value || !session.value || !turnStarted.value || stopping.value) return;
+  stopping.value = true;
+  stopRequested = true;
+  try {
+    await post(`/skills/${skill.value.id}/authoring-sessions/${session.value.id}/interrupt`);
+  } catch (err) {
+    stopRequested = false;
+    app.toast((err as Error).message, 'error');
+  } finally {
+    stopping.value = false;
   }
 }
 
@@ -1655,29 +1681,35 @@ onBeforeUnmount(() => {
                     :title="isNew ? '创建技能后可添加参考资料' : '把 Markdown 或文本资料添加到 references/'"
                     aria-label="添加参考资料"
                   >
-                    <Icon name="paperclip" :size="16" />
+                    <Icon name="paperclip" :size="18" />
                   </button>
                 </a-upload>
+                <button
+                  v-if="busy && turnStarted"
+                  type="button"
+                  class="stop-button"
+                  :disabled="stopping"
+                  aria-label="中止执行"
+                  title="中止执行"
+                  @click="stop"
+                >
+                  <span aria-hidden="true"></span>
+                </button>
                 <a-button
-                  class="composer-send"
+                  v-else
+                  class="task-send"
                   type="primary"
                   shape="circle"
                   html-type="submit"
                   :loading="busy"
                   :disabled="!canSend && !busy"
-                  :aria-label="busy ? '助手处理中' : '发送'"
-                  :title="busy ? '助手处理中' : '发送'"
-                  ><Icon v-if="!busy" name="arrow-up-line" :size="16"
-                /></a-button>
+                  aria-label="发送"
+                  title="发送 · Enter"
+                >
+                  <Icon v-if="!busy" name="ri-arrow-up-line" :size="18" />
+                </a-button>
               </div>
             </div>
-            <p v-if="busy" class="composer-hint">
-              {{
-                queuePosition
-                  ? `排队中 · 第 ${queuePosition} 位，完成后可继续发送`
-                  : '助手处理中，完成后可继续发送'
-              }}
-            </p>
           </form>
         </aside>
       </div>
@@ -2524,15 +2556,15 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 0 8px 8px;
 }
-/* 只显示图标，与右侧发送按钮同尺寸；说明放在 title 提示中 */
+/* 只显示图标，尺寸与工作台输入框的附件按钮一致；说明放在 title 提示中 */
 .composer-attach {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   padding: 0;
-  border-radius: 6px;
+  border-radius: 10px;
   color: var(--color-text-secondary);
 }
 .composer-attach:hover:not(:disabled) {
@@ -2546,34 +2578,6 @@ onBeforeUnmount(() => {
 .composer-attach:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 1px;
-}
-.composer-send {
-  width: 30px;
-  height: 30px;
-  min-width: 30px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50% !important;
-}
-.composer-send :deep(.ant-btn-loading-icon) {
-  display: inline-flex;
-  align-items: center;
-  margin: 0;
-}
-/* Disabled controls remain subdued on both light and dark surfaces. */
-.composer-send:disabled,
-.composer-send:disabled:hover {
-  background: var(--surface-muted) !important;
-  border-color: var(--border-default) !important;
-  color: var(--color-text-secondary) !important;
-  cursor: not-allowed;
-}
-.composer-hint {
-  margin: 6px 4px 0;
-  color: var(--color-text-tertiary);
-  font-size: 12px;
-  line-height: 1.4;
 }
 .history-list {
   display: flex;

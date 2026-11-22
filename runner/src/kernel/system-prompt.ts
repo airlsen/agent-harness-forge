@@ -30,7 +30,7 @@ export function workspaceGuide(tools: readonly string[]): string[] {
     );
   if (has('bash'))
     lines.push(
-      '你可以调用 bash 执行受限的终端与 Git 命令。命令直接执行，系统只拒绝破坏性系统命令、提权、读取凭据与密钥、向外部地址发起 curl/wget 等危险操作。代码分析优先使用 glob、grep、read；需要生成文件时优先用 workspace_write，避免不必要的复杂 Shell 语法。默认目录是会话工作区，也可以在关联项目中执行。',
+      '你可以调用 bash 执行受限的终端与 Git 命令。命令直接执行，系统只拒绝破坏性系统命令、提权、读取凭据与密钥等危险操作。代码分析优先使用 glob、grep、read；需要生成文件时优先用 workspace_write，避免不必要的复杂 Shell 语法。默认目录是会话工作区，也可以在关联项目中执行。',
     );
   if (has('glob') || has('grep') || has('workspace_read'))
     lines.push(
