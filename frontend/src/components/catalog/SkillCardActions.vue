@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
-import Icon from '../ForgeIcon.vue';
+import Icon from '../base/ForgeIcon.vue';
 
 defineProps<{
   name: string;

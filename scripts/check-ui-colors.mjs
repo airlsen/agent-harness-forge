@@ -15,7 +15,7 @@ const allowlist = [
   /[/\\]styles[/\\]/,
   /[/\\]utils[/\\]vizTheme\.ts$/,
   /[/\\]theme[/\\]antd\.ts$/,
-  /[/\\]components[/\\]common[/\\]/,
+  /[/\\]components[/\\]markdown[/\\](MarkdownPreview|JsonPreview)\.vue$/,
 ];
 // 6-digit (and 3-digit) hex. 8-digit hex (`#RRGGBBAA`) is alpha shadow/overlay,
 // an elevation concern rather than a semantic color, so it is intentionally out of scope.

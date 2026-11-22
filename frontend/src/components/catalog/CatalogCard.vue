@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Icon from '../ForgeIcon.vue';
+import Icon from '../base/ForgeIcon.vue';
 
 /**
  * 目录卡片：扁平无投影；hover / 键盘聚焦时边框变主题色并上浮 2px。

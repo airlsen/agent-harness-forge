@@ -65,7 +65,7 @@ for (const path of files) {
       if (findEmoji(line) || emojiLibrary.test(line)) failures.push(`${relative(root, path)}:${index + 1}`);
     });
 }
-const icon = readFileSync(join(root, 'frontend/src/components/ForgeIcon.vue'), 'utf8');
+const icon = readFileSync(join(root, 'frontend/src/components/base/ForgeIcon.vue'), 'utf8');
 assert.match(icon, /<svg[\s>]/);
 assert.match(icon, /<path\s/);
 assert.doesNotMatch(icon, /<img[\s>]|v-html/);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Icon from '../ForgeIcon.vue';
+import Icon from '../base/ForgeIcon.vue';
 
 /**
  * 目录空态：antd Empty + 品牌浅色图标块；标题、说明走默认插槽外的独立元素，
