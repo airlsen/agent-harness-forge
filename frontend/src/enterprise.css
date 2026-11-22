@@ -4774,6 +4774,180 @@ textarea:focus-visible {
 .diff-hunk .diff-code {
   color: var(--accent-ink);
 }
+/* 文本对比（Skill 修改前后等）：沿用上面的 diff 表格，补词级高亮、折叠行与左右并排 */
+.diff-table .diff-word {
+  border-radius: 2px;
+}
+.diff-add .diff-word,
+.diff-side-add .diff-word {
+  background: var(--color-success-border);
+}
+.diff-remove .diff-word,
+.diff-side-remove .diff-word {
+  background: var(--color-danger-border);
+}
+.diff-side-add {
+  background: var(--color-success-bg);
+}
+.diff-side-remove {
+  background: var(--color-danger-bg);
+}
+.diff-side-empty {
+  background: var(--surface-subtle);
+}
+.text-diff-split {
+  table-layout: fixed;
+}
+.text-diff-split .diff-col-num {
+  width: 52px;
+}
+.text-diff-split td.diff-num + td.diff-code {
+  border-right: 1px solid var(--line);
+}
+.text-diff-split td.diff-code:last-child {
+  border-right: 0;
+}
+.diff-fold td {
+  padding: 0 !important;
+  background: var(--accent-wash);
+}
+.diff-fold button {
+  width: 100%;
+  padding: 3px 10px;
+  border: 0;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.diff-fold button:hover {
+  text-decoration: underline;
+}
+.text-diff-empty {
+  padding: 24px 0;
+  color: var(--text-subtle);
+  font-size: 13px;
+  text-align: center;
+}
+.change-review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.change-review-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.change-review-bar .turn-changes-lines {
+  margin-left: 8px;
+}
+.change-review-body {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.change-review-body.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.change-review-files {
+  position: sticky;
+  top: 0;
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.change-review-files button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.change-review-files button:hover {
+  background: var(--accent-wash);
+}
+.change-review-files button.active {
+  background: var(--accent-soft);
+}
+.change-review-name {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.change-review-name strong,
+.change-review-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.change-review-name strong {
+  font-weight: 500;
+}
+.change-review-name small {
+  color: var(--text-subtle);
+  font-size: 12px;
+}
+.change-review-files .action-deleted strong,
+.change-review-diff header .action-deleted + strong {
+  text-decoration: line-through;
+}
+.change-review-diff {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.change-review-diff header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-card);
+  font-size: 13px;
+}
+.change-review-diff header strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.change-review-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.change-review-state.error {
+  color: var(--color-danger-text);
+}
+@media (max-width: 720px) {
+  .change-review-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .change-review-files {
+    position: static;
+  }
+}
 .file-diff .file-preview-note {
   padding: 0 16px 14px;
 }

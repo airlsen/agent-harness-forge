@@ -253,6 +253,41 @@ export { createApp, h, reactive, ref, nextTick, defineComponent } from 'vue';`,
     top = 950;
     api.onScroll();
     assert.equal(api.stick.value, true);
+    // 流式输出中只往上拖了一小段（仍在底部附近）：也立即停止跟随，不会被下一帧拽回
+    api.jumpToLatest();
+    top -= 30;
+    api.onScroll();
+    assert.equal(api.stick.value, false);
+    height += 40;
+    resizeCallbacks.forEach((callback) => callback([]));
+    assert.equal(top, 970);
+    // 滚轮往上：在滚动事件之前就停止跟随
+    api.jumpToLatest();
+    assert.equal(api.stick.value, true);
+    pane.dispatchEvent(new window.WheelEvent('wheel', { deltaY: -100 }));
+    assert.equal(api.stick.value, false);
+    // 往下滚轮不影响；手指往下拉同样停止跟随
+    api.jumpToLatest();
+    pane.dispatchEvent(new window.WheelEvent('wheel', { deltaY: 100 }));
+    assert.equal(api.stick.value, true);
+    const touch = (type, clientY) => {
+      const event = new window.Event(type);
+      event.touches = [{ clientY }];
+      pane.dispatchEvent(event);
+    };
+    touch('touchstart', 200);
+    touch('touchmove', 260);
+    assert.equal(api.stick.value, false);
+    // 内层代码块还能往上滚时，滚轮滚的是代码块，不停止跟随
+    api.jumpToLatest();
+    const inner = document.createElement('pre');
+    inner.style.overflowY = 'auto';
+    Object.defineProperty(inner, 'scrollTop', { get: () => 50 });
+    Object.defineProperty(inner, 'scrollHeight', { get: () => 300 });
+    Object.defineProperty(inner, 'clientHeight', { get: () => 100 });
+    pane.appendChild(inner);
+    inner.dispatchEvent(new window.WheelEvent('wheel', { deltaY: -100, bubbles: true }));
+    assert.equal(api.stick.value, true);
     harness.unmount();
   });
 
