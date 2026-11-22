@@ -27,7 +27,7 @@ const tool = (id, callId, name = 'workspace_read') => ({
   meta: { toolCallId: callId, tool: name, arguments: { path: 'a.txt' }, isError: false },
 });
 try {
-  const { buildTurns, latestUnavailable, processStats, processSummary } =
+  const { buildTurns, latestUnavailable, processStats, processSummary, toolArgSummary } =
     await vite.ssrLoadModule('/src/utils/turns.ts');
 
   check('一轮 = 用户消息 + 一个 AI 块；思考与正文是同一块内的步骤', () => {
@@ -80,8 +80,15 @@ try {
     // 思考一旦开始输出正文/调工具即结束；已转入工具调用的正文也不再流式
     assert.equal(turns[1].steps[1].live, false);
     assert.equal(turns[1].steps[2].live, false);
-    // 进行中的调用之前的正文是过程说明，不是最终回答
-    assert.equal(turns[1].answer.length, 0);
+    // 运行中已显示的正文留在原位（answer），不被收进过程块；过程块只含思考与工具
+    assert.deepEqual(
+      turns[1].answer.map((s) => [s.text, s.live]),
+      [['部分回答', false]],
+    );
+    assert.deepEqual(
+      turns[1].process.map((s) => s.kind),
+      ['tools', 'thinking', 'tools'],
+    );
   });
 
   check('只在推理流式时思考保持 live；开始调工具或出正文即视为思考结束', () => {
@@ -239,14 +246,17 @@ try {
     assert.equal(plain.process.length, 0);
   });
 
-  check('运行中：正文之后又开始调工具，这段正文收进过程块；最终回答流式时在过程块之后', () => {
+  check('运行中：正文之后又开始调工具，正文仍原位显示；最终回答流式时在过程块之后', () => {
     const narrating = buildTurns([user(1)], {
       running: true,
       reasoning: '想',
       text: '我先看看',
       activeTools: [{ id: 'c1', tool: 'workspace_list', pending: true }],
     })[0];
-    assert.equal(narrating.answer.length, 0);
+    assert.deepEqual(
+      narrating.answer.map((s) => s.text),
+      ['我先看看'],
+    );
     const stats = processStats(narrating.process);
     assert.equal(stats.pending.length, 1);
     const answering = buildTurns([user(1), tool(2, 'c1')], {
@@ -260,6 +270,59 @@ try {
       ['tools', 'thinking'],
     );
     assert.equal(answering.answer[0].live, true);
+  });
+
+  check('运行中显示过的中间说明不会消失；轮次结束后才整理进过程块，只留最终回答', () => {
+    const history = [user(1), assistant(2, '我先看看文件'), tool(3, 'c1')];
+    // 说明之后开始调第二个工具：说明仍在 answer 里显示
+    const running = buildTurns(history, {
+      running: true,
+      reasoning: '',
+      text: '',
+      activeTools: [{ id: 'c2', tool: 'workspace_read', pending: true }],
+    })[0];
+    assert.deepEqual(
+      running.answer.map((s) => s.text),
+      ['我先看看文件'],
+    );
+    assert.deepEqual(
+      running.process.map((s) => s.kind),
+      ['tools'],
+    );
+    // 最终回答流式输出时排在说明之后，两段都可见
+    const answering = buildTurns(history, {
+      running: true,
+      reasoning: '',
+      text: '结论是',
+      activeTools: [],
+    })[0];
+    assert.deepEqual(
+      answering.answer.map((s) => [s.text, s.live]),
+      [
+        ['我先看看文件', false],
+        ['结论是', true],
+      ],
+    );
+    // 结束后：说明收进过程块，answer 只剩最终回答
+    const [done] = buildTurns([...history, assistant(4, '结论是 42')], idle);
+    assert.deepEqual(
+      done.process.map((s) => s.kind),
+      ['text', 'tools'],
+    );
+    assert.deepEqual(
+      done.answer.map((s) => s.text),
+      ['结论是 42'],
+    );
+  });
+
+  check('工具参数摘要：路径、文件、说明、命令依次优先，过长截断', () => {
+    assert.equal(toolArgSummary({ path: 'src/a.ts', command: 'ls' }), 'src/a.ts');
+    assert.equal(toolArgSummary({ files: [{ path: 'a' }, { path: 'b' }] }), 'a、b');
+    assert.equal(toolArgSummary({ content: '正文', summary: '补全步骤' }), '补全步骤');
+    assert.equal(toolArgSummary({ command: '  curl https://x  ' }), 'curl https://x');
+    assert.equal(toolArgSummary({ command: 'x'.repeat(60) }, 10), 'xxxxxxxxxx…');
+    assert.equal(toolArgSummary({ n: 1 }), '{"n":1}');
+    assert.equal(toolArgSummary(null), '');
   });
 
   check('过程摘要统计失败的调用', () => {

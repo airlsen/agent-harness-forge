@@ -9,6 +9,7 @@ import { trapTabKey } from '../../utils/focus';
 import { confirm } from '../../utils/feedback';
 import { animateComposerArrival, captureComposerOrigin } from '../../utils/composerTransition';
 import type { KernelEvent } from '../../types/platform';
+import { useStickToBottom } from '../../utils/useStickToBottom';
 import { buildTurns, latestUnavailable, type ToolCallView, type Turn } from '../../utils/turns';
 import Icon from '../../components/base/ForgeIcon.vue';
 import Markdown from '../../components/markdown/MarkdownContent.vue';
@@ -84,7 +85,13 @@ const archiving = ref<string | null>(null);
 const diffChange = ref<FileChange | null>(null);
 const approvalBusy = ref<number | null>(null);
 const loadError = ref('');
-const stickToBottom = ref(true);
+// 跟随最新：只有用户自己往上翻才停止；内容高度变化时自动贴底
+const {
+  stick: stickToBottom,
+  onScroll: trackScroll,
+  jumpToLatest,
+  scrollToBottom: pinToBottom,
+} = useStickToBottom(messagesPane);
 const selected = computed(
   () => app.scenarios.find((s) => s.id === chat.selectedScenarioId) ?? app.availableScenarios[0],
 );
@@ -378,9 +385,9 @@ async function downloadArchive(dir = '') {
     archiving.value = null;
   }
 }
-/** 过程块是否处于进行中：运行中且最终回答尚未开始流式输出 */
-function processActive(turn: Turn) {
-  return turn.running && !turn.answer.some((step) => step.live);
+/** 过程块之后的正文是否正在流式输出（过程块头部据此显示「正在回复」） */
+function answerStreaming(turn: Turn) {
+  return turn.running && turn.answer.some((step) => step.live);
 }
 /** 运行中、但没有过程块可承载进度提示时（尚无输出，或无过程的回答已结束、等待后续）显示等待提示 */
 function turnWaiting(turn: Turn) {
@@ -478,12 +485,7 @@ onBeforeUnmount(() => {
 });
 async function scrollToBottom() {
   await nextTick();
-  const pane = messagesPane.value;
-  if (pane) pane.scrollTop = pane.scrollHeight;
-}
-function trackScroll() {
-  const pane = messagesPane.value;
-  if (pane) stickToBottom.value = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 120;
+  pinToBottom();
 }
 function showPanel(panel: 'files' | 'trajectory' | 'context') {
   chat.panelOpen = chat.panel !== panel || !chat.panelOpen;
@@ -639,8 +641,9 @@ async function quoteMessage(text: string) {
                 <ProcessBlock
                   v-if="turn.process.length"
                   :steps="turn.process"
-                  :active="processActive(turn)"
+                  :active="turn.running"
                   :waiting="chat.approvals.length > 0"
+                  :writing="answerStreaming(turn)"
                 />
                 <section v-for="step in turn.answer" :key="step.key" class="step-text">
                   <Markdown :text="step.text" :live="step.live" /><span
@@ -712,14 +715,7 @@ async function quoteMessage(text: string) {
         </div>
       </div>
       <div v-if="!loadError && !welcome && !chat.loading" class="composer-area enterprise-composer-area">
-        <button
-          v-if="!stickToBottom && !welcome"
-          class="jump-to-latest"
-          @click="
-            stickToBottom = true;
-            scrollToBottom();
-          "
-        >
+        <button v-if="!stickToBottom && !welcome" class="jump-to-latest" @click="jumpToLatest">
           <Icon name="arrowDown" :size="14" />回到最新
         </button>
         <div

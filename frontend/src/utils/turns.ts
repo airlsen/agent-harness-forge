@@ -22,6 +22,8 @@ export function latestUnavailable(turns: Pick<Turn, 'user'>[]): UnavailableCapab
  * 展示时按用户关心的「这一轮做了什么」组织，而不是按请求次数：
  * - process：最终回答之前的全部过程（所有思考、工具调用、中间的过程说明），合成一个过程块；
  * - answer：最后一次工具调用之后的正文，即最终回答。
+ * 运行中已显示的正文不再收回：所有正文都留在 answer 里原位显示，轮次结束后才整理一次
+ * （中间说明收进过程块），避免「文字出现几秒又消失」。
  */
 import type { ActiveCapabilities, ChatMessage } from '../types/platform';
 import {
@@ -150,15 +152,21 @@ export function buildTurns(messages: ChatMessage[], live: LiveTurn): Turn[] {
       });
     for (const call of live.activeTools) pushCall(last.steps, call);
   }
-  for (const turn of turns) Object.assign(turn, splitSteps(turn.steps));
+  for (const turn of turns) Object.assign(turn, splitSteps(turn.steps, turn.running));
   return turns;
 }
 
 /**
  * 拆分过程与最终回答：最后一个工具组之后的正文是最终回答，其余（含全部思考）归入过程。
- * 运行中若正文之后又开始调用工具，这段正文随之成为过程说明，收进过程块。
+ * running：轮次进行中时正文一律留在 answer——已经显示给用户的文字不因随后开始调工具而
+ * 被收进（收起状态的）过程块；轮次结束后再按上面的规则整理，只变化一次。
  */
-export function splitSteps(steps: TurnStep[]): { process: TurnStep[]; answer: TextStep[] } {
+export function splitSteps(steps: TurnStep[], running = false): { process: TurnStep[]; answer: TextStep[] } {
+  if (running)
+    return {
+      process: steps.filter((step) => step.kind !== 'text'),
+      answer: steps.filter((step): step is TextStep => step.kind === 'text'),
+    };
   let lastTools = -1;
   steps.forEach((step, index) => {
     if (step.kind === 'tools') lastTools = index;
@@ -199,4 +207,29 @@ export function processSummary(stats: ProcessStats): string {
     ...(stats.failures ? [`${stats.failures} 个失败`] : []),
   ];
   return parts.join(' · ') || '执行过程';
+}
+
+/**
+ * 工具调用参数的一行摘要：优先显示路径、文件、修改说明、命令、查询或网址，否则截断 JSON。
+ * 工具调用行与过程块的「当前动态」共用。
+ */
+export function toolArgSummary(value: unknown, max = 48): string {
+  if (!value || typeof value !== 'object') return typeof value === 'string' ? clip(value, max) : '';
+  const record = value as Record<string, unknown>;
+  if (typeof record.path === 'string' && record.path) return record.path;
+  if (Array.isArray(record.files) && record.files.length)
+    return record.files.map((file) => (typeof file?.path === 'string' ? file.path : '…')).join('、');
+  // 整篇写入类调用（如更新 SKILL.md）没有路径，显示修改说明而不是正文开头
+  for (const key of ['summary', 'command', 'cmd', 'query', 'url']) {
+    const text = record[key];
+    if (typeof text === 'string' && text.trim()) return clip(text.trim(), max);
+  }
+  try {
+    return clip(JSON.stringify(value), max);
+  } catch {
+    return '';
+  }
+}
+function clip(text: string, max: number) {
+  return text.length > max ? text.slice(0, max) + '…' : text;
 }

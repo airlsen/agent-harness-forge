@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { usePlatform } from '../../stores/platform';
-import type { ToolCallView } from '../../utils/turns';
+import { toolArgSummary, type ToolCallView } from '../../utils/turns';
 import Icon from '../base/ForgeIcon.vue';
 import { builtinToolTitle } from '../../utils/files';
 
@@ -24,22 +24,7 @@ function toolTitle(name: string) {
   return app.tools.find((tool) => tool.name === name)?.title ?? builtinToolTitle(name);
 }
 function argSummary(value: unknown) {
-  if (!value || typeof value !== 'object') return '';
-  const path = (value as Record<string, unknown>).path;
-  if (typeof path === 'string' && path) return path;
-  const files = (value as Record<string, unknown>).files;
-  if (Array.isArray(files) && files.length)
-    return files.map((file) => (typeof file?.path === 'string' ? file.path : '…')).join('、');
-  // 整篇写入类调用（如更新 SKILL.md）没有路径，显示修改说明而不是正文开头
-  const summary = (value as Record<string, unknown>).summary;
-  if (typeof summary === 'string' && summary)
-    return summary.length > 48 ? summary.slice(0, 48) + '…' : summary;
-  try {
-    const text = JSON.stringify(value);
-    return text.length > 48 ? text.slice(0, 48) + '…' : text;
-  } catch {
-    return '';
-  }
+  return toolArgSummary(value);
 }
 function formatArgs(value: unknown) {
   try {
