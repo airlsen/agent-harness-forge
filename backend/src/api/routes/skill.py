@@ -150,6 +150,20 @@ async def authoring_turn(
     )
 
 
+@router.post("/{skill_id}/authoring-sessions/{session_id}/interrupt")
+async def interrupt_authoring_turn(skill_id: int, session_id: int, db: AsyncSession = Depends(get_session)):
+    """停止 Skill 助手当前这一轮（与工作台「中止执行」一致）；没有正在处理的消息时什么也不做。"""
+    session = await skill_service.get_authoring_session(db, skill_id, session_id)
+    if session.status != "running" or not session.runner_session_id:
+        return ResponseUtil.ok({"interrupted": False})
+    try:
+        await runner_client.call("POST", f"/v1/sessions/{session.runner_session_id}/interrupt")
+    except HTTPException as error:
+        if error.status_code != 404:
+            raise
+    return ResponseUtil.ok({"interrupted": True})
+
+
 @router.post("/{skill_id}/authoring-sessions/{session_id}/approvals/{ticket_id}/resolve")
 async def resolve_authoring_approval(
     skill_id: int,
