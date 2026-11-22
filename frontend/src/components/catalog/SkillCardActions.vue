@@ -6,16 +6,21 @@ defineProps<{
   name: string;
   downloading?: boolean;
   disabled?: boolean;
+  /** 上线中的技能可以下线 */
+  canUnpublish?: boolean;
+  /** 草稿或已下线的技能可以删除 */
   canDelete?: boolean;
 }>();
 
 const emit = defineEmits<{
   download: [];
+  unpublish: [];
   delete: [];
 }>();
 
 function onMenuClick(info: MenuInfo) {
   if (info.key === 'download') emit('download');
+  if (info.key === 'unpublish') emit('unpublish');
   if (info.key === 'delete') emit('delete');
 }
 </script>
@@ -39,8 +44,13 @@ function onMenuClick(info: MenuInfo) {
           <a-menu-item key="download" :disabled="downloading">
             <Icon name="download" :size="15" />下载 ZIP
           </a-menu-item>
-          <a-menu-divider v-if="canDelete" />
-          <a-menu-item v-if="canDelete" key="delete" danger>删除草稿</a-menu-item>
+          <a-menu-divider v-if="canUnpublish || canDelete" />
+          <a-menu-item v-if="canUnpublish" key="unpublish" danger>
+            <Icon name="archive-line" :size="15" />下线
+          </a-menu-item>
+          <a-menu-item v-if="canDelete" key="delete" danger>
+            <Icon name="delete-bin-line" :size="15" />删除
+          </a-menu-item>
         </a-menu>
       </template>
     </a-dropdown>

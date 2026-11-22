@@ -13,6 +13,7 @@ import type { PluginPackage } from '../../types/plugin';
 import Icon from '../../components/base/ForgeIcon.vue';
 import { drawerA11y } from '../../utils/overlay';
 import CatalogCard from '../../components/catalog/CatalogCard.vue';
+import { missingSkillInfo } from '../../utils/skillLifecycle';
 import CatalogEmpty from '../../components/catalog/CatalogEmpty.vue';
 import CatalogFilter from '../../components/catalog/CatalogFilter.vue';
 import CatalogGrid from '../../components/catalog/CatalogGrid.vue';
@@ -152,7 +153,11 @@ async function loadCapabilityOptions() {
 }
 onMounted(() => void chat.loadCapabilityOptions().catch(() => {}));
 function skillTitle(id: number) {
-  return chat.capabilityOptions?.skills.find((skill) => skill.id === id)?.title ?? `Skill #${id}`;
+  const option = chat.capabilityOptions?.skills.find((skill) => skill.id === id);
+  if (option || !chat.capabilityOptions) return option?.title ?? `Skill #${id}`;
+  // 已下线或已删除：标签上写明，提醒在场景中移除
+  const missing = missingSkillInfo(chat.capabilityOptions, id);
+  return `${missing.title}（${missing.reason}）`;
 }
 function serverTitle(id: number) {
   return chat.capabilityOptions?.mcpServers.find((server) => server.id === id)?.name ?? `MCP #${id}`;
@@ -173,7 +178,7 @@ function cardLabels(payload: ScenarioPayload) {
     ...plugins.map((name) => ({ key: `plugin-${name}`, icon: 'blocks', label: name })),
   ];
 }
-/** 草稿中已绑定、但已取消发布或停用的项：保存会被拒绝，需先移除 */
+/** 草稿中已绑定、但已下线、删除或停用的项：保存会被拒绝，需先移除 */
 const missingSkills = computed(() =>
   chat.capabilityOptions
     ? draft.capabilities.skill_ids.filter((id) => !chat.capabilityOptions?.skills.some((s) => s.id === id))
@@ -741,10 +746,13 @@ async function versions(scenario: Scenario) {
           >
             <span class="tool-checkbox-icon"><Icon name="book" :size="18" /></span>
             <div>
-              <strong>Skill #{{ id }}</strong
-              ><small>已取消发布或已删除，取消勾选后才能保存</small>
+              <strong>{{ missingSkillInfo(chat.capabilityOptions, id).title }}</strong><small
+                >{{
+                  missingSkillInfo(chat.capabilityOptions, id).reason
+                }}，场景已不再使用它；取消勾选后才能保存</small
+              >
             </div>
-            <a-tag>不可用</a-tag>
+            <a-tag>{{ missingSkillInfo(chat.capabilityOptions, id).reason }}</a-tag>
           </a-checkbox>
         </section>
         <section class="scenario-plugin-picker" aria-labelledby="scenario-mcp-title">

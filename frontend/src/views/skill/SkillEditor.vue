@@ -23,6 +23,7 @@ import { lexer } from 'marked';
 import { readSkillDocument, updateSkillMetadata, initialSkillDocument } from '../../utils/skillDocument';
 import { usePlatform } from '../../stores/platform';
 import { confirm } from '../../utils/feedback';
+import { deleteSkill, skillState, unpublishSkill } from '../../utils/skillLifecycle';
 import {
   SKILL_FILE_DIRS,
   SKILL_MAIN_FILE,
@@ -77,6 +78,8 @@ const messages = ref<SkillAuthoringMessage[]>([]);
 const loading = ref(true);
 const saving = ref(false);
 const publishing = ref(false);
+// 正在下线或删除
+const lifecycleBusy = ref(false);
 const busy = ref(false);
 const dirty = ref(false);
 // 仅表示 Skill 无法打开（整页状态）；保存、发布等操作结果统一走全局 toast。
@@ -341,12 +344,57 @@ async function saveDocument() {
 async function requestPublish() {
   if (dirty.value || fileDirty.value || isNew.value) await save();
   if (!canPublish.value) return;
-  const ok = await confirm({
-    title: '发布新的正式版本？',
-    content: '将以当前草稿创建不可变版本。之后继续编辑会产生新的草稿，不会修改已发布版本。',
-    okText: '确认发布',
-  });
+  const ok = await confirm(
+    skill.value?.offline
+      ? {
+          title: '重新发布这个技能？',
+          content: '将以当前草稿发布为新的正式版本，聊天和场景可以重新选用它。',
+          okText: '确认发布',
+        }
+      : {
+          title: '发布新的正式版本？',
+          content: '将以当前草稿创建不可变版本。之后继续编辑会产生新的草稿，不会修改已发布版本。',
+          okText: '确认发布',
+        },
+  );
   if (ok) await publish();
+}
+/** 当前状态的说明：草稿 / 已发布 vN / 已下线（曾发布 vN），之后有改动时追加「有新修改」 */
+const statusText = computed(() => {
+  if (!skill.value) return '';
+  const state = skillState(skill.value);
+  if (state === 'draft') return '草稿';
+  const changed = dirty.value || state === 'changed' ? ' · 有新修改' : '';
+  if (state === 'offline')
+    return `已下线${skill.value.lastPublishedVersion ? `（曾发布 v${skill.value.lastPublishedVersion}）` : ''}`;
+  return `已发布 v${skill.value.publishedVersion}${changed}`;
+});
+async function requestUnpublish() {
+  if (!skill.value || lifecycleBusy.value) return;
+  lifecycleBusy.value = true;
+  try {
+    const updated = await unpublishSkill(skill.value);
+    if (!updated) return;
+    skill.value = updated;
+    app.toast('已下线，可以重新发布或删除');
+  } catch (err) {
+    app.toast((err as Error).message, 'error');
+  } finally {
+    lifecycleBusy.value = false;
+  }
+}
+async function requestDelete() {
+  if (!skill.value || lifecycleBusy.value) return;
+  lifecycleBusy.value = true;
+  try {
+    if (!(await deleteSkill(skill.value))) return;
+    app.toast('技能已删除');
+    await router.replace('/agent/skills');
+  } catch (err) {
+    app.toast((err as Error).message, 'error');
+  } finally {
+    lifecycleBusy.value = false;
+  }
 }
 async function publish() {
   if (!skill.value || publishing.value) return;
@@ -354,7 +402,9 @@ async function publish() {
   try {
     skill.value = await post<SkillDetail>(`/skills/${skill.value.id}/publish`);
     app.toast(
-      skill.value.publishedVersion ? `已发布 v${skill.value.publishedVersion}，新会话将使用此版本` : '已发布',
+      skill.value.publishedVersion
+        ? `已发布 v${skill.value.publishedVersion}。聊天里新选用即为此版本，场景需重新发布后才会使用`
+        : '已发布',
     );
     await refreshRevisions();
   } catch (err) {
@@ -1173,10 +1223,7 @@ onBeforeUnmount(() => {
         >
           {{ skill.name || '未命名技能' }}<Icon name="settings" :size="14" />
         </button>
-        <span class="studio-status"
-          >{{ skill.publishedVersion ? `已发布 v${skill.publishedVersion}` : '草稿'
-          }}{{ skill.publishedVersion && (dirty || skill.status === 'draft') ? ' · 有新修改' : '' }}</span
-        >
+        <span class="studio-status">{{ statusText }}</span>
         <div class="topbar-actions">
           <span class="save-state" :class="{ failed: saveError }" role="status">{{ saveState }}</span>
           <a-button v-if="saveError" type="text" size="small" :loading="saving" @click="save"
@@ -1186,11 +1233,34 @@ onBeforeUnmount(() => {
             >历史</a-button
           >
           <a-button
+            v-if="!isNew && skill.publishedRevisionId != null"
+            type="text"
+            size="small"
+            danger
+            :disabled="busy || saving || publishing || fileBusy"
+            :loading="lifecycleBusy"
+            title="撤下线上版本：聊天和场景从下一条消息起不再使用，历史版本保留"
+            @click="requestUnpublish"
+            >下线</a-button
+          >
+          <a-button
+            v-if="!isNew && skill.offline"
+            type="text"
+            size="small"
+            danger
+            :disabled="busy || saving || publishing || fileBusy || dirty || fileDirty"
+            :loading="lifecycleBusy"
+            title="永久删除这个已下线的技能"
+            @click="requestDelete"
+            >删除</a-button
+          >
+          <a-button
             type="primary"
             :disabled="
               busy ||
               saving ||
               publishing ||
+              lifecycleBusy ||
               fileBusy ||
               !!metadataError ||
               (!isNew && !dirty && skill.status === 'published')
@@ -1199,7 +1269,7 @@ onBeforeUnmount(() => {
             @click="requestPublish"
           >
             <template #icon><Icon name="bolt" :size="14" /></template>
-            {{ skill.publishedVersion ? '发布新版本' : '发布' }}
+            {{ skill.publishedVersion ? '发布新版本' : skill.offline ? '重新发布' : '发布' }}
           </a-button>
         </div>
       </header>

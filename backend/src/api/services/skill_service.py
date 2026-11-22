@@ -222,6 +222,9 @@ def _skill_view(
         "currentRevisionId": row.current_revision_id,
         "publishedRevisionId": row.published_revision_id,
         "publishedVersion": row.next_published_version - 1 if row.published_revision_id else None,
+        # 发布过、但当前没有上线版本：已下线（可重新发布或删除）
+        "offline": is_offline(row),
+        "lastPublishedVersion": row.next_published_version - 1 if row.next_published_version > 1 else None,
         "revision": revision.revision if revision else None,
         "content": revision.content if revision else "",
         "changeSummary": revision.change_summary if revision else "",
@@ -230,6 +233,11 @@ def _skill_view(
         "updatedAt": _iso(row.updated_at),
         "publishedAt": _iso(published_revision.created_at) if published_revision else None,
     }
+
+
+def is_offline(row: Skill) -> bool:
+    """发布过、但现在没有上线版本的 Skill（下线后 published_revision_id 清空，版本号继续累加）。"""
+    return row.published_revision_id is None and row.next_published_version > 1
 
 
 async def _current_revision(db: AsyncSession, skill: Skill) -> SkillRevision | None:
@@ -369,12 +377,79 @@ async def skill_archive(db: AsyncSession, skill_id: int, version: str = "current
     return buffer.getvalue(), name
 
 
-async def delete_draft(db: AsyncSession, skill_id: int) -> None:
+def scenario_skill_ids(bundle_json: dict) -> set[int]:
+    """场景版本绑定的 Skill：配置里勾选的，以及装配时冻结的引用。"""
+    payload = bundle_json.get("payload") or {}
+    ids = set((payload.get("capabilities") or {}).get("skill_ids") or [])
+    meta = (bundle_json.get("bundle") or {}).get("meta") or {}
+    ids.update(ref.get("id") for ref in meta.get("skills") or [] if isinstance(ref, dict))
+    return {item for item in ids if isinstance(item, int)}
+
+
+async def skill_usage(db: AsyncSession, skill_id: int) -> list[dict]:
+    """正在使用这个 Skill 的场景：当前配置或当前发布版本里绑定了它（已删除的场景不算）。"""
+    from ..models.agent_scenario import AgentScenario, AgentScenarioVersion
+
+    await get_skill(db, skill_id)
+    scenarios = (
+        await db.scalars(
+            select(AgentScenario).where(AgentScenario.status != "deleted").order_by(AgentScenario.id)
+        )
+    ).all()
+    result = []
+    for row in scenarios:
+        numbers = {row.current_version, row.published_version} - {0, None}
+        versions = (
+            await db.scalars(
+                select(AgentScenarioVersion).where(
+                    AgentScenarioVersion.scenario_id == row.id, AgentScenarioVersion.version.in_(numbers)
+                )
+            )
+        ).all()
+        bound = {item.version for item in versions if skill_id in scenario_skill_ids(item.bundle_json or {})}
+        if bound:
+            result.append(
+                {
+                    "id": row.id,
+                    "name": row.name,
+                    "space": row.space,
+                    # 已发布版本在用：下线后这个场景的新对话不再使用该 Skill
+                    "published": bool(row.published_version) and row.published_version in bound,
+                    # 当前配置在用：需在场景中取消勾选后才能保存
+                    "draft": row.current_version in bound,
+                }
+            )
+    return result
+
+
+async def unpublish_skill(db: AsyncSession, skill_id: int) -> dict:
+    """下线：撤下线上版本，历史修订与已发布版本全部保留；之后重新发布时版本号接着累加。
+
+    场景与聊天里引用它的地方从下一轮起跳过它（摘要里标记「已下线」），不阻断对话。
+    """
     skill = await db.scalar(select(Skill).where(Skill.id == skill_id).with_for_update())
     if not skill:
         raise HTTPException(404, "Skill 不存在")
-    if skill.published_revision_id is not None or skill.status != "draft":
-        raise HTTPException(409, "已发布的技能不能删除，请先处理归档")
+    if skill.published_revision_id is None:
+        raise HTTPException(409, "这个技能当前没有上线的版本")
+    skill.published_revision_id = None
+    skill.status = "draft"
+    await db.commit()
+    await db.refresh(skill)
+    return await skill_detail(db, skill_id)
+
+
+async def delete_skill(db: AsyncSession, skill_id: int) -> None:
+    """删除草稿或已下线的技能：上线中的要先下线，仍被场景使用的要先在场景中移除。"""
+    skill = await db.scalar(select(Skill).where(Skill.id == skill_id).with_for_update())
+    if not skill:
+        raise HTTPException(404, "Skill 不存在")
+    if skill.published_revision_id is not None:
+        raise HTTPException(409, "技能正在上线中，请先下线再删除")
+    usage = await skill_usage(db, skill_id)
+    if usage:
+        names = "、".join(f"「{item['name']}」" for item in usage)
+        raise HTTPException(409, f"以下场景仍在使用这个技能，请先在场景中移除后再删除：{names}")
     sessions = (
         await db.scalars(select(SkillAuthoringSession).where(SkillAuthoringSession.skill_id == skill_id))
     ).all()

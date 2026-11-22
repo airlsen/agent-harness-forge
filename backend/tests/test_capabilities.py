@@ -457,3 +457,94 @@ async def test_web_settings_hide_keys_and_fall_back_to_deepseek_model_key(env): 
         assert view["keySource"] == "model"
         options = await caps_module.options(db)
         assert options["web"]["available"] is True and "apiKey" not in json.dumps(options)
+
+
+@pytest.mark.asyncio
+async def test_unpublished_skill_stops_everywhere_and_can_be_deleted_after_removed_from_scenarios(
+    env, tmp_path  # noqa: F811
+):
+    """下线：场景与聊天里从下一轮起跳过（摘要标记「已下线」）；被场景使用时不能删，移除后才能删。"""
+    runner = env["runner"]
+    async with env["sessions"]() as db:
+        created = await skill_service.create_skill(db, "周报助手", "写周报", None, "admin")
+        skill_id = created["id"]
+        await skill_service.publish_skill(db, skill_id, "admin")
+        chat_only = await skill_service.create_skill(db, "翻译", "翻译", None, "admin")
+        await skill_service.publish_skill(db, chat_only["id"], "admin")
+        # 上线中的不能删
+        with pytest.raises(HTTPException) as error:
+            await skill_service.delete_skill(db, skill_id)
+        assert error.value.status_code == 409 and "先下线" in error.value.detail
+        scenario = await scenario_service.create(
+            db, "admin", ScenarioPayload(name="周报场景", capabilities=CapabilitySelection(skill_ids=[skill_id]))
+        )
+        row = await scenario_service.row(db, scenario["id"])
+        row.status, row.published_version = "published", row.current_version
+        await db.commit()
+        usage = await skill_service.skill_usage(db, skill_id)
+        assert usage == [
+            {"id": scenario["id"], "name": "周报场景", "space": "personal", "published": True, "draft": True}
+        ]
+
+    service = session_module.SessionService()
+    session = await service.create(scenario["id"], model_id=env["models"]["chat"]["id"])
+    await turn(service, session["id"], "写周报", capabilities=CapabilityChoice(skillIds=[chat_only["id"]]))
+    assert [skill["title"] for skill in runner.created_caps[-1]["skills"]] == ["周报助手", "翻译"]
+
+    async with env["sessions"]() as db:
+        offline = await skill_service.unpublish_skill(db, skill_id)
+        assert offline["offline"] is True
+        assert offline["publishedRevisionId"] is None and offline["publishedVersion"] is None
+        assert offline["lastPublishedVersion"] == 1
+        await skill_service.unpublish_skill(db, chat_only["id"])
+        with pytest.raises(HTTPException) as error:
+            await skill_service.unpublish_skill(db, skill_id)
+        assert error.value.status_code == 409
+        options = await caps_module.options(db)
+        assert options["skills"] == []
+        assert {item["title"] for item in options["offlineSkills"]} == {"周报助手", "翻译"}
+
+    # 下一轮：场景绑定和临时选择的都跳过，摘要写明「已下线」，对话照常进行
+    receipt = await turn(service, session["id"], "继续")
+    assert runner.caps[-1]["skills"] == []
+    assert receipt["activeCapabilities"]["unavailable"] == [
+        {"kind": "skill", "id": skill_id, "title": "周报助手", "reason": "已下线"},
+        {"kind": "skill", "id": chat_only["id"], "title": "翻译", "reason": "已下线"},
+    ]
+    with pytest.raises(HTTPException) as error:
+        await service.start(session["id"], "再选", capabilities=CapabilityChoice(skillIds=[skill_id]))
+    assert error.value.status_code == 422 and "周报助手（已下线）" in error.value.detail
+
+    async with env["sessions"]() as db:
+        # 场景仍在使用：不能删，并列出场景名称
+        with pytest.raises(HTTPException) as error:
+            await skill_service.delete_skill(db, skill_id)
+        assert error.value.status_code == 409 and "「周报场景」" in error.value.detail
+        # 场景仍勾着已下线的 Skill 时保存被拒绝，提示先移除
+        with pytest.raises(HTTPException) as error:
+            await scenario_service.update(
+                db,
+                "admin",
+                scenario["id"],
+                ScenarioPayload(name="周报场景", capabilities=CapabilitySelection(skill_ids=[skill_id])),
+            )
+        assert "周报助手（已下线）" in error.value.detail
+        # 重新发布：版本号接着往下编
+        republished = await skill_service.publish_skill(db, skill_id, "admin")
+        assert republished["publishedVersion"] == 2 and republished["offline"] is False
+        await skill_service.unpublish_skill(db, skill_id)
+        # 从场景中移除并重新发布场景后才能删除
+        await scenario_service.update(db, "admin", scenario["id"], ScenarioPayload(name="周报场景"))
+        assert (await skill_service.skill_usage(db, skill_id))[0]["draft"] is False
+        row = await scenario_service.row(db, scenario["id"])
+        row.published_version = row.current_version
+        await db.commit()
+        assert await skill_service.skill_usage(db, skill_id) == []
+        await skill_service.delete_skill(db, skill_id)
+        assert await db.get(Skill, skill_id) is None
+
+    # 删除后：仍挂在会话临时选择里的显示「已删除」
+    receipt = await turn(service, session["id"], "最后一轮")
+    assert {"kind": "skill", "id": skill_id, "title": "周报助手", "reason": "已删除"} in receipt[
+        "activeCapabilities"
+    ]["unavailable"]

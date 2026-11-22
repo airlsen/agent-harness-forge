@@ -132,7 +132,7 @@ async def test_archives_use_selected_revision_and_reference_snapshot(tmp_path, m
                 await skill_service.published_file(db, skill_id, 'references/other.md')
             assert missing.value.status_code == 404
             with pytest.raises(HTTPException) as error:
-                await skill_service.delete_draft(db, skill_id)
+                await skill_service.delete_skill(db, skill_id)
             assert error.value.status_code == 409
     finally:
         await engine.dispose()
@@ -157,7 +157,7 @@ async def test_delete_draft_removes_authoring_data_and_reference_files(tmp_path,
             db.add(SkillAuthoringMessage(authoring_session_id=authoring.id, seq=1, role='user', content='test'))
             await db.commit()
             assert (tmp_path / 'skills' / str(skill_id)).exists()
-            await skill_service.delete_draft(db, skill_id)
+            await skill_service.delete_skill(db, skill_id)
             assert await db.get(Skill, skill_id) is None
             assert (await db.scalars(select(SkillRevision).where(SkillRevision.skill_id == skill_id))).all() == []
             assert (await db.scalars(select(SkillAuthoringSession).where(SkillAuthoringSession.skill_id == skill_id))).all() == []
