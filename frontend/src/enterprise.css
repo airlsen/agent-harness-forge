@@ -991,7 +991,7 @@ textarea:focus-visible {
 /* Shared composer, reused by home and execution view. */
 .task-composer {
   position: relative;
-  border: 1px solid var(--line);
+  border: 2px solid var(--border-default);
   background: var(--surface-card);
   border-radius: 18px;
   padding: 12px 12px 4px;
@@ -1007,7 +1007,6 @@ textarea:focus-visible {
 }
 .task-composer-hero {
   padding: 12px 12px 4px;
-  border-color: var(--line);
   box-shadow: 0 8px 30px #26334a0a;
   border-radius: 20px;
 }
