@@ -567,3 +567,71 @@ async def test_agent_turn_saves_document_and_files_without_dropping_references(t
             assert history[0]['source'] == 'agent'
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_authoring_turn_persists_process_like_the_workbench(tmp_path, monkeypatch):
+    """每步回复（含思考）与工具结果各落一条消息，刷新后可还原过程；整篇草稿参数不落库，摘要不含工具原文。"""
+    monkeypatch.setattr(skill_service, "SKILL_ROOT", tmp_path / "skills")
+    monkeypatch.setattr(skill_service.settings, "data_dir", tmp_path)
+    engine, sessions = await _memory_sessions()
+    monkeypatch.setattr(skill_service, "SessionFactory", sessions)
+    _fake_model(monkeypatch)
+    runner = FakeAuthoringRunner(monkeypatch, alive=True)
+    draft = "---\nname: weekly\ndescription: 写周报时使用\n---\n" + "正文" * 3000
+
+    async def events(runner_id, message, model_config=None):
+        update = {"content": draft, "summary": "补全步骤"}
+        yield {"kind": "reasoning_delta", "payload": {"text": "先看草稿"}}
+        yield {"kind": "message", "payload": {"text": "", "reasoning": "先看草稿", "runtimeMessageId": "m1"}}
+        yield {"kind": "tool_use_start", "payload": {"toolCallId": "c1", "tool": "skill_read_draft", "arguments": {}}}
+        yield {"kind": "tool_result", "payload": {"toolCallId": "c1", "tool": "skill_read_draft", "arguments": {}, "result": "x" * 20000}}
+        yield {"kind": "message_delta", "payload": {"text": "我来补全"}}
+        yield {"kind": "message", "payload": {"text": "我来补全", "runtimeMessageId": "m2"}}
+        yield {"kind": "tool_use_start", "payload": {"toolCallId": "c2", "tool": "skill_update_draft", "arguments": update}}
+        yield {"kind": "skill_revision", "payload": {"action": "update_draft", **update}}
+        yield {"kind": "tool_result", "payload": {"toolCallId": "c2", "tool": "skill_update_draft", "arguments": update, "result": '{"saved":true}'}}
+        yield {"kind": "message_delta", "payload": {"text": "已补全"}}
+        yield {"kind": "message", "payload": {"text": "已补全。", "runtimeMessageId": "m3"}}
+        yield {"kind": "message_delta", "payload": {"text": "还有一点"}}  # 中断前未结算的输出
+
+    monkeypatch.setattr(skill_service.runner_client, "events", events)
+    try:
+        skill_id, session_id = await _authoring_fixture(sessions)
+        relayed = [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "补全")]
+        revision_event = next(e for e in relayed if e["kind"] == "skill_revision")
+        assert "content" not in revision_event["payload"]
+        async with sessions() as db:
+            view = await skill_service.latest_authoring_session(db, skill_id)
+            turn = view["messages"][3:]
+            assert [(m["role"], m["content"][:6]) for m in turn] == [
+                ("assistant", ""),
+                ("tool", "x" * 6),
+                ("assistant", "我来补全"),
+                ("tool", '{"save'),
+                ("assistant", "已补全。"),
+                ("assistant", "还有一点"),
+            ]
+            assert turn[0]["meta"]["reasoning"] == "先看草稿"
+            assert len(turn[1]["content"]) < 8100 and "已截断" in turn[1]["content"]
+            assert turn[1]["meta"] == {"toolCallId": "c1", "tool": "skill_read_draft", "arguments": {}, "isError": False}
+            update_meta = turn[3]["meta"]
+            assert update_meta["tool"] == "skill_update_draft" and update_meta["arguments"]["summary"] == "补全步骤"
+            assert update_meta["arguments"]["content"].startswith(f"（{len(draft)} 字")
+            assert update_meta["revision"]["revisionId"] == revision_event["payload"]["revisionId"]
+            assert turn[5]["meta"] == {"partial": True}
+            assert view["status"] == "idle"
+            rows = (
+                await db.scalars(
+                    select(SkillAuthoringMessage)
+                    .where(SkillAuthoringMessage.authoring_session_id == session_id)
+                    .order_by(SkillAuthoringMessage.seq)
+                )
+            ).all()
+            history = skill_service.authoring_history(list(rows))
+            # 摘要保留正文与修改记录，不含工具原始结果，也不含只有思考的步骤
+            assert "系统记录：草稿已更新：补全步骤" in history and "xxxxxx" not in history
+            assert "助手：我来补全" in history and "先看草稿" not in history
+        assert runner.turns == []
+    finally:
+        await engine.dispose()

@@ -639,6 +639,7 @@ async function quoteMessage(text: string) {
                   v-if="turn.process.length"
                   :steps="turn.process"
                   :active="processActive(turn)"
+                  :waiting="chat.approvals.length > 0"
                 />
                 <section v-for="step in turn.answer" :key="step.key" class="step-text">
                   <Markdown :text="step.text" :live="step.live" /><span

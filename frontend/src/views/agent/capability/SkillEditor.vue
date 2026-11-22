@@ -11,6 +11,7 @@ import { api, apiFetch, post, put, remove } from '../../../api/client';
 import Icon from '../../../components/ForgeIcon.vue';
 import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
 import Markdown from '../../../components/MarkdownContent.vue';
+import ProcessBlock from '../../../components/ProcessBlock.vue';
 import { MarkdownPreview } from '../../../components/common';
 import CodeBlock from '../../../components/CodeBlock.vue';
 import { useCopy } from '../../../utils/useCopy';
@@ -36,6 +37,13 @@ import {
   type SkillFileDir,
 } from '../../../utils/skillFiles';
 import { formatBytes } from '../../../utils/presentation';
+import { buildTurns, type Turn } from '../../../utils/turns';
+import {
+  applyAuthoringEvent,
+  authoringChatMessages,
+  authoringLiveTurn,
+  emptyAuthoringLive,
+} from '../../../utils/skillAuthoring';
 import type {
   SkillAuthoringMessage,
   SkillAuthoringSession,
@@ -61,10 +69,25 @@ const dirty = ref(false);
 // 仅表示 Skill 无法打开（整页状态）；保存、发布等操作结果统一走全局 toast。
 const error = ref('');
 const prompt = ref('');
-const streamingText = ref('');
+// 本轮进行中的思考、正文与工具调用；结算的回复和工具结果直接追加到 messages（与工作台一致）
+const live = reactive(emptyAuthoringLive());
+// 本轮用户消息已加入列表、正在等待或接收助手输出（busy 还包括发送前的保存与建会话）
+const streaming = ref(false);
 const assistantChange = ref('');
 // 本轮排队等待并发额度的位次；0 表示未排队。
 const queuePosition = ref(0);
+// 对话按轮展示（与工作台相同）：用户消息 + 过程块（思考、工具调用、中间说明）+ 最终回答
+const turns = computed(() =>
+  buildTurns(authoringChatMessages(messages.value), authoringLiveTurn(live, streaming.value)),
+);
+/** 过程块是否处于进行中：运行中且最终回答尚未开始流式输出 */
+function processActive(turn: Turn) {
+  return turn.running && !turn.answer.some((step) => step.live);
+}
+/** 运行中、但没有过程块可承载进度提示时（尚无输出，或回答已结束、等待后续）显示等待提示 */
+function turnWaiting(turn: Turn) {
+  return turn.running && !turn.process.length && !turn.answer.some((step) => step.live);
+}
 const previewRevision = ref<SkillRevision | null>(null);
 const { copied: revisionCopied, copy: copyRevision } = useCopy();
 const promptInput = ref<{ focus: () => void } | null>(null);
@@ -154,7 +177,7 @@ async function loadSkill(options: { focusAssistant?: boolean; quiet?: boolean } 
     saveError.value = '';
     metadataError.value = '';
     prompt.value = '';
-    streamingText.value = '';
+    Object.assign(live, emptyAuthoringLive());
     assistantChange.value = '';
     loading.value = false;
     await nextTick();
@@ -576,10 +599,13 @@ async function send() {
   assistantChange.value = '';
   assistantFiles.value = [];
   const changes: AssistantFileChange[] = [];
-  streamingText.value = '';
+  Object.assign(live, emptyAuthoringLive());
   queuePosition.value = 0;
   const text = prompt.value;
   const pendingId = `pending-${Date.now()}`;
+  // 本轮流式追加的消息使用临时 ID（以 pendingId 开头），结束后由服务端记录替换
+  let liveSeq = 0;
+  const nextId = () => `${pendingId}-${++liveSeq}`;
   const previousRevision = skill.value.revision;
   const before = revisions.value.find((revision) => revision.id === skill.value?.currentRevisionId);
   prompt.value = '';
@@ -590,6 +616,7 @@ async function send() {
       return;
     }
     messages.value.push({ id: pendingId, role: 'user', content: text });
+    streaming.value = true;
     const response = await apiFetch(
       `/api/skills/${skill.value.id}/authoring-sessions/${session.value.id}/turns`,
       {
@@ -612,9 +639,8 @@ async function send() {
         const line = block.split('\n').find((item) => item.startsWith('data: '));
         if (!line) continue;
         const event = JSON.parse(line.slice(6));
-        if (event.kind === 'message_delta') {
+        if (applyAuthoringEvent(live, messages.value, event, nextId)) {
           queuePosition.value = 0;
-          streamingText.value += String(event.payload?.text ?? '');
         } else if (event.kind === 'queued') {
           queuePosition.value = Number(event.payload?.position ?? 0);
         } else if (event.kind === 'dequeued') {
@@ -644,8 +670,9 @@ async function send() {
     app.toast(message, 'error');
   } finally {
     // 请求失败或历史读取失败时也不能把临时消息永远留在列表里。
-    messages.value = messages.value.filter((message) => message.id !== pendingId);
-    streamingText.value = '';
+    messages.value = messages.value.filter((message) => !String(message.id).startsWith(pendingId));
+    Object.assign(live, emptyAuthoringLive());
+    streaming.value = false;
     queuePosition.value = 0;
     busy.value = false;
   }
@@ -895,10 +922,13 @@ function resizePanel(event: PointerEvent, panel: 'tree' | 'chat') {
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', finish, { once: true });
 }
-watch([() => messages.value.length, streamingText], async () => {
-  await nextTick();
-  chatLog.value?.scrollTo({ top: chatLog.value.scrollHeight });
-});
+watch(
+  [() => messages.value.length, () => live.text, () => live.reasoning, () => live.tools.length],
+  async () => {
+    await nextTick();
+    chatLog.value?.scrollTo({ top: chatLog.value.scrollHeight });
+  },
+);
 watch(
   () => route.params.id,
   () => {
@@ -1229,7 +1259,7 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </header>
-          <div ref="chatLog" class="chat-log" aria-live="polite">
+          <div ref="chatLog" class="chat-log process-host" aria-live="polite">
             <div v-if="!messages.length && !busy" class="chat-empty">
               <h2>想{{ isNew ? '创建' : '修改' }}什么技能？</h2>
               <p>
@@ -1243,25 +1273,40 @@ onBeforeUnmount(() => {
                 {{ text }}
               </button>
             </div>
-            <article v-for="message in messages" :key="message.id" :class="['chat-message', message.role]">
-              <div v-if="message.role === 'assistant'" class="assistant-label">
-                <span class="assistant-icon"><Icon name="sparkles" :size="14" /></span>助手
-              </div>
-              <div v-if="message.role === 'tool'" class="tool-note">
-                <Icon name="file" :size="13" />{{ message.content }}
-              </div>
-              <Markdown v-else :text="message.content" />
-            </article>
-            <article v-if="busy" class="chat-message assistant">
-              <div class="assistant-label">
-                <span class="assistant-icon"><Icon name="sparkles" :size="14" /></span>助手
-              </div>
-              <Markdown v-if="streamingText" :text="streamingText" live /><span v-else class="thinking"
-                ><a-spin size="small" />{{
-                  queuePosition ? `排队中 · 第 ${queuePosition} 位，等待执行额度…` : '正在处理当前草稿…'
-                }}</span
-              >
-            </article>
+            <template v-for="turn in turns" :key="turn.key">
+              <article v-if="turn.user" class="chat-message user">
+                <Markdown :text="turn.user.content" />
+              </article>
+              <article v-if="turn.steps.length || turn.running" class="chat-message assistant">
+                <div class="assistant-label">
+                  <span class="assistant-icon"><Icon name="sparkles" :size="14" /></span>助手
+                </div>
+                <ProcessBlock
+                  v-if="turn.process.length"
+                  :steps="turn.process"
+                  :active="processActive(turn)"
+                />
+                <section v-for="step in turn.answer" :key="step.key" class="step-text">
+                  <Markdown :text="step.text" :live="step.live" /><span
+                    v-if="step.live"
+                    class="stream-cursor"
+                  ></span>
+                </section>
+                <span v-if="!turn.running && turn.answer.some((step) => step.partial)" class="message-partial"
+                  >执行未完成时保留的部分输出</span
+                >
+                <div v-if="turnWaiting(turn)" class="agent-working compact" role="status">
+                  <span class="thinking-dots"><i></i><i></i><i></i></span
+                  ><span>{{
+                    queuePosition
+                      ? `排队中 · 第 ${queuePosition} 位，等待执行额度…`
+                      : turn.steps.length
+                        ? '正在继续…'
+                        : '正在处理当前草稿…'
+                  }}</span>
+                </div>
+              </article>
+            </template>
             <div v-if="assistantChange && !busy" class="change-summary">
               <p>{{ assistantChange }}</p>
               <span>SKILL.md</span>
@@ -2007,22 +2052,8 @@ onBeforeUnmount(() => {
 .chat-message :deep(.markdown-body a) {
   color: var(--scenario-selection-text);
 }
-.tool-note {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-}
-.tool-note svg {
-  color: var(--color-brand);
-}
-.thinking {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  color: var(--color-text-secondary);
-  font-size: 12px;
+.chat-message.assistant .agent-working.compact {
+  margin: 6px 0 0;
 }
 .change-summary {
   border-left: 2px solid var(--color-brand);

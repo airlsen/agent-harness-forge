@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { usePlatform } from '../stores/platform';
-import { useConversation } from '../stores/conversation';
 import type { ToolCallView } from '../utils/turns';
 import Icon from './ForgeIcon.vue';
 import { builtinToolTitle } from '../utils/files';
 
-// flat：只渲染调用行（无分组标题），用于过程块内的时间线
-const props = defineProps<{ calls: ToolCallView[]; flat?: boolean }>();
+// flat：只渲染调用行（无分组标题），用于过程块内的时间线；waiting：进行中的调用正在等待用户确认
+const props = defineProps<{ calls: ToolCallView[]; flat?: boolean; waiting?: boolean }>();
 const app = usePlatform();
-const chat = useConversation();
 const open = ref(false);
 const running = computed(() => props.calls.some((call) => call.pending));
 const failures = computed(() => props.calls.filter((call) => !call.pending && call.isError).length);
@@ -17,7 +15,7 @@ const grouped = computed(() => props.calls.length > 1);
 const current = computed(() => [...props.calls].reverse().find((call: ToolCallView) => call.pending));
 const summary = computed(() => {
   if (running.value && current.value)
-    return `${toolTitle(current.value.tool)} · ${chat.approvals.length ? '等待你的确认' : '正在调用…'}`;
+    return `${toolTitle(current.value.tool)} · ${props.waiting ? '等待你的确认' : '正在调用…'}`;
   if (!grouped.value) return toolTitle(props.calls[0]?.tool ?? '工具');
   const names = [...new Set(props.calls.map((call) => toolTitle(call.tool)))];
   return `${props.calls.length} 次工具调用 · ${names.slice(0, 3).join('、')}${names.length > 3 ? ' 等' : ''}`;
@@ -32,6 +30,10 @@ function argSummary(value: unknown) {
   const files = (value as Record<string, unknown>).files;
   if (Array.isArray(files) && files.length)
     return files.map((file) => (typeof file?.path === 'string' ? file.path : '…')).join('、');
+  // 整篇写入类调用（如更新 SKILL.md）没有路径，显示修改说明而不是正文开头
+  const summary = (value as Record<string, unknown>).summary;
+  if (typeof summary === 'string' && summary)
+    return summary.length > 48 ? summary.slice(0, 48) + '…' : summary;
   try {
     const text = JSON.stringify(value);
     return text.length > 48 ? text.slice(0, 48) + '…' : text;
@@ -73,9 +75,7 @@ function formatArgs(value: unknown) {
           /></span>
           <strong>{{ toolTitle(call.tool) }}</strong>
           <span class="tool-arg">{{ argSummary(call.arguments) }}</span>
-          <span v-if="call.pending" class="tool-state">{{
-            chat.approvals.length ? '等待确认' : '正在调用…'
-          }}</span>
+          <span v-if="call.pending" class="tool-state">{{ waiting ? '等待确认' : '正在调用…' }}</span>
           <Icon v-else name="chevron" :size="12" />
         </summary>
         <div v-if="!call.pending" class="tool-call-details">
@@ -94,7 +94,7 @@ function formatArgs(value: unknown) {
         /></span>
         <strong>{{ summary }}</strong>
         <span class="tool-arg">{{ argSummary(calls[0]?.arguments) }}</span>
-        <span v-if="running" class="tool-state">{{ chat.approvals.length ? '等待确认' : '正在调用…' }}</span>
+        <span v-if="running" class="tool-state">{{ waiting ? '等待确认' : '正在调用…' }}</span>
         <Icon v-else name="chevron" :size="12" />
       </summary>
       <div v-if="!running" class="tool-call-details">
