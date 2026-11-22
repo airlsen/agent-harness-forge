@@ -3,7 +3,9 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { usePlatform } from '../../stores/platform';
 import { useConversation } from '../../stores/conversation';
-import { remove } from '../../api/client';
+import { api, remove } from '../../api/client';
+import { useSpace } from '../../stores/space';
+import SpaceTag from '../../components/space/SpaceTag.vue';
 import { formatDate, sessionMatches, sessionState } from '../../utils/presentation';
 import type { Conversation } from '../../types/platform';
 import Icon from '../../components/base/ForgeIcon.vue';
@@ -18,14 +20,35 @@ const refreshing = ref(false);
 const error = ref('');
 const archiveTarget = ref<Conversation | null>(null);
 const archiving = ref(false);
-const columns = [
-  { title: '会话 / 场景', key: 'conversation', width: '48%' },
-  { title: '状态', key: 'status', width: '16%' },
-  { title: '创建时间', key: 'createdAt', width: '21%' },
-  { title: '操作', key: 'actions', width: '15%' },
-];
+const space = useSpace();
+// 默认只看当前空间的会话；「全部空间」一次列出所有空间，打开时自动切到会话所在空间
+const scope = ref<'current' | 'all'>('current');
+const allConversations = ref<Conversation[]>([]);
+const scopeOptions = computed(() => [
+  { value: 'current', label: `当前空间 · ${space.current.name}` },
+  { value: 'all', label: '全部空间' },
+]);
+const conversations = computed(() =>
+  scope.value === 'all' ? allConversations.value.filter((item) => !item.isTest) : app.regularConversations,
+);
+const columns = computed(() =>
+  scope.value === 'all'
+    ? [
+        { title: '会话 / 场景', key: 'conversation', width: '40%' },
+        { title: '空间', key: 'space', width: '14%' },
+        { title: '状态', key: 'status', width: '14%' },
+        { title: '创建时间', key: 'createdAt', width: '19%' },
+        { title: '操作', key: 'actions', width: '13%' },
+      ]
+    : [
+        { title: '会话 / 场景', key: 'conversation', width: '48%' },
+        { title: '状态', key: 'status', width: '16%' },
+        { title: '创建时间', key: 'createdAt', width: '21%' },
+        { title: '操作', key: 'actions', width: '15%' },
+      ],
+);
 const filtered = computed(() =>
-  app.regularConversations.filter(
+  conversations.value.filter(
     (item) =>
       sessionMatches(item, query.value) &&
       (filter.value === 'all' ||
@@ -35,24 +58,26 @@ const filtered = computed(() =>
   ),
 );
 const filters = computed(() => [
-  { id: 'all', label: '全部', count: app.regularConversations.length },
+  { id: 'all', label: '全部', count: conversations.value.length },
   {
     id: 'running',
     label: '执行中',
-    count: app.regularConversations.filter((s) => s.status === 'running').length,
+    count: conversations.value.filter((s) => s.status === 'running').length,
   },
-  { id: 'idle', label: '可继续', count: app.regularConversations.filter((s) => s.status === 'idle').length },
+  { id: 'idle', label: '可继续', count: conversations.value.filter((s) => s.status === 'idle').length },
   {
     id: 'attention',
     label: '异常 / 中止',
-    count: app.regularConversations.filter((s) => ['error', 'interrupted'].includes(s.status)).length,
+    count: conversations.value.filter((s) => ['error', 'interrupted'].includes(s.status)).length,
   },
 ]);
 async function refresh() {
   refreshing.value = true;
   error.value = '';
   try {
-    await app.refreshSessions();
+    if (scope.value === 'all')
+      allConversations.value = (await api<{ items: Conversation[] }>('/agent/sessions?space=all')).items;
+    else await app.refreshSessions();
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
@@ -70,7 +95,7 @@ async function archive() {
     await remove(`/agent/sessions/${id}`);
     if (chat.current?.id === id) chat.prepareStart();
     archiveTarget.value = null;
-    await app.refreshSessions();
+    await Promise.all([app.refreshSessions(), scope.value === 'all' ? refresh() : null]);
     app.toast('会话已归档，历史消息与审计记录仍保留');
   } catch (e) {
     app.toast((e as Error).message, 'error');
@@ -97,7 +122,16 @@ onMounted(refresh);
         </a-tab-pane>
       </a-tabs>
       <div class="conversations-toolbar">
-        <span class="conversations-results" aria-live="polite">共 {{ filtered.length }} 个会话</span>
+        <div class="conversations-scope">
+          <a-segmented
+            v-model:value="scope"
+            size="small"
+            :options="scopeOptions"
+            aria-label="会话范围"
+            @change="refresh"
+          />
+          <span class="conversations-results" aria-live="polite">共 {{ filtered.length }} 个会话</span>
+        </div>
         <div class="conversations-search-actions">
           <CatalogSearch v-model:value="query" placeholder="搜索标题或场景" aria-label="搜索会话" />
           <a-button
@@ -116,11 +150,19 @@ onMounted(refresh);
       <a-alert v-if="error" type="error" show-icon message="未能读取会话" :description="error" role="alert">
         <template #action><a-button size="small" @click="refresh">重试</a-button></template>
       </a-alert>
-      <div v-if="refreshing && !app.regularConversations.length" class="loading-inline" role="status">
+      <div v-if="refreshing && !conversations.length" class="loading-inline" role="status">
         <span class="loader"></span>正在读取会话…
       </div>
       <div v-else-if="!filtered.length && !error" class="conversation-empty">
-        <a-empty :description="query || filter !== 'all' ? '没有匹配的会话' : '还没有会话'" />
+        <a-empty
+          :description="
+            query || filter !== 'all'
+              ? '没有匹配的会话'
+              : scope === 'current'
+                ? `「${space.current.name}」还没有会话`
+                : '还没有会话'
+          "
+        />
         <a-button
           v-if="query || filter !== 'all'"
           @click="
@@ -129,7 +171,10 @@ onMounted(refresh);
           "
           >清除筛选</a-button
         >
-        <a-button v-else type="primary" @click="newChat">开始会话</a-button>
+        <template v-else>
+          <a-button v-if="scope === 'current'" @click="((scope = 'all'), refresh())">查看全部空间</a-button>
+          <a-button type="primary" @click="newChat">开始会话</a-button>
+        </template>
       </div>
       <a-table
         v-else-if="filtered.length"
@@ -155,6 +200,7 @@ onMounted(refresh);
               <small>{{ item.scenarioName }}<i>·</i>v{{ item.scenarioVersion }}</small>
             </div></RouterLink
           >
+          <SpaceTag v-else-if="column.key === 'space'" :space-id="item.spaceId" always />
           <a-tooltip
             v-else-if="column.key === 'status'"
             :title="item.status === 'idle' ? '本轮已结束，可以继续对话；不代表业务任务已完成' : undefined"

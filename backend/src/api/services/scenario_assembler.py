@@ -12,6 +12,7 @@ from ..schemas.agent_scenario import ScenarioPayload
 from .capability_service import freeze_scenario_mcp, freeze_scenario_skills
 from .plugin_service import approved_bindings
 from .settings_service import TOOL_NAMES
+from .space_service import ensure_caps_visible
 
 
 @dataclass
@@ -33,7 +34,11 @@ class Bundle:
 
 
 def apply_current_policy(bundle: Bundle, tenant_policy: dict) -> Bundle:
-    """Apply current tenant limits to a frozen scenario bundle for a new session."""
+    """Apply current tenant limits to a frozen scenario bundle for a new session.
+
+    tenant_policy 已按会话所在空间收紧（space_service.effective_policy）：空间关闭的基础工具
+    不在 allowedTools 里，Runner 以它为基础能力的上限。
+    """
     allowed_tools = set(tenant_policy.get("allowedTools", []))
     allowed_plugin_tools = set(tenant_policy.get("allowedPluginTools", []))
     bundle.meta["builtin_tools"] = [
@@ -70,6 +75,7 @@ class ScenarioAssembler:
         *,
         tenant_policy: dict,
         rendered_prompt: str,
+        space_id: int | None = None,
     ) -> Bundle:
         caps = scenario.capabilities
         requested_plugins = list(dict.fromkeys(caps.plugin_names))
@@ -85,6 +91,9 @@ class ScenarioAssembler:
         mcp_servers = await freeze_scenario_mcp(db, list(caps.mcp_server_ids))
         if scenario.input_schema is not None:
             raise HTTPException(422, "当前工作台仅支持文本任务输入，结构化输入表单尚未接入")
+        if space_id is not None:
+            # 场景只能使用本空间和公共空间的 Skill、MCP、插件
+            await ensure_caps_visible(db, space_id, caps.skill_ids, caps.mcp_server_ids, requested_plugins)
         bindings = await approved_bindings(db, requested_plugins, caps.plugin_tools)
         builtin_tools = [
             name

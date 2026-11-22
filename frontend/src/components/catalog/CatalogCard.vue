@@ -5,6 +5,7 @@ import Icon from '../base/ForgeIcon.vue';
  * 目录卡片：扁平无投影；hover / 键盘聚焦时边框变主题色并上浮 2px。
  * 结构：头部（36px 图标 + 标题 + 状态标签）→ 两行描述 → 标签 → 附加内容 → 底栏按钮（右对齐）。
  * 插槽：
+ *   #badge   标题右侧的小标记（如所属空间「公共」）
  *   #sub     标题下的一行元信息（多个 <span> 之间自动加「·」）
  *   #tags    描述下方的标签区，放 <a-tag :bordered="false">
  *   default  标签之后的附加内容（如错误提示）
@@ -31,7 +32,11 @@ defineProps<{
       <header class="catalog-card-head">
         <span :class="['scene-icon', tone]"><Icon :name="icon" :size="20" /></span>
         <div class="catalog-card-heading">
-          <h2 :title="title">{{ title }}</h2>
+          <div v-if="$slots.badge" class="catalog-card-title-row">
+            <h2 :title="title">{{ title }}</h2>
+            <slot name="badge" />
+          </div>
+          <h2 v-else :title="title">{{ title }}</h2>
           <p v-if="$slots.sub" class="catalog-card-sub"><slot name="sub" /></p>
         </div>
         <a-tag v-if="status" class="catalog-card-status" :color="statusColor" :bordered="false">{{
@@ -100,6 +105,15 @@ defineProps<{
   line-height: 36px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.catalog-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.catalog-card-title-row h2 {
+  min-width: 0;
 }
 /* 有元信息时标题收成两行：标题 + 元信息，整体与 36px 图标同高 */
 .catalog-card-heading:has(.catalog-card-sub) h2 {

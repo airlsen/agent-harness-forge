@@ -1,11 +1,14 @@
 import asyncio
 import json
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.database import get_session
 from ..services.session_service import session_service
+from ..services.space_service import current_space
 from ..services.capability_service import CapabilityChoice
 from ..services.file_service import file_service
 from ..services.runner_client import runner_client
@@ -31,13 +34,21 @@ class Turn(BaseModel):
 
 
 @router.get("")
-async def list_sessions():
-    return ResponseUtil.ok({"items": await session_service.list()})
+async def list_sessions(
+    space: Literal["current", "all"] = Query("current"),
+    space_id: int | None = Depends(current_space),
+):
+    """会话列表：默认只列当前空间的会话；space=all 列出全部空间（我的会话 ·「全部空间」）。"""
+    return ResponseUtil.ok(
+        {"items": await session_service.list(space_id=None if space == "all" else space_id)}
+    )
 
 
 @router.post("")
-async def create(payload: NewSession):
-    return ResponseUtil.ok(await session_service.create(payload.scenarioId, model_id=payload.modelId))
+async def create(payload: NewSession, space_id: int | None = Depends(current_space)):
+    return ResponseUtil.ok(
+        await session_service.create(payload.scenarioId, model_id=payload.modelId, space_id=space_id)
+    )
 
 
 @router.get("/{session_id}")

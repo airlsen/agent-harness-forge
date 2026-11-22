@@ -11,6 +11,8 @@ export type SkillFile = {
 export type SkillSummary = {
   id: number;
   name: string;
+  /** 所属空间（公共空间 = 1） */
+  spaceId?: number;
   machineName: string;
   publishedMachineName: string;
   publishedName: string;
@@ -38,6 +40,7 @@ export type SkillSummary = {
 export type SkillDetail = SkillSummary;
 
 export type PublishedSkillSummary = {
+  spaceId?: number;
   id: number;
   name: string;
   machineName: string;

@@ -1,7 +1,7 @@
 """场景与场景版本模型。
 
 场景 = Bundle（02-技术方案 ADR-2）：版本记录不可变，会话启动时快照 bundle_hash。
-space 三级：official（预置只读）/ personal（我的）/ team（部门空间，V1）。
+space 只区分 official（预置只读模板）/ personal（我的）；所属的「空间」（部门/项目）是 space_id。
 """
 
 from datetime import datetime
@@ -11,6 +11,7 @@ from sqlalchemy import JSON, DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.database import Base
+from .space import space_column
 
 
 class AgentScenario(Base):
@@ -19,6 +20,8 @@ class AgentScenario(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     space: Mapped[str] = mapped_column(String(16), default="personal", index=True)
+    # 所属空间（公共空间 = 1）
+    space_id: Mapped[int] = space_column()
     owner_id: Mapped[str] = mapped_column(String(64), index=True)
     name: Mapped[str] = mapped_column(String(128))
     description: Mapped[str] = mapped_column(String(512), default="")

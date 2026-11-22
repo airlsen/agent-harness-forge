@@ -577,6 +577,40 @@ export const useConversation = defineStore('conversation', {
       this.capabilityOptions = options;
       return options;
     },
+    /**
+     * 切换空间后校正新会话草稿：场景、临时选择的 Skill / MCP 只能来自新空间或公共空间。
+     * 已有会话不受影响（打开别的空间的会话时会自动切到它所在的空间）。
+     */
+    async adaptDraftToSpace() {
+      const platform = usePlatform();
+      // 失败重试时复用的预建会话属于原空间，切换后不再复用
+      preparedSessions.clear();
+      const keep = (scenarioId: number | null | undefined) =>
+        platform.availableScenarios.some((item) => item.id === scenarioId) ||
+        (scenarioId !== null &&
+          scenarioId === this.previewScenarioId &&
+          platform.scenarios.some((item) => item.id === scenarioId));
+      const draft = this.drafts.new;
+      if (!this.current && this.draftKey === 'new' && !keep(this.selectedScenarioId)) {
+        this.selectedScenarioId = platform.availableScenarios[0]?.id ?? null;
+        this.previewScenarioId = null;
+      }
+      if (draft && !keep(draft.scenarioId)) draft.scenarioId = platform.availableScenarios[0]?.id ?? null;
+      const hasPicks = (choice?: CapabilityChoice) =>
+        Boolean(choice?.skillIds.length || choice?.mcpServerIds.length);
+      const live = !this.current && this.draftKey === 'new';
+      if (!(live && hasPicks(this.draftCapabilities)) && !hasPicks(draft?.capabilities)) return;
+      const options = await this.loadCapabilityOptions();
+      const skills = new Set(options.skills.map((item) => item.id));
+      const servers = new Set(options.mcpServers.map((item) => item.id));
+      const narrow = (choice: CapabilityChoice): CapabilityChoice => ({
+        skillIds: choice.skillIds.filter((id) => skills.has(id)),
+        mcpServerIds: choice.mcpServerIds.filter((id) => servers.has(id)),
+        webSearch: choice.webSearch,
+      });
+      if (live) this.draftCapabilities = narrow(this.draftCapabilities);
+      if (draft?.capabilities) draft.capabilities = narrow(draft.capabilities);
+    },
     /** 选择临时扩展能力（Skill / MCP / 联网）：规则同关联代码，随下一条消息提交。 */
     setCapabilities(choice: CapabilityChoice): CapabilityChoice {
       if (this.sending || this.loading) return this.draftCapabilities;

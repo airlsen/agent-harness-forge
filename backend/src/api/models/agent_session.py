@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import JSON, BigInteger, DateTime, Float, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 from ..core.database import Base
+from .space import space_column
 
 
 class AgentSession(Base):
@@ -11,6 +12,8 @@ class AgentSession(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tenant_id: Mapped[str] = mapped_column(String(64), default="sandbox", index=True)
     user_id: Mapped[str] = mapped_column(String(64), default="admin", index=True)
+    # 所属空间（公共空间 = 1）
+    space_id: Mapped[int] = space_column()
     title: Mapped[str] = mapped_column(String(160), default="新会话")
     scenario_id: Mapped[int] = mapped_column(Integer, index=True)
     scenario_version: Mapped[int] = mapped_column(Integer, default=1)

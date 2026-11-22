@@ -8,7 +8,7 @@ import { MAX_SESSION_MCP, MAX_SESSION_SKILLS, useConversation } from '../../stor
 import { api, post, put, remove } from '../../api/client';
 import { formatDate, isAvailableScenario, scenarioSource, scenarioState } from '../../utils/presentation';
 import { catalogDate, orderScenarios, scenarioPublished } from '../../utils/catalogOrdering';
-import type { Scenario, ScenarioPayload } from '../../types/platform';
+import type { CapabilityOptions, Scenario, ScenarioPayload } from '../../types/platform';
 import type { PluginPackage } from '../../types/plugin';
 import Icon from '../../components/base/ForgeIcon.vue';
 import { drawerA11y } from '../../utils/overlay';
@@ -18,9 +18,14 @@ import CatalogEmpty from '../../components/catalog/CatalogEmpty.vue';
 import CatalogFilter from '../../components/catalog/CatalogFilter.vue';
 import CatalogGrid from '../../components/catalog/CatalogGrid.vue';
 import CatalogSearch from '../../components/catalog/CatalogSearch.vue';
+import SpaceTag from '../../components/space/SpaceTag.vue';
+import SpaceMark from '../../components/space/SpaceMark.vue';
+import MoveSpaceDialog from '../../components/space/MoveSpaceDialog.vue';
+import { PUBLIC_SPACE_ID, useSpace } from '../../stores/space';
 
 const app = usePlatform();
 const chat = useConversation();
+const space = useSpace();
 const router = useRouter();
 const route = useRoute();
 const query = ref('');
@@ -179,15 +184,37 @@ function cardLabels(payload: ScenarioPayload) {
   ];
 }
 /** 草稿中已绑定、但已下线、删除或停用的项：保存会被拒绝，需先移除 */
-const missingSkills = computed(() =>
+// 场景只能使用所在空间和公共空间的 Skill / MCP / 插件：新建时为当前空间，编辑时为场景所在空间
+const editorSpaceId = computed(() => editing.value?.spaceId ?? space.currentId);
+const editorSpace = computed(() => space.byId(editorSpaceId.value));
+function inEditorSpace(spaceId?: number) {
+  return !spaceId || spaceId === PUBLIC_SPACE_ID || spaceId === editorSpaceId.value;
+}
+const editorOptions = computed<CapabilityOptions | null>(() =>
   chat.capabilityOptions
-    ? draft.capabilities.skill_ids.filter((id) => !chat.capabilityOptions?.skills.some((s) => s.id === id))
+    ? {
+        ...chat.capabilityOptions,
+        skills: chat.capabilityOptions.skills.filter((item) => inEditorSpace(item.spaceId)),
+        mcpServers: chat.capabilityOptions.mcpServers.filter((item) => inEditorSpace(item.spaceId)),
+      }
+    : null,
+);
+const editorPlugins = computed(() => plugins.value.filter((item) => inEditorSpace(item.spaceId)));
+/** 已绑定但用不了的 Skill：已下线 / 已删除 / 不在场景所在空间 */
+function missingSkill(id: number): { title: string; reason: string } {
+  const elsewhere = chat.capabilityOptions?.skills.find((item) => item.id === id);
+  if (elsewhere) return { title: elsewhere.title, reason: '不在本空间' };
+  return missingSkillInfo(chat.capabilityOptions, id);
+}
+const missingSkills = computed(() =>
+  editorOptions.value
+    ? draft.capabilities.skill_ids.filter((id) => !editorOptions.value?.skills.some((s) => s.id === id))
     : [],
 );
 const missingServers = computed(() =>
-  chat.capabilityOptions
+  editorOptions.value
     ? draft.capabilities.mcp_server_ids.filter(
-        (id) => !chat.capabilityOptions?.mcpServers.some((s) => s.id === id),
+        (id) => !editorOptions.value?.mcpServers.some((s) => s.id === id),
       )
     : [],
 );
@@ -274,8 +301,15 @@ function askDelete(scenario: Scenario) {
   deleteOpen.value = true;
 }
 /** 卡片「更多」下拉：查看、重新试运行、版本记录与删除 */
+// 移动到其他空间
+const moving = ref<Scenario | null>(null);
+async function moved() {
+  moving.value = null;
+  await app.refreshScenarios();
+}
 function moreAction(key: string, scenario: Scenario) {
-  if (key === 'detail') openDetail(scenario);
+  if (key === 'move') moving.value = scenario;
+  else if (key === 'detail') openDetail(scenario);
   else if (key === 'test') void test(scenario);
   else if (key === 'versions') void versions(scenario);
   else if (key === 'delete') askDelete(scenario);
@@ -443,6 +477,7 @@ async function versions(scenario: Scenario) {
                 : undefined
           "
         >
+          <template #badge><SpaceTag :space-id="scenario.spaceId" /></template>
           <template #sub>
             <template v-if="maintenance">
               <span>{{ scenarioSource(scenario) }}</span><span>v{{ scenario.current_version }}</span
@@ -555,6 +590,7 @@ async function versions(scenario: Scenario) {
                     >试运行</a-menu-item
                   >
                   <a-menu-item key="versions">版本记录 v{{ scenario.current_version }}</a-menu-item>
+                  <a-menu-item v-if="scenario.space !== 'official'" key="move">移动到其他空间</a-menu-item>
                   <a-menu-item v-if="scenario.space !== 'official'" key="delete" danger>删除场景</a-menu-item>
                 </a-menu>
               </template>
@@ -664,6 +700,22 @@ async function versions(scenario: Scenario) {
         <p v-if="basedOn || editing?.published_version" class="scenario-drawer-meta">
           {{ basedOn ? `基于「${basedOn}」创建草稿` : '保存为新修订，已发布版本继续可用。' }}
         </p>
+        <p v-if="editorSpace" class="scenario-drawer-space">
+          <SpaceMark :space="editorSpace" :size="16" />
+          <span v-if="!editing"
+            >保存到「{{ editorSpace.name }}」{{
+              editorSpace.isPublic
+                ? '：所有空间都能看到和使用'
+                : '：只能使用本空间和公共空间的 Skill、MCP 和插件'
+            }}</span
+          >
+          <span v-else-if="editorSpaceId !== space.currentId"
+            >这个场景在「{{ editorSpace.name }}」：只能使用{{
+              editorSpace.isPublic ? '公共空间' : '该空间和公共空间'
+            }}的 Skill、MCP 和插件</span
+          >
+          <span v-else>所在空间：{{ editorSpace.name }}</span>
+        </p>
         <div class="form-section-title"><span>01</span>基本信息</div>
         <a-form-item label="场景名称" name="name">
           <a-input v-model:value="draft.name" :maxlength="128" placeholder="例如：研发需求评审助手" />
@@ -700,13 +752,23 @@ async function versions(scenario: Scenario) {
         </a-form-item>
         <p class="field-hint">作为场景级指令使用。不会自动开始任务，也不会扩大工具权限。</p>
         <div class="form-section-title"><span>03</span>授权能力</div>
-        <p class="field-hint">平台基础能力（默认开启）：每个会话都可使用，范围以平台策略为上限。</p>
-        <a-checkbox v-for="tool in app.tools" :key="tool.name" class="tool-checkbox" checked disabled>
+        <p class="field-hint">
+          平台基础能力（默认开启）：每个会话都可使用，范围以平台策略和当前空间的工具开关为上限。
+        </p>
+        <a-checkbox
+          v-for="tool in app.tools"
+          :key="tool.name"
+          class="tool-checkbox"
+          :checked="tool.available !== false"
+          disabled
+        >
           <span class="tool-checkbox-icon"><Icon :name="tool.icon" :size="18" /></span>
           <div>
             <strong>{{ tool.title }}</strong><small>{{ tool.description }}</small>
           </div>
-          <Icon v-if="tool.permission !== 'read'" name="edit" :size="15" />
+          <a-tag v-if="tool.policyAllowed === false" :bordered="false">策略未允许</a-tag>
+          <a-tag v-else-if="tool.spaceEnabled === false" :bordered="false">本空间已关闭</a-tag>
+          <Icon v-else-if="tool.permission !== 'read'" name="edit" :size="15" />
         </a-checkbox>
         <section class="scenario-plugin-picker" aria-labelledby="scenario-skill-title">
           <header>
@@ -719,11 +781,11 @@ async function versions(scenario: Scenario) {
             </div>
             <a-spin v-if="optionsLoading" size="small" />
           </header>
-          <p v-if="!optionsLoading && !chat.capabilityOptions?.skills.length" class="field-hint">
+          <p v-if="!optionsLoading && !editorOptions?.skills.length" class="field-hint">
             还没有已发布的 Skill。<RouterLink to="/agent/skills">前往 Skill 中心</RouterLink>
           </p>
           <a-checkbox
-            v-for="skill in chat.capabilityOptions?.skills ?? []"
+            v-for="skill in editorOptions?.skills ?? []"
             :key="skill.id"
             class="scenario-plugin-option"
             :checked="draft.capabilities.skill_ids.includes(skill.id)"
@@ -746,13 +808,11 @@ async function versions(scenario: Scenario) {
           >
             <span class="tool-checkbox-icon"><Icon name="book" :size="18" /></span>
             <div>
-              <strong>{{ missingSkillInfo(chat.capabilityOptions, id).title }}</strong><small
-                >{{
-                  missingSkillInfo(chat.capabilityOptions, id).reason
-                }}，场景已不再使用它；取消勾选后才能保存</small
+              <strong>{{ missingSkill(id).title }}</strong><small
+                >{{ missingSkill(id).reason }}，场景已不再使用它；取消勾选后才能保存</small
               >
             </div>
-            <a-tag>{{ missingSkillInfo(chat.capabilityOptions, id).reason }}</a-tag>
+            <a-tag>{{ missingSkill(id).reason }}</a-tag>
           </a-checkbox>
         </section>
         <section class="scenario-plugin-picker" aria-labelledby="scenario-mcp-title">
@@ -765,13 +825,13 @@ async function versions(scenario: Scenario) {
               </p>
             </div>
           </header>
-          <p v-if="!optionsLoading && !chat.capabilityOptions?.mcpServers.length" class="field-hint">
+          <p v-if="!optionsLoading && !editorOptions?.mcpServers.length" class="field-hint">
             还没有可用的 MCP 服务。<RouterLink :to="{ path: '/agent/capabilities', query: { tab: 'mcp' } }"
               >前往能力中心接入</RouterLink
             >
           </p>
           <a-checkbox
-            v-for="server in chat.capabilityOptions?.mcpServers ?? []"
+            v-for="server in editorOptions?.mcpServers ?? []"
             :key="server.id"
             class="scenario-plugin-option"
             :checked="draft.capabilities.mcp_server_ids.includes(server.id)"
@@ -816,20 +876,20 @@ async function versions(scenario: Scenario) {
           <a-checkbox
             class="scenario-plugin-option"
             v-model:checked="draft.capabilities.web_search"
-            :disabled="!draft.capabilities.web_search && !chat.capabilityOptions?.web.available"
+            :disabled="!draft.capabilities.web_search && !editorOptions?.web.available"
           >
             <span class="tool-checkbox-icon"><Icon name="globe" :size="18" /></span>
             <div>
               <strong>联网搜索</strong
               ><small>{{
-                chat.capabilityOptions?.web.available
-                  ? chat.capabilityOptions.web.fetchEnabled
+                editorOptions?.web.available
+                  ? editorOptions.web.fetchEnabled
                     ? '搜索 + 读取网页'
                     : '仅搜索'
-                  : chat.capabilityOptions?.web.reason || '平台尚未开启联网搜索，请在治理中心配置'
+                  : editorOptions?.web.reason || '平台尚未开启联网搜索，请在治理中心配置'
               }}</small>
             </div>
-            <a-tag v-if="chat.capabilityOptions && !chat.capabilityOptions.web.available">未开启</a-tag>
+            <a-tag v-if="editorOptions && !editorOptions.web.available">未开启</a-tag>
           </a-checkbox>
         </section>
         <section class="scenario-plugin-picker" aria-labelledby="scenario-plugin-title">
@@ -842,7 +902,7 @@ async function versions(scenario: Scenario) {
           </header>
           <p v-if="!pluginsLoading && !plugins.length" class="field-hint">当前没有可用于场景的已批准插件。</p>
           <a-checkbox
-            v-for="plugin in plugins"
+            v-for="plugin in editorPlugins"
             :key="plugin.package"
             class="scenario-plugin-option"
             :checked="pluginSelected(plugin)"
@@ -862,7 +922,7 @@ async function versions(scenario: Scenario) {
             }}</a-tag>
           </a-checkbox>
           <div
-            v-for="plugin in plugins.filter(pluginSelected)"
+            v-for="plugin in editorPlugins.filter(pluginSelected)"
             :key="`${plugin.package}-tools`"
             class="scenario-plugin-tools"
           >
@@ -963,10 +1023,27 @@ async function versions(scenario: Scenario) {
         </a-timeline-item>
       </a-timeline>
     </a-drawer>
+    <MoveSpaceDialog
+      :open="Boolean(moving)"
+      kind="scenario"
+      :resource-id="moving?.id ?? null"
+      :name="moving?.payload.name ?? ''"
+      :space-id="moving?.spaceId"
+      @close="moving = null"
+      @moved="moved"
+    />
   </main>
 </template>
 
 <style scoped>
+.scenario-drawer-space {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 14px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
 /* ============ 页面节奏：页头 / 筛选栏 / 内容统一间距 ============ */
 .scenarios-page .scenario-page-heading {
   gap: 16px;

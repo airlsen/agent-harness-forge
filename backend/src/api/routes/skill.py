@@ -19,28 +19,36 @@ from ..schemas.skill import (
 )
 from ..services import skill_service
 from ..services.runner_client import runner_client
+from ..services.space_service import current_space
 from ..utils.response import ResponseUtil
 
 router = APIRouter()
 
 
 @router.get("")
-async def list_skills(db: AsyncSession = Depends(get_session)):
-    return ResponseUtil.ok({"items": await skill_service.list_skills(db)})
+async def list_skills(db: AsyncSession = Depends(get_session), space_id: int | None = Depends(current_space)):
+    return ResponseUtil.ok({"items": await skill_service.list_skills(db, space_id)})
 
 
 @router.post("")
-async def create_skill(payload: SkillCreate, db: AsyncSession = Depends(get_session)):
+async def create_skill(
+    payload: SkillCreate,
+    db: AsyncSession = Depends(get_session),
+    space_id: int | None = Depends(current_space),
+):
+    # 创建在当前空间（新建对话框里可改目标空间，前端以请求头传入）
     return ResponseUtil.ok(
         await skill_service.create_skill(
-            db, payload.name, payload.description, payload.content, settings.admin_username
+            db, payload.name, payload.description, payload.content, settings.admin_username, space_id
         )
     )
 
 
 @router.get("/published")
-async def list_published_skills(db: AsyncSession = Depends(get_session)):
-    return ResponseUtil.ok({"items": await skill_service.list_published_skills(db)})
+async def list_published_skills(
+    db: AsyncSession = Depends(get_session), space_id: int | None = Depends(current_space)
+):
+    return ResponseUtil.ok({"items": await skill_service.list_published_skills(db, space_id)})
 
 
 @router.get("/{skill_id}")

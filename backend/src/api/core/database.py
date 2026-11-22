@@ -194,6 +194,26 @@ async def init_db() -> None:
                 sync_conn.execute(text("ALTER TABLE agent_scenario ADD COLUMN published_at TIMESTAMP NULL"))
 
         await conn.run_sync(ensure_scenario_published_version)
+
+        # 空间：已有的场景、Skill、MCP、插件、会话全部归入公共空间（id=1）
+        def ensure_space_columns(sync_conn):
+            from sqlalchemy import inspect, text
+
+            inspector = inspect(sync_conn)
+            tables = set(inspector.get_table_names())
+            for table in ("agent_scenario", "skill", "mcp_server", "plugin_registry", "agent_session"):
+                if table not in tables:
+                    continue
+                existing = {column["name"] for column in inspector.get_columns(table)}
+                if "space_id" not in existing:
+                    sync_conn.execute(
+                        text(f"ALTER TABLE {table} ADD COLUMN space_id INTEGER NOT NULL DEFAULT 1")
+                    )
+                    sync_conn.execute(
+                        text(f"CREATE INDEX IF NOT EXISTS ix_{table}_space_id ON {table} (space_id)")
+                    )
+
+        await conn.run_sync(ensure_space_columns)
     # 重启时关闭所有孤立审批，为未完成的运行保留明确的中断记录。
     import json
     from datetime import datetime, timezone
@@ -203,7 +223,10 @@ async def init_db() -> None:
     from ..models.platform import PlatformSetting
     from ..models.agent_scenario import AgentScenario, AgentScenarioVersion
 
+    from ..services.space_service import ensure_public_space
+
     async with SessionFactory() as db:
+        await ensure_public_space(db)
         active = (await db.scalars(select(AgentSession).where(AgentSession.status == "running"))).all()
         pending = (await db.scalars(select(ApprovalTicket).where(ApprovalTicket.status == "pending"))).all()
         affected = {row.id for row in active} | {ticket.session_id for ticket in pending}

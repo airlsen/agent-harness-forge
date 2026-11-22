@@ -15,6 +15,9 @@ import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
 import Icon from '../../components/base/ForgeIcon.vue';
 import CatalogCard from '../../components/catalog/CatalogCard.vue';
 import SkillCardActions from '../../components/catalog/SkillCardActions.vue';
+import SpaceTag from '../../components/space/SpaceTag.vue';
+import MoveSpaceDialog from '../../components/space/MoveSpaceDialog.vue';
+import { useSpace } from '../../stores/space';
 import ToolDescription from '../../components/catalog/ToolDescription.vue';
 import CatalogFilter from '../../components/catalog/CatalogFilter.vue';
 import CatalogGrid from '../../components/catalog/CatalogGrid.vue';
@@ -35,11 +38,28 @@ type McpServer = {
   serverInfo: Record<string, unknown>;
   hasCredentials: boolean;
   createdAt: string | null;
+  /** 所属空间（公共空间 = 1） */
+  spaceId?: number;
 };
 const app = usePlatform();
 const chat = useConversation();
 const route = useRoute();
 const router = useRouter();
+const space = useSpace();
+// 移动 MCP 服务到其他空间
+const movingMcp = ref<McpServer | null>(null);
+async function mcpMoved() {
+  movingMcp.value = null;
+  await load();
+}
+/** 基础工具状态：策略未允许 / 本空间已关闭 / 正常（只读或写入） */
+function toolStatus(tool: Tool): { label: string; color?: string } {
+  if (tool.policyAllowed === false) return { label: '策略未允许' };
+  if (tool.spaceEnabled === false) return { label: '本空间已关闭' };
+  return tool.permission === 'read'
+    ? { label: '只读', color: 'success' }
+    : { label: '写入会话目录', color: 'warning' };
+}
 const query = ref('');
 const loading = ref(true);
 const loadError = ref('');
@@ -636,8 +656,8 @@ onMounted(load);
             :icon="tool.icon"
             :tone="tool.permission === 'read' ? 'shield' : 'book'"
             :description="tool.description"
-            :status="tool.permission === 'read' ? '只读' : '写入会话目录'"
-            :status-color="tool.permission === 'read' ? 'success' : 'warning'"
+            :status="toolStatus(tool).label"
+            :status-color="toolStatus(tool).color"
           >
             <template #footer>
               <a-button type="text" size="small" :aria-label="`查看${tool.title}详情`" @click="detail = tool">
@@ -705,6 +725,7 @@ onMounted(load);
               <div class="plugin-maintenance-body">
                 <div class="plugin-maintenance-heading">
                   <strong>{{ row.plugin.displayName }}</strong>
+                  <SpaceTag :space-id="row.plugin.spaceId" />
                   <a-tag class="plugin-maintenance-status" :color="row.tone || undefined" :bordered="false">{{
                     row.state
                   }}</a-tag>
@@ -769,6 +790,7 @@ onMounted(load);
             :status="mcpState(server).label"
             :status-color="mcpState(server).color"
           >
+            <template #badge><SpaceTag :space-id="server.spaceId" /></template>
             <template #sub>
               <span>{{ transportLabel(server.transport) }}</span><span>{{ server.tools.length }} 项工具</span
               ><span>{{ server.hasCredentials ? '认证信息已加密' : '无需认证' }}</span>
@@ -826,10 +848,15 @@ onMounted(load);
                   <a-menu
                     @click="
                       (info: MenuInfo) =>
-                        info.key === 'edit' ? editMcp(server) : info.key === 'delete' && deleteMcp(server)
+                        info.key === 'edit'
+                          ? editMcp(server)
+                          : info.key === 'move'
+                            ? (movingMcp = server)
+                            : info.key === 'delete' && deleteMcp(server)
                     "
                   >
                     <a-menu-item key="edit">编辑</a-menu-item>
+                    <a-menu-item key="move">移动到其他空间</a-menu-item>
                     <a-menu-item key="delete" danger>移除</a-menu-item>
                   </a-menu>
                 </template>
@@ -872,6 +899,7 @@ onMounted(load);
             status="已发布"
             status-color="success"
           >
+            <template #badge><SpaceTag :space-id="skill.spaceId" /></template>
             <template #sub>
               <span class="skill-capability-machine" :title="skill.machineName">{{
                 skill.machineName || `skill-${skill.id}`
@@ -930,7 +958,11 @@ onMounted(load);
       <template #title>
         <div class="capability-modal-title">
           <h2>上传插件包</h2>
-          <p>先检查插件契约，再进入平台审核流程。</p>
+          <p>
+            先检查插件契约，再进入平台审核流程。新插件放入「{{ space.current.name }}」{{
+              space.inPublic ? '，所有空间可见' : ''
+            }}；新版本跟随插件已有的空间。
+          </p>
         </div>
       </template>
       <div class="plugin-upload-content">
@@ -1008,6 +1040,11 @@ onMounted(load);
       <template #title>
         <div class="capability-modal-title">
           <h2>{{ mcpEditing ? '编辑 MCP 服务' : '导入 MCP 服务' }}</h2>
+          <p v-if="!mcpEditing">
+            导入到「{{ space.current.name }}」{{
+              space.inPublic ? '，所有空间可见' : ''
+            }}。服务名称在所有空间中唯一。
+          </p>
         </div>
       </template>
       <a-form layout="vertical" class="mcp-import-form">
@@ -1149,6 +1186,15 @@ onMounted(load);
         </div>
       </template>
     </a-drawer>
+    <MoveSpaceDialog
+      :open="Boolean(movingMcp)"
+      kind="mcp"
+      :resource-id="movingMcp?.id ?? null"
+      :name="movingMcp?.name ?? ''"
+      :space-id="movingMcp?.spaceId"
+      @close="movingMcp = null"
+      @moved="mcpMoved"
+    />
   </main>
 </template>
 

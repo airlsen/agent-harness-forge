@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 from ..core.database import Base
+from .space import space_column
 
 
 class Skill(Base):
@@ -11,6 +12,8 @@ class Skill(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(120), index=True)
+    # 所属空间（公共空间 = 1）
+    space_id: Mapped[int] = space_column()
     description: Mapped[str] = mapped_column(String(512), default="")
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
     tags: Mapped[list] = mapped_column(JSON, default=list)

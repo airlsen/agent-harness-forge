@@ -4,15 +4,21 @@ import { api } from '../../api/client';
 import { usePlatform } from '../../stores/platform';
 import type { Conversation } from '../../types/platform';
 import Icon from '../../components/base/ForgeIcon.vue';
+import SpaceTag from '../../components/space/SpaceTag.vue';
+import { PUBLIC_SPACE_ID, useSpace } from '../../stores/space';
+// 审计覆盖全部空间，可按空间筛选
 const app = usePlatform(),
+  space = useSpace(),
   rows = ref<Conversation[]>([]),
   query = ref(''),
   filter = ref('all'),
+  spaceFilter = ref('all'),
   loading = ref(true);
 const visible = computed(() =>
   rows.value.filter(
     (r) =>
       (filter.value === 'all' || r.status === filter.value) &&
+      (spaceFilter.value === 'all' || String(r.spaceId ?? PUBLIC_SPACE_ID) === spaceFilter.value) &&
       (r.title + r.scenarioName + r.id).toLowerCase().includes(query.value.toLowerCase()),
   ),
 );
@@ -20,7 +26,11 @@ const tokens = computed(() => rows.value.reduce((n, r) => n + r.tokensIn + r.tok
 async function load() {
   loading.value = true;
   try {
-    rows.value = (await api('/audit/sessions')).items;
+    const [result] = await Promise.all([
+      api('/audit/sessions'),
+      space.loaded ? null : space.load().catch(() => {}),
+    ]);
+    rows.value = result.items;
   } catch (e) {
     app.toast((e as Error).message, 'error');
   } finally {
@@ -81,7 +91,12 @@ function status(value: string) {
             <option value="idle">可继续</option>
             <option value="running">执行中</option>
             <option value="error">执行异常</option>
-            <option value="archived">已归档</option>
+            <option value="archived">已归档</option></select
+          ><select v-model="spaceFilter" aria-label="筛选空间">
+            <option value="all">全部空间</option>
+            <option v-for="item in space.sorted" :key="item.id" :value="String(item.id)">
+              {{ item.name }}
+            </option>
           </select>
         </div>
         <div v-if="loading" class="loading-inline"><span class="loader"></span>读取审计记录…</div>
@@ -107,6 +122,7 @@ function status(value: string) {
               <tr>
                 <th>会话</th>
                 <th>场景版本</th>
+                <th>空间</th>
                 <th>状态</th>
                 <th>Tokens</th>
                 <th>创建时间</th>
@@ -123,6 +139,7 @@ function status(value: string) {
                 <td>
                   {{ row.scenarioName }}<span class="tag neutral">v{{ row.scenarioVersion }}</span>
                 </td>
+                <td><SpaceTag :space-id="row.spaceId" always /></td>
                 <td>
                   <span :class="['status-label', row.status]"
                     ><span class="dot"></span>{{ status(row.status) }}</span

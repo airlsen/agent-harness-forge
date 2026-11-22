@@ -20,6 +20,7 @@ from fastapi import HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import space_service
 from ..core.config import ROOT, settings
 from ..models.registry import PluginRegistry
 from ..models.agent_scenario import AgentScenario, AgentScenarioVersion
@@ -220,6 +221,8 @@ def public_view(row: PluginRegistry) -> dict:
     return {
         "id": row.id,
         "package": _row_plugin_id(row),
+        # 所属空间（公共空间 = 1）；同一插件的所有版本一致
+        "spaceId": row.space_id or 1,
         "releaseKey": row.package,
         "displayName": row.display_name or _row_plugin_id(row),
         "description": row.description,
@@ -282,10 +285,19 @@ def _archive_manifest(filename: str, archive: bytes) -> dict:
         raise HTTPException(422, "forge.plugin.json 不是有效 JSON") from error
 
 
-async def import_archive(db: AsyncSession, filename: str, archive: bytes) -> dict:
+async def import_archive(
+    db: AsyncSession, filename: str, archive: bytes, space_id: int | None = None
+) -> dict:
     manifest = _archive_manifest(filename, archive)
     artifact_hash = hashlib.sha256(archive).hexdigest()
     plugin_id, version = manifest["id"], manifest["version"]
+    # 插件属于一个空间，同一插件的所有版本在同一空间；插件标识全局唯一
+    sibling = await db.scalar(select(PluginRegistry).where(PluginRegistry.plugin_id == plugin_id).limit(1))
+    if sibling is not None and not space_service.is_visible(sibling.space_id, space_id):
+        spaces = await space_service.space_map(db)
+        name = spaces.get(sibling.space_id, {}).get("name", "其他")
+        raise HTTPException(409, f"插件标识“{plugin_id}”已被「{name}」空间使用，请在该空间上传新版本")
+    plugin_space = sibling.space_id if sibling is not None else space_service.target_space(space_id)
     existing = await db.scalar(
         select(PluginRegistry).where(
             PluginRegistry.plugin_id == plugin_id,
@@ -304,6 +316,7 @@ async def import_archive(db: AsyncSession, filename: str, archive: bytes) -> dic
     release = PluginRegistry(
         package=_release_key(plugin_id, version, artifact_hash),
         plugin_id=plugin_id,
+        space_id=plugin_space,
         version=version,
         display_name=str(manifest["displayName"])[:128],
         description=str(manifest["description"])[:512],
@@ -452,8 +465,15 @@ def _current_available(rows: list[PluginRegistry]) -> list[PluginRegistry]:
     return sorted(selected, key=lambda row: (row.display_name or _row_plugin_id(row), _row_plugin_id(row)))
 
 
-async def list_plugins(db: AsyncSession) -> tuple[list[dict], list[dict]]:
-    rows = (await db.scalars(select(PluginRegistry).order_by(PluginRegistry.id.desc()))).all()
+async def list_plugins(db: AsyncSession, space_id: int | None = None) -> tuple[list[dict], list[dict]]:
+    """插件列表；传入当前空间时只列本空间和公共空间的插件。"""
+    rows = (
+        await db.scalars(
+            select(PluginRegistry)
+            .where(space_service.visible_filter(PluginRegistry.space_id, space_id))
+            .order_by(PluginRegistry.id.desc())
+        )
+    ).all()
     available = _current_available(rows)
     return [public_view(row) for row in available], [
         public_view(row) for row in rows if row.source_ref.startswith("uploaded:")
@@ -550,6 +570,7 @@ async def plugin_detail(db: AsyncSession, plugin_id: str) -> dict:
     ][:20]
     return {
         "id": plugin_id,
+        "spaceId": versions[0].space_id or 1,
         "releases": [
             public_view(row)
             for row in sorted(versions, key=lambda r: (_version_key(r.version), r.id), reverse=True)
