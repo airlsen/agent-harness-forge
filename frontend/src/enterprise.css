@@ -2625,7 +2625,8 @@ textarea:focus-visible {
 .enterprise-chat .user-message-block .user-message-text {
   max-width: 100%;
 }
-.enterprise-chat .message-action-bar {
+/* 消息下方的复制、引用按钮：工作台对话与 Skill 编写助手（.process-host）共用 */
+:is(.enterprise-chat, .process-host) .message-action-bar {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -2636,7 +2637,7 @@ textarea:focus-visible {
 .enterprise-chat .user-message-actions {
   justify-content: flex-end;
 }
-.enterprise-chat .message-action-bar button {
+:is(.enterprise-chat, .process-host) .message-action-bar button {
   display: grid;
   place-items: center;
   width: 28px;
@@ -2644,12 +2645,12 @@ textarea:focus-visible {
   border-radius: 6px;
   color: inherit;
 }
-.enterprise-chat .message-action-bar button:hover,
-.enterprise-chat .message-action-bar button:focus-visible {
+:is(.enterprise-chat, .process-host) .message-action-bar button:hover,
+:is(.enterprise-chat, .process-host) .message-action-bar button:focus-visible {
   color: var(--ink);
   background: var(--surface-hover);
 }
-.enterprise-chat .message-action-bar button:disabled {
+:is(.enterprise-chat, .process-host) .message-action-bar button:disabled {
   opacity: 0.4;
 }
 .enterprise-chat .markdown-body {
