@@ -686,6 +686,21 @@ async def get_authoring_session(db: AsyncSession, skill_id: int, session_id: int
     return row
 
 
+async def _authoring_model_view(db: AsyncSession, model_id: int | None) -> dict | None:
+    """对话当前模型的展示信息；所选模型已删除或尚无可用模型时返回 None。"""
+    try:
+        connection = await _authoring_connection(db, model_id)
+    except HTTPException:
+        if model_id is None:
+            return None
+        # 已停用的配置仍能读到名称，便于界面提示重新选择
+        connection = await get_connection(db, connection_id=model_id)
+        if not connection.get("configured"):
+            return None
+        return {**authoring_model_ref(connection), "available": False}
+    return {**authoring_model_ref(connection), "available": True}
+
+
 async def authoring_session_view(db: AsyncSession, row: SkillAuthoringSession) -> dict:
     messages = (
         await db.scalars(
@@ -699,6 +714,9 @@ async def authoring_session_view(db: AsyncSession, row: SkillAuthoringSession) -
         "skillId": row.skill_id,
         "status": row.status,
         "currentRevisionId": row.current_revision_id,
+        # 对话所选模型；None 表示跟随平台默认模型
+        "modelId": row.model_connection_id,
+        "model": await _authoring_model_view(db, row.model_connection_id),
         "messages": [
             {
                 "id": m.id,
@@ -820,13 +838,46 @@ def authoring_system_prompt(history: str, unavailable: str = "") -> dict:
 AUTHORING_USER_CTX_ROLES = ["admin"]
 
 
-async def _authoring_runtime(
-    db: AsyncSession, skill: Skill, revision: SkillRevision, history: str = ""
-) -> tuple[dict, dict, dict]:
-    """编写会话的执行配置（bundle + 模型）：每次按最新草稿与当前模型配置重新组装。"""
-    connection = await get_connection(db, secret=True)
+async def _authoring_connection(db: AsyncSession, model_id: int | None, *, secret: bool = False) -> dict:
+    """编辑对话使用的模型配置：选过模型用所选配置（须仍存在且已启用），否则跟随平台默认模型。
+
+    与工作台不同，这里不冻结凭据快照：每轮按模型配置的当前内容装配，模型管理中的修改从下一轮生效。
+    """
+    if model_id is None:
+        connection = await get_connection(db, secret=secret)
+        if not connection["configured"]:
+            raise HTTPException(409, "请先在模型管理中启用一个模型配置，再使用 Skill 助手")
+        return connection
+    connection = await get_connection(db, secret=secret, connection_id=model_id)
     if not connection["configured"]:
-        raise HTTPException(409, "请先在模型管理中启用一个模型配置，再使用 Skill 助手")
+        raise HTTPException(409, "所选模型不存在或已被删除，请重新选择模型")
+    if not connection.get("enabled", True):
+        raise HTTPException(409, "所选模型已停用，请重新选择模型")
+    return connection
+
+
+async def ensure_authoring_model(db: AsyncSession, model_id: int) -> None:
+    """校验编辑对话要切换到的模型存在且已启用（404 / 409 语义与工作台一致，统一按 409 提示重新选择）。"""
+    await _authoring_connection(db, model_id)
+
+
+def authoring_model_ref(connection: dict) -> dict:
+    """写入消息 meta 与对话视图的模型标识（不含地址与凭据）。"""
+    if not connection.get("configured"):
+        return {}
+    return {
+        "modelId": connection.get("id"),
+        "model": connection.get("model", ""),
+        "modelName": connection.get("name") or connection.get("model", ""),
+        "modelContextWindow": connection.get("contextWindow"),
+    }
+
+
+async def _authoring_runtime(
+    db: AsyncSession, skill: Skill, revision: SkillRevision, history: str = "", model_id: int | None = None
+) -> tuple[dict, dict, dict]:
+    """编写会话的执行配置（bundle + 模型）：每次按最新草稿与所选模型的当前配置重新组装。"""
+    connection = await _authoring_connection(db, model_id, secret=True)
     _, guides = skill_design_method()
     policy = await get_policy(db)
     max_output_tokens = max(int(policy.get("maxOutputTokens") or 0), AUTHORING_MIN_OUTPUT_TOKENS)
@@ -915,13 +966,18 @@ async def _recent_authoring_history(db: AsyncSession, skill_id: int) -> str:
     return authoring_history(list(reversed(context)))
 
 
-async def create_authoring_session(db: AsyncSession, skill_id: int, created_by: str) -> dict:
-    """新建对话：全新的执行上下文（草稿保留）。同一对话的后续轮次、Runner 重启、手动改草稿都接续这一条会话。"""
+async def create_authoring_session(
+    db: AsyncSession, skill_id: int, created_by: str, model_id: int | None = None
+) -> dict:
+    """新建对话：全新的执行上下文（草稿保留）。同一对话的后续轮次、Runner 重启、手动改草稿都接续这一条会话。
+
+    model_id 为新对话选择的模型（与工作台一致）；不传则跟随平台默认模型。
+    """
     skill = await get_skill(db, skill_id)
     revision = await _current_revision(db, skill)
     if not revision:
         raise HTTPException(409, "Skill 草稿不存在")
-    bundle, model_config, capabilities = await _authoring_runtime(db, skill, revision)
+    bundle, model_config, capabilities = await _authoring_runtime(db, skill, revision, model_id=model_id)
     runner = await runner_client.create_session(
         bundle, _authoring_user_ctx(created_by), model_config, capabilities=capabilities
     )
@@ -930,6 +986,7 @@ async def create_authoring_session(db: AsyncSession, skill_id: int, created_by: 
         runner_session_id=runner["sessionId"],
         status="idle",
         current_revision_id=revision.id,
+        model_connection_id=model_id,
     )
     db.add(row)
     await db.commit()
@@ -948,7 +1005,8 @@ async def _prepare_authoring_runner(
     revision = await _current_revision(db, skill)
     if not revision:
         raise HTTPException(409, "Skill 草稿不存在")
-    bundle, model_config, capabilities = await _authoring_runtime(db, skill, revision)
+    model_id = session.model_connection_id
+    bundle, model_config, capabilities = await _authoring_runtime(db, skill, revision, model_id=model_id)
     user_ctx = _authoring_user_ctx(created_by)
     if session.runner_session_id:
         try:
@@ -972,7 +1030,9 @@ async def _prepare_authoring_runner(
             if error.status_code not in (404, 410):
                 raise
     history = await _recent_authoring_history(db, skill.id)
-    bundle, model_config, capabilities = await _authoring_runtime(db, skill, revision, history)
+    bundle, model_config, capabilities = await _authoring_runtime(
+        db, skill, revision, history, model_id=model_id
+    )
     runner = await runner_client.create_session(bundle, user_ctx, model_config, capabilities=capabilities)
     session.runner_session_id = runner["sessionId"]
     session.current_revision_id = revision.id
@@ -1132,15 +1192,36 @@ async def sync_trial_files(session_id: int, runner_session_id: str) -> dict | No
     return {"kind": "trial_files", "source": "tools", "payload": {"count": len(items)}}
 
 
-async def run_authoring_turn(skill_id: int, session_id: int, message: str, created_by: str = "admin"):
-    """Persist the user turn and stream DSH events while checkpointing revisions/messages."""
+async def run_authoring_turn(
+    skill_id: int, session_id: int, message: str, created_by: str = "admin", model_id: int | None = None
+):
+    """Persist the user turn and stream DSH events while checkpointing revisions/messages.
+
+    model_id：从本轮起使用的模型（与工作台一致，只在两轮之间切换）；不传沿用对话当前模型。
+    """
     async with SessionFactory() as db:
         session = await get_authoring_session(db, skill_id, session_id)
         if session.status == "running":
             raise HTTPException(409, "Skill 助手正在处理上一条消息")
+        previous_model = session.model_connection_id
+        if model_id is not None and model_id != previous_model:
+            # 切换目标必须存在且已启用；校验失败时不留下任何记录
+            await _authoring_connection(db, model_id)
+            session.model_connection_id = model_id
+        # Runner 比对模型指纹：模型变化时以新配置重启 dsh 并接续同一份会话日志，上下文保留
         model_config = await _prepare_authoring_runner(db, session, created_by)
+        try:
+            connection = await _authoring_connection(db, session.model_connection_id)
+            model_ref = {
+                key: value
+                for key, value in authoring_model_ref(connection).items()
+                if key != "modelContextWindow"
+            }
+        except HTTPException:
+            model_ref = {}
         session.status = "running"
-        await _append_message(db, session, "user", message)
+        # 用户消息与本轮回复记录所用模型，供对话回溯（与工作台一致）
+        await _append_message(db, session, "user", message, dict(model_ref) or None)
         runner_id = session.runner_session_id
     # 与工作台一致地落库执行过程：每步模型回复（含思考）一条 assistant，每次工具结果一条 tool。
     partial_text, partial_reasoning = "", ""
@@ -1196,6 +1277,7 @@ async def run_authoring_turn(skill_id: int, session_id: int, message: str, creat
                         "runtimeMessageId": payload.get("runtimeMessageId"),
                         "partial": bool(payload.get("partial")),
                         **({"reasoning": reasoning} if reasoning else {}),
+                        **model_ref,
                     }
                     await _append_turn_message(skill_id, session_id, "assistant", text, meta)
             elif kind == "tool_result":
@@ -1220,7 +1302,11 @@ async def run_authoring_turn(skill_id: int, session_id: int, message: str, creat
             session = await get_authoring_session(db, skill_id, session_id)
             # 中途出错或断开时，尚未结算成消息的正文与思考保留为部分输出，不丢失
             if partial_text or partial_reasoning:
-                meta = {"partial": True, **({"reasoning": partial_reasoning} if partial_reasoning else {})}
+                meta = {
+                    "partial": True,
+                    **({"reasoning": partial_reasoning} if partial_reasoning else {}),
+                    **model_ref,
+                }
                 await _append_message(db, session, "assistant", partial_text, meta)
             session.status = "idle"
             await db.commit()

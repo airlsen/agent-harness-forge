@@ -16,6 +16,7 @@ import UserMessageText from '../../components/message/UserMessageText.vue';
 import MarkdownPreview from '../../components/markdown/MarkdownPreview.vue';
 import CodeBlock from '../../components/markdown/CodeBlock.vue';
 import FilePreview from '../../components/file/FilePreview.vue';
+import ModelSelect from '../../components/composer/ModelSelect.vue';
 import { useCopy } from '../../utils/useCopy';
 import MonacoEditor from '../../components/editor/MonacoEditor.vue';
 import { loadMonaco } from '../../utils/monaco';
@@ -74,6 +75,8 @@ let loadRequest = 0;
 let creatingSkillNavigationId: number | null = null;
 const revisions = ref<SkillRevision[]>([]);
 const session = ref<SkillAuthoringSession | null>(null);
+// 与工作台一致的模型选择：新对话用所选模型创建；已有对话从下一条消息起切换（只在两轮之间生效）
+const authoringModelId = ref<number | null>(null);
 const messages = ref<SkillAuthoringMessage[]>([]);
 const loading = ref(true);
 const saving = ref(false);
@@ -737,10 +740,47 @@ function updateContent(value: string) {
   }
   scheduleSave();
 }
+/** 对话当前实际使用且仍可用的模型；对话跟随平台默认时为默认模型，原模型已停用时为 null */
+const sessionModelId = computed(() =>
+  session.value?.model?.available ? (session.value.model.modelId ?? null) : null,
+);
+/** 对话原模型已停用：提示从下一条消息起改用所选模型 */
+const staleModelName = computed(() =>
+  session.value?.model && !session.value.model.available
+    ? session.value.model.modelName || session.value.model.model
+    : '',
+);
+function availableModel(id: number | null | undefined) {
+  return id != null && app.modelOptions.some((option) => option.id === id) ? id : null;
+}
+function preferredModel(id: number | null) {
+  return availableModel(id) ?? availableModel(app.defaultModelId) ?? app.modelOptions[0]?.id ?? null;
+}
+// 打开或切换对话、对话模型变化时，选择框回到对话当前模型
+watch(
+  () => [session.value?.id ?? null, sessionModelId.value] as const,
+  () => (authoringModelId.value = preferredModel(sessionModelId.value)),
+  { immediate: true },
+);
+// 可选模型变化（启停、删除、改默认）：只在当前选择失效时重新选择，不打断用户的切换
+watch(
+  () => [app.modelOptions, app.defaultModelId] as const,
+  () => {
+    if (availableModel(authoringModelId.value) === null)
+      authoringModelId.value = preferredModel(sessionModelId.value);
+  },
+);
+function refreshModels() {
+  void app.refreshModelOptions().catch(() => {});
+}
 async function startSession(keep: SkillAuthoringMessage[] = []) {
   if (!skill.value) return;
   try {
-    session.value = await post<SkillAuthoringSession>(`/skills/${skill.value.id}/authoring-sessions`);
+    const modelId = availableModel(authoringModelId.value);
+    session.value = await post<SkillAuthoringSession>(
+      `/skills/${skill.value.id}/authoring-sessions`,
+      modelId !== null ? { modelId } : undefined,
+    );
     // keep：发送时已先显示的本轮消息，新会话的历史读回后仍排在最后
     messages.value = [...(session.value.messages ?? []), ...keep];
   } catch (err) {
@@ -838,12 +878,15 @@ async function send() {
     if (!session.value)
       await startSession(messages.value.filter((message) => String(message.id).startsWith(pendingId)));
     if (!session.value || !skill.value) return; // 在 finally 中标为「发送失败」
+    // 所选模型与对话当前模型不同时随本条消息切换；服务端校验失败则本条不受理
+    const switchTo = availableModel(authoringModelId.value);
+    const modelId = switchTo !== null && switchTo !== sessionModelId.value ? switchTo : undefined;
     const response = await apiFetch(
       `/api/skills/${skill.value.id}/authoring-sessions/${session.value.id}/turns`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, ...(modelId !== undefined ? { modelId } : {}) }),
       },
     );
     if (!response.ok) throw new Error((await response.json()).message ?? '助手请求失败');
@@ -959,6 +1002,7 @@ watch(
 onMounted(() => {
   // 与技能详情请求同时加载，编辑器挂载时复用同一加载任务。
   void loadMonaco().catch(() => {});
+  if (!app.modelOptions.length) refreshModels();
   void loadSkill({ focusAssistant: route.query.start === 'generate' });
 });
 function isCreatingSkillNavigation(to: { path: string }) {
@@ -1773,24 +1817,32 @@ onBeforeUnmount(() => {
                 @keydown="onPromptKeydown"
               />
               <div class="composer-actions">
-                <a-upload
-                  :accept="acceptFor('references')"
-                  :file-list="[]"
-                  :show-upload-list="false"
-                  :disabled="isNew || busy || saving || publishing || fileBusy"
-                  :before-upload="beforeFileUpload('references')"
-                  @reject="rejectFiles('references')"
-                >
-                  <button
-                    type="button"
-                    class="composer-attach"
+                <div class="composer-tools">
+                  <a-upload
+                    :accept="acceptFor('references')"
+                    :file-list="[]"
+                    :show-upload-list="false"
                     :disabled="isNew || busy || saving || publishing || fileBusy"
-                    :title="isNew ? '创建技能后可添加参考资料' : '把 Markdown 或文本资料添加到 references/'"
-                    aria-label="添加参考资料"
+                    :before-upload="beforeFileUpload('references')"
+                    @reject="rejectFiles('references')"
                   >
-                    <Icon name="paperclip" :size="18" />
-                  </button>
-                </a-upload>
+                    <button
+                      type="button"
+                      class="composer-attach"
+                      :disabled="isNew || busy || saving || publishing || fileBusy"
+                      :title="isNew ? '创建技能后可添加参考资料' : '把 Markdown 或文本资料添加到 references/'"
+                      aria-label="添加参考资料"
+                    >
+                      <Icon name="paperclip" :size="18" />
+                    </button>
+                  </a-upload>
+                  <ModelSelect
+                    v-model="authoringModelId"
+                    :disabled="busy || preparing || streaming"
+                    :stale-name="staleModelName"
+                    @opened="refreshModels"
+                  />
+                </div>
                 <button
                   v-if="busy && turnStarted"
                   type="button"
@@ -2636,9 +2688,9 @@ onBeforeUnmount(() => {
     border-color 0.15s,
     box-shadow 0.15s;
 }
+/* 大输入框聚焦只用一层主题色边框，不加外光晕（光晕在大圆角框上会像第二道边） */
 .composer-box:focus-within {
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 2px var(--focus-ring-brand);
 }
 .composer-box :deep(textarea.ant-input) {
   display: block;
@@ -2662,6 +2714,12 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 8px;
   padding: 0 8px 8px;
+}
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 /* 只显示图标，尺寸与工作台输入框的附件按钮一致；说明放在 title 提示中 */
 .composer-attach {

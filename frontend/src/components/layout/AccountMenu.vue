@@ -6,7 +6,7 @@ import Icon from '../base/ForgeIcon.vue';
 
 type ThemePreference = 'system' | 'light' | 'dark';
 const themeOptions: { value: ThemePreference; label: string; icon: string }[] = [
-  { value: 'system', label: '跟随系统', icon: 'panel' },
+  { value: 'system', label: '跟随系统', icon: 'computer' },
   { value: 'light', label: '浅色', icon: 'sun' },
   { value: 'dark', label: '深色', icon: 'moon' },
 ];
@@ -109,8 +109,8 @@ function menuKeyboard(event: KeyboardEvent) {
     items[next]?.focus();
   }
 }
+// 切换外观后菜单保持打开：主题立即生效，便于来回对比
 function selectTheme(value: ThemePreference) {
-  close(true);
   emit('change-theme', value);
 }
 function showHelp() {
@@ -166,20 +166,24 @@ onBeforeUnmount(() => {
       aria-label="账号操作"
       @keydown="menuKeyboard"
     >
-      <span class="enterprise-account-menu-label">外观</span>
-      <div role="group" aria-label="外观">
-        <button
-          v-for="option in themeOptions"
-          :key="option.value"
-          type="button"
-          role="menuitemradio"
-          :aria-checked="theme === option.value"
-          tabindex="-1"
-          @click="selectTheme(option.value)"
-        >
-          <Icon :name="option.icon" :size="16" /><span>{{ option.label }}</span>
-          <Icon v-if="theme === option.value" name="check" :size="16" class="enterprise-account-check" />
-        </button>
+      <!-- 外观只占一行：左侧标题，右侧三段切换（跟随系统 / 浅色 / 深色） -->
+      <div class="enterprise-account-theme" role="group" aria-label="外观">
+        <Icon name="contrast" :size="16" /><span>外观</span>
+        <div class="enterprise-theme-switch">
+          <button
+            v-for="option in themeOptions"
+            :key="option.value"
+            type="button"
+            role="menuitemradio"
+            :aria-checked="theme === option.value"
+            :aria-label="option.label"
+            :title="option.label"
+            tabindex="-1"
+            @click="selectTheme(option.value)"
+          >
+            <Icon :name="option.icon" :size="15" />
+          </button>
+        </div>
       </div>
       <div class="enterprise-account-menu-divider"></div>
       <button type="button" role="menuitem" tabindex="-1" @click="showHelp">

@@ -74,9 +74,21 @@ export type SkillAuthoringMessage = {
   createdAt?: string | null;
 };
 
+/** Skill 编辑对话当前使用的模型（不含地址与凭据）；available=false 表示所选模型已停用 */
+export type SkillAuthoringModel = {
+  modelId: number | null;
+  model: string;
+  modelName: string;
+  modelContextWindow?: number | null;
+  available: boolean;
+};
+
 export type SkillAuthoringSession = {
   id: number;
   messages: SkillAuthoringMessage[];
+  /** 对话所选模型配置；null 表示跟随平台默认模型 */
+  modelId?: number | null;
+  model?: SkillAuthoringModel | null;
 };
 
 /** 正在使用某个 Skill 的场景（下线、删除前确认用） */
