@@ -1,6 +1,6 @@
 # Skill 脚本运行
 
-Skill 可以包含 `scripts/*.py`、`scripts/*.js`、`scripts/*.sh`。编写窗口的助手用 `skill_write_file` 保存，使用 `skill_test_script` 试运行（试用或调试整个 Skill 时先用 `skill_trial` 加载包含本轮修改的最新草稿）；下载 ZIP 和发布修订会保留脚本。业务会话只能运行已授权 Skill 的脚本，通过 `skill_run_script` 调用，每次调用需用户批准，平台策略中的“运行 Skill 脚本”可关闭此能力。
+Skill 可以包含 `scripts/*.py`、`scripts/*.js`、`scripts/*.sh`。编写窗口的助手用 `skill_write_file` 保存，使用 `skill_test_script` 试运行（试用或调试整个 Skill 时先用 `skill_trial` 加载包含本轮修改的最新草稿）；下载 ZIP 和发布修订会保留脚本。业务会话只能运行已授权 Skill 的脚本，通过 `skill_run_script` 调用，与 bash 一样直接执行、无需逐次确认，平台策略中的“运行 Skill 脚本”可关闭此能力。
 
 ## 运行方式
 
@@ -12,9 +12,9 @@ Skill 可以包含 `scripts/*.py`、`scripts/*.js`、`scripts/*.sh`。编写窗�
 | `bwrap` | 只允许隔离运行；缺少 `bwrap` 或命名空间被宿主策略禁止时报错“隔离运行环境不可用”，不退回直接运行。 |
 | `none` | 一律直接运行。 |
 
-隔离运行要求 Runner 运行在 Linux，并允许创建用户、挂载、网络和 PID 命名空间。此时仅挂载只读 Skill 文件（`/skill/current`：业务会话为本轮装配的修订快照目录 `DATA/<会话>/skills/<名称>/<修订号>-<内容哈希>/`，编写会话为最新草稿镜像）、只读系统解释器及库和工作目录；无网络、无宿主环境变量。直接运行时没有这些限制，脚本以 Runner 进程的身份运行。需要严格隔离的部署应设为 `bwrap`，并先用一个无副作用的脚本验证宿主是否支持。
+隔离运行要求 Runner 运行在 Linux，并允许创建用户、挂载、网络和 PID 命名空间。此时仅挂载只读 Skill 文件（`/skill/current`：业务会话为本轮装配的修订快照目录 `DATA/<会话>/skills/<名称>/<修订号>-<内容哈希>/`，编写会话为最新草稿镜像）、只读系统解释器及库、域名解析与证书配置和工作目录；共享宿主网络（与 bash 一致），无宿主环境变量。直接运行时没有这些限制，脚本以 Runner 进程的身份运行。需要严格隔离的部署应设为 `bwrap`，并先用一个无副作用的脚本验证宿主是否支持。
 
-两种方式都限制单次 10 秒、16 个参数、64 KB 输出，并提供环境变量 `FORGE_SKILL_DIR`（Skill 目录）与 `FORGE_OUTPUT_DIR`（工作目录）。
+两种方式都限制单次 5 分钟（与 bash 一致）、16 个参数、64 KB 输出，并提供环境变量 `FORGE_SKILL_DIR`（Skill 目录）与 `FORGE_OUTPUT_DIR`（工作目录）。
 
 ## 产出文件（outputs/）
 
@@ -28,8 +28,8 @@ Skill 可以包含 `scripts/*.py`、`scripts/*.js`、`scripts/*.sh`。编写窗�
 平台策略允许 `bash` 时，编写会话也开放 bash（与业务会话相同的命令拒绝规则），用于组合命令、安装依赖、运行生成的测试代码等：
 
 - 最新草稿镜像在会话工作区的 `.skill/` 目录（`SKILL.md` 与附加文件，只读副本），每次通过 `skill_*` 修改后自动同步，例如 `python3 .skill/scripts/parse.py`。要修改脚本必须用 `skill_write_file`，不要直接改 `.skill/`。
-- bash 产生的文件写到 `outputs/` 下，同样出现在「试用文件」中。`.skill/` 是隐藏目录，不出现在文件清单里。
+- bash 产生的文件写到 `outputs/` 下，同样出现在「试用文件」中。`.skill/` 是隐藏目录，不出现在文件清单里，但 `workspace_read`、`glob`、`grep` 可以读取和搜索它（只读）。
 
 ## 编写约定
 
-脚本的输入通过 `args` 传递；输出写 stdout，错误写 stderr，失败用非零退出码；需要交付的文件写到当前工作目录。业务会话中脚本不得依赖 pip/npm 安装包、外部网络或宿主文件（隔离运行时这些都不可用）。Skill 正文应明确何时运行、参数含义和失败时如何处理。普通 Skill 的业务效果测试与脚本试运行是两种不同的验证，后者只检查脚本本身。
+脚本的输入通过 `args` 传递；输出写 stdout，错误写 stderr，失败用非零退出码；需要交付的文件写到当前工作目录。业务会话中脚本尽量不依赖 pip/npm 安装包或宿主文件（隔离运行时只挂载系统解释器与只读 Skill 目录）。Skill 正文应明确何时运行、参数含义和失败时如何处理。普通 Skill 的业务效果测试与脚本试运行是两种不同的验证，后者只检查脚本本身。

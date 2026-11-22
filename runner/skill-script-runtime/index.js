@@ -4,7 +4,7 @@
  * - 运行方式由 FORGE_SKILL_SCRIPT_SANDBOX 决定：
  *   auto（默认）宿主有可用的 bubblewrap 时隔离运行，否则直接用解释器运行；
  *   bwrap 只允许隔离运行，不可用时报错；none 一律直接运行。
- *   隔离运行时 Skill 目录只读挂载到 /skill/current、无网络；直接运行时没有这些限制。
+ *   隔离运行时 Skill 目录只读挂载到 /skill/current，可以联网（与 bash 一致）；直接运行时没有这些限制。
  * - 工作目录：传入 outputRoot（会话工作区）时，脚本在 outputs/<脚本名>-<时间>/ 下运行，
  *   跑完保留其中的文件（会话文件同步后用户可见）；没有产出时删除空目录。未传时使用临时目录，跑完删除。
  * - 两种方式都提供 FORGE_SKILL_DIR（Skill 目录）与 FORGE_OUTPUT_DIR（工作目录）环境变量。
@@ -17,7 +17,8 @@ import { basename, join, resolve, sep } from 'node:path';
 
 const SCRIPT = /^scripts\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(?:py|js|sh)$/;
 const MAX_OUTPUT = 64_000;
-const TIMEOUT_MS = 10_000;
+/** 单次运行上限：与 bash 命令一致的 5 分钟 */
+const TIMEOUT_MS = 300_000;
 /** 返回给模型的产出文件清单上限（文件本身全部保留在工作区） */
 const MAX_LISTED_OUTPUTS = 50;
 export const OUTPUTS_DIR = 'outputs';
@@ -88,7 +89,7 @@ async function listOutputs(dir, prefix) {
   return { files, total };
 }
 
-/** 启动解释器并收集输出（10 秒、64 KB 上限）；bwrap 自身报错时抛出 SandboxUnavailable */
+/** 启动解释器并收集输出（5 分钟、64 KB 上限）；bwrap 自身报错时抛出 SandboxUnavailable */
 function execute(command, args, options, sandboxed) {
   return new Promise((resolveResult, reject) => {
     const child = spawn(command, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -121,7 +122,7 @@ function execute(command, args, options, sandboxed) {
     });
     child.once('close', (code) => {
       clearTimeout(timer);
-      if (timedOut) return reject(new Error('脚本运行超过 10 秒，已终止'));
+      if (timedOut) return reject(new Error(`脚本运行超过 ${TIMEOUT_MS / 60000} 分钟，已终止`));
       if (overLimit) return reject(new Error('脚本输出超过 64 KB，已终止'));
       // bwrap 自身失败（如宿主禁止创建命名空间）时 stderr 以 "bwrap:" 开头，脚本并没有运行
       if (sandboxed && code !== 0 && /^bwrap:/m.test(stderr) && !stdout)
@@ -141,9 +142,13 @@ function runIsolated(root, path, args, work, nodeScript) {
   const links = ['/bin', '/lib', '/lib64']
     .filter((dir) => existsSync(dir) && lstatSync(dir).isSymbolicLink())
     .flatMap((dir) => ['--symlink', readlinkSync(dir), dir]);
+  // 共享宿主网络（与 bash 一致），并只读挂载域名解析与证书配置，脚本才能访问外部服务
+  const netFiles = ['/etc/resolv.conf', '/etc/hosts', '/etc/nsswitch.conf', '/etc/ssl', '/etc/ca-certificates', '/etc/pki']
+    .filter((path) => existsSync(path))
+    .flatMap((path) => ['--ro-bind', path, path]);
   const command = [
-    '--die-with-parent', '--new-session', '--unshare-all',
-    ...mounts, ...links, ...(nodeScript ? ['--ro-bind', process.execPath, '/node'] : []),
+    '--die-with-parent', '--new-session', '--unshare-all', '--share-net',
+    ...mounts, ...links, ...netFiles, ...(nodeScript ? ['--ro-bind', process.execPath, '/node'] : []),
     '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp',
     '--dir', '/skill', '--ro-bind', root, '/skill/current', '--bind', work, '/work',
     '--chdir', '/work', '--', interpreter, `/skill/current/${path}`, ...args,

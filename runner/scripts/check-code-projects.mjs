@@ -158,7 +158,9 @@ try {
   await check('workspace paths keep the workspace rules; arguments are validated', () => {
     assert.equal(deny('read', { file_path: 'docs/plan.md' }), undefined);
     assert.equal(deny('grep', { pattern: 'x' }), undefined);
-    assert.match(deny('read', { file_path: '.secret/x' }), /隐藏/);
+    // 工作区内的隐藏目录（如 Skill 草稿镜像 .skill/）可以读取，密钥类文件仍拒绝
+    assert.equal(deny('read', { file_path: '.skill/SKILL.md' }), undefined);
+    assert.match(deny('read', { file_path: '.env' }), /密钥/);
     assert.match(deny('read', {}), /文件路径无效/);
     assert.match(deny('read', { file_path: 'a\0b' }), /文件路径无效/);
     assert.match(deny('glob', { pattern: '*', path: '' }), /搜索路径无效/);

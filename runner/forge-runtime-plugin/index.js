@@ -2,7 +2,7 @@
 import { LlmAdapter, attributionHeaders } from '@deepseek-ai/dsh-llm';
 import { lstatSync, realpathSync } from 'node:fs';
 import { mkdir, readFile, writeFile, readdir, lstat } from 'node:fs/promises';
-import { resolve, relative, dirname, sep } from 'node:path';
+import { basename, resolve, relative, dirname, sep } from 'node:path';
 import { inspectReadOnlyShell, ALLOWED_SHELL_COMMANDS } from './bash-readonly.js';
 
 export const name = 'forge-runtime';
@@ -11,16 +11,23 @@ const notify = (method, params) =>
   process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n');
 const utf8 = new TextDecoder('utf-8', { fatal: true });
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
-const MAX_FILE_BYTES = 256000;
-const MAX_FILES = 100;
-const MAX_TOTAL_BYTES = 10000000;
+/** 单文件上限：workspace_write 可写、workspace_read 可读的最大文件（Runner 原始下载上限为 20 MB） */
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_FILES = 1000;
+const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 const MAX_PRESENTED = 4;
 const MAX_READ_LINES = 2000;
+/** workspace_read 单次返回给模型的最大字符数：超过时分段，避免撑爆上下文 */
+const MAX_READ_CHARS = 256000;
+/** 工作区路径：最大目录深度与路径长度（控制面同步时路径不超过 256 字符） */
+const MAX_DEPTH = 16;
+const MAX_PATH_CHARS = 256;
 /** DSH 搜索插件（dsh-tool-fs-search）提供的工具：由 Runner 基础 patch 加载，执行前由本插件限制搜索路径。 */
 export const SEARCH_TOOLS = ['glob', 'grep'];
 /**
  * glob/grep 的 path 参数会原样交给 ripgrep，而 ripgrep 可以读取宿主机任意路径：
- * 只允许会话工作区内的相对路径，不允许隐藏目录与符号链接。返回拒绝原因，允许时返回 undefined。
+ * 只允许会话工作区内的相对路径，不允许符号链接与密钥类文件；隐藏目录（如 Skill 草稿镜像 .skill/）可以搜索。
+ * 返回拒绝原因，允许时返回 undefined。
  */
 export function searchPathDenial(root, args) {
   const path = args && typeof args === 'object' ? args.path : undefined;
@@ -31,7 +38,7 @@ export function searchPathDenial(root, args) {
   if (full !== root && !full.startsWith(root + sep))
     return '搜索路径超出当前会话工作区，请使用工作区内的相对路径';
   const parts = relative(root, full).split(sep).filter(Boolean);
-  if (parts.some((part) => part.startsWith('.'))) return '不允许搜索隐藏文件或目录';
+  if (secretPath(parts)) return '不允许访问版本库内部数据或密钥类文件';
   let current = root;
   for (const part of parts) {
     current = resolve(current, part);
@@ -116,67 +123,90 @@ function truncateCmd(cmd) {
   return cmd.length > 80 ? cmd.slice(0, 77) + '...' : cmd;
 }
 
+/** 命令起始位置：行首，或 ; & | ( 换行、$( 、反引号之后 */
+const COMMAND_START = String.raw`(?:^|[;&|(\n]|\$\(|\x60)\s*`;
+const atCommandStart = (names) => new RegExp(`${COMMAND_START}(?:${names})(?=\\s|$|[;&|)\\x60])`, 'i');
+const SYSTEM_COMMAND = atCommandStart(
+  String.raw`mkfs(?:\.\w+)?|fdisk|parted|shutdown|reboot|poweroff|halt|init\s+[06]`,
+);
+const PRIVILEGE_COMMAND = atCommandStart('sudo|su|pkexec|doas');
+const ENV_DUMP = new RegExp(
+  `${COMMAND_START}(?:printenv\\b|env\\s*(?=$|[;&|>)\\n]))|\\/proc\\/[^\\s]*\\/environ`,
+  'i',
+);
+/** rm 递归删除的高危目标：根目录、家目录与系统目录本身 */
+const DANGEROUS_RM_TARGET =
+  /^(?:\/|\/\*|~|~\/|~\/\*|\$HOME\/?\*?|\$\{HOME\}\/?\*?|\/(?:bin|boot|dev|etc|home|lib|lib64|opt|proc|root|sbin|srv|sys|usr|var)\/?\*?)$/;
+function dangerousRm(command) {
+  for (const match of command.matchAll(/(?:^|[\s;&|(])rm\s+([^;&|\n]*)/g)) {
+    const words = match[1]
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => word.replace(/^['"]|['"]$/g, ''));
+    const recursive = words.some((word) => /^-[^-]*[rR]/.test(word) || word === '--recursive');
+    if (recursive && words.some((word) => DANGEROUS_RM_TARGET.test(word))) return true;
+  }
+  return false;
+}
 /**
- * 对 bash 命令行进行安全门控分类（deny-list-only）：
- * - 'deny': 硬性拦截高危破坏、提权、探测凭据与密钥、对外部地址的网络请求
- * - 'allow': 其余命令（只读查看、写文件、编译运行等）自动放行
- * 调用方仍兼容 'ask'（交给用户确认），目前分类器不再返回该级别。
+ * 访问其他会话的数据目录：会话目录为 <数据目录>/<会话 id>/workspace，
+ * 命令里出现数据目录下除本会话以外的路径（或列出整个数据目录）时拒绝；本会话自己的目录放行。
  */
-export function classifyBashCommand(cmd) {
+function otherSessionAccess(command, workspace) {
+  const own = workspace ? basename(dirname(workspace)) : '';
+  const roots = ['data/sessions'];
+  if (workspace) roots.unshift(dirname(dirname(workspace)));
+  for (const root of roots) {
+    let index = command.indexOf(root);
+    while (index >= 0) {
+      const rest = command.slice(index + root.length);
+      const segment = rest.startsWith('/') ? (rest.slice(1).match(/^[^/\s'"]*/)?.[0] ?? '') : '';
+      if (!own || segment !== own) return true;
+      index = command.indexOf(root, index + root.length);
+    }
+  }
+  return false;
+}
+
+/**
+ * 对 bash 命令行进行安全门控分类（deny-list-only）：只拦截少数明显高危的命令，其余一律放行。
+ * - 递归删除根目录、家目录或系统目录本身；格式化磁盘、关机重启（仅当它们作为命令出现）；fork 炸弹；向 /dev 写入的 dd
+ * - 提权与切换用户（sudo/su/pkexec/doas，仅当作为命令出现）
+ * - 平台自身的密钥（data/encryption.key、data/auth.json）与其他会话的数据目录
+ * - 输出全部环境变量（printenv、不带参数的 env、/proc/<pid>/environ）：模型密钥在 Runner 进程环境中
+ * - 重定向写入 /etc、/boot
+ * workspace 为当前会话工作区（用于放行本会话自己的数据目录）。调用方仍兼容 'ask'，分类器不再返回该级别。
+ */
+export function classifyBashCommand(cmd, { workspace } = {}) {
   if (typeof cmd !== 'string' || !cmd.trim()) {
     return { level: 'deny', reason: '命令内容不能为空' };
   }
   const clean = cmd.trim();
-
-  // 1. 🔴 红色通道：硬性拦截（Deny）
-  // (1) 破坏性系统命令
   if (
-    /\brm\s+-[^\s]*[rf][^\s]*\s+(\/|~\/?|\.\.|\*|\$|\/etc|\/bin|\/usr|\/root)(?:\s|$|\/)/i.test(clean) ||
-    /\b(mkfs|fdisk|parted|dd\s+if=|shutdown|reboot|poweroff|init\s+0|halt)\b/i.test(clean) ||
-    /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/i.test(clean)
+    dangerousRm(clean) ||
+    SYSTEM_COMMAND.test(clean) ||
+    /\bdd\b[^;&|\n]*\bof=\/dev\//i.test(clean) ||
+    /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/.test(clean)
   ) {
     return { level: 'deny', reason: '安全策略拒绝执行破坏性系统命令' };
   }
-
-  // (2) 提权与切换用户
-  if (/\b(sudo|su|pkexec|doas)\b/i.test(clean)) {
+  if (PRIVILEGE_COMMAND.test(clean)) {
     return { level: 'deny', reason: '安全策略禁止使用提权命令 (sudo/su)' };
   }
-
-  // (3) 探测凭据、密钥与平台/跨会话敏感文件（与平台 secretPath 语义一致：.env.example/.sample/.template/.dist 放行）
-  const readsSensitive =
-    /\b(cat|more|less|tail|head|grep|awk|sed|type|print|echo|show)\b/i.test(clean) &&
-    /(\/etc\/(shadow|gshadow|sudoers|passwd)|\.git-credentials|\.netrc|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|\.npmrc|\.pypirc|\.pem|\.key|\.p12|\.pfx|\.jks|\.keystore|data\/encryption\.key|data\/auth\.json|data\/sessions\/|\.ssh\/(config|known_hosts|id_))/i.test(
-      clean,
-    );
-  const readsDotEnv =
-    /\b(cat|head|tail|more|less)\b/i.test(clean) &&
-    /\.env(?!\.(?:example|sample|template|dist)\b)/i.test(clean);
-  if (readsSensitive || readsDotEnv || /(^|\s)(printenv|env)(\s|$)/i.test(clean)) {
-    return { level: 'deny', reason: '安全策略禁止读取系统凭据、密钥与敏感文件' };
+  if (/data\/(?:encryption\.key|auth\.json)/i.test(clean)) {
+    return { level: 'deny', reason: '安全策略禁止访问平台密钥文件' };
   }
-
-  // (4) 对外联地址发起网络请求（下载/外泄）；本地回环（localhost/127.0.0.1/0.0.0.0）允许
-  if (
-    /\b(curl|wget)\b[\s\S]*\b(https?:\/\/|ftp:\/\/)/i.test(clean) &&
-    !/\b(curl|wget)\b[\s\S]*\b(https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)|ftp:\/\/(localhost|127\.0\.0\.1))\b/i.test(
-      clean,
-    )
-  ) {
-    return { level: 'deny', reason: '安全策略禁止向外部地址发起网络请求（curl/wget）' };
+  if (otherSessionAccess(clean, workspace)) {
+    return { level: 'deny', reason: '安全策略禁止访问其他会话的数据' };
   }
-  // (4b) 通过网络管道直接下载并执行脚本
-  if (/(curl|wget)[\s\S]*\|\s*(ba|z|k|c)?sh\b/i.test(clean)) {
-    return { level: 'deny', reason: '安全策略禁止通过网络管道直接下载并执行脚本' };
+  if (ENV_DUMP.test(clean)) {
+    return { level: 'deny', reason: '安全策略禁止输出全部环境变量' };
   }
-
-  // (5) 禁止危险的直接重定向覆写关键系统文件
-  if (/>\s*\/etc\//i.test(clean) || />\s*\/boot\//i.test(clean)) {
+  if (/>\s*\/(?:etc|boot)\//i.test(clean)) {
     return { level: 'deny', reason: '安全策略禁止向系统核心路径重定向写入' };
   }
-
-  // 2. 🟢 白名单（当前为空，保留供未来登记免确认只读命令）；deny-list-only 下其余默认放行。
-  //    注意：bash 工具没有路径沙箱，黑名单只挡明显危险操作；真正的隔离依赖 Runner 沙箱/只读挂载。
+  // 白名单（当前为空，保留供未来登记免确认只读命令）；deny-list-only 下其余默认放行。
+  // 注意：bash 工具没有路径沙箱，黑名单只挡明显危险操作，不是隔离边界。
   if (ALLOWED_SHELL_COMMANDS.size > 0 && inspectReadOnlyShell(clean).safe) {
     return { level: 'allow', reason: '只读命令自动放行' };
   }
@@ -283,7 +313,7 @@ class GatewayAdapter extends LlmAdapter {
       messages: messages(options),
       stream: true,
       stream_options: { include_usage: true },
-      max_tokens: options.maxTokens ?? this.config.maxOutputTokens ?? 4096,
+      max_tokens: options.maxTokens ?? this.config.maxOutputTokens ?? 16384,
     };
     if (options.temperature !== undefined) payload.temperature = options.temperature;
     if (schemas.length)
@@ -293,7 +323,7 @@ class GatewayAdapter extends LlmAdapter {
       }));
     const signal = AbortSignal.any([
       ...(options.signal ? [options.signal] : []),
-      AbortSignal.timeout((this.config.requestTimeoutSeconds ?? 120) * 1000),
+      AbortSignal.timeout((this.config.requestTimeoutSeconds ?? 300) * 1000),
     ]);
     let response;
     try {
@@ -445,14 +475,22 @@ class GatewayAdapter extends LlmAdapter {
     }
   }
 }
-async function checkedPath(root, name, writing = false) {
-  if (!name || name.length > 200 || name.includes('\0')) throw new Error('文件路径无效');
+/**
+ * 校验工作区内的文件路径：不允许越界与符号链接，目录不超过 MAX_DEPTH 层。
+ * - 读取（hidden: true）：允许隐藏目录（如 Skill 草稿镜像 .skill/），但拒绝 .git、.env、私钥等密钥类文件；
+ * - 写入与交付声明：不允许隐藏路径——.skill/ 是只读镜像（草稿须经 skill_write_file 修改），
+ *   隐藏文件也不会同步到会话文件区。
+ */
+async function checkedPath(root, name, { writing = false, hidden = false } = {}) {
+  if (typeof name !== 'string' || !name || name.length > MAX_PATH_CHARS || name.includes('\0'))
+    throw new Error('文件路径无效');
   const full = resolve(root, name);
   if (full === root || !full.startsWith(root + sep)) throw new Error('文件路径超出当前会话工作区');
   let current = root;
   const parts = relative(root, full).split(sep);
-  if (parts.length > 8 || parts.some((part) => part.startsWith('.')))
-    throw new Error('不允许隐藏文件或超过 8 层的目录');
+  if (parts.length > MAX_DEPTH) throw new Error(`目录层级不能超过 ${MAX_DEPTH} 层`);
+  if (hidden ? secretPath(parts) : parts.some((part) => part.startsWith('.')))
+    throw new Error(hidden ? '不允许读取版本库内部数据或密钥类文件' : '不允许写入或交付隐藏文件');
   for (const part of parts) {
     current = resolve(current, part);
     try {
@@ -465,13 +503,13 @@ async function checkedPath(root, name, writing = false) {
 }
 async function workspaceFiles(root, dir = root, depth = 0) {
   const files = [];
-  if (depth > 8) return files;
+  if (depth > MAX_DEPTH) return files;
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     if (entry.name.startsWith('.') || entry.isSymbolicLink()) continue;
     const path = resolve(dir, entry.name);
     if (entry.isDirectory()) files.push(...(await workspaceFiles(root, path, depth + 1)));
     else if (entry.isFile()) files.push({ path: relative(root, path), bytes: (await lstat(path)).size });
-    if (files.length > 100) break;
+    if (files.length > MAX_FILES) break;
   }
   return files;
 }
@@ -521,7 +559,7 @@ export async function apply(ctx, config) {
   );
   add(
     'workspace_read',
-    'Read a text file from this session workspace (read-only, workspace-relative path). Optionally pass offset (1-based start line) and limit (number of lines) to read a range, e.g. around a grep match.',
+    `Read a text file from this session workspace (read-only, workspace-relative path; hidden folders such as .skill/ are readable). Files up to 10 MB. Files up to ${MAX_READ_CHARS} characters return whole; larger ones return the first ${MAX_READ_LINES} lines with totalLines and truncated=true, then pass offset (1-based start line) and limit (number of lines) to continue, e.g. around a grep match.`,
     {
       path: { type: 'string', description: 'Path relative to the session workspace.' },
       offset: { type: 'integer', minimum: 1, description: 'First line to return, 1-based. Default 1.' },
@@ -534,27 +572,44 @@ export async function apply(ctx, config) {
     },
     ['path'],
     async ({ path, offset, limit }) => {
-      const full = await checkedPath(root, path);
+      const full = await checkedPath(root, path, { hidden: true });
       const stat = await lstat(full);
-      if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('仅允许读取 256 KB 内的文本文件');
+      if (!stat.isFile()) throw new Error('不是普通文件');
+      if (stat.size > MAX_FILE_BYTES)
+        throw new Error('仅允许读取 10 MB 内的文本文件，更大的文件请用 bash 处理');
       let content;
       try {
         content = utf8.decode(await readFile(full));
       } catch {
         throw new Error('这是二进制文件，无法按文本读取；用户可在结果面板预览或下载');
       }
-      if (offset === undefined && limit === undefined) return { path, content };
+      // 小文件且未指定范围：整篇返回（与旧行为一致）
+      if (offset === undefined && limit === undefined && content.length <= MAX_READ_CHARS)
+        return { path, content };
       const start = Number.isInteger(offset) && offset > 0 ? offset : 1;
       const count = Number.isInteger(limit) && limit > 0 ? Math.min(limit, MAX_READ_LINES) : MAX_READ_LINES;
       const lines = content.split(/\r?\n/);
       if (lines.length > 1 && lines.at(-1) === '') lines.pop();
       const slice = lines.slice(start - 1, start - 1 + count);
+      let text = slice.join('\n');
+      const clipped = text.length > MAX_READ_CHARS;
+      if (clipped) text = text.slice(0, MAX_READ_CHARS);
+      const endLine = slice.length ? start + slice.length - 1 : start - 1;
       return {
         path,
-        content: slice.join('\n'),
+        content: text,
         startLine: start,
-        endLine: slice.length ? start + slice.length - 1 : start - 1,
+        endLine,
         totalLines: lines.length,
+        // 模型自己指定了 limit 时只回报行号；默认分页或按字符截断时才提示如何继续
+        ...(clipped || (limit === undefined && endLine < lines.length)
+          ? {
+              truncated: true,
+              note: clipped
+                ? `内容超过 ${MAX_READ_CHARS} 字符已截断，请用更小的 limit 分段读取`
+                : `还有 ${lines.length - endLine} 行未返回，用 offset=${endLine + 1} 继续读取`,
+            }
+          : {}),
       };
     },
   );
@@ -570,16 +625,17 @@ export async function apply(ctx, config) {
     async ({ path, content, encoding }) =>
       exclusiveWrite(async () => {
         const data = contentBytes(content, encoding);
-        if (data.length > MAX_FILE_BYTES) throw new Error('单文件不能超过 256 KB');
-        const full = await checkedPath(root, path, true);
+        if (data.length > MAX_FILE_BYTES) throw new Error('单文件不能超过 10 MB');
+        const full = await checkedPath(root, path, { writing: true });
         const existing = await workspaceFiles(root);
         const previous = existing.find((file) => file.path === relative(root, full));
-        if (!previous && existing.length >= MAX_FILES) throw new Error('每个会话最多保存 100 个文件');
+        if (!previous && existing.length >= MAX_FILES)
+          throw new Error(`每个会话最多保存 ${MAX_FILES} 个文件`);
         if (
           existing.reduce((sum, file) => sum + file.bytes, 0) - (previous?.bytes ?? 0) + data.length >
           MAX_TOTAL_BYTES
         )
-          throw new Error('会话产物总量不能超过 10 MB');
+          throw new Error('会话产物总量不能超过 200 MB');
         await mkdir(dirname(full), { recursive: true });
         await writeFile(full, data, { mode: 0o600 });
         notify('forge.artifact', { path, bytes: data.length });
@@ -682,7 +738,7 @@ export async function apply(ctx, config) {
 
       // 2. bash 门控：危险命令拦截(deny)，其余放行(allow)；ask 分支保留兼容，分类器目前不返回
       if (exec.name === 'bash') {
-        const classification = classifyBashCommand(exec.arguments?.command);
+        const classification = classifyBashCommand(exec.arguments?.command, { workspace: root });
         notify('forge.policy', {
           tool: exec.name,
           callId: exec.callId,

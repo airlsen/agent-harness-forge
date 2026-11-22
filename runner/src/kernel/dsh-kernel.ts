@@ -1,4 +1,4 @@
-/** 业务内核：独立 dsh 进程、真实模型出口、受限文件工具、逐次审批。 */
+/** 业务内核：独立 dsh 进程、真实模型出口、受限文件工具、按需审批（受管插件与 MCP 中声明需确认的工具）。 */
 import { randomUUID, createHash } from 'node:crypto';
 import { mkdir, writeFile, readFile, readdir, lstat, rename, rm, rmdir, unlink } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
@@ -25,7 +25,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const PRESENT_TOOL = 'workspace_present';
 /**
  * 基础能力：每个会话默认加载，不需要场景逐个授权。仍以平台策略（allowedTools）为上限，
- * workspace_write 仅写入受限会话目录并直接执行；终端命令按风险逐次审批。场景 Bundle 是发布时的快照，由 Runner 统一补齐，已发布场景与存量会话同样生效。
+ * workspace_write 仅写入受限会话目录并直接执行；终端命令直接执行，仅拦截少数高危命令。场景 Bundle 是发布时的快照，由 Runner 统一补齐，已发布场景与存量会话同样生效。
  */
 export const BASE_TOOLS = [
   'current_time',
@@ -108,15 +108,18 @@ export function sessionToolset(
     code: hasCode,
     read,
     skills,
-    approval: [...mcp.approval, ...(scripts ? [SKILL_SCRIPT_TOOL] : [])],
+    // Skill 脚本与 bash 同等对待：直接执行，不再逐次确认
+    approval: mcp.approval,
   };
 }
 const MAX_RAW_BYTES = 20 * 1024 * 1024;
 /** 联网搜索密钥的环境变量名（含 KEY，不会被传给 stdio MCP 子进程） */
 const WEB_SEARCH_KEY_ENV = 'FORGE_WEB_SEARCH_API_KEY';
 const MCP_TOOL_TIMEOUT_MS = 60000;
-/** 清单上限：远高于插件的 100 个文件配额；达到上限时标记 truncated，控制面不会据此删除记录 */
-export const MAX_LISTED_FILES = 1000;
+/** 清单上限：高于插件的 1000 个文件配额（bash 产出不受该配额约束）；达到上限时标记 truncated，控制面不会据此删除记录 */
+export const MAX_LISTED_FILES = 2000;
+/** 清单遍历的最大目录深度，与 workspace_write 允许的层级一致 */
+const MAX_LISTED_DEPTH = 16;
 /** Runner 会话 id（randomUUID），同时决定磁盘目录名，必须严格校验 */
 const SESSION_ID = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
 const DATA = resolve(process.env.FORGE_RUNNER_DATA_DIR ?? join(ROOT, 'data', 'sessions'));
@@ -166,6 +169,14 @@ export function validModel(model?: RuntimeModel): model is RuntimeModel {
  * 自动压缩会被静默跳过，且会话内切换到该模型会被 dsh 直接拒绝。按模型窗口缩放余量，
  * 大窗口模型仍不超过官方默认值；摘要输出上限与普通回复一致，避免向网关请求超出模型能力的 max_tokens。
  */
+/**
+ * 实际下发的单次输出上限：平台策略值（默认 16384），但不超过模型上下文窗口的一半，
+ * 否则压缩预算为负、请求也会被网关以超出上下文拒绝。
+ */
+export function effectiveOutputTokens(contextWindow: number, policyValue?: number) {
+  const wanted = Number.isFinite(policyValue) && policyValue! > 0 ? Math.floor(policyValue!) : 16384;
+  return Math.max(256, Math.min(wanted, Math.floor(contextWindow / 2)));
+}
 export function compactionConfig(contextWindow: number, outputTokens: number) {
   const budget = contextWindow - outputTokens;
   const headroomTokens = Math.max(1024, Math.min(65536, Math.floor(budget * 0.25)));
@@ -418,6 +429,8 @@ export class DshKernel implements AgentKernel {
     const dir = join(DATA, entry.id);
     await mkdir(entry.workspace, { recursive: true, mode: 0o700 });
     const policy = (entry.bundle.meta?.policy as any) ?? {};
+    const contextWindow = entry.model.contextWindow || 64000;
+    const outputTokens = effectiveOutputTokens(contextWindow, policy.maxOutputTokens);
     const pluginTools = (entry.bundle.meta?.plugin_tools as string[]) ?? [];
     const toolset = sessionToolset(entry.bundle.meta, entry.code.length > 0, entry.caps);
     const skillDirs = await this.materializeSkills(entry);
@@ -435,8 +448,8 @@ export class DshKernel implements AgentKernel {
         approvalTools: toolset.approval,
         codeProjects: entry.code.map(({ name, path }) => ({ name, path })),
         readRoots: Object.entries(skillDirs).map(([name, path]) => ({ name: `skill:${name}`, path })),
-        maxOutputTokens: policy.maxOutputTokens ?? 4096,
-        requestTimeoutSeconds: policy.requestTimeoutSeconds ?? 120,
+        maxOutputTokens: outputTokens,
+        requestTimeoutSeconds: policy.requestTimeoutSeconds ?? 300,
       },
     };
     const skillAuthoringPlugin = entry.bundle.plugin_mounts.includes('skill-authoring')
@@ -497,7 +510,7 @@ export class DshKernel implements AgentKernel {
       { id: 'sessions', config: { root: join(dir, 'session-log'), compression: 'none' } },
       {
         id: 'compaction-basic',
-        config: compactionConfig(entry.model.contextWindow || 64000, policy.maxOutputTokens ?? 4096),
+        config: compactionConfig(contextWindow, outputTokens),
       },
       ...[
         'persistent-pwsh',
@@ -621,7 +634,7 @@ export class DshKernel implements AgentKernel {
         cwd: entry.workspace,
         provider: 'forge-gateway',
         model: entry.model.model,
-        maxTokens: policy.maxOutputTokens ?? 4096,
+        maxTokens: outputTokens,
         approvalRequests: true,
       }),
       30000,
@@ -934,11 +947,13 @@ export class DshKernel implements AgentKernel {
         30000,
       );
       entry.hasHistory = true;
-      const policy = (entry.bundle.meta?.policy as any) ?? {};
-      await timeout(
-        entry.proc!.request('session/wait', { sessionId: id }),
-        ((policy.requestTimeoutSeconds ?? 120) + (policy.approvalTimeoutSeconds ?? 120) + 30) * 1000,
-      );
+      // 整轮上限：一轮可能包含多次模型请求与工具调用，单步各有超时，这里只兜底防止进程长期占用并发额度
+      const seconds = turnTimeoutSeconds();
+      await timeout(entry.proc!.request('session/wait', { sessionId: id }), seconds * 1000).catch((error) => {
+        if (error instanceof Error && error.message === '执行超时')
+          throw new Error(`本轮执行超过 ${formatDuration(seconds)}，已自动停止，可继续对话`);
+        throw error;
+      });
     } catch (error) {
       if (!entry.error) {
         entry.error = error instanceof Error ? error.message : '执行失败';
@@ -1057,7 +1072,7 @@ export class DshKernel implements AgentKernel {
     const root = await this.workspace(id);
     const out: { path: string; bytes: number; mime: string; modifiedAt: string; sha256: string }[] = [];
     const walk = async (dir: string, depth = 0): Promise<void> => {
-      if (depth > 8 || out.length >= MAX_LISTED_FILES) return;
+      if (depth > MAX_LISTED_DEPTH || out.length >= MAX_LISTED_FILES) return;
       for (const item of await readdir(dir, { withFileTypes: true })) {
         if (item.isSymbolicLink() || item.name.startsWith('.')) continue;
         const full = join(dir, item.name);
@@ -1132,7 +1147,7 @@ export class DshKernel implements AgentKernel {
     await rm(root, { recursive: true, force: true });
     await mkdir(root, { recursive: true, mode: 0o700 });
   }
-  /** 原始字节读取：用于任意类型文件的预览与下载（工作区总量本身不超过 10 MB）。 */
+  /** 原始字节读取：用于任意类型文件的预览与下载（单文件不超过 20 MB）。 */
   async readRaw(id: string, path: string) {
     const { full, stat } = await this.workspaceFile(id, path);
     if (stat.size > MAX_RAW_BYTES) throw failure('文件过大，无法读取', 413);
@@ -1145,6 +1160,14 @@ async function isDirectory(path: string) {
   } catch {
     return false;
   }
+}
+/** 整轮执行上限（秒）：环境变量 RUNNER_TURN_TIMEOUT_SECONDS，默认 1800（30 分钟），最少 60 秒 */
+export function turnTimeoutSeconds(env: NodeJS.ProcessEnv = process.env) {
+  const value = Number(env.RUNNER_TURN_TIMEOUT_SECONDS);
+  return Number.isFinite(value) && value > 0 ? Math.max(60, Math.floor(value)) : 1800;
+}
+function formatDuration(seconds: number) {
+  return seconds % 60 === 0 ? `${seconds / 60} 分钟` : `${seconds} 秒`;
 }
 function timeout<T>(promise: Promise<T>, ms: number) {
   let timer: NodeJS.Timeout;

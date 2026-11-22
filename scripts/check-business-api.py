@@ -32,6 +32,14 @@ def check(name, condition):
     print("PASS", name)
 
 
+# 演示 CRM 插件中声明为「需审批」的工具：审批相关的端到端检查都用它触发确认
+APPROVAL_TOOL = "crm_add_customer_note"
+APPROVAL_PLUGIN = {
+    "plugin_names": ["forge-runtime", "forge-demo-crm"],
+    "plugin_tools": {"forge-demo-crm": ["crm_find_customer", APPROVAL_TOOL]},
+}
+
+
 class GatewayFixture(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -68,22 +76,20 @@ class GatewayFixture(BaseHTTPRequestHandler):
             default=0,
         )
         text = body["messages"][last].get("content", "")
-        tool_answered = any(
-            item["role"] == "tool" for item in body["messages"][last + 1 :]
+        answered = sum(
+            1 for item in body["messages"][last + 1 :] if item["role"] == "tool"
         )
-        if not tool_answered and "PENDING INTERRUPT" in text.upper():
-            tool_name = "bash"
-            tool_arguments = {"command": "date > pending.txt"}
-        elif not tool_answered and "APPROVAL" in text.upper():
-            tool_name = "bash"
+        upper = text.upper()
+        # 审批夹具：bash 与 Skill 脚本已直接执行，改用演示 CRM 插件中声明「需审批」的写入工具
+        if not answered and ("PENDING INTERRUPT" in upper or "APPROVAL" in upper):
+            tool_name = APPROVAL_TOOL
             tool_arguments = {
-                "command": (
-                    "echo '# API integration fixture' > result.md"
-                    if "WRITE" in text.upper()
-                    else "date > approved.txt"
-                )
+                "customerId": "crm-1001",
+                "note": "API integration fixture",
             }
-        elif not tool_answered and "WRITE" in text:
+        elif "WRITE" in text and (
+            not answered or (answered == 1 and "APPROVAL" in upper)
+        ):
             tool_name = "workspace_write"
             tool_arguments = {
                 "path": "result.md",
@@ -309,7 +315,11 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                 api("GET", "/audit/sessions")["items"] == [],
             )
             scene = api("POST", f"/agent-scenarios/{original['id']}/copy")
-            payload = {**scene["payload"], "name": "API acceptance fixture"}
+            payload = {
+                **scene["payload"],
+                "name": "API acceptance fixture",
+                "capabilities": {**scene["payload"]["capabilities"], **APPROVAL_PLUGIN},
+            }
             edited = api("PUT", f"/agent-scenarios/{scene['id']}", payload)
             check(
                 "scenario copy/edit creates immutable version history",
@@ -378,7 +388,7 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
             )
             api("POST", f"/agent/sessions/{sid}/turns", {"message": "second"}, 409)
             check(
-                "one turn per session; an approval-required command pauses execution",
+                "one turn per session; an approval-required plugin tool pauses execution",
                 api("GET", f"/agent/sessions/{sid}")["status"] == "running",
             )
             api(
@@ -394,7 +404,7 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                 "assistant and actual tool results persist",
                 any(
                     m["role"] == "tool"
-                    and m["meta"]["tool"] == "bash"
+                    and m["meta"]["tool"] == APPROVAL_TOOL
                     and not m["meta"]["isError"]
                     for m in detail["messages"]
                 )
@@ -649,14 +659,41 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                     "content"
                 ].startswith("# API"),
             )
+            # Runner 重启后，业务会话按数据库快照恢复并从磁盘会话日志接续（session/resume）
             api(
                 "POST",
                 f"/agent/sessions/{restricted['id']}/turns",
+                {"message": "PLAIN after restart"},
+                202,
+            )
+            resumed = wait_value(
+                lambda: api("GET", f"/agent/sessions/{restricted['id']}"),
+                lambda item: item["status"] != "running",
+            )
+            check(
+                "business session resumes from its session log after Runner restart",
+                resumed["status"] == "idle"
+                and resumed["messages"][-1]["role"] == "assistant",
+            )
+
+            async def runner_session_id(session_id):
+                async with SessionFactory() as db:
+                    return (await db.get(AgentSession, session_id)).runner_session_id
+
+            lost = client.portal.call(runner_session_id, cancelled["id"])
+            shutil.rmtree(data / "runner-sessions" / lost / "session-log")
+            runner.terminate()
+            runner.wait(timeout=10)
+            runner = start_runner()
+            api(
+                "POST",
+                f"/agent/sessions/{cancelled['id']}/turns",
                 {"message": "after restart"},
                 409,
             )
             check(
-                "missing runtime after Runner restart returns explicit conflict", True
+                "missing session log after Runner restart returns explicit conflict",
+                True,
             )
             api("DELETE", f"/agent-scenarios/{scene['id']}")
             api("GET", f"/agent-scenarios/{scene['id']}", code=404)
@@ -665,6 +702,74 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                 api("GET", f"/agent/sessions/{sid}")["scenarioName"]
                 == "API acceptance fixture",
             )
+            if "--browser" in sys.argv:
+                # 测试专用：浏览器流程使用官方模板「文档与报告」，在隔离数据库中为它挂上演示 CRM 插件，
+                # 让 APPROVAL 夹具有一个需审批的工具可调用；生产模板与真实工作空间不受影响。
+                async def attach_approval_plugin():
+                    from dataclasses import asdict
+                    from sqlalchemy import select
+                    from src.api.models.agent_scenario import AgentScenario
+                    from src.api.schemas.agent_scenario import ScenarioPayload
+                    from src.api.services.scenario_service import scenario_service
+                    from src.api.services.settings_service import get_policy
+
+                    async with SessionFactory() as db:
+                        row = await db.scalar(
+                            select(AgentScenario).where(
+                                AgentScenario.space == "official",
+                                AgentScenario.name == "文档与报告",
+                            )
+                        )
+                        version = await scenario_service.version(db, row)
+                        stored = version.bundle_json["payload"]
+                        clean = ScenarioPayload.model_validate(
+                            {
+                                **stored,
+                                "capabilities": {
+                                    **stored["capabilities"],
+                                    **APPROVAL_PLUGIN,
+                                },
+                            }
+                        )
+                        bundle = await scenario_service.assembler.compile(
+                            db,
+                            clean,
+                            tenant_policy=await get_policy(db),
+                            rendered_prompt=clean.prompt_template,
+                        )
+                        version.bundle_json = {
+                            "payload": clean.model_dump(),
+                            "bundle": asdict(bundle),
+                        }
+                        version.bundle_hash = bundle.bundle_hash
+                        await db.commit()
+                        return row.id
+
+                template_id = client.portal.call(attach_approval_plugin)
+                probe = api("POST", "/agent/sessions", {"scenarioId": template_id})
+                api(
+                    "POST",
+                    f"/agent/sessions/{probe['id']}/turns",
+                    {"message": "APPROVAL template probe"},
+                    202,
+                )
+                pending = wait_value(
+                    lambda: api("GET", "/agent/approvals")["items"], bool
+                )
+                api(
+                    "POST",
+                    f"/agent/approvals/{pending[0]['ticketId']}/resolve",
+                    {"action": "deny"},
+                )
+                wait_value(
+                    lambda: api("GET", f"/agent/sessions/{probe['id']}"),
+                    lambda item: item["status"] != "running",
+                )
+                api("DELETE", f"/agent/sessions/{probe['id']}")
+                check(
+                    "browser fixture template exposes an approval-required plugin tool",
+                    pending[0]["tool"] == APPROVAL_TOOL,
+                )
             api("POST", "/auth/logout")
             check(
                 "logout removes authenticated browser access",

@@ -289,8 +289,11 @@ def mcp_runnable(row: McpServer | None) -> bool:
 
 
 def tool_permission(tool: dict) -> str:
-    annotations = tool.get("annotations") if isinstance(tool.get("annotations"), dict) else {}
-    return "read" if annotations.get("readOnlyHint") is True else "approval"
+    """MCP 工具一律直接执行（与 bash 一致），不再按 readOnlyHint 标注逐次确认。
+
+    管理员接入并启用 MCP 服务即视为授权；Runner 仍兼容 permission=approval（受管插件等来源）。
+    """
+    return "read"
 
 
 def mcp_option(row: McpServer) -> dict:

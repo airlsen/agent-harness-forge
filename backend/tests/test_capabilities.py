@@ -232,8 +232,9 @@ async def test_turns_send_scenario_and_chat_capabilities_and_changes_apply_next_
             "title": "tickets",
             "source": "chat",
             "tools": [
+                # MCP 工具不再按标注逐次确认：未声明只读的工具同样直接执行
                 {"name": "lookup", "permission": "read"},
-                {"name": "create_ticket", "permission": "approval"},
+                {"name": "create_ticket", "permission": "read"},
             ],
             "transport": "stdio",
             "command": "node",
@@ -257,7 +258,7 @@ async def test_turns_send_scenario_and_chat_capabilities_and_changes_apply_next_
         bound_revision.id, bound_revision.content, sent["skills"][0]["files"]
     )
     assert summary["skills"][1]["snapshot"].startswith(f"{sent['skills'][1]['revisionId']}-")
-    assert summary["mcp"][0]["approvalTools"] == 1
+    assert summary["mcp"][0]["approvalTools"] == 0
     assert summary["web"] == {"search": True, "fetch": True, "source": "scenario"}
     dumped = json.dumps(first["messageMeta"], ensure_ascii=False)
     for secret in ("mcp-secret", "web-secret", "server.js", "结论先行", "术语表"):

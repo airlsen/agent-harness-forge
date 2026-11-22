@@ -127,7 +127,7 @@ export function capabilityGuide(caps: CapabilityContext = {}, tools: readonly st
         caps.skills.some((skill) => skill.hasScripts) &&
         tools.includes('skill_run_script') &&
         !tools.includes('skill_trial')
-          ? '需要运行 Skill 自带脚本时，按正文说明调用 skill_run_script（skill 为英文名称，path 为 scripts/ 下相对路径）。每次运行需要用户批准，拒绝后不要改用 bash 绕过。脚本在会话工作区的 outputs/<脚本名>-<时间>/ 下运行，产出文件保留在那里。'
+          ? '需要运行 Skill 自带脚本时，按正文说明调用 skill_run_script（skill 为英文名称，path 为 scripts/ 下相对路径）。脚本在会话工作区的 outputs/<脚本名>-<时间>/ 下运行，产出文件保留在那里。'
           : '',
       ]
         .filter(Boolean)

@@ -259,7 +259,8 @@ await check('Skill workbench exposes editing and draft execution in one DSH tool
   assert.ok(workbench.allowed.includes('skill'));
   assert.ok(workbench.allowed.includes('read'));
   assert.ok(workbench.allowed.includes('skill_run_script'));
-  assert.ok(workbench.approval.includes('skill_run_script'));
+  // 脚本与 bash 同等对待：直接执行，不逐次确认
+  assert.ok(!workbench.approval.includes('skill_run_script'));
   assert.ok(!workbench.allowed.includes('bash'));
 });
 await check('summary records revision and snapshot but never leaks skill bodies, credentials, commands or env', () => {

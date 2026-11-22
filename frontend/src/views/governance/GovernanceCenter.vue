@@ -12,8 +12,8 @@ const app = usePlatform(),
 const policy = reactive({
   allowedTools: [] as string[],
   allowedPluginTools: ['*'] as string[],
-  maxOutputTokens: 4096,
-  requestTimeoutSeconds: 120 as number | null,
+  maxOutputTokens: 16384,
+  requestTimeoutSeconds: 300 as number | null,
   approvalTimeoutSeconds: 120 as number | null,
   fileRetentionDays: 30 as number | null,
 });
@@ -22,7 +22,7 @@ const policy = reactive({
 const policyRules: Record<string, Rule[]> = {
   requestTimeoutSeconds: [
     { required: true, message: '请填写模型请求超时' },
-    { type: 'number', min: 15, max: 300, message: '模型请求超时需在 15 到 300 秒之间' },
+    { type: 'number', min: 15, max: 600, message: '模型请求超时需在 15 到 600 秒之间' },
   ],
   approvalTimeoutSeconds: [
     { required: true, message: '请填写审批等待超时' },
@@ -51,12 +51,11 @@ const fileRetentionValue = numberField('fileRetentionDays');
 
 // 工具权限标签以后端登记的 permission 为准，避免按工具名硬编码导致 bash 被误标为「只读」。
 function toolTag(tool: Tool) {
-  if (tool.name === 'bash') return '写入 · 按风险审批';
   return tool.permission === 'write' ? '写入' : '只读';
 }
 
 // 单次模型输出上限的固定档位。
-const outputTokenOptions = [1024, 2048, 4096, 8192, 16384].map((value) => ({
+const outputTokenOptions = [1024, 2048, 4096, 8192, 16384, 32768, 65536].map((value) => ({
   value,
   label: `${value.toLocaleString()} tokens`,
 }));
@@ -314,8 +313,8 @@ async function save() {
             <div>
               <strong>部署层强制边界</strong>
               <p>
-                不开放不受限的宿主机 Shell
-                与宿主机文件访问。终端命令（bash）仅在会话工作区或关联项目中受控执行：只读命令自动放行，修改、编译等命令逐次审批，高危命令直接拦截。联网仅限下方受控的搜索与公网网页读取。
+                终端命令（bash）与 Skill
+                脚本在会话工作区中直接执行，无需逐次确认；仅拦截提权、破坏系统、读取平台密钥与其他会话数据等少数高危命令。受管插件中声明需审批的工具仍逐次等待确认。
               </p>
             </div>
           </div>
@@ -332,7 +331,7 @@ async function save() {
               <a-input-number
                 v-model:value="requestTimeoutValue"
                 :min="15"
-                :max="300"
+                :max="600"
                 :controls="false"
                 style="width: 100%"
               />

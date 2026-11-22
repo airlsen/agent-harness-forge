@@ -8,7 +8,7 @@ export async function apply(ctx, config) {
   return ctx.tools.register({
     name: 'skill_run_script',
     description:
-      '运行已授权 Skill 中 scripts/ 下的脚本。需要用户批准。脚本在会话工作区的 outputs/<脚本名>-<时间>/ 下运行，写出的文件保留在那里（结果中的 outputs 列出产出路径）；环境变量 FORGE_SKILL_DIR 指向 Skill 目录。',
+      '运行已授权 Skill 中 scripts/ 下的脚本，直接执行，单次最长 5 分钟。脚本在会话工作区的 outputs/<脚本名>-<时间>/ 下运行，写出的文件保留在那里（结果中的 outputs 列出产出路径）；环境变量 FORGE_SKILL_DIR 指向 Skill 目录。',
     parameters: {
       type: 'object',
       properties: {

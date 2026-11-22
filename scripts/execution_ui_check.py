@@ -313,8 +313,9 @@ async def check_execution_ui(
             await expect(page.locator(".context-panel")).to_have_count(0)
             await page.get_by_role("button", name="允许本次").click()
             process = page.locator(".process-block").last
+            # 先调用需审批的演示 CRM 插件工具，批准后再写入 result.md
             await expect(process.locator(".process-header")).to_contain_text(
-                "调用 1 个工具"
+                "调用 2 个工具"
             )
             await page.get_by_role("button", name="查看结果", exact=True).click()
             result_file = page.locator(".file-card-main").filter(has_text="result.md")

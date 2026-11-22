@@ -44,3 +44,15 @@ def test_workspace_write_is_a_direct_write_not_an_approval_tool():
     write = next(tool for tool in TOOLS if tool["name"] == "workspace_write")
     assert write["permission"] == "write"
     assert "requireWriteApproval" not in DEFAULT_POLICY
+
+
+def test_default_limits_fit_long_agent_turns():
+    # 默认输出上限 16384、模型请求超时 300 秒；上限分别放宽到 65536 与 600 秒
+    assert DEFAULT_POLICY["maxOutputTokens"] == 16384
+    assert DEFAULT_POLICY["requestTimeoutSeconds"] == 300
+    payload = PolicyInput.model_validate({"maxOutputTokens": 65536, "requestTimeoutSeconds": 600})
+    assert payload.maxOutputTokens == 65536 and payload.requestTimeoutSeconds == 600
+    with pytest.raises(ValueError):
+        PolicyInput.model_validate({"requestTimeoutSeconds": 601})
+    with pytest.raises(ValueError):
+        PolicyInput.model_validate({"maxOutputTokens": 65537})
