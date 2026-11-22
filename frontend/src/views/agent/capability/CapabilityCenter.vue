@@ -173,8 +173,8 @@ const tab = computed(() => {
 const tabs = computed(() => [
   { value: 'tools', label: '基础工具', count: app.tools.length },
   { value: 'plugins', label: '插件', count: pluginRows.value.length },
-  { value: 'skills', label: '技能', count: publishedSkills.value.length },
-  { value: 'mcp', label: 'MCP 服务', count: mcp.value?.items.length },
+  { value: 'skills', label: 'Skills', count: publishedSkills.value.length },
+  { value: 'mcp', label: 'MCP', count: mcp.value?.items.length },
 ]);
 const searchCopy: Record<string, { placeholder: string; label: string }> = {
   tools: { placeholder: '搜索用途、名称或说明', label: '搜索基础工具' },
