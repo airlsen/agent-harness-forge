@@ -1,12 +1,16 @@
 import json
-from fastapi import APIRouter, Depends, Query
-from fastapi.responses import Response, StreamingResponse
 from typing import Literal
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from ..core.database import get_session
+
 from ..core.config import settings
-from ..schemas.skill import SkillCreate, SkillDraftUpdate, SkillFileWrite, SkillTurn
+from ..core.database import get_session
+from ..schemas.skill import SkillApprovalDecision, SkillCreate, SkillDraftUpdate, SkillFileWrite, SkillTurn
 from ..services import skill_service
+from ..services.runner_client import runner_client
 from ..utils.response import ResponseUtil
 
 router = APIRouter()
@@ -143,3 +147,22 @@ async def authoring_turn(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/{skill_id}/authoring-sessions/{session_id}/approvals/{ticket_id}/resolve")
+async def resolve_authoring_approval(
+    skill_id: int,
+    session_id: int,
+    ticket_id: UUID,
+    decision: SkillApprovalDecision,
+    db: AsyncSession = Depends(get_session),
+):
+    session = await skill_service.get_authoring_session(db, skill_id, session_id)
+    if session.status != "running" or not session.runner_session_id:
+        raise HTTPException(409, "当前没有等待确认的 Skill 执行")
+    await runner_client.call(
+        "POST",
+        f"/v1/sessions/{session.runner_session_id}/approvals/{ticket_id}/resolve",
+        decision.model_dump(),
+    )
+    return ResponseUtil.ok({"ticketId": ticket_id, "action": decision.action})

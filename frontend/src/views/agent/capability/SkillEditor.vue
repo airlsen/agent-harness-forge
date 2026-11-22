@@ -76,6 +76,14 @@ const streaming = ref(false);
 const assistantChange = ref('');
 // 本轮排队等待并发额度的位次；0 表示未排队。
 const queuePosition = ref(0);
+type WorkbenchApproval = {
+  ticketId: string;
+  tool: string;
+  arguments?: Record<string, unknown>;
+  reason?: string;
+};
+const approvals = ref<WorkbenchApproval[]>([]);
+const approvalBusy = ref<string | null>(null);
 // 对话按轮展示（与工作台相同）：用户消息 + 过程块（思考、工具调用、中间说明）+ 最终回答
 const turns = computed(() =>
   buildTurns(authoringChatMessages(messages.value), authoringLiveTurn(live, streaming.value)),
@@ -118,7 +126,7 @@ function revisionSource(source: string) {
   if (source === 'restore') return '恢复修订';
   return '手动编辑';
 }
-// 对应 skill-design 元 Skill 的三种模式：新建（访谈）/ 评审 / 修改。
+// 自然语言直接发给同一个工作台会话，助手自行选择编写、修改或试用。
 // 点击只填入输入框不发送；新建时首行会作为临时名称，所以写成让用户接着补全的开头。
 const starterPrompts = computed(() =>
   isNew.value
@@ -126,9 +134,7 @@ const starterPrompts = computed(() =>
     : [
         '帮我评审这个 Skill，按评分表指出问题，先不要修改。',
         '补充不适用的情况、需要找人确认的地方和输出样例。',
-        ...(skill.value?.files.find((file) => file.path.startsWith('scripts/'))
-          ? ['试运行这个 Skill 的脚本，检查输出与错误，并根据结果修改。']
-          : []),
+        '按当前草稿执行一次：我会给你具体任务，展示实际结果与问题。',
         '按我的要求修改：',
       ],
 );
@@ -601,6 +607,7 @@ async function send() {
   const changes: AssistantFileChange[] = [];
   Object.assign(live, emptyAuthoringLive());
   queuePosition.value = 0;
+  approvals.value = [];
   const text = prompt.value;
   const pendingId = `pending-${Date.now()}`;
   // 本轮流式追加的消息使用临时 ID（以 pendingId 开头），结束后由服务端记录替换
@@ -645,6 +652,10 @@ async function send() {
           queuePosition.value = Number(event.payload?.position ?? 0);
         } else if (event.kind === 'dequeued') {
           queuePosition.value = 0;
+        } else if (event.kind === 'approval_required') {
+          approvals.value.push(event.payload as WorkbenchApproval);
+        } else if (event.kind === 'approval_resolved') {
+          approvals.value = approvals.value.filter((item) => item.ticketId !== event.payload?.ticketId);
         } else if (event.kind === 'skill_revision' && event.payload?.path) {
           changes.push({ action: event.payload.action ?? 'update_draft', path: String(event.payload.path) });
         } else if (event.kind === 'error') throw new Error(event.payload?.message ?? 'Skill 助手执行失败');
@@ -674,7 +685,24 @@ async function send() {
     Object.assign(live, emptyAuthoringLive());
     streaming.value = false;
     queuePosition.value = 0;
+    approvals.value = [];
     busy.value = false;
+  }
+}
+
+async function decideApproval(ticketId: string, action: 'approve' | 'deny') {
+  if (!skill.value || !session.value) return;
+  approvalBusy.value = ticketId;
+  try {
+    await post(
+      `/skills/${skill.value.id}/authoring-sessions/${session.value.id}/approvals/${ticketId}/resolve`,
+      { action },
+    );
+    approvals.value = approvals.value.filter((item) => item.ticketId !== ticketId);
+  } catch (err) {
+    app.toast((err as Error).message, 'error');
+  } finally {
+    approvalBusy.value = null;
   }
 }
 
@@ -1266,7 +1294,7 @@ onBeforeUnmount(() => {
                 {{
                   isNew
                     ? '说说这项工作平时怎么做，我会先问几个关键问题再起草。发布由你确认。'
-                    : '可以让我评审、补充或按要求修改草稿。发布由你确认。'
+                    : '告诉我想修改什么，或给我一个具体任务试用当前草稿。发布由你确认。'
                 }}
               </p>
               <button v-for="text in starterPrompts" :key="text" @click="useStarterPrompt(text)">
@@ -1318,6 +1346,27 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
+          <div v-for="approval in approvals" :key="approval.ticketId" class="skill-approval" role="alert">
+            <strong>{{ approval.tool }} · 等待确认</strong>
+            <p>{{ approval.reason || '执行此操作需要你确认。' }}</p>
+            <pre>{{ JSON.stringify(approval.arguments ?? {}, null, 2) }}</pre>
+            <div>
+              <button
+                type="button"
+                :disabled="!!approvalBusy"
+                @click="decideApproval(approval.ticketId, 'deny')"
+              >
+                拒绝
+              </button>
+              <button
+                type="button"
+                :disabled="!!approvalBusy"
+                @click="decideApproval(approval.ticketId, 'approve')"
+              >
+                允许本次
+              </button>
+            </div>
+          </div>
           <form class="chat-composer" @submit.prevent="send">
             <div class="composer-box">
               <a-textarea
@@ -1325,7 +1374,7 @@ onBeforeUnmount(() => {
                 v-model:value="prompt"
                 :auto-size="{ minRows: 2, maxRows: 6 }"
                 :maxlength="8000"
-                placeholder="描述你想创建或修改的内容…"
+                placeholder="描述想创建、修改或试用的内容…"
                 aria-label="给 Skill 助手的要求"
                 @keydown="onPromptKeydown"
               />
@@ -2073,6 +2122,47 @@ onBeforeUnmount(() => {
   padding: 8px 12px 0 0;
   color: var(--color-brand);
   font-size: 12px;
+}
+.skill-approval {
+  flex-shrink: 0;
+  margin: 0 12px 8px;
+  padding: 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  background: var(--surface-content);
+  font-size: 13px;
+}
+.skill-approval p {
+  margin: 6px 0;
+  color: var(--color-text-secondary);
+}
+.skill-approval pre {
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 8px 0;
+}
+.skill-approval > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.skill-approval button {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-default);
+  color: var(--color-text-primary);
+  background: var(--surface-content);
+  cursor: pointer;
+}
+.skill-approval button:last-child {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+.skill-approval button:disabled {
+  opacity: 0.5;
+  cursor: wait;
 }
 .chat-composer {
   flex-shrink: 0;

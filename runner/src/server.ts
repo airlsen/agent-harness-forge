@@ -119,7 +119,7 @@ app.get<{ Querystring: { root?: string } }>('/v1/code/projects', async (req) =>
 );
 app.get<{ Params: { id: string } }>('/v1/sessions/:id', async (req, reply) =>
   kernel.has(req.params.id)
-    ? { exists: true, busy: kernel.isBusy(req.params.id) }
+    ? { exists: true, busy: kernel.isBusy(req.params.id), policyRef: kernel.policyRef(req.params.id) }
     : reply.code(404).send({ message: '执行会话不存在，Runner 可能已重启' }),
 );
 app.post<{
