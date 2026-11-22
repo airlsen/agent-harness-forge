@@ -87,9 +87,9 @@ defineExpose({ close: () => (open.value = false) });
       class="model-trigger is-empty"
       :title="title"
     >
-      <Icon name="cpu" :size="15" /><span>{{ label }}</span>
+      <Icon name="model" :size="15" /><span>{{ label }}</span>
     </RouterLink>
-    <Icon v-if="inSession || app.modelOptions.length" class="model-select-icon" name="cpu" :size="15" />
+    <Icon v-if="inSession || app.modelOptions.length" class="model-select-icon" name="model" :size="15" />
     <a-select
       v-if="inSession || app.modelOptions.length"
       class="model-select"
@@ -109,7 +109,7 @@ defineExpose({ close: () => (open.value = false) });
         value="__current__"
         :label="chat.current?.modelName || chat.current?.model || '未记录模型'"
       >
-        <Icon name="cpu" :size="17" />
+        <Icon name="model" :size="17" />
         <span class="task-select-option-copy">
           <strong
             >{{ chat.current?.modelName || chat.current?.model || '未记录模型'
@@ -126,7 +126,7 @@ defineExpose({ close: () => (open.value = false) });
         :value="option.id"
         :label="option.name"
       >
-        <Icon name="cpu" :size="17" />
+        <Icon name="model" :size="17" />
         <span class="task-select-option-copy">
           <strong
             >{{ option.name

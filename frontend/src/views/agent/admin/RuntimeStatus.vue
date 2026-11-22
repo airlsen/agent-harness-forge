@@ -116,7 +116,7 @@ async function refresh() {
 
         <section class="runtime-status-card runtime-model-status">
           <header>
-            <Icon name="cpu" :size="19" />
+            <Icon name="model" :size="19" />
             <div>
               <h2>平台默认模型</h2>
               <p>新会话未选择模型时使用；聊天中可为会话选择已启用的模型，并在两轮之间切换。</p>
