@@ -47,6 +47,8 @@ export interface Conversation {
   tokensOut: number;
   cost: number | null;
   createdAt: string;
+  /** 最近活动时间（最后一条消息的时间，没有消息时为创建时间）；旧版本后端不返回 */
+  lastActiveAt?: string;
   /** 模型 ID（如 deepseek-chat） */
   model: string;
   /** 会话使用的模型配置 ID；第一期之前创建的旧会话为 null */

@@ -147,7 +147,7 @@ class SessionService:
             raise HTTPException(404, "会话不存在")
         return row
 
-    def view(self, row, segment: AgentSessionModel | None = None):
+    def view(self, row, segment: AgentSessionModel | None = None, last_active: datetime | None = None):
         meta = row.bundle_snapshot.get("meta", {})
         current = model_ref(segment, row)
         return {
@@ -163,6 +163,8 @@ class SessionService:
             "tokensOut": row.tokens_out,
             "cost": row.cost if row.cost_known else None,
             "createdAt": iso(row.created_at),
+            # 最近活动：最后一条消息的时间，没有消息时为创建时间（侧栏「最近会话」按它排序）
+            "lastActiveAt": iso(last_active or row.created_at),
             # 当前模型取最新分段（会话内可切换）；旧会话回退到创建时快照，缺失的配置 ID 为 None。
             "model": current.get("model", ""),
             "modelId": current.get("modelId"),
@@ -244,9 +246,18 @@ class SessionService:
             if not include_archived:
                 query = query.where(AgentSession.status != "archived")
             rows = (await db.scalars(query)).all()
-            segments = await current_segments(db, [row.id for row in rows])
+            ids = [row.id for row in rows]
+            segments = await current_segments(db, ids)
+            last_active = {}
+            if ids:
+                latest = await db.execute(
+                    select(SessionMessage.session_id, func.max(SessionMessage.created_at))
+                    .where(SessionMessage.session_id.in_(ids))
+                    .group_by(SessionMessage.session_id)
+                )
+                last_active = dict(latest.all())
             return [
-                self.view(row, segments.get(row.id))
+                self.view(row, segments.get(row.id), last_active.get(row.id))
                 for row in rows
                 if include_tests or not row.bundle_snapshot.get("meta", {}).get("isTest")
             ]
