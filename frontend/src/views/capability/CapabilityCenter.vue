@@ -307,6 +307,34 @@ const guidance: Record<string, { example: string; boundary: string }> = {
     example: '请把分析结果整理成 Markdown 文件，供我预览和下载。',
     boundary: '直接写入当前会话目录，无需逐次确认；受文件数量与容量配额约束，不能写到会话目录之外。',
   },
+  todo_write: {
+    example: '请把这次任务拆成待办清单，并逐步更新进度。',
+    boundary: '只记录当前会话内的任务清单，不访问外部系统。',
+  },
+  job_output: {
+    example: '请读取刚才启动的后台任务的输出结果。',
+    boundary: '只能读取当前会话自己启动的后台任务输出。',
+  },
+  job_list: {
+    example: '请列出当前会话正在运行的后台任务。',
+    boundary: '只查看当前会话自己启动的后台任务。',
+  },
+  job_kill: {
+    example: '请终止那个超时的后台任务。',
+    boundary: '只能终止当前会话自己启动的后台任务。',
+  },
+  create_goal: {
+    example: '请为这次任务记录一个明确的执行目标。',
+    boundary: '只记录当前会话内的目标，不访问外部系统。',
+  },
+  get_goal: {
+    example: '请查看当前已记录的目标及其完成状态。',
+    boundary: '只查看当前会话内的目标状态。',
+  },
+  update_goal: {
+    example: '请更新当前目标的进度或调整目标描述。',
+    boundary: '只更新当前会话内的目标状态。',
+  },
 };
 async function load() {
   loading.value = true;
