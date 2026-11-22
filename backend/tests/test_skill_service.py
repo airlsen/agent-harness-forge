@@ -1,5 +1,8 @@
+import hashlib
 import io
+import json
 import zipfile
+from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -7,7 +10,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.api.core.database import Base
-from src.api.models.skill import Skill, SkillRevision, SkillAuthoringMessage, SkillAuthoringSession
+from src.api.models.skill import Skill, SkillAuthoringMessage, SkillAuthoringSession, SkillRevision
+from src.api.routes.skill import resolve_authoring_approval
+from src.api.schemas.skill import SkillApprovalDecision
 from src.api.services import skill_service
 from src.api.services.skill_service import (
     _slug,
@@ -211,11 +216,12 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
     async def fake_connection(db, secret=False):
         return {'configured': True, 'baseUrl': 'https://model.example', 'model': 'm', 'apiKey': 'k'}
 
-    async def fake_create_session(bundle, user_ctx, model_config):
+    async def fake_create_session(bundle, user_ctx, model_config, *, capabilities=None):
         captured['bundle'] = bundle
+        captured['capabilities'] = capabilities
         return {'sessionId': f'runner-{len(captured)}'}
 
-    policy = {'maxOutputTokens': 4096}
+    policy = {'maxOutputTokens': 4096, 'allowedTools': ['workspace_read', 'skill_run_script']}
 
     async def fake_policy(db):
         return dict(policy)
@@ -235,6 +241,12 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
             meta = bundle['meta']
             assert 'skill_read_guide' in meta['builtin_tools']
             assert meta['policy']['allowedTools'] == meta['builtin_tools']
+            assert 'workspace_read' in meta['builtin_tools']
+            assert 'skill_run_script' in meta['builtin_tools']
+            assert 'bash' not in meta['builtin_tools']
+            assert 'skill' in prompt['domain']
+            assert captured['capabilities']['skills'][0]['document'] == created['content']
+            assert captured['capabilities']['skills'][0]['name'] == f"skill-{created['id']}"
             # 企业策略低于 8192 时取 8192
             assert meta['policy']['maxOutputTokens'] == 8192
             authoring = meta['skillAuthoring']
@@ -315,6 +327,14 @@ class FakeAuthoringRunner:
     def __init__(self, monkeypatch, *, alive=True, restore_error=None):
         self.alive, self.restore_error = alive, restore_error
         self.calls, self.restored, self.created, self.turns = [], [], [], []
+        policy = {
+            "allowedTools": skill_service.AUTHORING_TOOLS,
+            "maxOutputTokens": 8192,
+            "requestTimeoutSeconds": 120,
+            "approvalTimeoutSeconds": 120,
+        }
+        digest = hashlib.sha256(json.dumps(policy, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:12]
+        self.policy_ref = f"skill-workbench-v1-{digest}"
         for name in ("call", "restore_session", "create_session", "events"):
             monkeypatch.setattr(skill_service.runner_client, name, getattr(self, name))
 
@@ -322,16 +342,17 @@ class FakeAuthoringRunner:
         self.calls.append((method, path))
         if not self.alive:
             raise HTTPException(404, "执行会话不存在，Runner 可能已重启")
-        return {"exists": True, "busy": False}
+        return {"exists": True, "busy": False, "policyRef": self.policy_ref}
 
-    async def restore_session(self, runner_session_id, bundle, user_ctx, model_config, *args):
+    async def restore_session(self, runner_session_id, bundle, user_ctx, model_config, *args, **kwargs):
         if self.restore_error:
             raise self.restore_error
-        self.restored.append((runner_session_id, bundle))
+        self.restored.append((runner_session_id, bundle, kwargs.get('capabilities', args[-1] if args else None)))
+        self.policy_ref = bundle['policy_ref']
         self.alive = True
         return {"sessionId": runner_session_id}
 
-    async def create_session(self, bundle, user_ctx, model_config):
+    async def create_session(self, bundle, user_ctx, model_config, **kwargs):
         self.created.append(bundle)
         return {"sessionId": f"fresh-{len(self.created)}"}
 
@@ -412,6 +433,106 @@ async def test_manual_draft_edit_swaps_the_latest_draft_into_the_same_session(mo
         # 草稿没有再变化：下一轮只确认会话存活，不再重启
         [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "再来")]
         assert len(runner.restored) == 1
+
+        async def changed_policy(db):
+            return {"maxOutputTokens": 4096, "allowedTools": ["current_time"]}
+
+        monkeypatch.setattr(skill_service, "get_policy", changed_policy)
+        [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "继续试用")]
+        assert len(runner.restored) == 2
+        assert "current_time" in runner.restored[-1][1]["meta"]["policy"]["allowedTools"]
+        assert "skill_run_script" not in runner.restored[-1][1]["meta"]["policy"]["allowedTools"]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_agent_edit_refreshes_same_session_skill_snapshot_on_next_turn(monkeypatch):
+    engine, sessions = await _memory_sessions()
+    monkeypatch.setattr(skill_service, "SessionFactory", sessions)
+    _fake_model(monkeypatch)
+    runner = FakeAuthoringRunner(monkeypatch)
+    try:
+        skill_id, session_id = await _authoring_fixture(sessions)
+        async with sessions() as db:
+            session = await skill_service.get_authoring_session(db, skill_id, session_id)
+            loaded_revision = session.current_revision_id
+
+        changed = '---\nname: weekly-report\ndescription: 写周报时使用\n---\n\n# 新版工作步骤\n'
+
+        async def edit_events(runner_id, message, model_config=None):
+            yield {"kind": "skill_revision", "payload": {"action": "update_draft", "content": changed}}
+
+        monkeypatch.setattr(skill_service.runner_client, "events", edit_events)
+        [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "修改步骤")]
+        async with sessions() as db:
+            session = await skill_service.get_authoring_session(db, skill_id, session_id)
+            assert session.current_revision_id == loaded_revision
+            assert (await skill_service.get_skill(db, skill_id)).current_revision_id != loaded_revision
+
+        monkeypatch.setattr(skill_service.runner_client, "events", runner.events)
+        [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "按新版试用")]
+        assert runner.restored[0][0] == "r1"
+        snapshot = runner.restored[0][2]["skills"][0]
+        assert snapshot["document"] == changed
+        assert snapshot["revisionId"] != loaded_revision
+        assert runner.turns[0][0] == "r1"
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_existing_editor_session_upgrades_to_workbench_without_new_conversation(monkeypatch):
+    engine, sessions = await _memory_sessions()
+    monkeypatch.setattr(skill_service, "SessionFactory", sessions)
+    _fake_model(monkeypatch)
+    runner = FakeAuthoringRunner(monkeypatch)
+
+    async def old_session(method, path, body=None):
+        return {"exists": True, "busy": False, "policyRef": "skill-authoring-v2"}
+
+    monkeypatch.setattr(skill_service.runner_client, "call", old_session)
+    try:
+        skill_id, session_id = await _authoring_fixture(sessions)
+        [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "测试当前草稿")]
+        assert len(runner.restored) == 1
+        assert runner.restored[0][0] == "r1"
+        assert runner.restored[0][1]["policy_ref"].startswith("skill-workbench-v1-")
+        assert len(runner.restored[0][2]["skills"]) == 1
+        assert runner.created == []
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_workbench_approval_is_bound_to_active_editor_session(monkeypatch):
+    engine, sessions = await _memory_sessions()
+    calls = []
+
+    async def fake_call(method, path, body=None):
+        calls.append((method, path, body))
+        return {"ok": True}
+
+    from src.api.routes import skill as skill_route
+    monkeypatch.setattr(skill_route.runner_client, "call", fake_call)
+    ticket = uuid4()
+    try:
+        skill_id, session_id = await _authoring_fixture(sessions)
+        async with sessions() as db:
+            with pytest.raises(HTTPException) as inactive:
+                await resolve_authoring_approval(
+                    skill_id, session_id, ticket, SkillApprovalDecision(action="approve"), db
+                )
+            assert inactive.value.status_code == 409 and not calls
+            session = await skill_service.get_authoring_session(db, skill_id, session_id)
+            session.status = "running"
+            await db.commit()
+            await resolve_authoring_approval(
+                skill_id, session_id, ticket, SkillApprovalDecision(action="deny"), db
+            )
+            assert calls == [
+                ("POST", f"/v1/sessions/r1/approvals/{ticket}/resolve", {"action": "deny"})
+            ]
     finally:
         await engine.dispose()
 

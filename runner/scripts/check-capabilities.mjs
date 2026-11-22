@@ -248,6 +248,20 @@ await check('session toolset adds skill/read, web tools and granted MCP tools on
   const plain = resolveCapabilities({ skills: [{ ...skill, files: [] }] });
   assert.equal(sessionToolset({ policy: { allowedTools: [] } }, false, plain).read, false);
 });
+await check('Skill workbench exposes editing and draft execution in one DSH toolset', () => {
+  const draft = resolveCapabilities({ skills: [{ ...skill, files: [{ path: 'scripts/check.py', content: 'print(1)' }] }] });
+  const workbench = sessionToolset(
+    { builtin_tools: ['skill_update_draft', 'skill_read_draft', 'skill_run_script'],
+      policy: { allowedTools: ['skill_update_draft', 'skill_read_draft', 'skill_run_script'] } },
+    false, draft,
+  );
+  assert.ok(workbench.allowed.includes('skill_update_draft'));
+  assert.ok(workbench.allowed.includes('skill'));
+  assert.ok(workbench.allowed.includes('read'));
+  assert.ok(workbench.allowed.includes('skill_run_script'));
+  assert.ok(workbench.approval.includes('skill_run_script'));
+  assert.ok(!workbench.allowed.includes('bash'));
+});
 await check('summary records revision and snapshot but never leaks skill bodies, credentials, commands or env', () => {
   const summary = capabilitySummary(resolveCapabilities(caps));
   assert.equal(summary.skills[0].revisionId, 42);

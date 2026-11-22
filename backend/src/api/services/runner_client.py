@@ -159,13 +159,15 @@ class RunnerClient:
 
 
 async def ensure_session(
-    client, runner_session_id, bundle, user_ctx, model_config, code_projects=None, capabilities=None
+    client, runner_session_id, bundle, user_ctx, model_config, code_projects=None, capabilities=None,
+    expected_policy_ref=None,
 ) -> bool:
     """确保执行会话可用：仍在 Runner 内存中直接返回 False；Runner 重启过则按快照从会话日志恢复并返回 True。
     日志缺失或无法恢复时抛出 Runner 的 404 / 410，由调用方决定降级方式。"""
     try:
-        await client.call("GET", f"/v1/sessions/{runner_session_id}")
-        return False
+        state = await client.call("GET", f"/v1/sessions/{runner_session_id}")
+        if not expected_policy_ref or state.get("policyRef") == expected_policy_ref:
+            return False
     except HTTPException as error:
         if error.status_code != 404:
             raise

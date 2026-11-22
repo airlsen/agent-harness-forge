@@ -229,6 +229,9 @@ export class DshKernel implements AgentKernel {
   has(id: string) {
     return this.sessions.has(id);
   }
+  policyRef(id: string) {
+    return this.entry(id).bundle.policy_ref;
+  }
   isBusy(id: string) {
     return this.entry(id).busy;
   }
