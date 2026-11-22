@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.config import settings
 from ..core.database import SessionFactory
 from ..models.skill import Skill, SkillAuthoringMessage, SkillAuthoringSession, SkillRevision
-from ..services.runner_client import runner_client
+from ..services.runner_client import ensure_session, runner_client
 from .settings_service import get_connection, get_policy
 from .skill_files import (
     MAX_FILE_BYTES,
@@ -188,7 +188,9 @@ def _skill_view(
         "publishedName": published_metadata.get("title") or (row.name if published_revision else ""),
         "publishedDescription": published_metadata.get("description")
         or (row.description if published_revision else ""),
-        "publishedFileCount": len(skill_files(published_revision.reference_files)) if published_revision else 0,
+        "publishedFileCount": len(skill_files(published_revision.reference_files))
+        if published_revision
+        else 0,
         "description": row.description,
         "status": row.status,
         "tags": row.tags or [],
@@ -673,32 +675,22 @@ def authoring_system_prompt(history: str) -> dict:
             "SKILL.md 元信息中 title 为中文展示名称，name 为英文机器标识，description 写什么情况下使用；修改名称或用途时同步更新对应字段，保留其他元信息。",
             "skill_update_draft 会用 content 整体替换草稿：必须提交完整文档，未要求修改的内容原样保留。",
             "用户询问原因或解释内容时只回答，不调用更新工具；只有明确要求修改或创建时才修改草稿。",
+            "对话期间维护者可能手动修改草稿或附加文件：每次修改前都重新调用 skill_read_draft，不要沿用之前读到的内容。",
         ],
         "workspace": [f"# Skill 设计方法\n\n{method}", history],
     }
 
 
-async def create_authoring_session(db: AsyncSession, skill_id: int, created_by: str) -> dict:
-    skill = await get_skill(db, skill_id)
-    revision = await _current_revision(db, skill)
-    if not revision:
-        raise HTTPException(409, "Skill 草稿不存在")
+AUTHORING_USER_CTX_ROLES = ["admin"]
+
+
+async def _authoring_runtime(
+    db: AsyncSession, skill: Skill, revision: SkillRevision, history: str = ""
+) -> tuple[dict, dict]:
+    """编写会话的执行配置（bundle + 模型）：每次按最新草稿与当前模型配置重新组装。"""
     connection = await get_connection(db, secret=True)
     if not connection["configured"]:
         raise HTTPException(409, "请先在模型管理中启用一个模型配置，再使用 Skill 助手")
-    # 手动编辑或恢复版本后前端会重建会话（保证草稿最新），历史对话通过系统提示延续。
-    context = (
-        await db.scalars(
-            select(SkillAuthoringMessage)
-            .join(
-                SkillAuthoringSession, SkillAuthoringSession.id == SkillAuthoringMessage.authoring_session_id
-            )
-            .where(SkillAuthoringSession.skill_id == skill.id)
-            .order_by(SkillAuthoringMessage.id.desc())
-            .limit(AUTHORING_HISTORY_MESSAGES)
-        )
-    ).all()
-    history = authoring_history(list(reversed(context)))
     _, guides = skill_design_method()
     policy = await get_policy(db)
     max_output_tokens = max(int(policy.get("maxOutputTokens") or 0), AUTHORING_MIN_OUTPUT_TOKENS)
@@ -739,9 +731,36 @@ async def create_authoring_session(db: AsyncSession, skill_id: int, created_by: 
         "apiKey": connection.get("apiKey", ""),
         "contextWindow": connection.get("contextWindow", 64000),
     }
-    runner = await runner_client.create_session(
-        bundle, {"tenantId": "sandbox", "userId": created_by, "roles": ["admin"]}, model_config
-    )
+    return bundle, model_config
+
+
+def _authoring_user_ctx(created_by: str) -> dict:
+    return {"tenantId": "sandbox", "userId": created_by, "roles": AUTHORING_USER_CTX_ROLES}
+
+
+async def _recent_authoring_history(db: AsyncSession, skill_id: int) -> str:
+    context = (
+        await db.scalars(
+            select(SkillAuthoringMessage)
+            .join(
+                SkillAuthoringSession, SkillAuthoringSession.id == SkillAuthoringMessage.authoring_session_id
+            )
+            .where(SkillAuthoringSession.skill_id == skill_id)
+            .order_by(SkillAuthoringMessage.id.desc())
+            .limit(AUTHORING_HISTORY_MESSAGES)
+        )
+    ).all()
+    return authoring_history(list(reversed(context)))
+
+
+async def create_authoring_session(db: AsyncSession, skill_id: int, created_by: str) -> dict:
+    """新建对话：全新的执行上下文（草稿保留）。同一对话的后续轮次、Runner 重启、手动改草稿都接续这一条会话。"""
+    skill = await get_skill(db, skill_id)
+    revision = await _current_revision(db, skill)
+    if not revision:
+        raise HTTPException(409, "Skill 草稿不存在")
+    bundle, model_config = await _authoring_runtime(db, skill, revision)
+    runner = await runner_client.create_session(bundle, _authoring_user_ctx(created_by), model_config)
     row = SkillAuthoringSession(
         skill_id=skill.id,
         runner_session_id=runner["sessionId"],
@@ -752,6 +771,38 @@ async def create_authoring_session(db: AsyncSession, skill_id: int, created_by: 
     await db.commit()
     await db.refresh(row)
     return await authoring_session_view(db, row)
+
+
+async def _prepare_authoring_runner(
+    db: AsyncSession, session: SkillAuthoringSession, created_by: str
+) -> dict:
+    """发送前确保执行会话可用且持有最新草稿，返回本轮模型配置：
+    - Runner 重启过：按最新草稿重新装配，从磁盘会话日志接续（dsh session/resume），上下文完整保留；
+    - 草稿在对话外被修改过（手动编辑、上传文件、恢复版本）：替换为最新草稿，本轮重启接续同一份日志；
+    - 会话日志缺失或无法恢复：新建执行会话，以最近的对话记录作为系统提示延续（降级）。"""
+    skill = await get_skill(db, session.skill_id)
+    revision = await _current_revision(db, skill)
+    if not revision:
+        raise HTTPException(409, "Skill 草稿不存在")
+    bundle, model_config = await _authoring_runtime(db, skill, revision)
+    user_ctx = _authoring_user_ctx(created_by)
+    if session.runner_session_id:
+        try:
+            if session.current_revision_id != revision.id:
+                await runner_client.restore_session(session.runner_session_id, bundle, user_ctx, model_config)
+            else:
+                await ensure_session(runner_client, session.runner_session_id, bundle, user_ctx, model_config)
+            session.current_revision_id = revision.id
+            return model_config
+        except HTTPException as error:
+            if error.status_code not in (404, 410):
+                raise
+    history = await _recent_authoring_history(db, skill.id)
+    bundle, model_config = await _authoring_runtime(db, skill, revision, history)
+    runner = await runner_client.create_session(bundle, user_ctx, model_config)
+    session.runner_session_id = runner["sessionId"]
+    session.current_revision_id = revision.id
+    return model_config
 
 
 def skill_file_contents(revision: SkillRevision) -> list[dict]:
@@ -780,30 +831,20 @@ async def _append_message(
     await db.commit()
 
 
-async def run_authoring_turn(skill_id: int, session_id: int, message: str):
+async def run_authoring_turn(skill_id: int, session_id: int, message: str, created_by: str = "admin"):
     """Persist the user turn and stream DSH events while checkpointing revisions/messages."""
     async with SessionFactory() as db:
         session = await get_authoring_session(db, skill_id, session_id)
         if session.status == "running":
             raise HTTPException(409, "Skill 助手正在处理上一条消息")
-        if not session.runner_session_id:
-            raise HTTPException(409, "Skill 助手会话不存在，请新建编辑会话")
-        try:
-            await runner_client.call("GET", f"/v1/sessions/{session.runner_session_id}")
-        except HTTPException as error:
-            if error.status_code == 404:
-                session.status = "interrupted"
-                await db.commit()
-                raise HTTPException(
-                    409, "Runner 已重启，请新建 Skill 编辑会话；当前草稿和对话记录已保留"
-                ) from error
-            raise
+        model_config = await _prepare_authoring_runner(db, session, created_by)
         session.status = "running"
         await _append_message(db, session, "user", message)
         runner_id = session.runner_session_id
     assistant_text = []
     try:
-        async for event in runner_client.events(runner_id, message):
+        # 每轮下发当前模型配置：模型管理中修改后，Runner 比对指纹并以新配置重启接续
+        async for event in runner_client.events(runner_id, message, model_config):
             payload = event.get("payload") if isinstance(event, dict) else {}
             kind = event.get("kind") if isinstance(event, dict) else ""
             if kind == "skill_revision" and isinstance(payload, dict):

@@ -70,6 +70,24 @@ class RunnerClient:
             },
         )
 
+    async def restore_session(
+        self, runner_session_id, bundle, user_ctx, model_config, code_projects=None, capabilities=None
+    ):
+        """以原 id 重新装配执行会话：Runner 重启后从磁盘会话日志接续上下文（404 日志缺失 / 410 无法恢复），
+        会话仍在内存中时替换为新配置、下一轮重启接续。"""
+        return await self.call(
+            "POST",
+            f"/v1/sessions/{runner_session_id}/restore",
+            {
+                "bundle": bundle,
+                "userCtx": user_ctx,
+                "modelConfig": model_config,
+                "codeProjects": list(code_projects or []),
+                **({"codeRoot": self.code_root} if self.code_root else {}),
+                "capabilities": capabilities or {"skills": [], "mcp": [], "web": None},
+            },
+        )
+
     async def code_projects(self, root: str | None = None):
         """代码目录下可关联的项目；目录由 Runner 读取，控制面不接触代码。传 root 时只检查该目录，不改变设置。"""
         query = urlencode({"root": self.code_root if root is None else root})
@@ -105,6 +123,23 @@ class RunnerClient:
                 async for line in response.aiter_lines():
                     if line.startswith("data: "):
                         yield json.loads(line[6:])
+
+
+async def ensure_session(
+    client, runner_session_id, bundle, user_ctx, model_config, code_projects=None, capabilities=None
+) -> bool:
+    """确保执行会话可用：仍在 Runner 内存中直接返回 False；Runner 重启过则按快照从会话日志恢复并返回 True。
+    日志缺失或无法恢复时抛出 Runner 的 404 / 410，由调用方决定降级方式。"""
+    try:
+        await client.call("GET", f"/v1/sessions/{runner_session_id}")
+        return False
+    except HTTPException as error:
+        if error.status_code != 404:
+            raise
+    await client.restore_session(
+        runner_session_id, bundle, user_ctx, model_config, code_projects, capabilities
+    )
+    return True
 
 
 runner_client = RunnerClient()

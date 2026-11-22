@@ -14,7 +14,7 @@ from ..models.platform import PlatformSetting, SessionMessage
 from ..models.approval_ticket import ApprovalTicket
 from ..schemas.agent_scenario import ScenarioPayload
 from .file_service import file_service
-from .runner_client import runner_client
+from .runner_client import ensure_session, runner_client
 from .scenario_service import scenario_service, iso
 from .scenario_assembler import Bundle, apply_current_policy
 from .plugin_service import ensure_bindings_available
@@ -392,23 +392,34 @@ class SessionService:
                     config = await resolve_session_connection(db, model_id)
                     segment = segment_from_connection(session_id, config)
                 runtime = runtime_config(segment)
+                user_ctx = {
+                    "tenantId": "sandbox",
+                    "userId": settings.admin_username,
+                    "roles": ["workspace-admin"],
+                }
                 if row.runner_session_id:
+                    # Runner 重启后按会话快照重新装配，从磁盘会话日志接续完整上下文（dsh session/resume）
                     try:
-                        await runner_client.call("GET", f"/v1/sessions/{row.runner_session_id}")
+                        await ensure_session(
+                            runner_client,
+                            row.runner_session_id,
+                            row.bundle_snapshot,
+                            user_ctx,
+                            runtime,
+                            code,
+                            runtime_caps,
+                        )
                     except HTTPException as error:
-                        if error.status_code == 404:
+                        if error.status_code in (404, 410):
                             raise HTTPException(
-                                409, "执行内核已重启，请新建会话；历史消息、轨迹和本地产物仍可查看"
+                                409,
+                                f"执行上下文无法恢复（{error.detail}），请新建会话；历史消息、轨迹和本地产物仍可查看",
                             ) from error
                         raise
                 else:
                     handle = await runner_client.create_session(
                         row.bundle_snapshot,
-                        {
-                            "tenantId": "sandbox",
-                            "userId": settings.admin_username,
-                            "roles": ["workspace-admin"],
-                        },
+                        user_ctx,
                         runtime,
                         code,
                         runtime_caps,

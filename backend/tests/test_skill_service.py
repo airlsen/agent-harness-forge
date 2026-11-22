@@ -241,16 +241,27 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
             assert [guide['name'] for guide in authoring['guides']] == list(skill_service.SKILL_DESIGN_GUIDES)
             assert 'conversationContext' not in authoring
 
-            # 有了对话记录后重建会话（如手动编辑后）：历史进入系统提示；企业策略更高时跟随策略
+            # 显式新建对话是全新的执行上下文：即使已有对话记录，也不把旧对话塞进系统提示
             row = await skill_service.get_authoring_session(db, created['id'], first['id'])
             await skill_service._append_message(db, row, 'user', '给财务团队用的周报')
             await skill_service._append_message(db, row, 'assistant', '好的，先确认数据来源。')
             policy['maxOutputTokens'] = 16384
             await skill_service.create_authoring_session(db, created['id'], 'tester')
+            fresh = captured['bundle']
+            assert fresh['profile_patch']['systemPrompt']['workspace'][1] == ''
+            assert fresh['meta']['policy']['maxOutputTokens'] == 16384
+
+            # 降级：会话日志不可用时新建执行会话，最近对话进入系统提示
+            async def missing_log(*args, **kwargs):
+                raise HTTPException(404, '会话日志不存在，无法接续执行上下文')
+
+            monkeypatch.setattr(skill_service.runner_client, 'call', missing_log)
+            monkeypatch.setattr(skill_service.runner_client, 'restore_session', missing_log)
+            await skill_service._prepare_authoring_runner(db, row, 'tester')
             rebuilt = captured['bundle']
             history = rebuilt['profile_patch']['systemPrompt']['workspace'][1]
             assert '维护者：给财务团队用的周报' in history and '助手：好的，先确认数据来源。' in history
-            assert rebuilt['meta']['policy']['maxOutputTokens'] == 16384
+            assert row.runner_session_id == f'runner-{len(captured)}'
     finally:
         await engine.dispose()
 
@@ -285,6 +296,148 @@ def test_skill_files_convert_legacy_entries_and_validate_paths():
     ]:
         with pytest.raises(ValueError, match=message):
             validate_file_path(path)
+
+
+def _fake_model(monkeypatch):
+    async def fake_connection(db, secret=False):
+        return {"configured": True, "baseUrl": "https://model.example", "model": "m", "apiKey": "k"}
+
+    async def fake_policy(db):
+        return {"maxOutputTokens": 4096}
+
+    monkeypatch.setattr(skill_service, "get_connection", fake_connection)
+    monkeypatch.setattr(skill_service, "get_policy", fake_policy)
+
+
+class FakeAuthoringRunner:
+    """记录 Runner 调用：alive=False 模拟 Runner 重启（内存会话丢失），restore_error 模拟日志缺失/损坏。"""
+
+    def __init__(self, monkeypatch, *, alive=True, restore_error=None):
+        self.alive, self.restore_error = alive, restore_error
+        self.calls, self.restored, self.created, self.turns = [], [], [], []
+        for name in ("call", "restore_session", "create_session", "events"):
+            monkeypatch.setattr(skill_service.runner_client, name, getattr(self, name))
+
+    async def call(self, method, path, body=None):
+        self.calls.append((method, path))
+        if not self.alive:
+            raise HTTPException(404, "执行会话不存在，Runner 可能已重启")
+        return {"exists": True, "busy": False}
+
+    async def restore_session(self, runner_session_id, bundle, user_ctx, model_config, *args):
+        if self.restore_error:
+            raise self.restore_error
+        self.restored.append((runner_session_id, bundle))
+        self.alive = True
+        return {"sessionId": runner_session_id}
+
+    async def create_session(self, bundle, user_ctx, model_config):
+        self.created.append(bundle)
+        return {"sessionId": f"fresh-{len(self.created)}"}
+
+    async def events(self, runner_id, message, model_config=None):
+        self.turns.append((runner_id, message, model_config))
+        yield {"kind": "message_delta", "payload": {"text": f"re: {message}"}}
+
+
+async def _authoring_fixture(sessions, *, revision_current=True):
+    """一个 Skill + 一条已有对话的编写会话（runner r1）。revision_current=False 表示草稿之后被手动改过。"""
+    async with sessions() as db:
+        created = await create_skill(db, "周报", "写周报时使用", None, "tester")
+        skill_id = created["id"]
+        row = SkillAuthoringSession(
+            skill_id=skill_id,
+            runner_session_id="r1",
+            status="idle",
+            current_revision_id=created["currentRevisionId"],
+        )
+        db.add(row)
+        await db.commit()
+        await skill_service._append_message(db, row, "user", "给财务团队用的周报")
+        await skill_service._append_message(db, row, "assistant", "好的，先确认数据来源。")
+        if not revision_current:
+            await update_draft(
+                db, skill_id, created["content"] + "\n手动补充的一段。\n", "手动编辑草稿", "admin"
+            )
+        return skill_id, row.id
+
+
+@pytest.mark.asyncio
+async def test_authoring_turn_resumes_the_same_dsh_session_after_runner_restart(monkeypatch):
+    engine, sessions = await _memory_sessions()
+    monkeypatch.setattr(skill_service, "SessionFactory", sessions)
+    _fake_model(monkeypatch)
+    runner = FakeAuthoringRunner(monkeypatch, alive=False)
+    try:
+        skill_id, session_id = await _authoring_fixture(sessions)
+        relayed = [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "继续")]
+        assert relayed == [{"kind": "message_delta", "payload": {"text": "re: 继续"}}]
+        # 按原 id 恢复，不新建会话；上下文来自 dsh 会话日志，系统提示里不再塞摘要
+        assert [restored[0] for restored in runner.restored] == ["r1"]
+        bundle = runner.restored[0][1]
+        assert bundle["profile_patch"]["systemPrompt"]["workspace"][1] == ""
+        assert runner.created == []
+        assert runner.turns == [
+            (
+                "r1",
+                "继续",
+                {"baseUrl": "https://model.example", "model": "m", "apiKey": "k", "contextWindow": 64000},
+            )
+        ]
+        async with sessions() as db:
+            view = await skill_service.latest_authoring_session(db, skill_id)
+            assert view["id"] == session_id and view["status"] == "idle"
+            assert [m["content"] for m in view["messages"]][-2:] == ["继续", "re: 继续"]
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_manual_draft_edit_swaps_the_latest_draft_into_the_same_session(monkeypatch):
+    engine, sessions = await _memory_sessions()
+    monkeypatch.setattr(skill_service, "SessionFactory", sessions)
+    _fake_model(monkeypatch)
+    runner = FakeAuthoringRunner(monkeypatch, alive=True)
+    try:
+        skill_id, session_id = await _authoring_fixture(sessions, revision_current=False)
+        [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "看看我改的")]
+        # 会话仍在内存中也要替换配置：插件下一轮从最新草稿启动，并接续同一份日志
+        assert [restored[0] for restored in runner.restored] == ["r1"]
+        assert "手动补充的一段。" in runner.restored[0][1]["meta"]["skillAuthoring"]["content"]
+        assert runner.created == [] and runner.turns[0][0] == "r1"
+        async with sessions() as db:
+            row = await skill_service.get_authoring_session(db, skill_id, session_id)
+            skill = await skill_service.get_skill(db, skill_id)
+            assert row.current_revision_id == skill.current_revision_id
+        # 草稿没有再变化：下一轮只确认会话存活，不再重启
+        [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "再来")]
+        assert len(runner.restored) == 1
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [404, 410])
+async def test_unrecoverable_session_log_falls_back_to_a_new_runner_session_with_history(monkeypatch, status):
+    engine, sessions = await _memory_sessions()
+    monkeypatch.setattr(skill_service, "SessionFactory", sessions)
+    _fake_model(monkeypatch)
+    runner = FakeAuthoringRunner(
+        monkeypatch, alive=False, restore_error=HTTPException(status, "log unavailable")
+    )
+    try:
+        skill_id, session_id = await _authoring_fixture(sessions)
+        [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "继续")]
+        assert len(runner.created) == 1
+        history = runner.created[0]["profile_patch"]["systemPrompt"]["workspace"][1]
+        assert "维护者：给财务团队用的周报" in history
+        assert runner.turns[0][0] == "fresh-1"
+        async with sessions() as db:
+            row = await skill_service.get_authoring_session(db, skill_id, session_id)
+            # 同一条编写会话继续使用（消息不分裂），只换执行会话
+            assert row.runner_session_id == "fresh-1" and row.status == "idle"
+    finally:
+        await engine.dispose()
 
 
 async def _memory_sessions():
@@ -368,13 +521,18 @@ async def test_agent_turn_saves_document_and_files_without_dropping_references(t
     async def fake_call(method, path, *args, **kwargs):
         return {}
 
+    async def fake_restore(*args, **kwargs):
+        return {'sessionId': args[0]}
+
     events = []
 
-    async def fake_events(runner_id, message):
+    async def fake_events(runner_id, message, model_config=None):
         for event in events:
             yield event
 
+    _fake_model(monkeypatch)
     monkeypatch.setattr(skill_service.runner_client, 'call', fake_call)
+    monkeypatch.setattr(skill_service.runner_client, 'restore_session', fake_restore)
     monkeypatch.setattr(skill_service.runner_client, 'events', fake_events)
     try:
         async with sessions() as db:

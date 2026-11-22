@@ -216,7 +216,7 @@ async def init_db() -> None:
                 )
             for row in (row for row in active if row.id == session_id):
                 row.status, row.ended_at = "interrupted", datetime.now(timezone.utc)
-                append("error", {"message": "控制面重启，未完成的任务已标记中断，请新建会话"})
+                append("error", {"message": "控制面重启，未完成的任务已标记中断；可继续发送消息，上下文会保留"})
                 append("done", {"status": "error", "reason": "control-plane-restart"})
 
         # Additive compatibility for existing platform policies and official scenarios to include bash
