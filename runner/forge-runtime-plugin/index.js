@@ -118,7 +118,8 @@ function truncateCmd(cmd) {
 
 /**
  * 对 bash 命令行进行安全门控分类（deny-list-only）：
- * - 'deny': 硬性拦截高危破坏、提权、探测凭据与密钥、对外部地址的网络请求
+ * - 'deny': 硬性拦截高危破坏、提权、探测凭据与密钥、下载后直接执行脚本
+ * - curl/wget 等网络请求（含外部地址）不拦截，接口调试、测试可直接使用
  * - 'allow': 其余命令（只读查看、写文件、编译运行等）自动放行
  * 调用方仍兼容 'ask'（交给用户确认），目前分类器不再返回该级别。
  */
@@ -156,16 +157,7 @@ export function classifyBashCommand(cmd) {
     return { level: 'deny', reason: '安全策略禁止读取系统凭据、密钥与敏感文件' };
   }
 
-  // (4) 对外联地址发起网络请求（下载/外泄）；本地回环（localhost/127.0.0.1/0.0.0.0）允许
-  if (
-    /\b(curl|wget)\b[\s\S]*\b(https?:\/\/|ftp:\/\/)/i.test(clean) &&
-    !/\b(curl|wget)\b[\s\S]*\b(https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)|ftp:\/\/(localhost|127\.0\.0\.1))\b/i.test(
-      clean,
-    )
-  ) {
-    return { level: 'deny', reason: '安全策略禁止向外部地址发起网络请求（curl/wget）' };
-  }
-  // (4b) 通过网络管道直接下载并执行脚本
+  // (4) 通过网络管道直接下载并执行脚本
   if (/(curl|wget)[\s\S]*\|\s*(ba|z|k|c)?sh\b/i.test(clean)) {
     return { level: 'deny', reason: '安全策略禁止通过网络管道直接下载并执行脚本' };
   }
