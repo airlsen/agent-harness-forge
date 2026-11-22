@@ -13,6 +13,7 @@ import { buildTurns, latestUnavailable, type ToolCallView, type Turn } from '../
 import Icon from '../../../components/ForgeIcon.vue';
 import Markdown from '../../../components/MarkdownContent.vue';
 import ProcessBlock from '../../../components/ProcessBlock.vue';
+import UserMessageText from '../../../components/UserMessageText.vue';
 import TaskComposer from '../../../components/TaskComposer.vue';
 import ConversationStart from '../../../components/ConversationStart.vue';
 import FileCard from '../../../components/FileCard.vue';
@@ -604,7 +605,7 @@ async function quoteMessage(text: string) {
           <article v-for="(turn, turnIndex) in turns" :key="turn.key" class="turn-block">
             <div v-if="turn.user" class="message-row user">
               <div class="user-message-block">
-                <div class="user-message-text">{{ turn.user.content }}</div>
+                <div class="user-message-text"><UserMessageText :text="turn.user.content" /></div>
                 <div class="message-action-bar user-message-actions" aria-label="用户消息操作">
                   <button
                     type="button"

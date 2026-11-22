@@ -12,6 +12,7 @@ import Icon from '../../../components/ForgeIcon.vue';
 import CatalogEmpty from '../../../components/catalog/CatalogEmpty.vue';
 import Markdown from '../../../components/MarkdownContent.vue';
 import ProcessBlock from '../../../components/ProcessBlock.vue';
+import UserMessageText from '../../../components/UserMessageText.vue';
 import { MarkdownPreview } from '../../../components/common';
 import CodeBlock from '../../../components/CodeBlock.vue';
 import { useCopy } from '../../../utils/useCopy';
@@ -751,7 +752,7 @@ const lastChange = ref<{
   files: { written: string[]; deleted: string[] };
 } | null>(null);
 const chatLog = ref<HTMLElement>();
-const treeWidth = ref(210);
+const treeWidth = ref(240);
 const chatWidth = ref(380);
 const totalFiles = computed(() => 1 + (skill.value?.files.length ?? 0));
 const currentPath = computed(() => selectedPath.value);
@@ -1275,7 +1276,7 @@ onBeforeUnmount(() => {
             </div>
             <template v-for="turn in turns" :key="turn.key">
               <article v-if="turn.user" class="chat-message user">
-                <Markdown :text="turn.user.content" />
+                <UserMessageText :text="turn.user.content" />
               </article>
               <article v-if="turn.steps.length || turn.running" class="chat-message assistant">
                 <div class="assistant-label">
@@ -1345,7 +1346,7 @@ onBeforeUnmount(() => {
                     :title="isNew ? '创建技能后可添加参考资料' : '把 Markdown 或文本资料添加到 references/'"
                     aria-label="添加参考资料"
                   >
-                    <Icon name="paperclip" :size="15" />附件
+                    <Icon name="paperclip" :size="16" />
                   </button>
                 </a-upload>
                 <a-button
@@ -1660,6 +1661,7 @@ onBeforeUnmount(() => {
 }
 .studio-files .pane-header strong {
   color: var(--color-text-secondary);
+  font-size: 13px;
 }
 .studio-chat .pane-header strong {
   color: var(--color-text-primary);
@@ -1695,7 +1697,7 @@ onBeforeUnmount(() => {
   padding: 6px 10px;
   text-align: left;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 13px;
 }
 .file-row > span {
   overflow: hidden;
@@ -1740,7 +1742,7 @@ onBeforeUnmount(() => {
   padding: 2px 7px;
   min-width: 20px;
   text-align: center;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--color-text-secondary);
 }
 .reference-row {
@@ -1853,7 +1855,8 @@ onBeforeUnmount(() => {
   background: var(--color-brand);
 }
 .file-path {
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2029,15 +2032,8 @@ onBeforeUnmount(() => {
   color: #fff;
   border-radius: 10px;
   border: none;
-}
-.chat-message.user :deep(.markdown-body),
-.chat-message.user :deep(.markdown-body h1),
-.chat-message.user :deep(.markdown-body h2),
-.chat-message.user :deep(.markdown-body h3) {
-  color: #fff;
-}
-.chat-message.user :deep(.markdown-body a) {
-  color: #fff;
+  /* 与工作台一致：原样显示用户输入，超过 5 行收起（UserMessageText） */
+  line-height: 1.75;
 }
 .chat-message :deep(.markdown-body) {
   color: var(--color-text-primary);
@@ -2117,15 +2113,16 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 0 8px 8px;
 }
+/* 只显示图标，与右侧发送按钮同尺寸；说明放在 title 提示中 */
 .composer-attach {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-height: 30px;
-  padding: 0 6px;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   border-radius: 6px;
   color: var(--color-text-secondary);
-  font-size: 12px;
 }
 .composer-attach:hover:not(:disabled) {
   color: var(--sidebar-nav-hover-text);
