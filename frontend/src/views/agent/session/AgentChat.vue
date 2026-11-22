@@ -153,8 +153,11 @@ const turns = computed(() =>
 );
 /** 最近一轮实际未生效的扩展能力：在「能力」面板逐项标记，并在面板按钮上提示数量 */
 const lastUnavailable = computed(() => (chat.current ? latestUnavailable(turns.value) : []));
+function skippedItem(kind: 'skill' | 'mcp' | 'web', id: number | null = null) {
+  return lastUnavailable.value.find((item) => item.kind === kind && (kind === 'web' || item.id === id));
+}
 function skippedLastTurn(kind: 'skill' | 'mcp' | 'web', id: number | null = null) {
-  return lastUnavailable.value.some((item) => item.kind === kind && (kind === 'web' || item.id === id));
+  return Boolean(skippedItem(kind, id));
 }
 /** 右侧面板展示的关联代码：附带代码根目录中读到的分支与提交 */
 const linkedCode = computed(() =>
@@ -206,7 +209,8 @@ const extensionSkills = computed(() => {
     const option = options.find((item) => item.id === skill.id);
     const name = skill.name || option?.name || '';
     // 上一轮实际未装配；或临时选择的 Skill 已取消发布，下一轮将被跳过
-    const skipped = skippedLastTurn('skill', skill.id);
+    const skippedEntry = skippedItem('skill', skill.id);
+    const skipped = Boolean(skippedEntry);
     const missing = skipped || (skill.source === 'chat' && Boolean(chat.capabilityOptions) && !option);
     const origin = skill.source === 'scenario' ? '场景绑定' : '临时选用';
     return {
@@ -214,7 +218,7 @@ const extensionSkills = computed(() => {
       title: skill.title || option?.title || `Skill #${skill.id}`,
       missing,
       note: skipped
-        ? '上一轮未生效：已取消发布或已删除'
+        ? `上一轮未生效：${skippedEntry?.reason || '已取消发布或已删除'}`
         : missing
           ? '已取消发布，下一轮将跳过'
           : [origin, name ? `/${name}` : ''].filter(Boolean).join(' · '),

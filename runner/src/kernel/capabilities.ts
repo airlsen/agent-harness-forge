@@ -2,13 +2,17 @@
  * 会话扩展能力（Skill / MCP / 联网搜索）：控制面每轮下发「本轮生效」的完整集合 = 场景绑定 ∪ 聊天临时选择。
  *
  * - Skill：只是文本。Runner 把正文注册为 DSH 运行时 Skill（dsh-skill 注册表 + dsh-tool-skill 的 skill 工具），
- *   references/、assets/、scripts/ 中的文件写到会话目录外的只读目录；脚本经单独工具隔离运行；
- *   用户可在消息中用 /名称 直接调用。
+ *   并把完整原文（SKILL.md）与 references/、assets/、scripts/ 写成按「修订号-内容哈希」命名的只读快照目录
+ *   （会话工作区之外）；脚本经单独工具隔离运行并逐次审批；用户可在消息中用 /名称 直接调用。
  * - MCP：每个服务挂一个 dsh-mcp-client；凭据只在本轮配置里出现，不写入 Bundle。
  *   工具按 mcp__<server>__<tool> 命名，只有控制面允许的工具进入白名单，需确认的工具逐次审批。
  * - 联网：dsh-web + DeepSeek 搜索提供方 + HTTP 抓取，由 dsh-tool-web 提供 web_search / web_fetch。
  *
  * 任一变化（含凭据）都以新配置重启 dsh 并接续会话，和关联代码、模型切换一致：下一轮生效。
+ *
+ * Skill 内容按快照引用传递：修订不可变、快照名含内容哈希，所以控制面已知 Runner 有这一版时只发
+ * {name, revisionId, snapshot, …}，不带原文与附件；Runner 从本会话当前能力或进程内缓存取内容。
+ * 缺少的快照以 409 + missingSkills 告知控制面，控制面补发这几个 Skill 的全文后重试一次。
  */
 import { createHash } from 'node:crypto';
 
@@ -22,6 +26,8 @@ export const MAX_MCP_SERVERS = 10;
 export const MAX_MCP_TOOLS = 200;
 /** DSH 技能名语法（dsh-skill isSkillName）：小写 kebab-case */
 export const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** Skill 快照目录名：<修订号>-<内容哈希前 12 位>（见 skillSnapshotId） */
+export const SKILL_SNAPSHOT = /^\d{1,15}-[0-9a-f]{12}$/;
 /** dsh-mcp-client 的 serverName 语法 */
 export const MCP_SERVER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
 /** 附加文件路径：references/、assets/ 或 scripts/ 下一层、非隐藏、常见安全字符 */
@@ -43,8 +49,15 @@ export interface RuntimeSkill {
   name: string;
   description: string;
   whenToUse?: string;
+  /** 去掉 front matter 的正文：注册为 DSH 运行时 Skill，由 skill 工具加载 */
   content: string;
+  /** 完整原文（含 front matter）：原样写成快照目录里的 SKILL.md；旧控制面不下发时不写 SKILL.md */
+  document?: string;
+  /** 控制面 Skill 修订号：快照目录名与能力摘要使用 */
+  revisionId?: number;
   files: SkillFile[];
+  /** 快照标识 <修订号>-<内容哈希>：解析时算一次（或取自缓存），目录名、指纹与摘要都用它 */
+  snapshot: string;
   /** 展示用：来源（scenario/chat）与平台 Skill 名称 */
   source: 'scenario' | 'chat';
   title?: string;
@@ -129,21 +142,99 @@ function resolveSkillFiles(name: string, raw: Record<string, unknown>): SkillFil
   });
 }
 
-function resolveSkill(raw: unknown): RuntimeSkill {
+/** Skill 的内容部分（快照缓存的值）：同一快照标识对应的内容必然相同 */
+export type SkillContent = Pick<RuntimeSkill, 'document' | 'content' | 'files'>;
+/** 按快照标识查找 Runner 已有的 Skill 内容 */
+export type SkillLookup = (snapshot: string) => SkillContent | undefined;
+/** 控制面只发了快照引用、而 Runner 没有对应内容：409，控制面补发全文后重试 */
+export const SKILL_CONTENT_REQUIRED = 'SKILL_CONTENT_REQUIRED';
+
+/** 解析一个 Skill；引用形式找不到内容时返回 missing，由调用方汇总后一次性告知控制面 */
+function resolveSkill(raw: unknown, lookup?: SkillLookup): RuntimeSkill | { missing: string } {
   if (!isObject(raw)) throw failure('Skill 配置无效');
   const name = text(raw.name, 64, 'Skill 名称')!;
   if (!SKILL_NAME.test(name)) throw failure(`Skill 名称无效：${name}`);
-  const content = text(raw.content, MAX_SKILL_BYTES, `Skill ${name} 正文`)!;
-  if (bytes(content) > MAX_SKILL_BYTES) throw failure(`Skill ${name} 正文超过 64 KB`);
-  return {
+  if (
+    raw.revisionId !== undefined &&
+    (!Number.isSafeInteger(raw.revisionId) || (raw.revisionId as number) < 1 || String(raw.revisionId).length > 15)
+  )
+    throw failure(`Skill ${name} 修订号无效`);
+  const revisionId = raw.revisionId as number | undefined;
+  const claimed = raw.snapshot === undefined ? undefined : text(raw.snapshot, 32, `Skill ${name} 快照标识`)!;
+  if (claimed !== undefined && (!SKILL_SNAPSHOT.test(claimed) || !claimed.startsWith(`${revisionId ?? 0}-`)))
+    throw failure(`Skill ${name} 快照标识无效`);
+  const meta = {
     name,
     description: text(raw.description, 1024, `Skill ${name} 描述`)!,
     ...(raw.whenToUse ? { whenToUse: text(raw.whenToUse, 1024, `Skill ${name} 适用场景`)! } : {}),
-    content,
-    files: resolveSkillFiles(name, raw),
+    ...(revisionId !== undefined ? { revisionId } : {}),
     source: source(raw.source),
     ...(typeof raw.title === 'string' && raw.title ? { title: raw.title.slice(0, 120) } : {}),
   };
+  // 引用形式：不带正文与附件，内容取自 Runner 已有的同一快照（快照名含内容哈希，不会取错）
+  const isRef = ['content', 'document', 'files', 'references'].every((field) => raw[field] === undefined);
+  if (isRef) {
+    if (claimed === undefined) throw failure(`Skill ${name} 正文 无效`);
+    const cached = lookup?.(claimed);
+    if (!cached) return { missing: claimed };
+    return { ...meta, ...contentOf(cached), snapshot: claimed };
+  }
+  const content = text(raw.content, MAX_SKILL_BYTES, `Skill ${name} 正文`)!;
+  if (bytes(content) > MAX_SKILL_BYTES) throw failure(`Skill ${name} 正文超过 64 KB`);
+  // 新字段可选：旧控制面不下发时照常装配（只是不写 SKILL.md、快照修订号记为 0）
+  const document = text(raw.document, MAX_SKILL_BYTES, `Skill ${name} 原文`, false);
+  if (document !== undefined && bytes(document) > MAX_SKILL_BYTES) throw failure(`Skill ${name} 原文超过 64 KB`);
+  const files = resolveSkillFiles(name, raw);
+  const snapshot = skillSnapshotId({ revisionId, document, content, files });
+  // 全文形式附带的快照标识必须与 Runner 自己算的一致，否则之后的引用永远对不上
+  if (claimed !== undefined && claimed !== snapshot) throw failure(`Skill ${name} 快照标识与内容不一致`);
+  return { ...meta, ...contentOf({ content, document, files }), snapshot };
+}
+
+/** 内容部分：没有原文时不带 document 字段（旧控制面），与缓存中的值同形 */
+function contentOf(value: SkillContent): SkillContent {
+  return {
+    content: value.content,
+    ...(value.document !== undefined ? { document: value.document } : {}),
+    files: value.files,
+  };
+}
+
+/**
+ * 进程内 Skill 内容缓存：快照标识 → 内容，按最近使用淘汰，总量上限 64 MB。
+ * 正在使用的会话自己持有内容（entry.caps），淘汰只会让控制面多补发一次全文，不影响正确性。
+ */
+export class SkillContentCache {
+  private items = new Map<string, { value: SkillContent; bytes: number }>();
+  private total = 0;
+  constructor(private readonly limit = 64 * 1024 * 1024) {}
+  get size() {
+    return this.items.size;
+  }
+  get(snapshot: string): SkillContent | undefined {
+    const item = this.items.get(snapshot);
+    if (!item) return undefined;
+    this.items.delete(snapshot);
+    this.items.set(snapshot, item);
+    return item.value;
+  }
+  /** 记住本轮装配的 Skill；已有的只刷新使用顺序，不重新计算大小 */
+  remember(skills: readonly RuntimeSkill[]) {
+    for (const skill of skills) {
+      if (this.get(skill.snapshot)) continue;
+      const size =
+        bytes(skill.content) +
+        (skill.document ? bytes(skill.document) : 0) +
+        skill.files.reduce((sum, file) => sum + bytes(file.path) + bytes(file.content), 0);
+      this.items.set(skill.snapshot, { value: contentOf(skill), bytes: size });
+      this.total += size;
+    }
+    for (const [key, item] of this.items) {
+      if (this.total <= this.limit || this.items.size <= 1) break;
+      this.items.delete(key);
+      this.total -= item.bytes;
+    }
+  }
 }
 
 function resolveMcp(raw: unknown): RuntimeMcpServer {
@@ -227,9 +318,16 @@ function resolveWeb(raw: unknown): RuntimeWeb | null {
   return web;
 }
 
-/** 校验控制面下发的扩展能力；不传视为没有扩展能力。名称冲突直接拒绝（控制面负责去重）。 */
-export function resolveCapabilities(raw: unknown): RuntimeCapabilities {
+/** 已解析的能力集合：再次传入 resolveCapabilities 时原样返回（Runner 入口先校验、执行时不再重复解析） */
+const resolvedSets = new WeakSet<object>();
+
+/**
+ * 校验控制面下发的扩展能力；不传视为没有扩展能力。名称冲突直接拒绝（控制面负责去重）。
+ * lookup 用于解析只带快照引用的 Skill；找不到的快照汇总后以 409 + missingSkills 抛出。
+ */
+export function resolveCapabilities(raw: unknown, lookup?: SkillLookup): RuntimeCapabilities {
   if (raw === undefined || raw === null) return { skills: [], mcp: [], web: null };
+  if (isObject(raw) && resolvedSets.has(raw)) return raw as unknown as RuntimeCapabilities;
   if (!isObject(raw)) throw failure('扩展能力配置无效');
   const skills = raw.skills === undefined ? [] : raw.skills;
   const mcp = raw.mcp === undefined ? [] : raw.mcp;
@@ -237,8 +335,15 @@ export function resolveCapabilities(raw: unknown): RuntimeCapabilities {
     throw failure(`一个会话最多使用 ${MAX_SKILLS} 个 Skill`);
   if (!Array.isArray(mcp) || mcp.length > MAX_MCP_SERVERS)
     throw failure(`一个会话最多连接 ${MAX_MCP_SERVERS} 个 MCP 服务`);
+  const parsed = skills.map((item) => resolveSkill(item, lookup));
+  const missing = parsed.flatMap((item) => ('missing' in item ? [item.missing] : []));
+  if (missing.length)
+    throw Object.assign(failure('Runner 缺少部分 Skill 内容，请补发全文', 409), {
+      code: SKILL_CONTENT_REQUIRED,
+      missingSkills: [...new Set(missing)],
+    });
   const resolved = {
-    skills: skills.map(resolveSkill),
+    skills: parsed as RuntimeSkill[],
     mcp: mcp.map(resolveMcp),
     web: resolveWeb(raw.web),
   };
@@ -246,6 +351,7 @@ export function resolveCapabilities(raw: unknown): RuntimeCapabilities {
   if (new Set(skillNames).size !== skillNames.length) throw failure('Skill 名称重复');
   const servers = resolved.mcp.map((server) => server.serverName);
   if (new Set(servers).size !== servers.length) throw failure('MCP 服务标识重复');
+  resolvedSets.add(resolved);
   return resolved;
 }
 
@@ -274,9 +380,30 @@ export function mcpToolNames(caps: RuntimeCapabilities) {
   return { allowed, approval };
 }
 
-/** 指纹覆盖全部字段（含凭据）：任一变化都需以新配置重启 dsh */
+/**
+ * 指纹覆盖全部字段（含凭据）：任一变化都需以新配置重启 dsh。
+ * Skill 的原文、正文与附件由快照标识（含内容哈希）代表，不再每轮对全文做哈希。
+ */
 export function capabilityFingerprint(caps: RuntimeCapabilities) {
-  return createHash('sha256').update(JSON.stringify(caps)).digest('hex');
+  const skills = caps.skills.map(({ document: _document, content: _content, files: _files, ...rest }) => rest);
+  return createHash('sha256')
+    .update(JSON.stringify({ ...caps, skills }))
+    .digest('hex');
+}
+
+/**
+ * Skill 快照标识「<修订号>-<内容哈希前 12 位>」，与控制面 capability_service.skill_snapshot_id 算法一致。
+ * 哈希覆盖 SKILL.md 原文与全部附加文件（按路径排序，路径与内容以 NUL 分隔；校验已保证两者都不含 NUL）。
+ * 旧控制面没有原文时以正文代替（此时目录里不写 SKILL.md）。
+ */
+export function skillSnapshotId(skill: Pick<RuntimeSkill, 'revisionId' | 'document' | 'content' | 'files'>) {
+  const hash = createHash('sha256');
+  const parts =
+    skill.document !== undefined ? ['SKILL.md', skill.document] : ['content', skill.content];
+  const files = [...skill.files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  for (const file of files) parts.push(file.path, file.content);
+  for (const value of parts) hash.update(value, 'utf8').update('\0');
+  return `${skill.revisionId ?? 0}-${hash.digest('hex').slice(0, 12)}`;
 }
 
 /** 对外（事件、日志）展示的摘要：不含正文、凭据、命令与环境变量 */
@@ -286,6 +413,8 @@ export function capabilitySummary(caps: RuntimeCapabilities) {
       name: skill.name,
       title: skill.title ?? skill.name,
       source: skill.source,
+      ...(skill.revisionId !== undefined ? { revisionId: skill.revisionId } : {}),
+      snapshot: skill.snapshot,
     })),
     mcp: caps.mcp.map((server) => ({
       serverName: server.serverName,

@@ -4,14 +4,20 @@
 控制面每轮把完整集合解析成 Runner 可执行的配置下发：
 
 - Skill：场景冻结到已发布的修订（SkillRevision 不可变），聊天临时选择使用当时最新的已发布修订；
-  正文去掉 front matter，参考资料随配置下发，由 Runner 物化为只读目录。
+  内容按快照传递：快照标识「修订号-内容哈希」，Runner 据此物化只读快照目录（SKILL.md + references/、assets/、
+  scripts/），与修订逐字节一致。修订不可变，所以控制面记住已算过的快照：首次使用某修订时读取全部文件、下发全文
+  （document 原文 + content 正文 + files）；之后每轮只发 {revisionId, snapshot} 引用，不读文件内容、不传全文。
+  Runner 没有该快照（重启或缓存淘汰）时返回 409 + missingSkills，由 expand_skills 补发全文后重试一次。
+  附加文件缺失或损坏时只跳过这一个 Skill 并在摘要中记录原因，不阻断对话。
 - MCP：只用已启用、连接测试通过的服务；凭据每轮解密下发，不进入 Bundle 与事件。
   工具标注 readOnlyHint=true 的直接执行，其余每次调用都需用户确认。
 - 联网：平台级开关与凭据（治理中心），场景或聊天开启后才会装配；搜索使用 DeepSeek 官方搜索。
 """
 
+import hashlib
 import json
 import re
+from collections import OrderedDict
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException
@@ -23,7 +29,7 @@ from ..core import security
 from ..models.platform import ModelConnection, PlatformSetting
 from ..models.registry import McpServer
 from ..models.skill import Skill, SkillRevision
-from .skill_service import skill_file_contents
+from .skill_service import MAX_SKILL_BYTES, skill_file_snapshot, skill_files_missing
 
 MAX_SESSION_SKILLS = 20
 MAX_SESSION_MCP = 10
@@ -137,20 +143,130 @@ async def freeze_scenario_skills(db: AsyncSession, skill_ids: list[int]) -> list
     return [skill_ref(*available[item]) for item in skill_ids]
 
 
-async def _runtime_skill(db: AsyncSession, ref: dict, source: str, name: str) -> dict | None:
+def skill_snapshot_id(revision_id: int | None, document: str, files: list[dict]) -> str:
+    """Skill 快照标识「<修订号>-<内容哈希前 12 位>」，与 Runner capabilities.skillSnapshotId 算法一致。
+
+    哈希覆盖 SKILL.md 原文与全部附加文件（按路径排序，路径与内容以 NUL 分隔；两者都不含 NUL），
+    同一修订内容不变时快照目录可复用，内容不同则必然是新目录。
+    """
+    digest = hashlib.sha256()
+    for part in ["SKILL.md", document]:
+        digest.update(part.encode("utf-8") + b"\0")
+    for item in sorted(files, key=lambda file: file["path"]):
+        digest.update(item["path"].encode("utf-8") + b"\0")
+        digest.update(item["content"].encode("utf-8") + b"\0")
+    return f"{revision_id or 0}-{digest.hexdigest()[:12]}"
+
+
+# 已算过的快照：修订内容键 → 快照标识。键含修订编号、原文哈希与文件清单（含磁盘位置），
+# 数据库重建导致编号复用时也不会对错版本；只在内存里，进程重启后首次使用再算一次。
+MAX_KNOWN_SNAPSHOTS = 4096
+_known_snapshots: "OrderedDict[tuple, str]" = OrderedDict()
+
+
+def _revision_key(revision: SkillRevision) -> tuple:
+    return (
+        revision.id,
+        revision.skill_id,
+        hashlib.sha256(revision.content.encode("utf-8")).hexdigest(),
+        json.dumps(revision.reference_files or [], sort_keys=True, ensure_ascii=False),
+    )
+
+
+def _remember_snapshot(key: tuple, snapshot: str) -> None:
+    _known_snapshots[key] = snapshot
+    _known_snapshots.move_to_end(key)
+    while len(_known_snapshots) > MAX_KNOWN_SNAPSHOTS:
+        _known_snapshots.popitem(last=False)
+
+
+def forget_snapshots(snapshot: str | None = None) -> None:
+    """忘记某个快照（不传则全部）：下一轮重新读取文件并下发全文。"""
+    for key in [key for key, value in _known_snapshots.items() if snapshot is None or value == snapshot]:
+        _known_snapshots.pop(key, None)
+
+
+async def _runtime_skill(db: AsyncSession, ref: dict, source: str, name: str) -> tuple[dict | None, str]:
+    """Runner 配置；不可用时返回 (None, 原因)。已知快照只发引用，首次使用才读文件、发全文。"""
     revision = await db.get(SkillRevision, ref.get("revisionId"))
     if not revision or revision.skill_id != ref.get("id"):
-        return None
-    _, _, body = parse_skill(revision.content)
-    return {
+        return None, "Skill 修订不存在或已删除"
+    document = revision.content
+    if "\0" in document or len(document.encode("utf-8")) > MAX_SKILL_BYTES:
+        return None, f"SKILL.md 无效或超过 {MAX_SKILL_BYTES // 1000} KB"
+    meta = {
         "name": name,
         "title": ref.get("title") or name,
         "description": ref.get("description") or name,
-        "content": body or revision.content,
-        # 完整 Skill 目录：Runner 写成 <name>/SKILL.md + references/、assets/ 只读文件
-        "files": skill_file_contents(revision),
+        "revisionId": revision.id,
         "source": source,
     }
+    key = _revision_key(revision)
+    known = _known_snapshots.get(key)
+    if known:
+        # 引用形式：只确认文件仍在（不读内容），被删除时与首次读取一样只跳过这个 Skill
+        problem = skill_files_missing(revision)
+        if problem:
+            _known_snapshots.pop(key, None)
+            return None, problem
+        _known_snapshots.move_to_end(key)
+        return {**meta, "snapshot": known}, ""
+    files, problem = skill_file_snapshot(revision)
+    if problem:
+        return None, problem
+    snapshot = skill_snapshot_id(revision.id, document, files)
+    _remember_snapshot(key, snapshot)
+    return {**meta, "snapshot": snapshot, **_skill_content(document, files)}, ""
+
+
+def _skill_content(document: str, files: list[dict]) -> dict:
+    _, _, body = parse_skill(document)
+    return {
+        # 完整原文：Runner 写成快照目录里的 SKILL.md（不从正文重建，保证与修订逐字节一致）
+        "document": document,
+        # 去掉 front matter 的正文：注册为 DSH 运行时 Skill，由 skill 工具加载
+        "content": body or document,
+        # 附加文件：Runner 写入同一快照目录的 references/、assets/、scripts/（只读）
+        "files": files,
+    }
+
+
+SKILL_CONTENT_FIELDS = ("document", "content", "files")
+
+
+def as_refs(caps: dict) -> dict:
+    """只保留 Skill 的快照引用：Runner 已有这些内容时（例如刚用全文创建会话）使用。"""
+    return {
+        **caps,
+        "skills": [
+            {key: value for key, value in skill.items() if key not in SKILL_CONTENT_FIELDS}
+            if skill.get("snapshot")
+            else skill
+            for skill in caps.get("skills") or []
+        ],
+    }
+
+
+async def expand_skills(db: AsyncSession, caps: dict, snapshots: list[str]) -> dict:
+    """Runner 缺少这些快照的内容：把对应 Skill 换成全文形式（按修订重新严格读取）。
+
+    内容已不可用（文件在两轮之间被删除）或与记录的快照不一致时，忘记该快照并让本轮失败；
+    下一轮会重新读取，并按常规把它标记为不可用。
+    """
+    wanted = set(snapshots)
+    skills = []
+    for skill in caps.get("skills") or []:
+        if skill.get("snapshot") in wanted and "content" not in skill:
+            revision = await db.get(SkillRevision, skill.get("revisionId"))
+            files, problem = skill_file_snapshot(revision) if revision else ([], "Skill 修订不存在或已删除")
+            if not problem and skill_snapshot_id(revision.id, revision.content, files) != skill["snapshot"]:
+                problem = "内容与记录的版本不一致"
+            if problem:
+                forget_snapshots(skill["snapshot"])
+                raise HTTPException(409, f"Skill「{skill.get('title') or skill['name']}」暂不可用：{problem}，请重新发送消息")
+            skill = {**skill, **_skill_content(revision.content, files)}
+        skills.append(skill)
+    return {**caps, "skills": skills}
 
 
 # —— MCP ——
@@ -387,9 +503,11 @@ async def resolve(db: AsyncSession, meta: dict, selection: dict) -> tuple[dict, 
         name = ref["name"]
         if name in used_names:
             name = f"{name[:56]}-{ref['id']}"
-        runtime = await _runtime_skill(db, ref, source, name)
+        runtime, reason = await _runtime_skill(db, ref, source, name)
         if not runtime:
-            unavailable.append({"kind": "skill", "id": ref.get("id"), "title": ref.get("title", "")})
+            unavailable.append(
+                {"kind": "skill", "id": ref.get("id"), "title": ref.get("title", ""), "reason": reason}
+            )
             return
         used_names.add(name)
         skills.append(runtime)
@@ -399,6 +517,9 @@ async def resolve(db: AsyncSession, meta: dict, selection: dict) -> tuple[dict, 
                 "name": name,
                 "title": runtime["title"],
                 "version": ref.get("version"),
+                # 本轮实际装配的修订与快照目录名（Runner 用同一算法得到相同的目录名）
+                "revisionId": runtime["revisionId"],
+                "snapshot": runtime["snapshot"],
                 "source": source,
             }
         )
@@ -412,7 +533,7 @@ async def resolve(db: AsyncSession, meta: dict, selection: dict) -> tuple[dict, 
         if skill_id in published:
             await add_skill(skill_ref(*published[skill_id]), "chat")
         else:
-            unavailable.append({"kind": "skill", "id": skill_id, "title": ""})
+            unavailable.append({"kind": "skill", "id": skill_id, "title": "", "reason": "已取消发布或已删除"})
 
     mcp, mcp_view, server_names = [], [], set()
     scenario_ids = [ref.get("id") for ref in meta.get("mcpServers") or []]

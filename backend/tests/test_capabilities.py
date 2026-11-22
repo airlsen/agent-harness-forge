@@ -19,6 +19,7 @@ from src.api.services.capability_service import (
     parse_skill,
     runtime_skill_name,
     save_web_settings,
+    skill_snapshot_id,
     web_settings_view,
 )
 from src.api.services.mcp_service import scrubbed_env
@@ -35,6 +36,8 @@ def fake_security(monkeypatch, tmp_path):
     monkeypatch.setattr(security, "encrypt", lambda value: f"encrypted:{value}")
     monkeypatch.setattr(security, "decrypt", lambda value: value.removeprefix("encrypted:"))
     monkeypatch.setattr(skill_service.settings, "data_dir", tmp_path)
+    # 已知快照缓存按进程保存；各测试的内存数据库会复用修订编号，逐个测试清空
+    caps_module.forget_snapshots()
 
 
 async def add_skill(db, tmp_path, name, *, published=True, front_name=None, references=()):
@@ -97,6 +100,16 @@ def test_skill_front_matter_and_runtime_names():
     assert (name, description, body) == ("Weekly_Report.v2", "写周报", "# 正文\n")
     assert runtime_skill_name(name, 3) == "weekly-report-v2"
     assert runtime_skill_name("——", 9) == "skill-9"
+
+
+def test_skill_snapshot_id_matches_runner_algorithm():
+    # 与 runner/scripts/check-capabilities.mjs 的同一夹具保持一致：两端必须得到相同的快照目录名
+    document = "---\nname: demo\n---\n\n# 演示\n"
+    files = [{"path": "references/b.md", "content": "B"}, {"path": "assets/a.md", "content": "甲"}]
+    assert skill_snapshot_id(7, document, files) == "7-805488fce25c"
+    assert skill_snapshot_id(7, document, list(reversed(files))) == "7-805488fce25c"
+    assert skill_snapshot_id(7, document + " ", files) != "7-805488fce25c"
+    assert skill_snapshot_id(None, document, files).startswith("0-")
 
 
 def test_stdio_probe_environment_never_inherits_secrets(monkeypatch):
@@ -196,9 +209,20 @@ async def test_turns_send_scenario_and_chat_capabilities_and_changes_apply_next_
         capabilities=CapabilityChoice(skillIds=[extra.id], mcpServerIds=[server.id]),
     )
     sent = runner.created_caps[0]
-    assert sent == runner.caps[0]
+    # 首次使用：创建会话时下发全文；Runner 已持有内容，紧接着的第一轮只发快照引用
+    assert runner.caps[0] == caps_module.as_refs(sent)
+    assert all(
+        set(skill) == {"name", "title", "description", "revisionId", "snapshot", "source"}
+        for skill in runner.caps[0]["skills"]
+    )
     assert [skill["name"] for skill in sent["skills"]] == ["weekly-report", f"weekly-report-{extra.id}"]
     assert sent["skills"][0]["content"] == SKILL_BODY
+    # 完整原文与修订号一并下发：Runner 原样写成快照目录里的 SKILL.md
+    async with env["sessions"]() as db:
+        bound_revision = await db.get(SkillRevision, (await db.get(Skill, bound.id)).published_revision_id)
+    assert sent["skills"][0]["document"] == bound_revision.content
+    assert sent["skills"][0]["document"].startswith("---\nname: weekly-report\n")
+    assert sent["skills"][0]["revisionId"] == bound_revision.id
     # 旧格式参考资料记录也按完整目录下发
     assert sent["skills"][0]["files"] == [{"path": "references/glossary.md", "content": "术语表"}]
     assert sent["skills"][0]["source"] == "scenario" and sent["skills"][1]["source"] == "chat"
@@ -227,6 +251,12 @@ async def test_turns_send_scenario_and_chat_capabilities_and_changes_apply_next_
     # 消息里只有摘要：没有正文、凭据与命令
     summary = first["messageMeta"]["capabilities"]
     assert [item["source"] for item in summary["skills"]] == ["scenario", "chat"]
+    # 摘要记录本轮实际装配的修订与快照目录名
+    assert summary["skills"][0]["revisionId"] == bound_revision.id
+    assert summary["skills"][0]["snapshot"] == skill_snapshot_id(
+        bound_revision.id, bound_revision.content, sent["skills"][0]["files"]
+    )
+    assert summary["skills"][1]["snapshot"].startswith(f"{sent['skills'][1]['revisionId']}-")
     assert summary["mcp"][0]["approvalTools"] == 1
     assert summary["web"] == {"search": True, "fetch": True, "source": "scenario"}
     dumped = json.dumps(first["messageMeta"], ensure_ascii=False)
@@ -237,6 +267,9 @@ async def test_turns_send_scenario_and_chat_capabilities_and_changes_apply_next_
     # 不传沿用；修改（换成远程 MCP、移除临时 Skill）随下一条消息提交并从这一轮生效，Runner 会话不重建
     await turn(service, session["id"], "继续")
     assert runner.caps[-1]["mcp"][0]["serverName"] == "tickets"
+    assert [skill["snapshot"] for skill in runner.caps[-1]["skills"]] == [skill["snapshot"] for skill in sent["skills"]]
+    assert "content" not in runner.caps[-1]["skills"][0]
+    assert runner.missing_requests == []
     saved = await turn(
         service, session["id"], "查文档", capabilities=CapabilityChoice(mcpServerIds=[remote.id])
     )
@@ -257,6 +290,95 @@ async def test_turns_send_scenario_and_chat_capabilities_and_changes_apply_next_
     assert receipt["activeCapabilities"]["unavailable"] == [
         {"kind": "mcp", "id": remote.id, "title": "docs-search"}
     ]
+
+
+@pytest.mark.asyncio
+async def test_skill_with_missing_file_is_skipped_with_reason_without_blocking_turn(env, tmp_path):  # noqa: F811
+    runner = env["runner"]
+    async with env["sessions"]() as db:
+        broken = await add_skill(db, tmp_path, "周报助手", references=[("glossary.md", "术语表")])
+        bare = await add_skill(db, tmp_path, "翻译")  # 只有 SKILL.md
+        revision = await db.get(SkillRevision, broken.published_revision_id)
+        (tmp_path / revision.reference_files[0]["path"]).unlink()
+    service = session_module.SessionService()
+    session = await service.create(env["scenario"]["id"], model_id=env["models"]["chat"]["id"])
+    receipt = await turn(
+        service, session["id"], "写周报", capabilities=CapabilityChoice(skillIds=[broken.id, bare.id])
+    )
+    # 只有残缺的 Skill 被跳过，其余照常装配；不会下发缺文件的 Skill（也就不会出现残缺的快照目录）
+    sent = runner.created_caps[-1]["skills"]
+    assert [item["title"] for item in sent] == ["翻译"]
+    assert sent[0]["files"] == [] and sent[0]["document"].startswith("---\n")
+    assert receipt["activeCapabilities"]["unavailable"] == [
+        {"kind": "skill", "id": broken.id, "title": "周报助手", "reason": "缺少附加文件：references/glossary.md"}
+    ]
+    assert receipt["messageMeta"]["capabilities"]["unavailable"][0]["reason"].startswith("缺少附加文件")
+    assert [item["title"] for item in receipt["activeCapabilities"]["skills"]] == ["翻译"]
+
+
+@pytest.mark.asyncio
+async def test_known_skill_snapshots_are_sent_as_refs_without_reading_files(env, tmp_path, monkeypatch):  # noqa: F811
+    runner = env["runner"]
+    async with env["sessions"]() as db:
+        skill = await add_skill(db, tmp_path, "周报助手", references=[("glossary.md", "术语表")])
+        revision = await db.get(SkillRevision, skill.published_revision_id)
+    reads = []
+    original = skill_service.read_entry
+    monkeypatch.setattr(skill_service, "read_entry", lambda *args: reads.append(args) or original(*args))
+    service = session_module.SessionService()
+    session = await service.create(env["scenario"]["id"], model_id=env["models"]["chat"]["id"])
+    choice = CapabilityChoice(skillIds=[skill.id])
+
+    # 第一轮：首次使用该修订，读取文件并以全文创建 Runner 会话
+    first = await turn(service, session["id"], "写周报", capabilities=choice)
+    full = runner.created_caps[-1]["skills"][0]
+    assert full["files"] == [{"path": "references/glossary.md", "content": "术语表"}]
+    snapshot = first["messageMeta"]["capabilities"]["skills"][0]["snapshot"]
+    assert full["snapshot"] == snapshot and snapshot.startswith(f"{revision.id}-")
+    assert len(reads) == 1
+
+    # 之后每轮：只发快照引用，不读文件内容、不传全文
+    for message in ("继续", "再改改"):
+        receipt = await turn(service, session["id"], message)
+        assert runner.caps[-1]["skills"] == [caps_module.as_refs({"skills": [full]})["skills"][0]]
+        assert receipt["messageMeta"]["capabilities"]["skills"][0]["snapshot"] == snapshot
+    assert len(reads) == 1 and runner.missing_requests == []
+
+    # Runner 缓存丢失（重启或淘汰）：返回缺少的快照，控制面补发全文并重试，本轮照常完成
+    runner.known_snapshots.clear()
+    receipt = await turn(service, session["id"], "Runner 忘了")
+    assert runner.missing_requests == [[snapshot]]
+    assert runner.caps[-1]["skills"][0]["files"] == full["files"]
+    assert runner.caps[-1]["skills"][0]["document"] == revision.content
+    detail = await service.detail(session["id"])
+    assert detail["messages"][-1]["content"] == "re: Runner 忘了"
+    assert len(reads) == 2
+
+    # 已知快照的文件在两轮之间被删除：不读内容也能发现（只检查文件是否存在），只跳过这个 Skill
+    (tmp_path / revision.reference_files[0]["path"]).unlink()
+    receipt = await turn(service, session["id"], "继续写")
+    assert runner.caps[-1]["skills"] == []
+    assert receipt["activeCapabilities"]["unavailable"] == [
+        {"kind": "skill", "id": skill.id, "title": "周报助手", "reason": "缺少附加文件：references/glossary.md"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_skill_files_are_sent_verbatim_and_oversized_files_are_not_truncated(env, tmp_path):  # noqa: F811
+    runner = env["runner"]
+    large = "汉" * 50_000  # 150 KB UTF-8：旧实现会按字符截断后下发
+    async with env["sessions"]() as db:
+        exact = await add_skill(db, tmp_path, "规范", references=[("rules.md", "第一行\r\n第二行 \n")])
+        oversized = await add_skill(db, tmp_path, "超大", references=[("huge.md", large)])
+    service = session_module.SessionService()
+    session = await service.create(env["scenario"]["id"], model_id=env["models"]["chat"]["id"])
+    receipt = await turn(
+        service, session["id"], "hi", capabilities=CapabilityChoice(skillIds=[exact.id, oversized.id])
+    )
+    sent = runner.created_caps[-1]["skills"]
+    assert [item["title"] for item in sent] == ["规范"]
+    assert sent[0]["files"] == [{"path": "references/rules.md", "content": "第一行\r\n第二行 \n"}]
+    assert receipt["activeCapabilities"]["unavailable"][0]["reason"] == "附加文件超过 120 KB：references/huge.md"
 
 
 @pytest.mark.asyncio

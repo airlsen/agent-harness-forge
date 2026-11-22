@@ -5,7 +5,7 @@ import { DshKernel, MAX_LISTED_FILES, validModel, type RuntimeModel } from './ke
 import { PluginWorkerClient } from './plugin-worker-client.js';
 import type { Bundle, UserCtx } from './kernel/types.js';
 import { listCodeProjects, resolveCodeProjects, setCodeRoot } from './kernel/code-projects.js';
-import { resolveCapabilities } from './kernel/capabilities.js';
+import { SKILL_CONTENT_REQUIRED } from './kernel/capabilities.js';
 
 const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
 if (nodeMajor < 24 || (nodeMajor === 24 && nodeMinor < 9))
@@ -23,7 +23,13 @@ app.addHook('onRequest', async (req, reply) => {
     return reply.code(401).send({ message: 'internal runner authentication required' });
 });
 app.setErrorHandler((error: any, _req, reply) =>
-  reply.code(error.statusCode ?? 400).send({ message: error.message ?? 'Runner error' }),
+  reply.code(error.statusCode ?? 400).send({
+    message: error.message ?? 'Runner error',
+    // 只带快照引用、而 Runner 没有对应内容的 Skill：控制面据此补发全文后重试
+    ...(error.code === SKILL_CONTENT_REQUIRED && Array.isArray(error.missingSkills)
+      ? { code: SKILL_CONTENT_REQUIRED, missingSkills: error.missingSkills }
+      : {}),
+  }),
 );
 app.get('/healthz', async () => ({ status: 'ok', service: 'forge-runner', mode: 'business' }));
 app.get('/v1/runtime', async () => ({
@@ -41,6 +47,7 @@ app.get('/v1/runtime', async () => ({
     workspaceFiles: true,
     codeProjects: true,
     skills: true,
+    skillSnapshots: true,
     mcp: ['stdio', 'streamable-http'],
     webSearch: true,
     shell: false,
@@ -109,7 +116,9 @@ app.post<{
     return reply.code(422).send({ message: 'modelConfig requires baseUrl and model' });
   setCodeRoot(req.body.codeRoot);
   if (req.body.codeProjects !== undefined) resolveCodeProjects(req.body.codeProjects);
-  if (req.body.capabilities !== undefined) resolveCapabilities(req.body.capabilities);
+  // 解析结果直接交给 sendTurn（不会重复解析）；缺少 Skill 内容时在这里以 409 返回
+  if (req.body.capabilities !== undefined)
+    req.body.capabilities = kernel.resolveTurnCapabilities(req.body.capabilities, id);
   reply.hijack();
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',

@@ -22,10 +22,13 @@ from ..services.runner_client import runner_client
 from .settings_service import get_connection, get_policy
 from .skill_files import (
     MAX_FILE_BYTES,
+    MAX_FILES,
+    MAX_TOTAL_BYTES,
     check_capacity,
     file_view,
     read_entry,
     skill_files,
+    storage_path,
     validate_file_path,
 )
 
@@ -543,7 +546,7 @@ async def write_file(
         check_capacity(next_files)
     except ValueError as error:
         raise HTTPException(413, str(error)) from error
-    target.write_text(content, encoding="utf-8")
+    target.write_text(content, encoding="utf-8", newline="")  # 不做换行转换，原样落盘
     target.chmod(0o600)
     default = f"{'更新' if exists else '新建'}文件：{path}"
     return await add_revision(
@@ -755,7 +758,10 @@ async def create_authoring_session(db: AsyncSession, skill_id: int, created_by: 
 
 
 def skill_file_contents(revision: SkillRevision) -> list[dict]:
-    """修订的全部附加文件及内容（编写会话与业务会话下发给 Runner）；读不到的文件跳过。"""
+    """修订的全部附加文件及内容（编写会话下发给 Runner，供助手查看与修改）；读不到的文件跳过。
+
+    业务会话不使用它：运行时快照必须与修订完全一致，见 skill_file_snapshot。
+    """
     values = []
     for entry in skill_files(revision.reference_files):
         try:
@@ -764,6 +770,53 @@ def skill_file_contents(revision: SkillRevision) -> list[dict]:
             continue
         values.append({"path": entry["path"], "content": content[:MAX_FILE_BYTES]})
     return values
+
+
+def skill_file_snapshot(revision: SkillRevision) -> tuple[list[dict], str | None]:
+    """业务会话下发的附加文件：与修订记录逐字节一致，不截断、不跳过。
+
+    返回 (文件列表, 不可用原因)。任一文件缺失、不可读、不是 UTF-8 文本或超出 Runner 限制时返回原因，
+    调用方只把这一个 Skill 标记为不可用，不阻断整轮对话，也不会让模型看到残缺的 Skill 目录。
+    """
+    entries = skill_files(revision.reference_files)
+    if len(entries) > MAX_FILES:
+        return [], f"附加文件超过 {MAX_FILES} 个"
+    values, total = [], 0
+    for entry in entries:
+        path = entry["path"]
+        try:
+            validate_file_path(path)
+        except ValueError:
+            return [], f"附加文件路径无效：{path}"
+        try:
+            content = read_entry(settings.data_dir, revision.skill_id, entry)
+        except FileNotFoundError:
+            return [], f"缺少附加文件：{path}"
+        except UnicodeError:
+            return [], f"附加文件不是 UTF-8 文本：{path}"
+        except (OSError, ValueError):
+            return [], f"无法读取附加文件：{path}"
+        size = len(content.encode("utf-8"))
+        if size > MAX_FILE_BYTES:
+            return [], f"附加文件超过 {MAX_FILE_BYTES // 1000} KB：{path}"
+        if "\0" in content:
+            return [], f"附加文件包含空字符：{path}"
+        total += size
+        if total > MAX_TOTAL_BYTES:
+            return [], f"附加文件合计超过 {MAX_TOTAL_BYTES // 1000} KB"
+        values.append({"path": path, "content": content})
+    return values, None
+
+
+def skill_files_missing(revision: SkillRevision) -> str | None:
+    """只检查附加文件是否仍在磁盘上（不读内容）：每轮只发快照引用时用来尽早发现被删除的文件。"""
+    for entry in skill_files(revision.reference_files):
+        try:
+            if not storage_path(settings.data_dir, revision.skill_id, entry).is_file():
+                return f"缺少附加文件：{entry['path']}"
+        except (OSError, ValueError):
+            return f"无法读取附加文件：{entry['path']}"
+    return None
 
 
 async def _append_message(
