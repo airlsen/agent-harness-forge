@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { apply, checkSkillDocument, validateFilePath } from '../skill-authoring-plugin/index.js';
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { MIRROR_DIR, apply, checkSkillDocument, validateFilePath } from '../skill-authoring-plugin/index.js';
 
 const tools = new Map();
 const ctx = {
@@ -158,6 +161,62 @@ try {
   dispose();
   assert.equal(tools.size, 0);
 
+  // 有会话工作区时：最新草稿镜像到 .skill/（只读、随修改同步、清理已删除文件），脚本产出保留在 outputs/
+  const workspace = await mkdtemp(join(tmpdir(), 'forge-authoring-ws-'));
+  try {
+    const outside = join(workspace, 'outside');
+    await mkdir(outside);
+    await symlink(outside, join(workspace, MIRROR_DIR)); // 镜像目录被替换成符号链接时不能写到链接目标
+    const mirrored = await apply(ctx, {
+      skillId: 7,
+      content: GOOD,
+      files: [
+        { path: 'scripts/emit.py', content: 'import sys\nopen("out.txt", "w").write(sys.argv[1])\nprint("done")\n' },
+        { path: 'references/rules.md', content: '规则' },
+      ],
+      workspace,
+      allowedTools: ['skill_trial', 'skill_write_file', 'skill_delete_file', 'skill_update_draft', 'skill_test_script', 'bash'],
+    });
+    const mirror = join(workspace, MIRROR_DIR);
+    assert.ok((await lstat(mirror)).isDirectory());
+    assert.deepEqual(await readdir(outside), []);
+    assert.equal(await readFile(join(mirror, 'SKILL.md'), 'utf8'), GOOD);
+    assert.equal(await readFile(join(mirror, 'references', 'rules.md'), 'utf8'), '规则');
+    assert.equal((await stat(join(mirror, 'references', 'rules.md'))).mode & 0o777, 0o400);
+    const loadedTrial = await tools.get('skill_trial').execute({});
+    assert.deepEqual(loadedTrial.workspaceDraft, { dir: MIRROR_DIR, absolutePath: mirror, readOnly: true });
+    assert.equal(loadedTrial.outputsDir, 'outputs');
+    assert.ok(loadedTrial.howTo.some((item) => item.includes(`python3 ${MIRROR_DIR}/scripts/xxx.py`)));
+    assert.ok(tools.get('skill_trial').description.includes('bash'));
+
+    // 修改与删除后镜像立即同步；镜像里多出的文件被清理
+    await writeFile(join(mirror, 'stray.txt'), 'x');
+    await tools.get('skill_write_file').execute({ path: 'scripts/emit.py', content: 'import sys\nopen("out.txt", "w").write("v2:" + sys.argv[1])\n' });
+    await tools.get('skill_delete_file').execute({ path: 'references/rules.md' });
+    assert.deepEqual((await readdir(mirror)).sort(), ['SKILL.md', 'scripts']);
+    assert.match(await readFile(join(mirror, 'scripts', 'emit.py'), 'utf8'), /v2:/);
+    const updated = `${GOOD}\n运行 scripts/emit.py 生成结果。`;
+    await tools.get('skill_update_draft').execute({ content: updated });
+    assert.equal(await readFile(join(mirror, 'SKILL.md'), 'utf8'), updated);
+
+    // skill_test_script 用最新草稿运行，产出留在 outputs/<脚本名>-<时间>/
+    const run = await tools.get('skill_test_script').execute({ path: 'scripts/emit.py', args: ['hi'] });
+    assert.equal(run.exitCode, 0, run.stderr);
+    assert.match(run.outputDir, /^outputs\/emit-\d{8}-\d{6}$/);
+    assert.deepEqual(run.outputs.map((item) => item.path), [`${run.outputDir}/out.txt`]);
+    assert.equal(await readFile(join(workspace, run.outputDir, 'out.txt'), 'utf8'), 'v2:hi');
+    mirrored();
+
+    // 没有开放 bash 时不提示 bash 用法
+    const noBash = await apply(ctx, { skillId: 8, content: GOOD, files: [{ path: 'scripts/a.py', content: 'print(1)' }], workspace, allowedTools: ['skill_trial'] });
+    const limited = await tools.get('skill_trial').execute({});
+    assert.ok(!limited.howTo.some((item) => item.includes('python3')));
+    assert.ok(limited.howTo.some((item) => item.includes('没有开放 bash')));
+    noBash();
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+
   // 旧控制面下发的 references:[{filename}] 视为 references/<filename>
   const legacy = await apply(ctx, {
     skillId: 6,
@@ -202,7 +261,7 @@ try {
   );
   assert.deepEqual(checkSkillDocument(metaSkill), { valid: true, errors: [], warnings: [] });
 
-  process.stderr.write('PASS isolated Skill authoring tools, file read/write/delete with limits, reference checks, guide whitelist, aligned validation, unsaved invalid drafts, and disposal\n');
+  process.stderr.write('PASS isolated Skill authoring tools, file read/write/delete with limits, reference checks, guide whitelist, aligned validation, unsaved invalid drafts, .skill/ mirror with outputs/, and disposal\n');
 } finally {
   process.stdout.write = originalWrite;
 }

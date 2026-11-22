@@ -4,7 +4,7 @@ from .approval_ticket import ApprovalTicket
 from .registry import McpServer, ModelRegistry, ModelRoutePolicy, PluginRegistry, UsageRecord
 from .platform import PlatformSetting, ModelConnection, SessionMessage
 from .session_file import SessionFile, SessionFileChange
-from .skill import Skill, SkillRevision, SkillAuthoringSession, SkillAuthoringMessage
+from .skill import Skill, SkillRevision, SkillAuthoringSession, SkillAuthoringMessage, SkillAuthoringFile
 
 __all__ = [
     "AgentScenario",
@@ -27,4 +27,5 @@ __all__ = [
     "SkillRevision",
     "SkillAuthoringSession",
     "SkillAuthoringMessage",
+    "SkillAuthoringFile",
 ]

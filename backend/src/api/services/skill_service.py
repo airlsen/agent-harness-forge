@@ -3,6 +3,7 @@
 import hashlib
 import io
 import json
+import logging
 import re
 import secrets
 import shutil
@@ -18,8 +19,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
 from ..core.database import SessionFactory
-from ..models.skill import Skill, SkillAuthoringMessage, SkillAuthoringSession, SkillRevision
+from ..models.skill import (
+    Skill,
+    SkillAuthoringFile,
+    SkillAuthoringMessage,
+    SkillAuthoringSession,
+    SkillRevision,
+)
 from ..services.runner_client import ensure_session, runner_client
+from .file_service import file_service
 from .settings_service import get_connection, get_policy
 from .skill_files import (
     MAX_FILE_BYTES,
@@ -32,6 +40,8 @@ from .skill_files import (
     storage_path,
     validate_file_path,
 )
+
+log = logging.getLogger(__name__)
 
 SKILL_ROOT = settings.data_dir / "skills"
 MAX_SKILL_BYTES = 64_000
@@ -47,7 +57,15 @@ AUTHORING_TOOLS = [
     "skill_test_script",
     "skill_trial",
 ]
-WORKBENCH_TOOLS = ("current_time", "workspace_list", "workspace_read", "workspace_write", "skill_run_script")
+# 编辑会话另外开放的基础工具（仍以平台策略为上限）：试用时读写会话工作区、用 bash 运行脚本与测试
+WORKBENCH_TOOLS = (
+    "current_time",
+    "workspace_list",
+    "workspace_read",
+    "workspace_write",
+    "bash",
+    "skill_run_script",
+)
 
 # Skill 编写助手的工作方法：仓库内置的 skill-design 元 Skill。
 # 正文常驻编写会话的系统提示，参考资料由 skill_read_guide 按需读取。
@@ -363,15 +381,23 @@ async def delete_draft(db: AsyncSession, skill_id: int) -> None:
     if any(session.status == "running" for session in sessions):
         raise HTTPException(409, "技能助手正在修改，请等待完成后删除")
     session_ids = [session.id for session in sessions]
+    runner_ids = [(session.id, session.runner_session_id) for session in sessions]
     if session_ids:
         await db.execute(
             delete(SkillAuthoringMessage).where(SkillAuthoringMessage.authoring_session_id.in_(session_ids))
+        )
+        await db.execute(
+            delete(SkillAuthoringFile).where(SkillAuthoringFile.authoring_session_id.in_(session_ids))
         )
     await db.execute(delete(SkillAuthoringSession).where(SkillAuthoringSession.skill_id == skill_id))
     await db.execute(delete(SkillRevision).where(SkillRevision.skill_id == skill_id))
     await db.delete(skill)
     await db.commit()
     shutil.rmtree(SKILL_ROOT / str(skill_id), ignore_errors=True)
+    # 试用文件的服务端记录已随草稿删除；Runner 工作区尽力清理，内容由存储回收任务释放
+    for authoring_id, runner_session_id in runner_ids:
+        if runner_session_id:
+            await file_service.authoring_purge(authoring_id, runner_session_id, runner_client)
 
 
 async def revisions(db: AsyncSession, skill_id: int) -> list[dict]:
@@ -690,8 +716,10 @@ def authoring_system_prompt(history: str, unavailable: str = "") -> dict:
             "按用户意图自行判断是新建、修改、评审、试用、调试还是答疑，不要求用户切换模式。修改前先用 skill_read_draft 读取最新草稿，"
             "只能用 skill_* 编辑当前 Skill；只有工具调用成功后才能说已经修改。"
             "用户要求试用或调试时，先调用 skill_trial 加载最新草稿（包含本轮刚做的修改），按它的步骤使用本会话实际可用的工具完成任务："
-            "附加文件用 skill_read_file 读取，脚本用 skill_test_script 运行，不能用 bash 绕过脚本隔离。"
-            "skill_trial 返回 snapshotStale 为 false 时，也可以用 skill 工具按业务会话方式加载，脚本经 skill_run_script 执行。"
+            "附加文件用 skill_read_file 读取，脚本用 skill_test_script 运行。"
+            "需要组合命令、安装依赖、跑生成的测试代码时可以用 bash：最新草稿在会话工作区的 .skill/ 目录（只读副本，随草稿修改自动同步），"
+            "例如 python3 .skill/scripts/xxx.py；要改脚本必须用 skill_write_file，不要直接改 .skill/ 里的文件。"
+            "skill_trial 返回 snapshotStale 为 false 时，也可以用 skill 工具按业务会话方式加载。"
             "若当前草稿因文件缺失而无法加载，先说明原因并协助修复。"
             "报告实际执行结果和阻碍。不要发布 Skill。"
         ),
@@ -702,7 +730,8 @@ def authoring_system_prompt(history: str, unavailable: str = "") -> dict:
             "skill_update_draft 会用 content 整体替换草稿：必须提交完整文档，未要求修改的内容原样保留。",
             "用户询问原因或解释内容时只回答，不调用更新工具；只有明确要求修改或创建时才修改草稿。",
             "对话期间维护者可能手动修改草稿或附加文件：每次修改前都重新调用 skill_read_draft，不要沿用之前读到的内容。",
-            "本轮通过 skill_* 改动后，skill、read、skill_run_script 仍是本轮开始时的只读快照：试用新内容只能用 skill_trial，不能将旧快照的执行结果称为新版本测试。",
+            "本轮通过 skill_* 改动后，skill、read、skill_run_script 仍是本轮开始时的只读快照：试用新内容用 skill_trial、skill_test_script 或 bash 运行 .skill/ 下的文件，不能将旧快照的执行结果称为新版本测试。",
+            "试用产出是“试用文件”，与 Skill 文件分开：生成的报告、测试代码、解析结果等写到会话工作区的 outputs/ 下（workspace_write 或 bash），用户在编辑页「试用文件」中查看；只有用户要求把某个产出沉淀为模板或资料时，才用 skill_write_file 存进 Skill。",
             "调试时自动“修改 → 重测”最多 3 轮，且只在用户明确要求调通、修好或直接改时进行；否则试用发现问题只报告，并询问是否修改。",
         ],
         "workspace": [
@@ -982,6 +1011,47 @@ async def _append_turn_message(skill_id: int, session_id: int, role: str, conten
         await _append_message(db, session, role, content, meta)
 
 
+# ---------- 试用文件：编辑对话的会话工作区（与 Skill 目录分开，不进入修订、不随发布） ----------
+
+
+async def trial_files(db: AsyncSession, skill_id: int, session_id: int, refresh: bool = False) -> dict:
+    """试用文件清单（服务端记录）；refresh 时先从 Runner 补同步一次，Runner 不可用时返回已有记录。"""
+    session = await get_authoring_session(db, skill_id, session_id)
+    if refresh and session.runner_session_id:
+        await file_service.sync_authoring(session.id, session.runner_session_id, runner_client)
+        await db.commit()  # 结束当前读事务，确保看到刚同步写入的记录
+    return {"items": await file_service.authoring_list(db, session.id)}
+
+
+async def trial_file_raw(db: AsyncSession, skill_id: int, session_id: int, path: str) -> tuple[bytes, str]:
+    session = await get_authoring_session(db, skill_id, session_id)
+    return await file_service.authoring_raw(db, session.id, path)
+
+
+async def delete_trial_file(db: AsyncSession, skill_id: int, session_id: int, path: str) -> None:
+    session = await get_authoring_session(db, skill_id, session_id)
+    if session.status == "running":
+        raise HTTPException(409, "Skill 助手正在执行，请等待本轮结束后再删除文件")
+    await file_service.authoring_delete(session.id, session.runner_session_id, path, runner_client)
+
+
+# 这些工具可能在会话工作区产生或删除文件且没有逐次通知：结果返回后同步试用文件（workspace_write 有 files 事件）
+TRIAL_FILE_TOOLS = frozenset({"bash", "skill_test_script", "skill_run_script"})
+
+
+async def sync_trial_files(session_id: int, runner_session_id: str) -> dict | None:
+    """同步编辑对话的试用文件，返回推送给编辑页的 trial_files 事件；同步失败不影响对话。"""
+    try:
+        if not await file_service.sync_authoring(session_id, runner_session_id, runner_client):
+            return None
+        async with SessionFactory() as db:
+            items = await file_service.authoring_list(db, session_id)
+    except Exception:  # 文件同步失败只记录日志，不影响对话
+        log.warning("编辑对话 %s 的试用文件同步失败", session_id, exc_info=True)
+        return None
+    return {"kind": "trial_files", "source": "tools", "payload": {"count": len(items)}}
+
+
 async def run_authoring_turn(skill_id: int, session_id: int, message: str, created_by: str = "admin"):
     """Persist the user turn and stream DSH events while checkpointing revisions/messages."""
     async with SessionFactory() as db:
@@ -995,6 +1065,7 @@ async def run_authoring_turn(skill_id: int, session_id: int, message: str, creat
     # 与工作台一致地落库执行过程：每步模型回复（含思考）一条 assistant，每次工具结果一条 tool。
     partial_text, partial_reasoning = "", ""
     revisions: list[dict] = []  # 工具执行期间产生的草稿修订，挂到该次调用的工具结果上
+    trial_synced = False  # 本轮结束时是否已同步试用文件
     try:
         # 每轮下发当前模型配置：模型管理中修改后，Runner 比对指纹并以新配置重启接续
         async for event in runner_client.events(runner_id, message, model_config):
@@ -1056,6 +1127,14 @@ async def run_authoring_turn(skill_id: int, session_id: int, message: str, creat
                     skill_id, session_id, "tool", clip_tool_result(str(payload.get("result") or "")), meta
                 )
             yield event
+            # 写文件、运行脚本或命令后同步试用文件，编辑页收到 trial_files 后刷新清单
+            touched = kind == "files" or (kind == "tool_result" and payload.get("tool") in TRIAL_FILE_TOOLS)
+            if touched and (update := await sync_trial_files(session_id, runner_id)):
+                yield update
+        # 本轮结束再同步一次：覆盖没有逐次通知的改动（如 bash 后台命令写出的文件）
+        trial_synced = True
+        if update := await sync_trial_files(session_id, runner_id):
+            yield update
     finally:
         async with SessionFactory() as db:
             session = await get_authoring_session(db, skill_id, session_id)
@@ -1065,3 +1144,6 @@ async def run_authoring_turn(skill_id: int, session_id: int, message: str, creat
                 await _append_message(db, session, "assistant", partial_text, meta)
             session.status = "idle"
             await db.commit()
+        # 中途出错或断开：会话已恢复空闲后再补一次试用文件同步
+        if not trial_synced:
+            await sync_trial_files(session_id, runner_id)

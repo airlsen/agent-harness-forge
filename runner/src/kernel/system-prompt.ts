@@ -30,7 +30,7 @@ export function workspaceGuide(tools: readonly string[]): string[] {
     );
   if (has('bash'))
     lines.push(
-      '你可以调用 bash 执行受限的终端与 Git 命令。只读查看命令（如 git status、git branch、git log、git diff、ls、pwd、cat）直接执行；编译、修改等操作会由系统向用户发起确认。代码分析优先使用 glob、grep、read；需要终端时使用简单只读命令，避免不必要的脚本、写文件与复杂 Shell 语法。支持在会话工作区或关联项目中执行。',
+      '你可以调用 bash 执行受限的终端与 Git 命令。命令直接执行，系统只拒绝破坏性系统命令、提权、读取凭据与密钥、向外部地址发起 curl/wget 等危险操作。代码分析优先使用 glob、grep、read；需要生成文件时优先用 workspace_write，避免不必要的复杂 Shell 语法。默认目录是会话工作区，也可以在关联项目中执行。',
     );
   if (has('glob') || has('grep') || has('workspace_read'))
     lines.push(
@@ -123,8 +123,11 @@ export function capabilityGuide(caps: CapabilityContext = {}, tools: readonly st
         files
           ? 'Skill 正文提到 references/、assets/ 中的文件时，按 skill 结果给出的目录拼出绝对路径，用 read 按需读取；这些文件只读。目录随 Skill 版本变化，以本次 skill 结果为准，不要沿用历史消息里的旧路径。'
           : '',
-        caps.skills.some((skill) => skill.hasScripts) && tools.includes('skill_run_script')
-          ? '需要运行 Skill 自带脚本时，按正文说明调用 skill_run_script（skill 为英文名称，path 为 scripts/ 下相对路径）。每次运行需要用户批准，拒绝后不要改用 bash 绕过。'
+        // Skill 编辑会话（有 skill_trial）由控制面的系统提示说明如何运行草稿脚本，这里不再重复
+        caps.skills.some((skill) => skill.hasScripts) &&
+        tools.includes('skill_run_script') &&
+        !tools.includes('skill_trial')
+          ? '需要运行 Skill 自带脚本时，按正文说明调用 skill_run_script（skill 为英文名称，path 为 scripts/ 下相对路径）。每次运行需要用户批准，拒绝后不要改用 bash 绕过。脚本在会话工作区的 outputs/<脚本名>-<时间>/ 下运行，产出文件保留在那里。'
           : '',
       ]
         .filter(Boolean)

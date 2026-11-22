@@ -25,6 +25,7 @@ from ..core.database import SessionFactory
 from ..models.agent_session import AgentSession
 from ..models.platform import SessionMessage
 from ..models.session_file import SessionFile, SessionFileChange
+from ..models.skill import SkillAuthoringFile, SkillAuthoringSession
 from .file_store import FileStore, file_store
 from .settings_service import get_policy
 
@@ -103,12 +104,13 @@ class FileService:
     def __init__(self, store: FileStore = file_store, sessions=SessionFactory):
         self.store = store
         self.sessions = sessions
-        self.locks: dict[int, asyncio.Lock] = {}
+        self.locks: dict[object, asyncio.Lock] = {}
         self.last_cleanup: dict | None = None
         self.cleanup_lock = asyncio.Lock()
 
-    def lock(self, session_id: int) -> asyncio.Lock:
-        return self.locks.setdefault(session_id, asyncio.Lock())
+    def lock(self, key) -> asyncio.Lock:
+        """同步锁：业务会话以会话 ID 为键，Skill 编辑对话以 ("skill", 对话 ID) 为键。"""
+        return self.locks.setdefault(key, asyncio.Lock())
 
     # ---------- 同步 ----------
 
@@ -117,19 +119,64 @@ class FileService:
             rows = (await db.scalars(select(SessionFile).where(SessionFile.session_id == session_id))).all()
         return {row.path: (row.sha256, row.bytes) for row in rows}
 
+    @staticmethod
+    async def _listing(runner_session_id: str, client) -> tuple[list, bool] | None:
+        """读取 Runner 工作区清单；Runner 离线或工作区丢失时返回 None（调用方保留服务端副本）。"""
+        try:
+            listing = await client.call("GET", f"/v1/sessions/{runner_session_id}/files")
+        except Exception:  # noqa: BLE001 - Runner 离线或工作区丢失时保留服务端副本
+            return None
+        items = listing.get("items") if isinstance(listing, dict) else None
+        if not isinstance(items, list):
+            return None
+        return items, not listing.get("truncated")
+
+    async def _pull(
+        self, db, rows: dict, items: list, runner_session_id: str, client, new_row
+    ) -> tuple[set, bool]:
+        """按清单拉取变化的文件写入存储并更新 rows（path → 记录），返回 (清单中的路径, 清单是否完整)。
+
+        new_row(path) 创建并登记一条新记录；内容哈希未变且存储中仍有内容的文件不重复拉取。
+        """
+        complete = True
+        seen: set[str] = set()
+        for item in items:
+            path = item.get("path") if isinstance(item, dict) else None
+            if not isinstance(path, str) or not path or len(path) > 256:
+                continue
+            seen.add(path)
+            row, digest = rows.get(path), item.get("sha256")
+            if row and digest and row.sha256 == digest and self.store.exists(digest):
+                continue
+            try:
+                data, mime = await client.raw(
+                    f"/v1/sessions/{runner_session_id}/raw?path={quote(path, safe='')}"
+                )
+            except HTTPException as error:
+                if error.status_code == 404:  # 列出后又被删除
+                    seen.discard(path)
+                else:
+                    complete = False
+                continue
+            if row is None:
+                row = new_row(path)
+                db.add(row)
+                rows[path] = row
+            row.sha256 = self.store.put(data)
+            row.bytes = len(data)
+            row.mime = (item.get("mime") or mime or "application/octet-stream").split(";")[0][:128]
+            row.modified_at = parse_time(item.get("modifiedAt")) or utcnow()
+        return seen, complete
+
     async def sync(self, session_id: int, runner_session_id: str, client) -> bool:
         """把 Runner 工作区同步到服务端存储，返回是否拿到了权威清单。"""
         if not runner_session_id:
             return False
         async with self.lock(session_id):
-            try:
-                listing = await client.call("GET", f"/v1/sessions/{runner_session_id}/files")
-            except Exception:  # noqa: BLE001 - Runner 离线或工作区丢失时保留服务端副本
+            listing = await self._listing(runner_session_id, client)
+            if listing is None:
                 return False
-            items = listing.get("items") if isinstance(listing, dict) else None
-            if not isinstance(items, list):
-                return False
-            complete = not listing.get("truncated")
+            items, complete = listing
             async with self.sessions() as db:
                 rows = {
                     row.path: row
@@ -137,34 +184,15 @@ class FileService:
                         await db.scalars(select(SessionFile).where(SessionFile.session_id == session_id))
                     ).all()
                 }
-                seen: set[str] = set()
-                for item in items:
-                    path = item.get("path") if isinstance(item, dict) else None
-                    if not isinstance(path, str) or not path or len(path) > 256:
-                        continue
-                    seen.add(path)
-                    row, digest = rows.get(path), item.get("sha256")
-                    if row and digest and row.sha256 == digest and self.store.exists(digest):
-                        continue
-                    try:
-                        data, mime = await client.raw(
-                            f"/v1/sessions/{runner_session_id}/raw?path={quote(path, safe='')}"
-                        )
-                    except HTTPException as error:
-                        if error.status_code == 404:  # 列出后又被删除
-                            seen.discard(path)
-                        else:
-                            complete = False
-                        continue
-                    if row is None:
-                        row = SessionFile(session_id=session_id, path=path)
-                        db.add(row)
-                        rows[path] = row
-                    row.sha256 = self.store.put(data)
-                    row.bytes = len(data)
-                    row.mime = (item.get("mime") or mime or "application/octet-stream").split(";")[0][:128]
-                    row.modified_at = parse_time(item.get("modifiedAt")) or utcnow()
-                if complete:
+                seen, pulled = await self._pull(
+                    db,
+                    rows,
+                    items,
+                    runner_session_id,
+                    client,
+                    lambda path: SessionFile(session_id=session_id, path=path),
+                )
+                if complete and pulled:
                     for path, row in rows.items():
                         if path not in seen:
                             await db.delete(row)
@@ -361,6 +389,118 @@ class FileService:
         truncated = len(lines) > MAX_DIFF_OUTPUT_LINES
         return {**view, "truncated": truncated, "diff": "".join(lines[:MAX_DIFF_OUTPUT_LINES])}
 
+    # ---------- Skill 编辑对话的试用文件 ----------
+    # 编辑对话的会话工作区（试用产出、脚本输出）同步到 skill_authoring_file，与 Skill 目录分开：
+    # 不进入修订、不随发布。执行会话重建时旧工作区的记录保留（只删除当前执行会话清单中消失的文件）。
+
+    async def sync_authoring(self, authoring_session_id: int, runner_session_id: str, client) -> bool:
+        """同步一个编辑对话的工作区，返回是否拿到了权威清单。"""
+        if not runner_session_id:
+            return False
+        async with self.lock(("skill", authoring_session_id)):
+            listing = await self._listing(runner_session_id, client)
+            if listing is None:
+                return False
+            items, complete = listing
+            async with self.sessions() as db:
+                rows = {
+                    row.path: row
+                    for row in (
+                        await db.scalars(
+                            select(SkillAuthoringFile).where(
+                                SkillAuthoringFile.authoring_session_id == authoring_session_id
+                            )
+                        )
+                    ).all()
+                }
+
+                def new_row(path: str) -> SkillAuthoringFile:
+                    return SkillAuthoringFile(
+                        authoring_session_id=authoring_session_id,
+                        runner_session_id=runner_session_id,
+                        path=path,
+                    )
+
+                seen, pulled = await self._pull(db, rows, items, runner_session_id, client, new_row)
+                for path in seen:
+                    rows[path].runner_session_id = runner_session_id
+                if complete and pulled:
+                    for path, row in rows.items():
+                        if path not in seen and row.runner_session_id == runner_session_id:
+                            await db.delete(row)
+                await db.commit()
+            return True
+
+    async def authoring_list(self, db, authoring_session_id: int) -> "list[dict]":
+        rows = (
+            await db.scalars(
+                select(SkillAuthoringFile)
+                .where(SkillAuthoringFile.authoring_session_id == authoring_session_id)
+                .order_by(SkillAuthoringFile.path)
+            )
+        ).all()
+        return [
+            {
+                "path": row.path,
+                "bytes": row.bytes,
+                "mime": row.mime,
+                "modifiedAt": iso(row.modified_at),
+                "sha256": row.sha256,
+            }
+            for row in rows
+        ]
+
+    async def _authoring_row(self, db, authoring_session_id: int, path: str) -> SkillAuthoringFile:
+        row = await db.scalar(
+            select(SkillAuthoringFile).where(
+                SkillAuthoringFile.authoring_session_id == authoring_session_id,
+                SkillAuthoringFile.path == path,
+            )
+        )
+        if not row:
+            raise HTTPException(404, "文件不存在或已被删除")
+        return row
+
+    async def authoring_raw(self, db, authoring_session_id: int, path: str) -> tuple[bytes, str]:
+        row = await self._authoring_row(db, authoring_session_id, path)
+        try:
+            return self.store.get(row.sha256), row.mime
+        except FileNotFoundError as error:
+            raise HTTPException(410, "文件内容已被清理") from error
+
+    async def authoring_delete(
+        self, authoring_session_id: int, runner_session_id: str, path: str, client
+    ) -> None:
+        """删除一个试用文件：当前执行会话的工作区与服务端记录一起删除。"""
+        async with self.lock(("skill", authoring_session_id)), self.sessions() as db:
+            row = await self._authoring_row(db, authoring_session_id, path)
+            if runner_session_id and row.runner_session_id == runner_session_id:
+                try:
+                    await client.call(
+                        "DELETE", f"/v1/sessions/{runner_session_id}/file?path={quote(path, safe='')}"
+                    )
+                except HTTPException as error:
+                    if error.status_code != 404:  # Runner 中已不存在时只需删除服务端副本
+                        raise
+            await db.delete(row)
+            await db.commit()
+
+    async def authoring_purge(self, authoring_session_id: int, runner_session_id: str, client) -> None:
+        """清理一个编辑对话的全部试用文件：Runner 工作区（尽力而为）与服务端记录。"""
+        async with self.lock(("skill", authoring_session_id)):
+            if runner_session_id:
+                try:
+                    await client.call("DELETE", f"/v1/sessions/{runner_session_id}/workspace")
+                except Exception:  # noqa: BLE001 - Runner 离线时只清理服务端记录
+                    log.info("编辑对话 %s 的 Runner 工作区清理失败，仅清理服务端记录", authoring_session_id)
+            async with self.sessions() as db:
+                await db.execute(
+                    delete(SkillAuthoringFile).where(
+                        SkillAuthoringFile.authoring_session_id == authoring_session_id
+                    )
+                )
+                await db.commit()
+
     # ---------- 删除与清理 ----------
 
     async def delete(self, session: AgentSession, path: str, client) -> None:
@@ -412,6 +552,7 @@ class FileService:
             referenced = set((await db.scalars(select(SessionFile.sha256))).all())
             referenced |= set((await db.scalars(select(SessionFileChange.before_sha))).all())
             referenced |= set((await db.scalars(select(SessionFileChange.after_sha))).all())
+            referenced |= set((await db.scalars(select(SkillAuthoringFile.sha256))).all())
         threshold = time.time() - GC_GRACE_SECONDS
         freed = 0
         for sha, _size, mtime in self.store.all():
@@ -462,9 +603,38 @@ class FileService:
                 except Exception:
                     failed += 1
                     log.warning("会话 %s 的文件清理失败，将在下次重试", session_id, exc_info=True)
+            # Skill 编辑对话的试用文件：对话最后一次活动超过保留期限后清理
+            purged_authoring = 0
+            if days > 0:
+                cutoff = now - timedelta(days=days)
+                async with self.sessions() as db:
+                    has_trial_files = (
+                        select(SkillAuthoringFile.id)
+                        .where(SkillAuthoringFile.authoring_session_id == SkillAuthoringSession.id)
+                        .exists()
+                    )
+                    stale = (
+                        await db.execute(
+                            select(SkillAuthoringSession.id, SkillAuthoringSession.runner_session_id).where(
+                                SkillAuthoringSession.status != "running",
+                                SkillAuthoringSession.updated_at < cutoff,
+                                has_trial_files,
+                            )
+                        )
+                    ).all()
+                for authoring_id, runner_session_id in stale:
+                    try:
+                        await self.authoring_purge(authoring_id, runner_session_id, client)
+                        purged_authoring += 1
+                    except Exception:
+                        failed += 1
+                        log.warning(
+                            "编辑对话 %s 的试用文件清理失败，将在下次重试", authoring_id, exc_info=True
+                        )
             result = {
                 "retentionDays": days,
                 "purgedSessions": purged,
+                "purgedSkillConversations": purged_authoring,
                 "backfilledSessions": backfilled,
                 "failedSessions": failed,
                 "freedBytes": await self.gc(),
