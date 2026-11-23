@@ -2805,7 +2805,9 @@ table td > .tag {
 }
 .login-story {
   position: relative;
-  background: var(--surface-shell);
+  background:
+    radial-gradient(ellipse at 52% 72%, rgb(var(--brand-rgb) / 0.15), transparent 57%),
+    linear-gradient(155deg, rgb(var(--brand-rgb) / 0.08), transparent 58%), var(--surface-shell);
   border-right: 1px solid var(--border-default);
   padding: 41px 53px;
   display: flex;
@@ -2830,7 +2832,7 @@ table td > .tag {
 }
 .login-intro > .eyebrow {
   font-size: 12px;
-  color: var(--color-text-secondary);
+  color: var(--scenario-selection-text);
   letter-spacing: 1.6px;
 }
 .login-intro > h1 {
@@ -2840,6 +2842,9 @@ table td > .tag {
   color: var(--color-text-primary);
   margin: 20px 0 20px;
   letter-spacing: -1.5px;
+}
+.login-headline-accent {
+  color: var(--scenario-selection-text);
 }
 .login-intro > p {
   color: var(--color-text-secondary);
@@ -2857,7 +2862,7 @@ table td > .tag {
 }
 .illustration-orbit {
   position: absolute;
-  border: 1px dashed var(--border-strong);
+  border: 1px dashed var(--scenario-selection-border);
   border-radius: 50%;
 }
 .orbit-one {
@@ -2867,7 +2872,7 @@ table td > .tag {
 .orbit-two {
   width: 325px;
   height: 325px;
-  border-color: var(--border-default);
+  border-color: rgb(var(--brand-rgb) / 0.24);
 }
 .illustration-center {
   display: grid;
@@ -2879,7 +2884,7 @@ table td > .tag {
   border: 1px solid var(--scenario-selection-border);
   border-radius: 20px;
   transform: rotate(12deg);
-  box-shadow: 0 12px 30px #b39c7d0f;
+  box-shadow: 0 12px 30px rgb(var(--brand-rgb) / 0.15);
   z-index: 1;
 }
 .illustration-node {
@@ -2888,12 +2893,12 @@ table td > .tag {
   align-items: center;
   gap: 7px;
   font-size: 12px;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--scenario-selection-border);
   padding: 14px 16px;
   border-radius: 11px;
-  background: var(--surface-subtle-bg);
-  color: var(--color-text-secondary);
-  box-shadow: 0 5px 14px #95846c03;
+  background: var(--surface-card);
+  color: var(--color-text-primary);
+  box-shadow: 0 5px 14px rgb(var(--brand-rgb) / 0.07);
   z-index: 1;
 }
 .node-code {
@@ -2963,11 +2968,16 @@ table td > .tag {
 .login-form > .button {
   margin-top: 30px;
   font-size: 13px;
-  background: var(--color-brand);
-  border-color: var(--color-brand);
 }
-.login-form > .button:hover {
-  background: var(--color-brand) !important;
+.login-form > .button.secondary {
+  margin-top: 12px;
+  background: var(--surface-content);
+  border-color: var(--scenario-selection-border);
+  color: var(--scenario-selection-text);
+}
+.login-form > .button.secondary:not(:disabled):hover {
+  background: var(--scenario-selection-bg);
+  border-color: var(--scenario-selection-border);
 }
 .login-security {
   display: flex;
@@ -3958,17 +3968,12 @@ textarea::placeholder {
 .button.secondary {
   color: var(--color-text-secondary);
 }
-.button.primary,
-.login-form > .button {
+.button.primary {
   color: var(--color-text-inverse);
   background: var(--accent-solid);
   border-color: var(--accent-solid);
 }
-.login-form > .button {
-  color: var(--btn-primary-fg);
-}
-.button.primary:not(:disabled):hover,
-.login-form > .button:hover {
+.button.primary:not(:disabled):hover {
   background: var(--accent-solid-hover) !important;
 }
 .login-form > p,

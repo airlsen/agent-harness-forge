@@ -109,7 +109,7 @@ async function login() {
       >
       <div class="login-intro">
         <span class="eyebrow">SHARED CAPABILITIES. REAL WORK.</span>
-        <h1>让智能，<br />真正参与工作。</h1>
+        <h1><span class="login-headline-accent">让智能，</span><br />真正参与工作。</h1>
         <p>从一个想法，到一次可追溯的执行。<br />企业统一提供能力，让 Agent 成为工作的助力。</p>
         <div class="login-illustration">
           <div class="illustration-orbit orbit-one"></div>
@@ -159,8 +159,7 @@ async function login() {
           />
         </a-form-item>
         <button type="submit" class="button primary large" :disabled="busy">
-          <span v-if="busy" class="loader small"></span>{{ busy ? '正在登录' : '进入企业平台'
-          }}<Icon v-if="!busy" name="arrow" :size="17" />
+          <span v-if="busy" class="loader small"></span>{{ busy ? '登录中…' : '登录' }}
         </button>
         <button
           v-if="app.registrationAvailable"
@@ -168,7 +167,7 @@ async function login() {
           class="button secondary large"
           @click="switchMode('register')"
         >
-          没有账号？注册
+          注册账号
         </button>
         <div class="login-security">
           <Icon name="lock" :size="14" /><span>{{
@@ -223,7 +222,7 @@ async function login() {
             placeholder="再次输入密码"
         /></a-form-item>
         <button type="submit" class="button primary large" :disabled="busy">
-          <span v-if="busy" class="loader small"></span>{{ busy ? '正在注册' : '创建账号' }}
+          <span v-if="busy" class="loader small"></span>{{ busy ? '注册中…' : '注册' }}
         </button>
         <button type="button" class="button secondary large" :disabled="busy" @click="switchMode('login')">
           返回登录
