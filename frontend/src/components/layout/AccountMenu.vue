@@ -211,7 +211,7 @@ onBeforeUnmount(() => {
       <!-- 空间：当前空间打勾；空间较多时出现搜索框，列表限高滚动 -->
       <div class="enterprise-space-heading">空间</div>
       <label v-if="searchable" class="enterprise-space-search">
-        <Icon name="search" :size="14" />
+        <Icon name="search" :size="15" />
         <input v-model="spaceQuery" type="search" placeholder="搜索空间" aria-label="搜索空间" />
       </label>
       <div :class="['enterprise-space-options', { scroll: searchable }]" role="group" aria-label="切换空间">
@@ -226,18 +226,18 @@ onBeforeUnmount(() => {
           :title="item.description || item.name"
           @click="chooseSpace(item.id)"
         >
-          <SpaceMark :space="item" :size="18" /><span>{{ item.name }}</span
-          ><Icon v-if="item.id === space.currentId" name="check" :size="15" />
+          <SpaceMark :space="item" :size="20" /><span>{{ item.name }}</span
+          ><Icon v-if="item.id === space.currentId" name="check" :size="17" />
         </button>
         <p v-if="!shownSpaces.length" class="enterprise-space-empty">没有匹配的空间</p>
       </div>
       <button type="button" role="menuitem" tabindex="-1" @click="manageSpaces">
-        <Icon name="settings" :size="16" /><span>管理空间</span>
+        <Icon name="settings" :size="18" /><span>管理空间</span>
       </button>
       <div class="enterprise-account-menu-divider"></div>
       <!-- 外观只占一行：左侧标题，右侧三段切换（跟随系统 / 浅色 / 深色） -->
       <div class="enterprise-account-theme" role="group" aria-label="外观">
-        <Icon name="contrast" :size="16" /><span>外观</span>
+        <Icon name="contrast" :size="18" /><span>外观</span>
         <div class="enterprise-theme-switch">
           <button
             v-for="option in themeOptions"
@@ -250,16 +250,16 @@ onBeforeUnmount(() => {
             tabindex="-1"
             @click="selectTheme(option.value)"
           >
-            <Icon :name="option.icon" :size="15" />
+            <Icon :name="option.icon" :size="16" />
           </button>
         </div>
       </div>
       <div class="enterprise-account-menu-divider"></div>
       <button type="button" role="menuitem" tabindex="-1" @click="showHelp">
-        <Icon name="book" :size="16" /><span>使用帮助</span>
+        <Icon name="book" :size="18" /><span>使用帮助</span>
       </button>
       <button type="button" role="menuitem" tabindex="-1" :disabled="busy" @click="signOut">
-        <Icon name="logout" :size="16" /><span>退出登录</span>
+        <Icon name="logout" :size="18" /><span>退出登录</span>
       </button>
     </div>
   </div>

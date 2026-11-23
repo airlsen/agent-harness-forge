@@ -241,9 +241,12 @@ onMounted(async () => {
           <h1>空间管理</h1>
           <p>按团队或业务划分场景、Skill、MCP 和插件；在账号菜单里切换空间。</p>
         </div>
-        <a-button type="primary" @click="openCreate">
-          <template #icon><Icon name="plus" :size="16" /></template>新建空间
-        </a-button>
+        <!-- 按钮放进操作区，标题说明较长时也不会被挤压换行 -->
+        <div class="page-heading-actions">
+          <a-button type="primary" @click="openCreate">
+            <template #icon><Icon name="plus" :size="16" /></template>新建空间
+          </a-button>
+        </div>
       </div>
       <div class="policy-intro">
         <Icon name="info" :size="18" /><span

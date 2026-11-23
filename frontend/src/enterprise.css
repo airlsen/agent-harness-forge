@@ -358,17 +358,27 @@ textarea:focus-visible {
   margin-bottom: 2px;
   background: transparent;
 }
-/* 时间分组（今天 / 昨天 / 7 天内 / 更早）：比「最近会话」标题更轻 */
+/* 时间分组（今天 / 昨天 / 7 天内 / 更早）：浅色加粗小字 + 右侧细线，和会话条目明显区分 */
 .enterprise-recent-group + .enterprise-recent-group {
-  margin-top: 12px;
+  margin-top: 16px;
 }
 .enterprise-recent-group-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0 0 4px;
-  padding: 0 13px;
-  color: var(--text-subtle);
+  padding: 0 8px 0 13px;
+  color: var(--color-text-tertiary);
   font-size: 12px;
-  font-weight: 400;
-  line-height: 20px;
+  font-weight: 600;
+  line-height: 22px;
+  letter-spacing: 0.4px;
+}
+.enterprise-recent-group-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
 }
 .enterprise-recent-item > a {
   display: grid;
@@ -570,9 +580,9 @@ textarea:focus-visible {
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;
-  width: 232px;
+  width: 256px;
   max-width: calc(100vw - 24px);
-  padding: 5px;
+  padding: 6px;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: var(--surface);
@@ -590,17 +600,18 @@ textarea:focus-visible {
 .enterprise-account-menu button[role^='menuitem'] {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  min-height: 40px;
-  padding: 9px 12px;
-  border-radius: 5px;
+  min-height: 42px;
+  padding: 10px 14px;
+  border-radius: 6px;
   color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 20px;
+  font-size: 14px;
+  line-height: 22px;
   text-align: left;
 }
-.enterprise-account-menu button[role^='menuitem'] > span {
+/* 只让文字撑满剩余宽度；空间色块保持固定方块，不被拉长 */
+.enterprise-account-menu button[role^='menuitem'] > span:not(.space-mark) {
   flex: 1;
 }
 .enterprise-account-menu button[role^='menuitem'][aria-checked='true'] {
@@ -615,12 +626,12 @@ textarea:focus-visible {
 .enterprise-account-theme {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  padding: 4px 6px 4px 12px;
+  gap: 12px;
+  min-height: 42px;
+  padding: 4px 6px 4px 14px;
   color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 20px;
+  font-size: 14px;
+  line-height: 22px;
 }
 .enterprise-account-theme > span {
   flex: 1;
@@ -634,9 +645,9 @@ textarea:focus-visible {
 }
 .enterprise-account-menu .enterprise-theme-switch button[role^='menuitem'] {
   justify-content: center;
-  width: 28px;
+  width: 32px;
   min-height: 0;
-  height: 26px;
+  height: 30px;
   padding: 0;
   border-radius: 5px;
   color: var(--text-secondary);
@@ -667,18 +678,18 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 .enterprise-space-heading {
-  padding: 6px 12px 2px;
+  padding: 6px 14px 4px;
   color: var(--color-text-tertiary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 13px;
+  line-height: 20px;
 }
 .enterprise-space-search {
   display: flex;
   align-items: center;
   gap: 6px;
   margin: 4px 6px;
-  padding: 0 8px;
-  height: 30px;
+  padding: 0 10px;
+  height: 34px;
   border: 1px solid var(--line);
   border-radius: 6px;
   color: var(--text-secondary);
@@ -693,17 +704,17 @@ textarea:focus-visible {
   outline: 0;
   background: transparent;
   color: var(--ink);
-  font-size: 12px;
+  font-size: 13px;
 }
 .enterprise-space-options.scroll {
-  max-height: 232px;
+  max-height: 260px;
   overflow-y: auto;
 }
 .enterprise-account-menu button.enterprise-space-option {
-  min-height: 34px;
-  padding: 7px 12px;
+  min-height: 38px;
+  padding: 8px 14px;
 }
-.enterprise-account-menu button.enterprise-space-option > span {
+.enterprise-account-menu button.enterprise-space-option > span:not(.space-mark) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -718,9 +729,9 @@ textarea:focus-visible {
 }
 .enterprise-space-empty {
   margin: 0;
-  padding: 8px 12px;
+  padding: 8px 14px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 13px;
 }
 .enterprise-account-menu-divider {
   height: 1px;
@@ -3590,10 +3601,10 @@ textarea:focus-visible {
     --page-title-size: 26px;
   }
   .enterprise-account-menu button[role^='menuitem'] {
-    min-height: 44px;
+    min-height: 46px;
   }
   .enterprise-account-theme {
-    min-height: 44px;
+    min-height: 46px;
   }
   .enterprise-account-menu .enterprise-theme-switch button[role^='menuitem'] {
     min-height: 0;
