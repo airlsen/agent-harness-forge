@@ -115,9 +115,9 @@ const filtered = computed(() =>
 watch(maintenance, () => {
   filter.value = 'all';
 });
-function toggleMaintenance() {
+function enterMaintenance() {
   filter.value = 'all';
-  void router.replace({ query: maintenance.value ? {} : { view: 'maintain' } });
+  void router.replace({ query: { view: 'maintain' } });
 }
 async function loadPlugins() {
   if (pluginsLoading.value) return;
@@ -373,6 +373,14 @@ function editDetail() {
 function hasPendingDraft(scenario: Scenario) {
   return scenario.published_version > 0 && scenario.current_version > scenario.published_version;
 }
+/** 自建场景试运行通过、有待发布内容时，卡片主操作是「发布」 */
+function canPublish(scenario: Scenario) {
+  return (
+    scenario.space !== 'official' &&
+    (!scenario.published_version || hasPendingDraft(scenario)) &&
+    scenario.tested
+  );
+}
 function closeEditor() {
   if (busy.value) return;
   // 关闭后尚未返回的 AI 结果不再写入
@@ -495,7 +503,19 @@ async function versions(scenario: Scenario) {
           <span class="catalog-kicker"
             ><span class="catalog-kicker-mark"><Icon name="layers" :size="12" /></span>SCENARIO LIBRARY</span
           >
-          <h1>企业场景</h1>
+          <h1>
+            <!-- 维护模式：返回按钮放在标题左侧，与「我的技能」页一致 -->
+            <RouterLink
+              v-if="maintenance"
+              class="catalog-back"
+              to="/agent/scenarios"
+              aria-label="返回使用目录"
+              title="返回使用目录"
+            >
+              <Icon name="ri-arrow-go-back-fill" :size="20" />
+            </RouterLink>
+            企业场景
+          </h1>
           <p v-if="!maintenance">按工作目标选择场景，进入对话直接开始。</p>
           <p v-else>编辑场景，试运行通过后发布。</p>
         </div>
@@ -505,16 +525,11 @@ async function versions(scenario: Scenario) {
         <!-- 搜索与维护操作同在右侧，和能力管理页一致：维护场景/新建场景紧贴搜索框右边 -->
         <div class="scenario-toolbar-actions">
           <CatalogSearch v-model:value="query" placeholder="搜索场景名称或描述" aria-label="搜索场景" />
-          <!-- 使用目录：「维护场景」为主按钮；维护模式下让位给「新建场景」，避免两个主按钮并排 -->
-          <a-button
-            :type="maintenance ? 'default' : 'primary'"
-            :aria-pressed="maintenance"
-            @click="toggleMaintenance"
-          >
-            <template #icon><Icon :name="maintenance ? 'grid' : 'settings'" :size="16" /></template
-            >{{ maintenance ? '返回使用目录' : '维护场景' }}
+          <!-- 使用目录：「维护场景」；维护模式：「新建场景」（返回在标题左侧） -->
+          <a-button v-if="!maintenance" type="primary" @click="enterMaintenance">
+            <template #icon><Icon name="settings" :size="16" /></template>维护场景
           </a-button>
-          <a-button v-if="maintenance" type="primary" @click="edit()">
+          <a-button v-else type="primary" @click="edit()">
             <template #icon><Icon name="plus" :size="16" /></template>新建场景
           </a-button>
         </div>
@@ -602,9 +617,11 @@ async function versions(scenario: Scenario) {
               {{ isAvailableScenario(scenario) ? '开始' : '预览草稿' }}
             </a-button>
           </template>
-          <!-- 维护模式：编辑 + 当前阶段操作；其他操作收进「更多」以保持单行。 -->
+          <!-- 维护模式：编辑 + 当前阶段操作；其他操作收进「更多」以保持单行。
+               每张卡片一个主题色主操作：可发布时为「发布」，否则为「编辑 / 基于模板创建」。 -->
           <template v-if="maintenance" #ops>
             <a-button
+              :type="canPublish(scenario) ? 'default' : 'primary'"
               size="small"
               :disabled="busy"
               @click="scenario.space === 'official' ? createFromTemplate(scenario) : edit(scenario)"
@@ -629,11 +646,7 @@ async function versions(scenario: Scenario) {
               <template #icon><Icon name="play" :size="14" /></template>试运行
             </a-button>
             <a-button
-              v-if="
-                scenario.space !== 'official' &&
-                (!scenario.published_version || hasPendingDraft(scenario)) &&
-                scenario.tested
-              "
+              v-if="canPublish(scenario)"
               type="primary"
               size="small"
               :disabled="busy"

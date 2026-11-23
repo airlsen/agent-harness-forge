@@ -484,7 +484,7 @@ async def main():
             check(
                 "template copy, maintenance edit and immutable version history persist"
             )
-            await page.get_by_role("button", name="返回使用目录").click()
+            await page.get_by_role("link", name="返回使用目录").click()
             await expect(page.locator(".catalog-card")).to_have_count(4)
             await expect(page.locator(".catalog-grid")).not_to_contain_text(
                 fixture_name
