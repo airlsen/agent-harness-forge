@@ -131,7 +131,7 @@ onMounted(load);
           >
           <h1>
             <RouterLink
-              class="skill-library-back"
+              class="catalog-back"
               to="/agent/capabilities?tab=skills"
               aria-label="返回技能管理"
               title="返回技能管理"
@@ -273,24 +273,6 @@ onMounted(load);
 .skill-library-page .skill-library-heading {
   gap: 16px;
   margin-bottom: 24px;
-}
-.skill-library-back {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 32px;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  color: var(--color-text-secondary);
-}
-.skill-library-back:hover {
-  color: var(--color-text-primary);
-  background: var(--surface-hover);
-}
-.skill-library-back:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: 2px;
 }
 .skill-library-actions :deep(.ant-btn) {
   display: inline-flex;

@@ -5012,6 +5012,25 @@ textarea:focus-visible {
   letter-spacing: -0.9px;
   line-height: 1.25;
 }
+/* 二级目录（我的技能、场景维护）标题左侧的返回按钮 */
+.catalog-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+}
+.catalog-back:hover {
+  color: var(--color-text-primary);
+  background: var(--surface-hover);
+}
+.catalog-back:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
 .enterprise-view .catalog-page-heading .catalog-heading-copy p {
   margin-top: 9px;
   color: var(--color-text-secondary);
