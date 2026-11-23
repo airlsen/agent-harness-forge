@@ -2806,8 +2806,14 @@ table td > .tag {
 .login-story {
   position: relative;
   background:
-    radial-gradient(ellipse at 52% 72%, rgb(var(--brand-rgb) / 0.15), transparent 57%),
-    linear-gradient(155deg, rgb(var(--brand-rgb) / 0.08), transparent 58%), var(--surface-shell);
+    radial-gradient(ellipse at 52% 72%, rgb(var(--brand-rgb) / 0.3), transparent 65%),
+    linear-gradient(
+      155deg,
+      rgb(var(--brand-rgb) / 0.16),
+      rgb(var(--brand-rgb) / 0.07) 58%,
+      rgb(var(--brand-rgb) / 0.12)
+    ),
+    var(--surface-shell);
   border-right: 1px solid var(--border-default);
   padding: 41px 53px;
   display: flex;
@@ -2947,6 +2953,24 @@ table td > .tag {
 .login-form {
   width: 100%;
   max-width: 350px;
+}
+.login-form .ant-input-affix-wrapper.ant-input-affix-wrapper-lg {
+  height: 41px;
+}
+.login-form .ant-input-affix-wrapper > .ant-input {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.login-form .ant-input-affix-wrapper > .ant-input:focus {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.login-form .ant-input-affix-wrapper > .ant-input:focus-visible {
+  outline: none;
 }
 .login-form > .tag {
   font-size: 12px;
