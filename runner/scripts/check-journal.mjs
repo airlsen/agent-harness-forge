@@ -111,7 +111,7 @@ try {
     assert.deepEqual(event('turn/end', { reason: { kind: 'error', error: { message: 'boom' } } })[1], {
       failure: 'boom',
     });
-    assert.match(event('turn/end', { reason: { kind: 'max-tokens' } })[1].failure, /长度上限/);
+    assert.match(event('turn/end', { reason: { kind: 'max-tokens' } })[1].failure, /单次输出上限/);
   });
   check('plugin notifications map to Forge events; gateway errors are explicit failures', () => {
     assert.deepEqual(translateNotification('forge.delta', { text: 'x' }, calls), [
