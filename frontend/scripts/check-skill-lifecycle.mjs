@@ -9,7 +9,7 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: false },
 });
 try {
-  const lifecycle = await vite.ssrLoadModule('/src/utils/skillLifecycle.ts');
+  const lifecycle = await vite.ssrLoadModule('/src/utils/skill/lifecycle.ts');
   const skill = (status, publishedRevisionId, offline) => ({ status, publishedRevisionId, offline });
 
   // 四种状态：草稿、已发布、已发布后又有修改、已下线

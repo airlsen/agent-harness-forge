@@ -5,7 +5,7 @@ import Icon from '../base/ForgeIcon.vue';
 import Markdown from '../markdown/MarkdownContent.vue';
 import MarkdownPreview from '../markdown/MarkdownPreview.vue';
 import { apiBlob, saveBlob } from '../../api/client';
-import { formatBytes } from '../../utils/presentation';
+import { formatBytes } from '../../utils/common/format';
 import {
   HIGHLIGHT_LIMIT,
   KIND_META,
@@ -18,7 +18,7 @@ import {
   parseDelimited,
   rawFileUrl,
   type FileRef,
-} from '../../utils/files';
+} from '../../utils/file/files';
 
 /**
  * 会话文件预览：按原始字节读取后分类型渲染。

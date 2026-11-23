@@ -63,7 +63,7 @@ try {
   const entry = join(temporary, 'editor.cjs');
   await build({
     stdin: {
-      contents: `export { default as Editor } from './src/components/editor/MonacoEditor.vue'; export { createApp, h, reactive, nextTick } from 'vue'; export * as monaco from 'monaco-editor/editor'; export { minimalTextEdit } from './src/utils/editorTextEdit';`,
+      contents: `export { default as Editor } from './src/components/editor/MonacoEditor.vue'; export { createApp, h, reactive, nextTick } from 'vue'; export * as monaco from 'monaco-editor/editor'; export { minimalTextEdit } from './src/utils/editor/textEdit';`,
       resolveDir: root,
     },
     define: {

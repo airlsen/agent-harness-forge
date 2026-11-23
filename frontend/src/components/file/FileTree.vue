@@ -2,8 +2,8 @@
 import { computed, ref, watch } from 'vue';
 import FileCard from './FileCard.vue';
 import Icon from '../base/ForgeIcon.vue';
-import { formatBytes } from '../../utils/presentation';
-import { buildFileTree, defaultCollapsed, treeRows, type FileRef } from '../../utils/files';
+import { formatBytes } from '../../utils/common/format';
+import { buildFileTree, defaultCollapsed, treeRows, type FileRef } from '../../utils/file/files';
 
 /**
  * 会话文件目录树：目录可折叠、可整体打包下载；文件行沿用文件卡片（预览、下载、删除）。

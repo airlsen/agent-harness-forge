@@ -13,7 +13,7 @@ const extensions = new Set(['.vue', '.ts', '.js', '.mjs', '.css', '.scss', '.sas
 // Files that legitimately *define* color values (raw scales, tokens, data-viz ramps, previewer themes).
 const allowlist = [
   /[/\\]styles[/\\]/,
-  /[/\\]utils[/\\]vizTheme\.ts$/,
+  /[/\\]utils[/\\]markdown[/\\]vizTheme\.ts$/,
   /[/\\]theme[/\\]antd\.ts$/,
   /[/\\]components[/\\]markdown[/\\](MarkdownPreview|JsonPreview)\.vue$/,
 ];

@@ -6,7 +6,7 @@
  * 品牌相关色值来自当前主题（styles/themes/，经 theme-export.module.scss 导出），这里不写品牌色。
  */
 import type { EmbedOptions } from 'vega-embed';
-import themeColors from '../styles/theme-export.module.scss';
+import themeColors from '../../styles/theme-export.module.scss';
 
 /**
  * 数据图表分类色板：以品牌色为首，其余为高明度、中高饱和的清透色（马卡龙但不发灰），

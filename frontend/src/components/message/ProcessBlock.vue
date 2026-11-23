@@ -17,8 +17,8 @@ import {
   toolArgSummary,
   type ToolCallView,
   type TurnStep,
-} from '../../utils/turns';
-import { builtinToolTitle } from '../../utils/files';
+} from '../../utils/conversation/turns';
+import { builtinToolTitle } from '../../utils/conversation/toolTitles';
 import Icon from '../base/ForgeIcon.vue';
 import Markdown from '../markdown/MarkdownContent.vue';
 import ToolCallGroup from './ToolCallGroup.vue';

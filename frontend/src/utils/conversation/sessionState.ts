@@ -1,4 +1,5 @@
-import type { Conversation, Scenario } from '../types/platform';
+/** 会话与场景的状态展示：状态标签、可用性、来源与搜索匹配。 */
+import type { Conversation, Scenario } from '../../types/platform';
 
 /** `idle` is a settled round, never a claim that the business goal succeeded. */
 export function sessionState(status: string) {
@@ -10,22 +11,6 @@ export function sessionState(status: string) {
     archived: { label: '已归档', tone: 'neutral', icon: 'archive' },
   };
   return states[status] ?? { label: '状态未知', tone: 'neutral', icon: 'circle' };
-}
-
-export function formatDate(value: string, withTime = false): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '时间未知';
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
-  }).format(date);
-}
-
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
 export function isAvailableScenario(scenario: Scenario) {

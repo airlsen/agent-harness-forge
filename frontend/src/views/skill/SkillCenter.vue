@@ -12,14 +12,14 @@ import CatalogSearch from '../../components/catalog/CatalogSearch.vue';
 import SpaceTag from '../../components/space/SpaceTag.vue';
 import MoveSpaceDialog from '../../components/space/MoveSpaceDialog.vue';
 import type { SkillSummary } from '../../types/skill';
-import { catalogDate, orderManagedSkills } from '../../utils/catalogOrdering';
+import { catalogDate, orderManagedSkills } from '../../utils/common/catalogOrdering';
 import {
   SKILL_STATE_LABELS,
   canDeleteSkill,
   deleteSkill as confirmDeleteSkill,
   skillState,
   unpublishSkill as confirmUnpublishSkill,
-} from '../../utils/skillLifecycle';
+} from '../../utils/skill/lifecycle';
 
 const skills = ref<SkillSummary[]>([]);
 const app = usePlatform();

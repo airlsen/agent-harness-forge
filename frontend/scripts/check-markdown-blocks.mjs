@@ -23,7 +23,7 @@ const check = async (name, fn) => {
 };
 const FENCE = '```';
 try {
-  const { splitMarkdown, fenceClosed } = await vite.ssrLoadModule('/src/utils/markdownBlocks.ts');
+  const { splitMarkdown, fenceClosed } = await vite.ssrLoadModule('/src/utils/markdown/blocks.ts');
 
   await check('正文与代码块按出现顺序拆分', () => {
     const md = `# 标题\n\n说明\n\n${FENCE}TS\nconst a = 1;\n${FENCE}\n\n结尾`;
@@ -174,7 +174,7 @@ try {
     assert.equal(blocks[0].code, url);
   });
 
-  const { normalizeLang, highlightCode } = await vite.ssrLoadModule('/src/utils/highlight.ts');
+  const { normalizeLang, highlightCode } = await vite.ssrLoadModule('/src/utils/markdown/highlight.ts');
 
   await check('语言别名归一化，白名单外的语言走纯文本', () => {
     assert.equal(normalizeLang('TS'), 'typescript');
@@ -197,7 +197,7 @@ try {
     assert.doesNotMatch(plain, /<b>/);
   });
 
-  const { sanitizeDiagramSvg } = await vite.ssrLoadModule('/src/utils/sanitizeSvg.ts');
+  const { sanitizeDiagramSvg } = await vite.ssrLoadModule('/src/utils/markdown/sanitizeSvg.ts');
 
   await check('Mermaid SVG 消毒保留 foreignObject 节点文字，移除脚本与事件属性', () => {
     const svg =
@@ -212,7 +212,9 @@ try {
     assert.doesNotMatch(clean, /<script|onerror|onclick|javascript:|<img/i);
   });
 
-  const { MERMAID_CONFIG, VEGA_CONFIG, VIZ_PALETTE } = await vite.ssrLoadModule('/src/utils/vizTheme.ts');
+  const { MERMAID_CONFIG, VEGA_CONFIG, VIZ_PALETTE } = await vite.ssrLoadModule(
+    '/src/utils/markdown/vizTheme.ts',
+  );
   const { default: themeColors } = await vite.ssrLoadModule('/src/styles/theme-export.module.scss');
 
   await check('图与图表共用品牌色板，Mermaid 使用可自定义的 base 主题', () => {

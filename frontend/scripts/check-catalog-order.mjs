@@ -12,7 +12,7 @@ const vite = await createServer({
 });
 try {
   const { orderScenarios, orderManagedSkills, orderPublishedSkills, orderByCreated, catalogDate } =
-    await vite.ssrLoadModule('/src/utils/catalogOrdering.ts');
+    await vite.ssrLoadModule('/src/utils/common/catalogOrdering.ts');
   const d = (day) => `2026-01-${String(day).padStart(2, '0')}T00:00:00Z`;
   const ids = (items) => items.map((item) => item.id);
   const scenarios = [

@@ -2,8 +2,8 @@
 import { computed, ref, watch } from 'vue';
 import Icon from '../base/ForgeIcon.vue';
 import TextDiff from './TextDiff.vue';
-import { CHANGE_LABELS, fileDir, fileName, type ChangeAction } from '../../utils/files';
-import { diffText } from '../../utils/textDiff';
+import { CHANGE_LABELS, fileDir, fileName, type ChangeAction } from '../../utils/file/files';
+import { diffText } from '../../utils/file/textDiff';
 
 /** 一组文件的修改前后对比：左侧文件列表（状态与增删行数），右侧逐行对比，可切换合并 / 左右视图。 */
 export interface ReviewFile {

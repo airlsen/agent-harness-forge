@@ -10,7 +10,7 @@ const vite = await createServer({
 });
 try {
   const { groupRecentSessions, recentSessionDot, lastActiveTime, RECENT_LIMIT } = await vite.ssrLoadModule(
-    '/src/utils/recentSessions.ts',
+    '/src/utils/conversation/recentSessions.ts',
   );
   const now = new Date(2026, 10, 22, 22, 30);
   const at = (day, hour = 10) => new Date(2026, 10, day, hour).toISOString();

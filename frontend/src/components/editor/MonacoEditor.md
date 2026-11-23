@@ -19,7 +19,7 @@
 - 异步切换文件时先设置 `loading`，同时更新文件 key；内容到达后再解除 loading，避免空占位内容覆盖旧文件。加载失败时继续保持 loading。
 - 外部 `modelValue` 更新作为一个独立的可撤销编辑，不发出 change / update:modelValue。用户输入、撤销、重做正常发出这两个事件。
 - 支持 `ready`、`shortcut-save`、`content-selected`、`selection-cleared` 事件；暴露 `getEditor()`、`getValue()`、`focus()`、`layout()`。
-- 可配置 `language`、`theme`、`height`、`ariaLabel`、`options`。当前按需注册 Markdown、YAML；其他语言需要在 `utils/monaco.ts` 添加注册，配置 language 本身不会自动安装语言服务。
+- 可配置 `language`、`theme`、`height`、`ariaLabel`、`options`。当前按需注册 Markdown、YAML；其他语言需要在 `utils/editor/monaco.ts` 添加注册，配置 language 本身不会自动安装语言服务。
 - Monaco 的主题是页面级设置；同一页面的多个实例应使用相同主题。未提供 Markdown 格式化服务，也不承诺移动浏览器编辑兼容性。
 
 技能预览使用 `MarkdownContent` 的 `variant="document"`，默认 `message` 保持聊天原有排版。

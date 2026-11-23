@@ -1,4 +1,4 @@
-import type { Conversation } from '../types/platform';
+import type { Conversation } from '../../types/platform';
 
 /** 侧栏「最近会话」最多显示的条数；更多的到「我的会话」查看 */
 export const RECENT_LIMIT = 30;

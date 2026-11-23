@@ -49,14 +49,27 @@
 | `editor/` | Monaco 代码编辑器（见 `editor/MonacoEditor.md`） |
 | `catalog/` | 目录卡片页共用：卡片、网格、搜索、筛选、空状态 |
 
+工具函数放在 `src/utils/<分组>/`，分组名与 `components/` 对应；文件放进分组后不再重复分组前缀（如 `skill/authoring.ts` 而不是 `skillAuthoring.ts`）：
+
+| 工具分组 `utils/` | 内容 |
+|---|---|
+| `common/` | 与业务无关的通用件：`feedback`（提示 / 确认框）、`focus`（弹窗焦点）、`overlay`（抽屉无障碍属性）、`format`（日期、文件大小）、`catalogOrdering`（目录排序） |
+| `conversation/` | 对话与执行过程：`turns`（轮次与过程块）、`toolTitles`（工具中文名）、`sessionState`（会话 / 场景状态）、`composerTransition`、`modelContext`、`recentSessions` |
+| `file/` | 会话文件：`files`（类型识别、交付物、下载地址）、`textDiff` |
+| `markdown/` | 内容渲染：`blocks`（Markdown 分块）、`highlight`、`sanitizeSvg`、`vizTheme`、`remoteImages` |
+| `editor/` | Monaco：`monaco`、`textEdit` |
+| `skill/` | Skill：`authoring`、`document`、`files`、`lifecycle` |
+
+Vue 组合式函数（`useXxx`，内部用到 `ref` / `watch` 等响应式 API）放在 `src/composables/`：`useCopy`、`useStickToBottom`、`useRetained`。
+
 ## 代码分工
 
 - `App.vue`：常驻企业导航、管理区导航、左下角操作帮助；不再渲染全局顶栏。存在运行中会话时每 3 秒同步会话列表状态，防止离开 SSE 页后状态滞留。
 - `components/layout/AccountMenu.vue`：头像账号菜单；鼠标悬停、点击及键盘打开，手机首触可用，Esc/外部点击/切页关闭；退出仍由 `App.vue` 清空会话草稿后调用原认证接口。
 - `components/composer/ConversationStart.vue`：工作台与空白新会话共用唯一标题、居中输入、真实场景建议与必要的模型配置提示。
 - `components/composer/TaskComposer.vue`：首页/会话共用输入、场景选择、文本附件和发送，拒绝空提交、二进制文本和超限附件。
-- `components/base/DialogShell.vue`、`utils/focus.ts`：遮罩、Esc、Tab 焦点约束与焦点返回；真正的模态弹层同时将应用背景设为 inert / aria-hidden，关闭时恢复原状态；这些焦点约束仅用于弹窗和按需详情，不把常驻主导航当作模态抽屉。
-- `utils/presentation.ts`：统一状态/日期/文件尺寸，`idle` 只显示“可继续”，不等于成功。
+- `components/base/DialogShell.vue`、`utils/common/focus.ts`：遮罩、Esc、Tab 焦点约束与焦点返回；真正的模态弹层同时将应用背景设为 inert / aria-hidden，关闭时恢复原状态；这些焦点约束仅用于弹窗和按需详情，不把常驻主导航当作模态抽屉。
+- `utils/common/format.ts`、`utils/conversation/sessionState.ts`：统一日期/文件尺寸与会话状态，`idle` 只显示“可继续”，不等于成功。
 - `stores/conversation.ts`：真实 SSE、接收后原子交接、会话级草稿停放、显式新建确认；提交/读取代际校验，迟到响应不能污染新草稿；附件读取跟随草稿版本，重新打开提交中的会话等待真实回执后再回读。
 - `style.css`：既有管理表单、Markdown 与基础业务样式。
 - `enterprise.css`：新版外壳、公共目录、工作台、会话体验与响应式布局；桌面/平板为常驻完整侧栏，700px 及以下为常驻有文字导航栏，不再点击展开。所有导航行共用固定图标列、文字列与尾部列；短窗口的菜单区域独立滚动。保留原有暖橙主题，无外部字体、图片或 CDN 依赖。

@@ -25,15 +25,15 @@ export function latestUnavailable(turns: Pick<Turn, 'user'>[]): UnavailableCapab
  * 运行中已显示的正文不再收回：所有正文都留在 answer 里原位显示，轮次结束后才整理一次
  * （中间说明收进过程块），避免「文字出现几秒又消失」。
  */
-import type { ActiveCapabilities, ChatMessage } from '../types/platform';
+import type { ActiveCapabilities, ChatMessage } from '../../types/platform';
+import { PRESENT_TOOL } from './toolTitles';
 import {
-  PRESENT_TOOL,
   mergeDeliverables,
   parseChanges,
   parseDeliverables,
   type Deliverable,
   type WorkspaceChanges,
-} from './files';
+} from '../file/files';
 
 export interface ToolCallView {
   id: string;
