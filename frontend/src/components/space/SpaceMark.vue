@@ -23,7 +23,7 @@ const initial = computed(() => Array.from(props.space.name.trim())[0]?.toUpperCa
 <style scoped>
 .space-mark {
   display: inline-grid;
-  flex-shrink: 0;
+  flex: none;
   place-items: center;
   border-radius: 5px;
   background: var(--space-gray);
