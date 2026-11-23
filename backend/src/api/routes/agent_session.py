@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from ..core.database import get_session
+from ..core.database import SessionFactory, get_session
 from ..services.session_service import session_service
 from ..services.space_service import current_space
 from ..services.capability_service import CapabilityChoice
@@ -18,8 +18,14 @@ from ..utils.response import ResponseUtil
 router = APIRouter()
 
 
-async def require_session_owner(session_id: int, request: Request, db: AsyncSession = Depends(get_session)):
-    return await session_service.owned_row(db, session_id, request.state.user.id)
+async def require_session_owner(session_id: int, request: Request) -> None:
+    """会话所有者校验：自己开一个短连接，查完立即归还。
+
+    不能用 Depends(get_session)：FastAPI 0.118 起，这类依赖要等响应全部发完才释放连接，
+    而事件流在整轮执行期间都保持打开，会让每个运行中的会话页面一直占着连接池。
+    """
+    async with SessionFactory() as db:
+        await session_service.owned_row(db, session_id, request.state.user.id)
 
 
 owned_routes = APIRouter(dependencies=[Depends(require_session_owner)])

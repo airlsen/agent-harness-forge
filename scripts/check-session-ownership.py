@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Two-account regression for chat, streaming, files, approval, audit and Skill editor ownership."""
 
+import asyncio
 import hashlib
 import json
 import os
@@ -38,8 +39,9 @@ with tempfile.TemporaryDirectory(prefix="forge-ownership-") as directory:
         }
     )
 
+    import httpx
     from fastapi.testclient import TestClient
-    from sqlalchemy import select
+    from sqlalchemy import select, update
     from src.api.main import app
     from src.api.core.database import SessionFactory
     from src.api.models.agent_session import AgentSession, SessionEventIndex
@@ -159,6 +161,103 @@ with tempfile.TemporaryDirectory(prefix="forge-ownership-") as directory:
                 plugin_id,
                 scenario_id,
             )
+
+    # 默认连接池上限为 5 个常驻 + 10 个临时；多开一个才能暴露“事件流一直占着连接”的问题
+    STREAM_COUNT = 16
+
+    async def concurrent_streams(cookie: str, user_id: str, scenario_id: int) -> None:
+        """运行中会话的事件流会长时间保持打开，不能一直占着数据库连接：
+        同时打开超过连接池上限的事件流后，其他接口仍须立即响应。"""
+        async with SessionFactory() as db:
+            rows = [
+                AgentSession(
+                    user_id=user_id,
+                    scenario_id=scenario_id,
+                    bundle_hash="stream",
+                    status="running",
+                )
+                for _ in range(STREAM_COUNT)
+            ]
+            db.add_all(rows)
+            await db.commit()
+            ids = [row.id for row in rows]
+        headers = [
+            (b"host", b"testserver"),
+            (b"cookie", f"forge_session={cookie}".encode()),
+        ]
+        closing = asyncio.Event()
+
+        def stream(session_id: int, opened: asyncio.Event):
+            # 直接走 ASGI：TestClient 和 httpx 的 ASGITransport 都要等响应结束才返回，测不了长连接
+            path = f"/api/agent/sessions/{session_id}/events"
+            scope = {
+                "type": "http",
+                "asgi": {"version": "3.0"},
+                "http_version": "1.1",
+                "method": "GET",
+                "scheme": "http",
+                "path": path,
+                "raw_path": path.encode(),
+                "query_string": b"",
+                "root_path": "",
+                "headers": headers,
+                "client": ("127.0.0.1", 50000 + session_id),
+                "server": ("testserver", 80),
+            }
+            requested = False
+
+            async def receive():
+                nonlocal requested
+                if not requested:
+                    requested = True
+                    return {"type": "http.request", "body": b"", "more_body": False}
+                await closing.wait()
+                return {"type": "http.disconnect"}
+
+            async def send(message):
+                if message["type"] == "http.response.start":
+                    assert message["status"] == 200, (session_id, message["status"])
+                elif message["type"] == "http.response.body" and message.get("body"):
+                    opened.set()
+
+            return app(scope, receive, send)
+
+        events = [asyncio.Event() for _ in ids]
+        tasks = [asyncio.create_task(stream(i, ready)) for i, ready in zip(ids, events)]
+        try:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*(ready.wait() for ready in events)), 10
+                )
+                async with httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+                ) as http:
+                    listed = await asyncio.wait_for(
+                        http.get(
+                            "/api/agent/sessions",
+                            headers={"cookie": f"forge_session={cookie}"},
+                        ),
+                        5,
+                    )
+            except TimeoutError:
+                raise AssertionError(
+                    f"同时打开 {STREAM_COUNT} 个运行中会话的事件流后接口无响应：事件流占住了数据库连接"
+                ) from None
+            assert listed.status_code == 200, listed.text
+            assert set(ids).issubset(
+                {item["id"] for item in listed.json()["data"]["items"]}
+            )
+        finally:
+            closing.set()
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 10)
+            # 收尾：不留“运行中”会话，避免下次启动时对账去找 Runner
+            async with SessionFactory() as db:
+                await db.execute(
+                    update(AgentSession)
+                    .where(AgentSession.id.in_(ids))
+                    .values(status="idle")
+                )
+                await db.commit()
 
     with TestClient(app) as client:
         users = {}
@@ -341,6 +440,9 @@ with tempfile.TemporaryDirectory(prefix="forge-ownership-") as directory:
             ]["id"]
             == alice_edit
         )
+        client.portal.call(
+            concurrent_streams, client.cookies.get("forge_session"), alice, scenario_id
+        )
 
     # Simulate an old editor table without owner_id; restart must assign its sessions to admin.
     with sqlite3.connect(data / "ownership.db") as db:
@@ -370,5 +472,5 @@ with tempfile.TemporaryDirectory(prefix="forge-ownership-") as directory:
         )
 
     print(
-        "PASS owner-only chat, SSE, files, messages, approvals, Skill editor; admin-only audit; legacy migration"
+        "PASS owner-only chat, SSE, files, messages, approvals, Skill editor; admin-only audit; legacy migration; concurrent SSE keeps DB pool free"
     )
