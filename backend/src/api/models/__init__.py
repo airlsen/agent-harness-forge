@@ -6,6 +6,7 @@ from .platform import PlatformSetting, ModelConnection, SessionMessage
 from .session_file import SessionFile, SessionFileChange
 from .space import Space
 from .skill import Skill, SkillRevision, SkillAuthoringSession, SkillAuthoringMessage, SkillAuthoringFile
+from .user import User, LoginSession, EmailVerification
 
 __all__ = [
     "AgentScenario",
@@ -30,4 +31,7 @@ __all__ = [
     "SkillAuthoringSession",
     "SkillAuthoringMessage",
     "SkillAuthoringFile",
+    "User",
+    "LoginSession",
+    "EmailVerification",
 ]

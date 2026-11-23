@@ -59,7 +59,10 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
     headers,
     cache: 'no-store',
   });
-  if (response.status === 401 && url !== '/api/auth/login') {
+  if (
+    response.status === 401 &&
+    !['/api/auth/login', '/api/auth/register', '/api/auth/verify-email'].includes(url)
+  ) {
     setPreviewSession(null);
     setCsrf('');
     window.dispatchEvent(new Event('forge:unauthorized'));

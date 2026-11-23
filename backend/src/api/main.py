@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from .core.database import close_db, init_db, SessionFactory
 from .core.config import settings
-from .core.security import initialize_security, require_auth
+from .core.security import initialize_security, require_auth, seed_admin
 from .routes import (
     agent_scenario,
     agent_session,
@@ -41,6 +41,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if len(settings.runner_token) < 24:
         raise RuntimeError("FORGE_RUNNER_TOKEN 未设置，请先初始化并加载 data/business.env")
     await init_db()
+    await seed_admin()
     async with SessionFactory() as db:
         await seed_plugins(db)
         await seed_scenarios(db)
@@ -71,9 +72,11 @@ async def authentication(request: Request, call_next):
     if request.url.path.startswith("/api/") and request.url.path not in (
         "/api/auth/session",
         "/api/auth/login",
+        "/api/auth/register",
+        "/api/auth/verify-email",
     ):
         try:
-            require_auth(request)
+            await require_auth(request)
         except HTTPException as error:
             return JSONResponse(
                 status_code=error.status_code,
@@ -135,10 +138,10 @@ async def runtime():
                 "lastTest": connection.get("lastTest"),
             },
             "storage": "SQLite" if settings.database_url.startswith("sqlite") else "PostgreSQL",
-            "authMode": "local-workspace",
+            "authMode": "local-accounts",
             "deployment": "sandbox",
             "limitations": [
-                "单工作空间管理员账号；OIDC 与多租户 RBAC 尚未接入",
+                "支持本地账号注册与登录；资源和会话仍在单工作空间共享，OIDC 与多租户 RBAC 尚未接入",
                 "会话工作区文件工具与终端命令（bash）直接执行，仅拦截少数高危命令，受平台策略约束；不是容器级隔离",
                 "原生 fork 与跨 Runner 重启恢复尚未接入；历史消息和事件持久化保留",
                 "本地数据库与文件存储，尚未接入 S3/WORM 和生产容器隔离",

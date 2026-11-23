@@ -1,45 +1,25 @@
-"""单工作空间账号认证。生产 OIDC/RBAC 尚未接入，不伪称多租户安全。"""
+"""Local account authentication; business-resource authorization is a later milestone."""
 
 import hashlib
 import hmac
 import json
 import secrets
 import time
+
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi import Request, HTTPException
+from fastapi import HTTPException, Request
+from sqlalchemy import select
+
 from .config import settings
+from .database import SessionFactory
+from ..models.user import LoginSession, User
 
 COOKIE = "forge_session"
 AUTH_FILE = settings.data_dir / "auth.json"
 KEY_FILE = settings.data_dir / "encryption.key"
 PREVIEW_HEADER = "X-Forge-Session"
 PREVIEW_TTL = 3600
-# 仅显式开启的沙箱预览使用：服务端只存令牌摘要。过期/退出/进程重启均失效。
-_preview_sessions: dict[str, int] = {}
-
-
-def make_preview_session() -> dict:
-    now = int(time.time())
-    for digest, expiry in list(_preview_sessions.items()):
-        if expiry <= now:
-            _preview_sessions.pop(digest, None)
-    if len(_preview_sessions) >= 100:
-        raise HTTPException(429, "预览会话过多，请退出不再使用的标签页后重试")
-    token = "fp1_" + secrets.token_urlsafe(32)
-    expiry = now + PREVIEW_TTL
-    _preview_sessions[hashlib.sha256(token.encode()).hexdigest()] = expiry
-    return {"token": token, "expiresAt": expiry}
-
-
-def revoke_preview_session(request: Request) -> None:
-    token = request.headers.get(PREVIEW_HEADER, "")
-    _preview_sessions.pop(hashlib.sha256(token.encode()).hexdigest(), None)
-
-
-def auth_credential(request: Request) -> str:
-    if request.headers.get(PREVIEW_HEADER):
-        return request.headers[PREVIEW_HEADER] if settings.preview_header_auth else ""
-    return request.cookies.get(COOKIE, "")
+COOKIE_TTL = 86400 * 7
 
 
 def initialize_security() -> None:
@@ -54,6 +34,27 @@ def _auth() -> dict:
     return json.loads(AUTH_FILE.read_text())
 
 
+async def seed_admin() -> None:
+    """Keep the original admin password and ID on an existing installation."""
+    legacy = _auth()
+    async with SessionFactory() as db:
+        if await db.scalar(select(User.id).limit(1)) is not None:
+            return
+        db.add(
+            User(
+                id=legacy["username"],
+                username=legacy["username"].lower(),
+                email=None,
+                display_name="管理员",
+                password_salt=legacy["salt"],
+                password_digest=legacy["digest"],
+                role="admin",
+                status="active",
+            )
+        )
+        await db.commit()
+
+
 def encrypt(value: str) -> str:
     return Fernet(KEY_FILE.read_bytes()).encrypt(value.encode()).decode() if value else ""
 
@@ -63,52 +64,94 @@ def decrypt(value: str) -> str:
 
 
 def reveal_secret(value: str) -> str:
-    """管理员主动查看已保存的密钥：解密失败（加密密钥丢失或被更换）时提示重新填写。"""
     try:
         return decrypt(value)
     except InvalidToken:
         raise HTTPException(409, "已保存的密钥无法读取，请重新填写") from None
 
 
-def password_valid(username: str, password: str) -> bool:
-    auth = _auth()
-    digest = hashlib.scrypt(password.encode(), salt=bytes.fromhex(auth["salt"]), n=16384, r=8, p=1).hex()
-    return hmac.compare_digest(username.encode(), auth["username"].encode()) and hmac.compare_digest(
-        digest, auth["digest"]
-    )
+def password_hash(password: str, salt: str) -> str:
+    return hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt), n=16384, r=8, p=1).hex()
 
 
-def _signature(value: str) -> str:
-    return hmac.new(bytes.fromhex(_auth()["signing_key"]), value.encode(), hashlib.sha256).hexdigest()
+def new_password(password: str) -> tuple[str, str]:
+    salt = secrets.token_hex(16)
+    return salt, password_hash(password, salt)
 
 
-def make_cookie() -> str:
-    value = f"{int(time.time()) + 86400 * 7}.{secrets.token_hex(24)}"
-    return value + "." + _signature(value)
+async def password_user(username: str, password: str) -> User | None:
+    async with SessionFactory() as db:
+        user = await db.scalar(select(User).where(User.username == username.strip().lower()))
+    salt = user.password_salt if user else "00" * 16
+    digest = password_hash(password, salt)
+    if user and user.status == "active" and hmac.compare_digest(digest, user.password_digest):
+        return user
+    return None
 
 
-def authenticated(request: Request) -> bool:
-    token = auth_credential(request)
+def token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+async def create_login_session(user: User, transport: str) -> tuple[str, int]:
+    token = ("fp1_" if transport == "preview-header" else "fs1_") + secrets.token_urlsafe(32)
+    expiry = int(time.time()) + (PREVIEW_TTL if transport == "preview-header" else COOKIE_TTL)
+    async with SessionFactory() as db:
+        db.add(
+            LoginSession(
+                token_digest=token_digest(token),
+                user_id=user.id,
+                transport=transport,
+                expires_at=expiry,
+            )
+        )
+        await db.commit()
+    return token, expiry
+
+
+def auth_credential(request: Request) -> str:
     if request.headers.get(PREVIEW_HEADER):
-        if not settings.preview_header_auth or not token.startswith("fp1_") or len(token) != 47:
-            return False
-        return _preview_sessions.get(hashlib.sha256(token.encode()).hexdigest(), 0) > time.time()
-    try:
-        expiry, nonce, signature = token.split(".")
-        return int(expiry) > time.time() and hmac.compare_digest(signature, _signature(expiry + "." + nonce))
-    except (ValueError, TypeError, FileNotFoundError):
-        return False
+        return request.headers[PREVIEW_HEADER] if settings.preview_header_auth else ""
+    return request.cookies.get(COOKIE, "")
+
+
+async def current_user(request: Request) -> User | None:
+    token = auth_credential(request)
+    transport = "preview-header" if request.headers.get(PREVIEW_HEADER) else "cookie"
+    if not token.startswith("fp1_" if transport == "preview-header" else "fs1_") or len(token) != 47:
+        return None
+    async with SessionFactory() as db:
+        session = await db.get(LoginSession, token_digest(token))
+        if not session or session.transport != transport or session.expires_at <= time.time():
+            return None
+        user = await db.get(User, session.user_id)
+        return user if user and user.status == "active" else None
+
+
+async def revoke_session(request: Request) -> None:
+    token = auth_credential(request)
+    if token:
+        async with SessionFactory() as db:
+            session = await db.get(LoginSession, token_digest(token))
+            if session:
+                await db.delete(session)
+                await db.commit()
 
 
 def csrf_token(request: Request) -> str:
-    return _signature("csrf:" + auth_credential(request))
+    return hmac.new(
+        bytes.fromhex(_auth()["signing_key"]),
+        ("csrf:" + auth_credential(request)).encode(),
+        hashlib.sha256,
+    ).hexdigest()
 
 
-def require_auth(request: Request) -> None:
-    if not authenticated(request):
+async def require_auth(request: Request) -> None:
+    user = await current_user(request)
+    if not user:
         raise HTTPException(401, "请登录工作空间")
-    if request.method not in ("GET", "HEAD", "OPTIONS"):
-        if not hmac.compare_digest(
-            request.headers.get("X-Forge-CSRF", "").encode(), csrf_token(request).encode()
-        ):
-            raise HTTPException(403, "请求校验失败，请刷新页面重试")
+    if request.method not in ("GET", "HEAD", "OPTIONS") and not hmac.compare_digest(
+        request.headers.get("X-Forge-CSRF", ""), csrf_token(request)
+    ):
+        raise HTTPException(403, "请求校验失败，请刷新页面重试")
+    request.state.user = user

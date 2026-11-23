@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import sqlite3
 import sys
 import tempfile
 import time
@@ -50,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix="forge-preview-auth-") as temporary:
     from fastapi.testclient import TestClient
     from src.api.main import app
     from src.api.core.config import settings
-    from src.api.core.security import _preview_sessions
+    from src.api.core.security import token_digest
 
     with TestClient(app) as client:
         payload = {"username": "admin", "password": password}
@@ -100,8 +101,12 @@ with tempfile.TemporaryDirectory(prefix="forge-preview-auth-") as temporary:
             token.startswith("fp1_")
             and len(token) == 47
             and 3590 < session["expiresAt"] - time.time() <= 3600
-            and digest in _preview_sessions
-            and token not in _preview_sessions,
+            and sqlite3.connect(data / "auth-test.db")
+            .execute(
+                "SELECT count(*) FROM login_session WHERE token_digest=?", (digest,)
+            )
+            .fetchone()[0]
+            == 1,
         )
         auth = client.get("/api/auth/session", headers=headers).json()["data"]
         check(
@@ -157,8 +162,12 @@ with tempfile.TemporaryDirectory(prefix="forge-preview-auth-") as temporary:
             "revocation does not invalidate another legitimate session",
             client.get("/api/registry/tools", headers=other_headers).status_code == 200,
         )
-        other_digest = hashlib.sha256(other["token"].encode()).hexdigest()
-        _preview_sessions[other_digest] = int(time.time()) - 1
+        other_digest = token_digest(other["token"])
+        with sqlite3.connect(data / "auth-test.db") as db:
+            db.execute(
+                "UPDATE login_session SET expires_at=? WHERE token_digest=?",
+                (int(time.time()) - 1, other_digest),
+            )
         check(
             "expired preview sessions are rejected",
             not client.get("/api/auth/session", headers=other_headers).json()["data"][
@@ -168,16 +177,20 @@ with tempfile.TemporaryDirectory(prefix="forge-preview-auth-") as temporary:
             == 401,
         )
         fresh = create()
-        _preview_sessions.clear()
+        with sqlite3.connect(data / "auth-test.db") as db:
+            db.execute(
+                "DELETE FROM login_session WHERE token_digest=?",
+                (token_digest(fresh["token"]),),
+            )
         check(
-            "dropping the process-local session table invalidates preview credentials",
+            "deleting a server-side session invalidates preview credentials",
             client.get(
                 "/api/registry/tools", headers={"X-Forge-Session": fresh["token"]}
             ).status_code
             == 401,
         )
         check(
-            "no preview credential is persisted in database or encryption files",
+            "no raw preview credential is persisted in database or encryption files",
             all(
                 token.encode() not in file.read_bytes()
                 and fresh["token"].encode() not in file.read_bytes()

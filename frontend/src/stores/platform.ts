@@ -16,7 +16,9 @@ export const usePlatform = defineStore('platform', {
     authenticated: false,
     authLoading: true,
     previewHeaderAuth: false,
-    user: null as null | { name: string; username: string; workspace: string },
+    registrationAvailable: false,
+    registrationRequiresEmailVerification: false,
+    user: null as null | { id: string; name: string; username: string; role: string; workspace: string },
     scenarios: [] as Scenario[],
     conversations: [] as Conversation[],
     tools: [] as Tool[],
@@ -52,6 +54,8 @@ export const usePlatform = defineStore('platform', {
         this.authenticated = data.authenticated;
         this.user = data.user;
         this.previewHeaderAuth = data.previewHeaderAuth;
+        this.registrationAvailable = data.registrationAvailable;
+        this.registrationRequiresEmailVerification = data.registrationRequiresEmailVerification;
         if (!data.authenticated) setPreviewSession(null);
         setCsrf(data.csrfToken ?? '');
       } finally {
@@ -86,6 +90,8 @@ export const usePlatform = defineStore('platform', {
       this.authenticated = true;
       this.user = auth.user;
       this.previewHeaderAuth = auth.previewHeaderAuth;
+      this.registrationAvailable = auth.registrationAvailable;
+      this.registrationRequiresEmailVerification = auth.registrationRequiresEmailVerification;
       if (!cookieWorks) this.toast('已使用预览兼容会话：仅当前标签页、1 小时有效', 'info');
     },
     async logout() {
@@ -98,6 +104,12 @@ export const usePlatform = defineStore('platform', {
         setPreviewSession(null);
         setCsrf('');
       }
+    },
+    async register(values: { username: string; email: string; password: string; display_name: string }) {
+      return post<{ verificationRequired: boolean }>('/auth/register', values);
+    },
+    async verifyEmail(token: string) {
+      return post('/auth/verify-email', { token });
     },
     async initialize() {
       this.loading = true;

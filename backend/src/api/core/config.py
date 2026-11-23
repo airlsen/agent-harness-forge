@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     cookie_samesite: Literal["strict", "lax", "none"] = "strict"
     cookie_partitioned: bool = False
     preview_header_auth: bool = False
+    registration_enabled: bool = True
+    registration_require_email_verification: bool = False
+    registration_email_domains: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    public_base_url: str = ""
     serve_frontend: bool = True
     frontend_dist: Path = ROOT / "frontend" / "dist"
     approval_timeout_seconds: int = 120
