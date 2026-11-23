@@ -232,6 +232,7 @@ export interface ChatMessage {
   createdAt?: string;
 }
 export interface KernelEvent {
+  /** 持久事件的序号；事件流中的流式片段与快照（live_snapshot）没有序号 */
   seq: number;
   source: string;
   kind: string;
@@ -264,6 +265,8 @@ export interface SessionModelSegment {
 export interface SessionDetail extends Conversation {
   messages: ChatMessage[];
   lastEventSeq: number;
+  /** 底层轨迹事件数（聊天页只显示数量） */
+  trajectoryEventCount?: number;
   bundle: any;
   pendingApprovals: Approval[];
   models?: SessionModelSegment[];

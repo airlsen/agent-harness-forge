@@ -119,42 +119,13 @@ const selectedTools = computed(() => {
   return app.tools.filter((t) => names.has(t.name));
 });
 const welcome = computed(() => !chat.messages.length && !chat.outgoing && !loadError.value);
-const processEvents = computed(() =>
-  chat.events.filter((e) =>
-    [
-      'model_switched',
-      'workspace_changes',
-      'tool_use_start',
-      'tool_result',
-      'approval_required',
-      'approval_resolved',
-      'error',
-      'message',
-    ].includes(e.kind),
-  ),
-);
-const rawEvents = computed(() => chat.events.filter((e) => e.kind === 'trajectory'));
+// 会话状态只保留过程事件（底层轨迹只计数、流式片段只拼接实时正文），这里不再逐条过滤
+const processEvents = computed(() => chat.events);
 const lastAnswer = computed(() =>
   [...chat.messages].reverse().find((m) => m.role === 'assistant' && m.content.trim()),
 );
-const pendingTools = computed<ToolCallView[]>(() =>
-  !chat.running
-    ? []
-    : chat.events
-        .filter(
-          (e) =>
-            e.kind === 'tool_use_start' &&
-            !chat.events.some(
-              (r) => r.kind === 'tool_result' && r.payload.toolCallId === e.payload.toolCallId,
-            ),
-        )
-        .map((e) => ({
-          id: String(e.payload.toolCallId),
-          tool: e.payload.tool,
-          arguments: e.payload.arguments,
-          pending: true,
-        })),
-);
+// 进行中的工具调用由会话状态随事件维护，不再每次更新都扫描全部事件
+const pendingTools = computed<ToolCallView[]>(() => (chat.running ? chat.activeTools : []));
 /** 已发出、尚未受理的消息在对话中的临时编号（受理后换成服务端记录） */
 const OUTGOING_ID = 'outgoing';
 const turns = computed(() =>
@@ -439,8 +410,7 @@ async function loadSession(value: unknown) {
       // 打开别的空间的会话（链接、全部空间列表）：自动切到会话所在空间，留在本页
       if (generation === routeGeneration && chat.current?.id === Number(value))
         await space.follow(chat.current.spaceId, '（会话所在空间）');
-    } else if (value && chat.current?.status === 'running')
-      chat.follow(Number(value), chat.events.at(-1)?.seq ?? 0);
+    } else if (value && chat.current?.status === 'running') chat.follow(Number(value), chat.lastSeq);
     else if (!value) chat.prepareStart();
     if (generation === routeGeneration) await scrollToBottom();
   } catch (error) {
@@ -501,8 +471,9 @@ watch(
   },
   { immediate: true },
 );
+// 只比较长度：避免每次更新都拼接整段实时正文
 watch(
-  () => chat.liveText + chat.liveReasoning + chat.messages.length + chat.events.length,
+  () => [chat.liveText.length, chat.liveReasoning.length, chat.messages.length, chat.events.length],
   async () => {
     if (stickToBottom.value) await scrollToBottom();
   },
@@ -1045,8 +1016,8 @@ async function quoteMessage(text: string) {
         <div v-if="processEvents.length > 100" class="panel-description">
           仅显示最近 100 项，完整记录请打开完整轨迹。
         </div>
-        <div v-if="rawEvents.length" class="panel-description">
-          已记录 {{ rawEvents.length }} 条底层轨迹事件，可在完整轨迹中检查。
+        <div v-if="chat.trajectoryEventCount" class="panel-description">
+          已记录 {{ chat.trajectoryEventCount }} 条底层轨迹事件，可在完整轨迹中检查。
         </div>
       </div>
       <div v-else class="panel-scroll">

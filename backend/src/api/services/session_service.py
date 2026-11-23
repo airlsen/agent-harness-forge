@@ -14,6 +14,7 @@ from ..models.platform import PlatformSetting, SessionMessage
 from ..models.approval_ticket import ApprovalTicket
 from ..schemas.agent_scenario import ScenarioPayload
 from .file_service import file_service
+from .live_stream import TRANSIENT_KINDS, live_hub
 from .runner_client import (
     JOURNAL_RESET,
     RunnerEventsUnavailable,
@@ -327,6 +328,12 @@ class SessionService:
                     .order_by(AgentSessionModel.id)
                 )
             ).all()
+            # 底层轨迹事件数：聊天页只显示数量，完整内容在执行轨迹页查看
+            trajectory_count = await db.scalar(
+                select(func.count())
+                .select_from(SessionEventIndex)
+                .where(SessionEventIndex.session_id == session_id, SessionEventIndex.kind == "trajectory")
+            )
             # 最近一次模型请求的输入 tokens ≈ 当前上下文规模，用于切换到较小窗口模型前的提醒。
             last_usage = await db.scalar(
                 select(SessionEventIndex.attrs)
@@ -338,6 +345,7 @@ class SessionService:
                 **self.view(row, segments[-1] if segments else None, spaces=await space_map(db)),
                 "bundle": row.bundle_snapshot,
                 "lastEventSeq": cursor,
+                "trajectoryEventCount": trajectory_count or 0,
                 "models": [segment_view(segment) for segment in segments],
                 "contextTokens": (last_usage or {}).get("tokensIn", 0),
                 "messages": [
@@ -632,7 +640,11 @@ class SessionService:
         announce,
         lost_message="执行内核事件流提前结束，任务未正常完成",
     ):
-        """转发一轮执行事件并落库：按 Runner 序号去重，结束后回执，Runner 据此清理执行日志。"""
+        """转发一轮执行事件并落库：按 Runner 序号去重，结束后回执，Runner 据此清理执行日志。
+
+        流式片段（transient）与 Runner 一致不落库，只经 live_hub 推送给正在查看的页面；
+        持久事件提交后同样经 live_hub 按顺序推送。
+        """
         failed, got_done, detached, partial, partial_reasoning = False, False, False, "", ""
         async with SessionFactory() as db:
             seen = (await self.row(db, session_id)).runner_event_seq or 0
@@ -640,6 +652,7 @@ class SessionService:
         async def persist(kind, payload, source="system", runner_seq=None):
             nonlocal cursor
             cursor += 1
+            seq = cursor
             async with SessionFactory() as db:
                 row = await self.row(db, session_id)
                 # 与事件同一事务记录续读位置：落库与位置要么都成功、要么都不生效
@@ -730,12 +743,21 @@ class SessionService:
                     row.status = "error" if failed or payload.get("status") == "error" else "idle"
                     row.ended_at = datetime.now(timezone.utc)
                 db.add(
-                    SessionEventIndex(
-                        session_id=session_id, seq=cursor, source=source, kind=kind, attrs=payload
-                    )
+                    SessionEventIndex(session_id=session_id, seq=seq, source=source, kind=kind, attrs=payload)
                 )
                 await db.commit()
+            live_hub.publish(
+                session_id,
+                {
+                    "seq": seq,
+                    "source": source,
+                    "kind": kind,
+                    "payload": payload,
+                    "ts": iso(datetime.now(timezone.utc)),
+                },
+            )
 
+        live_hub.begin(session_id, cursor)
         try:
             if announce:
                 await persist("session", {"sessionId": session_id, "workspaceUri": "session://" + runner_id})
@@ -759,12 +781,17 @@ class SessionService:
                         await file_service.sync(session_id, runner_id, runner_client)
                     except Exception:
                         log.warning("会话 %s 的文件同步失败", session_id, exc_info=True)
+                if kind in TRANSIENT_KINDS:
+                    # 流式片段只累计（中断时保留为部分输出）并推送，不落库
+                    text = str(payload.get("text") or "")
+                    if kind == "message_delta":
+                        partial += text
+                    else:
+                        partial_reasoning += text
+                    live_hub.delta(session_id, kind, text, event.get("source", "llm"))
+                    continue
                 if kind == "error":
                     failed = True
-                elif kind == "message_delta":
-                    partial += payload.get("text", "")
-                elif kind == "reasoning_delta":
-                    partial_reasoning += payload.get("text", "")
                 elif kind == "message":
                     partial = ""
                     partial_reasoning = ""
@@ -795,11 +822,22 @@ class SessionService:
                 text = error.detail if isinstance(error, HTTPException) else str(error)
             await persist("error", {"message": text[:600] or "执行连接中断，请稍后重试"})
         finally:
-            if not detached:
-                await self._finish_turn(
-                    session_id, runner_id, turn, baseline, failed, partial, partial_reasoning, persist, seen
-                )
-                await runner_client.ack(runner_id, seen)
+            try:
+                if not detached:
+                    await self._finish_turn(
+                        session_id,
+                        runner_id,
+                        turn,
+                        baseline,
+                        failed,
+                        partial,
+                        partial_reasoning,
+                        persist,
+                        seen,
+                    )
+                    await runner_client.ack(runner_id, seen)
+            finally:
+                live_hub.end(session_id)
 
     async def _finish_turn(
         self, session_id, runner_id, turn, baseline, failed, partial, partial_reasoning, persist, seen
@@ -840,7 +878,8 @@ class SessionService:
                 log.warning("会话 %s 的本轮文件改动记录失败", session_id, exc_info=True)
         await persist("done", {"status": "error" if failed else "idle"}, runner_seq=seen)
 
-    async def events(self, session_id, after=0, source=None, limit=1000):
+    async def events(self, session_id, after=0, source=None, limit=1000, kinds=None):
+        """按序号读取已落库的事件；kinds 只读取这些类型（聊天页不需要底层轨迹与旧版落库的流式片段）。"""
         async with SessionFactory() as db:
             await self.row(db, session_id)
             query = select(SessionEventIndex).where(
@@ -848,6 +887,8 @@ class SessionService:
             )
             if source:
                 query = query.where(SessionEventIndex.source == source)
+            if kinds:
+                query = query.where(SessionEventIndex.kind.in_(kinds))
             rows = (await db.scalars(query.order_by(SessionEventIndex.seq).limit(limit))).all()
             return [
                 {

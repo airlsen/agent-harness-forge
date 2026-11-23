@@ -1,8 +1,11 @@
 import { defineStore } from 'pinia';
+import { markRaw } from 'vue';
 import { api, post, remove } from '../api/client';
 import { openEventStream } from '../api/events';
 import { usePlatform } from './platform';
 import { fileUrl, type FileRetention, type WorkspaceFile } from '../utils/file/files';
+import { createLiveBuffer, isLiveDelta, type LiveBuffer } from '../utils/conversation/liveBuffer';
+import type { ToolCallView } from '../utils/conversation/turns';
 import type {
   Approval,
   CapabilityChoice,
@@ -14,6 +17,23 @@ import type {
   SessionModelSegment,
 } from '../types/platform';
 let stream: { close: () => void } | null = null;
+// 当前事件流的流式片段缓冲：合并后再写入 liveText / liveReasoning
+let liveBuffer: LiveBuffer | null = null;
+/**
+ * 聊天页需要保留的过程事件（「过程」面板、错误提示、工具状态）。底层轨迹只计数、流式片段只拼接实时正文，
+ * 都不进入页面状态：长会话中它们有成千上万条，逐条保留会让页面越来越慢。
+ */
+export const PROCESS_KINDS = [
+  'model_switched',
+  'workspace_changes',
+  'tool_use_start',
+  'tool_result',
+  'approval_required',
+  'approval_resolved',
+  'error',
+  'message',
+];
+const PROCESS_KIND_SET = new Set(PROCESS_KINDS);
 let openGeneration = 0;
 // Reopening a conversation while its turn request is still in flight must read
 // the database after that request settles, not display an older idle snapshot.
@@ -109,14 +129,16 @@ function sameDraft(left: TaskDraft, right: TaskDraft) {
   );
 }
 
+/** 读取已落库的过程事件（只取 PROCESS_KINDS，跳过底层轨迹与旧版落库的流式片段） */
 async function trajectory(id: number, last: number) {
   const events: KernelEvent[] = [];
+  const kinds = encodeURIComponent(PROCESS_KINDS.join(','));
   let cursor = 0;
   while (true) {
     const page = await api<{ events: KernelEvent[]; nextCursor: number }>(
-      `/agent/sessions/${id}/trajectory?cursor=${cursor}`,
+      `/agent/sessions/${id}/trajectory?cursor=${cursor}&kinds=${kinds}`,
     );
-    events.push(...page.events);
+    for (const event of page.events) events.push(markRaw(event));
     if (!page.events.length || page.nextCursor >= last) break;
     cursor = page.nextCursor;
   }
@@ -126,7 +148,14 @@ export const useConversation = defineStore('conversation', {
   state: () => ({
     current: null as SessionDetail | null,
     messages: [] as ChatMessage[],
+    /** 过程事件（PROCESS_KINDS）；事件对象不做深层响应式 */
     events: [] as KernelEvent[],
+    /** 已处理到的持久事件序号：事件流去重与续读位置 */
+    lastSeq: 0,
+    /** 底层轨迹事件数（聊天页只显示数量，完整内容在执行轨迹页） */
+    trajectoryEventCount: 0,
+    /** 已开始、尚未返回结果的工具调用 */
+    activeTools: [] as ToolCallView[],
     approvals: [] as Approval[],
     files: [] as WorkspaceFile[],
     fileRetention: null as FileRetention | null,
@@ -200,6 +229,24 @@ export const useConversation = defineStore('conversation', {
     disconnect() {
       stream?.close();
       stream = null;
+      liveBuffer?.clear();
+      liveBuffer = null;
+    },
+    /** 记录一条持久事件：过程事件保留，工具调用同步到进行中列表 */
+    recordEvent(event: KernelEvent) {
+      if (event.kind === 'trajectory') ++this.trajectoryEventCount;
+      if (!PROCESS_KIND_SET.has(event.kind)) return;
+      this.events.push(markRaw(event));
+      const data = event.payload ?? {};
+      if (event.kind === 'tool_use_start') {
+        const id = String(data.toolCallId ?? `tool-${event.seq}`);
+        if (!this.activeTools.some((call) => call.id === id))
+          this.activeTools.push({ id, tool: data.tool, arguments: data.arguments, pending: true });
+      } else if (event.kind === 'tool_result') {
+        const id = String(data.toolCallId ?? '');
+        if (this.activeTools.some((call) => call.id === id))
+          this.activeTools = this.activeTools.filter((call) => call.id !== id);
+      }
     },
     snapshotDraft(): TaskDraft {
       if (!this.draftId) this.draftId = ++this.draftSequence;
@@ -237,6 +284,9 @@ export const useConversation = defineStore('conversation', {
       this.current = null;
       this.messages = [];
       this.events = [];
+      this.lastSeq = 0;
+      this.trajectoryEventCount = 0;
+      this.activeTools = [];
       this.approvals = [];
       this.files = [];
       this.fileRetention = null;
@@ -413,23 +463,16 @@ export const useConversation = defineStore('conversation', {
         this.messages = detail.messages;
         this.restoreDraft(`session:${id}`, detail.scenarioId, true);
         this.approvals = detail.pendingApprovals;
-        this.events = events;
+        this.trajectoryEventCount = detail.trajectoryEventCount ?? 0;
+        for (const event of events) this.recordEvent(event);
+        this.lastSeq = Math.max(detail.lastEventSeq, events.at(-1)?.seq ?? 0);
         const lastError = [...events].reverse().find((event) => event.kind === 'error');
         if (['error', 'interrupted'].includes(detail.status))
           this.runError = lastError?.payload.message ?? '上一次任务未完成';
         void this.refreshFiles();
-        if (detail.status === 'running') {
-          for (const event of events) {
-            if (event.kind === 'message_delta') this.liveText += event.payload.text;
-            else if (event.kind === 'reasoning_delta') this.liveReasoning += event.payload.text;
-            else if (event.kind === 'message') {
-              this.liveText = '';
-              this.liveReasoning = '';
-            }
-          }
-          // detail 的消息快照与事件读取可能有时间差；结算时统一回读数据库去重。
-          this.follow(id, events.at(-1)?.seq ?? 0);
-        }
+        // 尚未结算的正文与思考由事件流的快照（live_snapshot）补上。
+        // detail 的消息快照与事件读取可能有时间差；结算时统一回读数据库去重。
+        if (detail.status === 'running') this.follow(id, this.lastSeq);
       } finally {
         if (generation === openGeneration) this.loading = false;
       }
@@ -470,6 +513,7 @@ export const useConversation = defineStore('conversation', {
       this.connectionWarning = '';
       this.liveText = '';
       this.liveReasoning = '';
+      this.activeTools = [];
       // 先把消息显示出来、清空输入框；新会话的创建与受理在后台进行（首轮约 1–2 秒）。
       this.outgoing = { content: message, failed: false, draft: copyDraft(submittedDraft) };
       this.input = '';
@@ -632,15 +676,36 @@ export const useConversation = defineStore('conversation', {
     follow(id: number, after: number) {
       this.disconnect();
       this.connectionWarning = '';
+      this.lastSeq = Math.max(this.lastSeq, after);
+      const buffer = createLiveBuffer((text, reasoning) => {
+        if (this.current?.id !== id) return;
+        this.liveText += text;
+        this.liveReasoning += reasoning;
+      });
+      liveBuffer = buffer;
       stream = openEventStream(`/api/agent/sessions/${id}/events?after=${after}`, {
         kernel: (event) => {
           if (this.current?.id !== id) return;
-          if (this.events.some((row) => row.seq === event.seq)) return;
-          this.events.push(event);
-          const data = event.payload;
-          if (event.kind === 'message_delta') this.liveText += data.text;
-          else if (event.kind === 'reasoning_delta') this.liveReasoning += data.text;
-          else if (event.kind === 'message') {
+          // 持久事件按序号去重；流式片段与快照没有序号
+          if (typeof event.seq === 'number') {
+            if (event.seq <= this.lastSeq) return;
+            this.lastSeq = event.seq;
+          }
+          const data = event.payload ?? {};
+          if (isLiveDelta(event.kind)) {
+            buffer.push(event.kind, String(data.text ?? ''));
+            return;
+          }
+          // 其他事件处理前先写入已攒下的片段，保证先后顺序
+          buffer.flush();
+          if (event.kind === 'live_snapshot') {
+            // 订阅时尚未结算的正文与思考：整体替换（重连后不会重复拼接）
+            this.liveText = String(data.text ?? '');
+            this.liveReasoning = String(data.reasoning ?? '');
+            return;
+          }
+          this.recordEvent(event);
+          if (event.kind === 'message') {
             if (
               !this.messages.some(
                 (message) =>
@@ -716,6 +781,7 @@ export const useConversation = defineStore('conversation', {
         this.approvals = detail.pendingApprovals;
         this.liveText = '';
         this.liveReasoning = '';
+        this.activeTools = [];
         this.queue = null;
         await usePlatform().refreshSessions();
         await this.refreshFiles();

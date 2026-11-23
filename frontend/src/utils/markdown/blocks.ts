@@ -1,8 +1,8 @@
 /**
  * 把 Markdown 文本切成有序渲染块：连续的普通内容合并为 html 块，
  * 图片语法与明显的裸图片地址安全地内嵌；围栏代码块单独成块（代码 / mermaid / vega 由对应组件接管）。
- * 流式场景下文本只会从尾部增长，历史块的 key 与内容保持稳定，
- * 因此只有最后一个块会被重复解析与高亮。
+ * 流式场景下文本只会从尾部增长，历史块的 key 与内容保持稳定；已完成的段落按原文缓存渲染结果，
+ * 因此每次更新只有最后一个（仍在增长的）段落会重新渲染与消毒。
  */
 import { marked, Renderer, Tokenizer, type MarkedOptions, type Token, type Tokens } from 'marked';
 import DOMPurify from 'dompurify';
@@ -206,15 +206,62 @@ export function fenceClosed(raw: string): boolean {
   return closer.test(body);
 }
 
+function renderTokens(tokens: Token[], allowRemoteImages: boolean): string {
+  const rendered = marked.parser(tokens, markedOptions(createMarkdownRenderer(allowRemoteImages)));
+  return sanitizeMarkdownHtml(rendered, allowRemoteImages);
+}
+
+/** 已完成段落的渲染缓存（按原文 + 是否内嵌远程图片），超出上限时淘汰最久未用的 */
+const HTML_CACHE_LIMIT = 600;
+const htmlCache = new Map<string, string>();
+
+function cachedTokenHtml(token: Token, allowRemoteImages: boolean, store: boolean): string {
+  const key = `${allowRemoteImages ? 'r' : 'l'}${token.raw}`;
+  const hit = htmlCache.get(key);
+  if (hit !== undefined) {
+    htmlCache.delete(key);
+    htmlCache.set(key, hit);
+    return hit;
+  }
+  const html = renderTokens([token], allowRemoteImages);
+  if (store) {
+    htmlCache.set(key, html);
+    if (htmlCache.size > HTML_CACHE_LIMIT) htmlCache.delete(htmlCache.keys().next().value!);
+  }
+  return html;
+}
+
+/**
+ * 渲染一组连续的普通内容。逐段渲染再拼接与整组渲染结果相同（块级元素各自闭合；
+ * 引用式链接在分词阶段已解析），例外是原始 HTML 可能跨段开合、引用式链接的定义可能在别处，
+ * 这两种情况整组渲染、不缓存。流式中最后一段仍在增长，只渲染不缓存。
+ */
+function renderGroup(
+  group: Token[],
+  allowRemoteImages: boolean,
+  cacheable: boolean,
+  growing: Token | undefined,
+): string {
+  if (!cacheable || group.some((token) => token.type === 'html'))
+    return renderTokens(group, allowRemoteImages);
+  return group
+    .map((token) =>
+      token.type === 'space' ? '' : cachedTokenHtml(token, allowRemoteImages, token !== growing),
+    )
+    .join('');
+}
+
 export function splitMarkdown(text: string, options: { live?: boolean } = {}): MarkdownBlock[] {
   const allowRemoteImages = !options.live;
   const tokens = marked.lexer(text ?? '', markedOptions());
+  const cacheable = Object.keys(tokens.links ?? {}).length === 0;
+  let growing: Token | undefined;
+  if (options.live) for (const token of tokens) if (token.type !== 'space') growing = token;
   const blocks: MarkdownBlock[] = [];
   let htmlGroup: Token[] = [];
   const flushHtml = () => {
     if (!htmlGroup.length) return;
-    const rendered = marked.parser(htmlGroup, markedOptions(createMarkdownRenderer(allowRemoteImages)));
-    const html = sanitizeMarkdownHtml(rendered, allowRemoteImages);
+    const html = renderGroup(htmlGroup, allowRemoteImages, cacheable, growing);
     htmlGroup = [];
     if (!html.trim()) return;
     blocks.push({ kind: 'html', html, key: `h${blocks.length}` });

@@ -11,6 +11,7 @@ from ..services.session_service import session_service
 from ..services.space_service import current_space
 from ..services.capability_service import CapabilityChoice
 from ..services.file_service import file_service
+from ..services.live_stream import END, coalesce, live_hub
 from ..services.runner_client import runner_client
 from ..utils.response import ResponseUtil
 
@@ -69,8 +70,19 @@ async def turn(session_id: int, payload: Turn):
     )
 
 
+def _kernel(event: dict) -> str:
+    """持久事件带 id（断线重连从这里续读）；流式片段与快照没有序号，不带 id。"""
+    head = f"id: {event['seq']}\n" if "seq" in event else ""
+    return f"{head}event: kernel\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
+# 订阅期间多久没有事件就发一次心跳（同时检查页面是否已断开）
+LIVE_HEARTBEAT_SECONDS = 15
+
+
 @router.get("/{session_id}/events")
 async def events(session_id: int, request: Request, after: int = Query(default=0, ge=0)):
+    """会话事件流：已落库的事件按序号补齐；进行中的回合订阅实时通道，流式片段只在这里推送。"""
     await session_service.status(session_id)
     try:
         after = max(after, int(request.headers.get("last-event-id", "0")))
@@ -80,17 +92,60 @@ async def events(session_id: int, request: Request, after: int = Query(default=0
     async def generate():
         cursor = after
         while not await request.is_disconnected():
-            rows = await session_service.events(session_id, cursor)
-            for event in rows:
-                cursor = event["seq"]
-                yield f"id: {cursor}\nevent: kernel\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
-            state = await session_service.status(session_id)
-            if state != "running" and not rows:
-                yield "event: settled\ndata: {}\n\n"
-                return
-            if not rows:
-                yield ": heartbeat\n\n"
-            await asyncio.sleep(0.2)
+            live = live_hub.subscribe(session_id)
+            if live is None:
+                # 没有进行中的回合（已结束、尚未开始转发或由控制面重启接回前）：读库
+                rows = await session_service.events(session_id, cursor)
+                for event in rows:
+                    cursor = event["seq"]
+                    yield _kernel(event)
+                state = await session_service.status(session_id)
+                if state != "running" and not rows:
+                    yield "event: settled\ndata: {}\n\n"
+                    return
+                if not rows:
+                    yield ": heartbeat\n\n"
+                await asyncio.sleep(0.2)
+                continue
+            try:
+                # 订阅前已落库的事件从数据库补齐；之后的由订阅按到达顺序推送
+                while cursor < live.seq:
+                    page = await session_service.events(session_id, cursor)
+                    rows = [row for row in page if row["seq"] <= live.seq]
+                    if not rows:
+                        break
+                    for event in rows:
+                        cursor = event["seq"]
+                        yield _kernel(event)
+                # 订阅时尚未结算的正文与思考：页面整体替换（重连后不会重复拼接）
+                yield _kernel(
+                    {
+                        "kind": "live_snapshot",
+                        "source": "system",
+                        "payload": {"text": live.text, "reasoning": live.reasoning},
+                    }
+                )
+                ended = False
+                while not ended and not live.lagged:
+                    try:
+                        first = await asyncio.wait_for(live.queue.get(), LIVE_HEARTBEAT_SECONDS)
+                    except TimeoutError:
+                        if await request.is_disconnected():
+                            return
+                        yield ": heartbeat\n\n"
+                        continue
+                    for event in coalesce([first, *live.drain()]):
+                        if event is END:
+                            ended = True
+                            break
+                        if "seq" in event:
+                            if event["seq"] <= cursor:
+                                continue
+                            cursor = event["seq"]
+                        yield _kernel(event)
+                # 回合结束或读取跟不上：回到循环开头，读库补齐后结束或重新订阅
+            finally:
+                live_hub.unsubscribe(live)
 
     return StreamingResponse(
         generate(),
@@ -112,8 +167,15 @@ async def archive(session_id: int):
 
 
 @router.get("/{session_id}/trajectory")
-async def trajectory(session_id: int, source: str | None = None, cursor: int = Query(0, ge=0)):
-    rows = await session_service.events(session_id, cursor, source=source)
+async def trajectory(
+    session_id: int,
+    source: str | None = None,
+    cursor: int = Query(0, ge=0),
+    kinds: str | None = Query(default=None, max_length=1000),
+):
+    """分页读取已落库的事件；kinds（逗号分隔）只读取这些类型，聊天页据此跳过底层轨迹。"""
+    wanted = [kind.strip() for kind in (kinds or "").split(",") if kind.strip()] or None
+    rows = await session_service.events(session_id, cursor, source=source, kinds=wanted)
     return ResponseUtil.ok({"events": rows, "nextCursor": rows[-1]["seq"] if rows else cursor})
 
 
