@@ -18,6 +18,22 @@ export interface ScenarioPayload {
   execution_mode: 'standard';
   input_schema?: Record<string, unknown> | null;
 }
+/** AI 生成场景时可选择重新生成的内容 */
+export type ScenarioGenerateField = 'name' | 'description' | 'icon' | 'prompt' | 'capabilities';
+/** AI 生成场景的结果：草稿已合并好（推荐的能力已勾选），由用户确认后保存 */
+export interface ScenarioGenerateResult {
+  draft: Pick<ScenarioPayload, 'name' | 'description' | 'icon' | 'prompt_template' | 'capabilities'>;
+  /** 实际生成并采用的字段 */
+  applied: ScenarioGenerateField[];
+  /** 推荐理由：skill:编号 / mcp:编号 / plugin:插件包 / web */
+  reasons: Record<string, string>;
+  /** 平台里没有、但建议补充的能力 */
+  missing: { name: string; reason: string }[];
+  notices: string[];
+  model: { id: number; name: string; model: string };
+  usage: { promptTokens: number; completionTokens: number };
+  latencyMs: number;
+}
 /** 空间色块颜色键；公共空间为 gray */
 export type SpaceColor = 'orange' | 'blue' | 'green' | 'purple' | 'red' | 'cyan' | 'yellow' | 'pink' | 'gray';
 /** 列表与详情里附带的所属空间 */

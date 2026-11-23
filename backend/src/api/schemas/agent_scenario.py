@@ -41,5 +41,26 @@ class UpdateScenarioRequest(ScenarioPayload):
     change_log: str = ""
 
 
+GENERATE_FIELDS = ["name", "description", "icon", "prompt", "capabilities"]
+
+
 class GenerateScenarioRequest(BaseModel):
-    description: str = Field(min_length=4, max_length=2000)
+    """AI 生成场景：新建时按一句话需求生成整套配置；编辑时可只重新生成某几项。"""
+
+    # 用户对场景的描述；编辑时可留空，按当前草稿补全或优化
+    requirement: str = Field(default="", max_length=2000)
+    # 当前编辑中的草稿（结构同 ScenarioPayload，允许尚未填写名称）
+    draft: dict[str, Any] | None = None
+    # 需要生成的字段；不传表示全部
+    fields: list[Literal["name", "description", "icon", "prompt", "capabilities"]] | None = None
+    # 编辑已有场景时传入，用于确定场景所在空间（只匹配该空间和公共空间的能力）
+    scenarioId: int | None = None
+    # 不传则使用平台默认模型
+    modelId: int | None = None
+
+    @field_validator("fields")
+    @classmethod
+    def nonempty_fields(cls, value):
+        if value is not None and not value:
+            raise ValueError("请至少选择一项要生成的内容")
+        return value

@@ -18,6 +18,7 @@ from .routes import (
     capability,
     code,
     governance,
+    llm,
     registry,
     auth,
     model,
@@ -109,6 +110,7 @@ app.include_router(skill.router, prefix="/api/skills", tags=["skills"])
 app.include_router(space.router, prefix="/api/spaces", tags=["spaces"])
 app.include_router(governance.router, prefix="/api/governance", tags=["governance"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
+app.include_router(llm.router, prefix="/api/llm", tags=["llm"])
 
 
 @app.get("/healthz")
