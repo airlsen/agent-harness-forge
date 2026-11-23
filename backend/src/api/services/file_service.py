@@ -20,7 +20,6 @@ from urllib.parse import quote
 from fastapi import HTTPException
 from sqlalchemy import delete, func, or_, select
 
-from ..core.config import settings
 from ..core.database import SessionFactory
 from ..models.agent_session import AgentSession
 from ..models.platform import SessionMessage
@@ -642,15 +641,6 @@ class FileService:
             }
             self.last_cleanup = result
             return result
-
-    async def retention_loop(self, client) -> None:
-        await asyncio.sleep(60)
-        while True:
-            try:
-                await self.cleanup_expired(client)
-            except Exception:
-                log.exception("会话文件过期清理失败")
-            await asyncio.sleep(max(60, settings.file_cleanup_interval_seconds))
 
     async def stats(self, db) -> dict:
         files, logical, sessions = (

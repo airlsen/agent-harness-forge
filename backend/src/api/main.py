@@ -1,6 +1,5 @@
 """Forge 业务控制面正式入口。工作台、场景、会话、模型与治理共用数据库。"""
 
-import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
@@ -28,9 +27,9 @@ from .routes import (
 from .models.platform import PlatformSetting
 from .services.scenario_service import seed_scenarios
 from .services.plugin_service import seed_plugins
-from .services.file_service import file_service
 from .services.session_service import session_service
 from .services.runner_client import runner_client
+from .services.scheduler import scheduler
 from .services.settings_service import get_connection
 from .utils.response import ResponseUtil
 
@@ -50,10 +49,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         runner_client.code_root = str((saved.value or {}).get("root") or "") if saved else ""
     # 上次停止时未结束的会话：先问 Runner，再接回、补录或标记中断
     await session_service.reconcile()
-    # 按保留期限定期清理过期会话文件
-    cleanup = asyncio.create_task(file_service.retention_loop(runner_client))
+    # 定时任务：服务保活、会话文件过期清理等（见 services/scheduler.py）
+    scheduler.start()
     yield
-    cleanup.cancel()
+    await scheduler.stop()
     await session_service.shutdown()
     await close_db()
 
