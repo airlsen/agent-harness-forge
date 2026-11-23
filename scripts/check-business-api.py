@@ -465,8 +465,17 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                 "SSE carries durable event IDs and a settled event",
                 "event: kernel" in events_response.text
                 and "event: settled" in events_response.text
-                and "approval_required" in events_response.text
-                and "reasoning_delta" in events_response.text,
+                and "approval_required" in events_response.text,
+            )
+            # 流式片段只在回合进行中实时推送、不落库；思考随结算的回复保存
+            check(
+                "stream fragments are not persisted; reasoning is kept on the settled reply",
+                "reasoning_delta" not in events_response.text
+                and "message_delta" not in events_response.text
+                and any(
+                    message["role"] == "assistant" and message["meta"].get("reasoning")
+                    for message in api("GET", f"/agent/sessions/{sid}")["messages"]
+                ),
             )
             export = client.get(f"/api/agent/sessions/{sid}/export")
             check(

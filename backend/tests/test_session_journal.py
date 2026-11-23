@@ -96,9 +96,9 @@ async def test_events_are_persisted_once_by_runner_seq_and_acknowledged(env, run
     ]
     await turn(service, session["id"], "第一轮")
 
+    # 流式片段与 Runner 一致不落库（只经实时通道推送）
     assert await kinds(env["sessions"], session["id"]) == [
         "session",
-        "message_delta",
         "message",
         "cost_tick",
         "done",

@@ -60,6 +60,7 @@ import {
   authoringLiveTurn,
   emptyAuthoringLive,
 } from '../../utils/skill/authoring';
+import { createLiveBuffer, isLiveDelta } from '../../utils/conversation/liveBuffer';
 import type {
   SkillAuthoringMessage,
   SkillAuthoringSession,
@@ -898,6 +899,11 @@ async function send() {
   // 本轮流式追加的消息使用临时 ID（以 pendingId 开头），结束后由服务端记录替换
   let liveSeq = 0;
   const nextId = () => `${pendingId}-${++liveSeq}`;
+  // 流式片段合并后再写入实时正文与思考，避免每个片段都重新解析 Markdown、重算对话（与工作台一致）
+  const liveBuffer = createLiveBuffer((text, reasoning) => {
+    live.text += text;
+    live.reasoning += reasoning;
+  });
   const previousRevision = skill.value.revision;
   const before = revisions.value.find((revision) => revision.id === skill.value?.currentRevisionId);
   try {
@@ -932,6 +938,13 @@ async function send() {
         if (!line) continue;
         const event = JSON.parse(line.slice(6));
         turnStarted.value = true;
+        if (isLiveDelta(event.kind)) {
+          liveBuffer.push(event.kind, String(event.payload?.text ?? ''));
+          queuePosition.value = 0;
+          continue;
+        }
+        // 其他事件处理前先写入已攒下的片段，保证先后顺序
+        liveBuffer.flush();
         if (applyAuthoringEvent(live, messages.value, event, nextId)) {
           queuePosition.value = 0;
         } else if (event.kind === 'queued') {
@@ -949,6 +962,7 @@ async function send() {
         } else if (event.kind === 'error') throw new Error(event.payload?.message ?? 'Skill 助手执行失败');
       }
     }
+    liveBuffer.flush();
     await loadSkill({ quiet: true });
     void loadTrialFiles();
     if (skill.value?.revision && skill.value.revision !== previousRevision) {
@@ -978,6 +992,7 @@ async function send() {
     // 未受理的失败（含上面重新读取历史之后）：仍在对话里显示「发送失败」
     if (!accepted && !stopRequested) markFailed();
     preparing.value = false;
+    liveBuffer.clear();
     Object.assign(live, emptyAuthoringLive());
     streaming.value = false;
     queuePosition.value = 0;

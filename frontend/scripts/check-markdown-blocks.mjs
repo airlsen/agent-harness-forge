@@ -65,6 +65,53 @@ try {
     assert.deepEqual(before.slice(0, 2), after.slice(0, 2));
   });
 
+  // 带引用式链接定义的文档走整组渲染（不缓存）：在末尾追加一条不使用的定义即可得到整组渲染的参照结果。
+  const wholeGroup = (md, options) =>
+    splitMarkdown(`${md}\n\n[unused-reference]: https://example.com/unused`, options)
+      .map((b) => b.html ?? '')
+      .join('');
+  const htmlOf = (md, options) =>
+    splitMarkdown(md, options)
+      .map((b) => b.html ?? '')
+      .join('');
+  const STREAM_DOC = [
+    '## 一、概览',
+    '',
+    '这是**第一段**，含 `行内代码`、[链接](https://example.com/a) 和裸地址 https://example.com/b。',
+    '',
+    '- 列表一',
+    '- 列表二',
+    '  - 嵌套项',
+    '',
+    '> 引用内容',
+    '> 第二行',
+    '',
+    '| 列 | 值 |',
+    '| --- | --- |',
+    '| a | 1 |',
+    '',
+    '1. 有序一',
+    '2. 有序二',
+    '',
+    '---',
+    '',
+    '最后一段~~删除线~~结束。',
+  ].join('\n');
+
+  await check('逐段缓存渲染与整组渲染结果一致（完成后与流式中都一致）', () => {
+    assert.equal(htmlOf(STREAM_DOC), wholeGroup(STREAM_DOC));
+    assert.equal(htmlOf(STREAM_DOC), htmlOf(STREAM_DOC)); // 第二次命中缓存
+    for (let end = 1; end <= STREAM_DOC.length; end += 7) {
+      const prefix = STREAM_DOC.slice(0, end);
+      assert.equal(htmlOf(prefix, { live: true }), wholeGroup(prefix, { live: true }), `前 ${end} 字`);
+    }
+  });
+
+  await check('原始 HTML 跨段开合时整组渲染，段落仍在标签内', () => {
+    const html = htmlOf('<details>\n<summary>展开</summary>\n\n内容段落\n\n</details>');
+    assert.match(html, /<details>[\s\S]*<p>内容段落<\/p>[\s\S]*<\/details>/);
+  });
+
   await check('空文本不产生块', () => {
     assert.deepEqual(splitMarkdown(''), []);
     assert.deepEqual(splitMarkdown(undefined), []);
