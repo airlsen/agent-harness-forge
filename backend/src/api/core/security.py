@@ -5,7 +5,7 @@ import hmac
 import json
 import secrets
 import time
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Request, HTTPException
 from .config import settings
 
@@ -60,6 +60,14 @@ def encrypt(value: str) -> str:
 
 def decrypt(value: str) -> str:
     return Fernet(KEY_FILE.read_bytes()).decrypt(value.encode()).decode() if value else ""
+
+
+def reveal_secret(value: str) -> str:
+    """管理员主动查看已保存的密钥：解密失败（加密密钥丢失或被更换）时提示重新填写。"""
+    try:
+        return decrypt(value)
+    except InvalidToken:
+        raise HTTPException(409, "已保存的密钥无法读取，请重新填写") from None
 
 
 def password_valid(username: str, password: str) -> bool:

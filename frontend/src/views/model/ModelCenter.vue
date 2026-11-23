@@ -8,6 +8,7 @@ import { confirm } from '../../utils/feedback';
 import type { ModelConnection } from '../../types/platform';
 import Icon from '../../components/base/ForgeIcon.vue';
 import CatalogEmpty from '../../components/catalog/CatalogEmpty.vue';
+import SecretInput from '../../components/base/SecretInput.vue';
 import { drawerA11y } from '../../utils/overlay';
 
 type ModelHealthTone = 'normal' | 'attention' | 'unverified' | 'disabled';
@@ -33,6 +34,8 @@ const form = reactive({
   inputPrice: null as number | null,
   outputPrice: null as number | null,
 });
+// 点击查看后取回的已保存密钥；保存时未改动就不重新提交。
+const revealedKey = ref('');
 
 // antd 表单校验规则：等价于原原生 HTML5 校验（必填、URL、数值范围），并提供字段级错误提示。
 const rules: Record<string, Rule[]> = {
@@ -87,6 +90,7 @@ function resetForm(model?: ModelConnection) {
   form.baseUrl = model?.baseUrl ?? '';
   form.model = model?.model ?? '';
   form.apiKey = '';
+  revealedKey.value = '';
   form.contextWindow = model?.contextWindow ?? 64000;
   form.inputPrice = model?.inputPrice ?? null;
   form.outputPrice = model?.outputPrice ?? null;
@@ -162,7 +166,7 @@ async function save() {
       name: form.name.trim(),
       baseUrl: form.baseUrl.trim(),
       model: form.model.trim(),
-      apiKey: form.apiKey || null,
+      apiKey: form.apiKey && form.apiKey !== revealedKey.value ? form.apiKey : null,
       contextWindow: form.contextWindow,
       inputPrice: form.inputPrice,
       outputPrice: form.outputPrice,
@@ -177,6 +181,9 @@ async function save() {
   } finally {
     saving.value = false;
   }
+}
+async function revealKey() {
+  return (await post<{ apiKey: string }>(`/models/${editing.value?.id}/key`)).apiKey;
 }
 async function testModel(model: ModelConnection) {
   if (!model.id || testingId.value !== null) return;
@@ -451,13 +458,18 @@ onMounted(load);
       </a-form-item>
 
       <a-form-item label="API Key" name="apiKey">
-        <a-input-password
+        <SecretInput
           v-model:value="form.apiKey"
+          :saved="!!editing?.apiKeyConfigured"
+          :reveal="revealKey"
           autocomplete="new-password"
-          :placeholder="editing?.apiKeyConfigured ? '留空保留原密钥' : '无鉴权服务可留空'"
+          placeholder="无鉴权服务可留空"
+          @revealed="revealedKey = $event"
         />
         <template #extra>{{
-          editing?.apiKeyConfigured ? '留空保留原密钥；填写新值将替换。' : '密钥加密保存在服务端。'
+          editing?.apiKeyConfigured
+            ? '已保存，点右侧眼睛图标查看；填写新值将替换。'
+            : '密钥加密保存在服务端。'
         }}</template>
       </a-form-item>
 

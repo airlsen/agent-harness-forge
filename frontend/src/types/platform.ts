@@ -182,7 +182,7 @@ export interface ActiveCapabilities {
   /** 本轮跳过的能力；reason 为具体原因（如 Skill 缺少附加文件），旧消息没有 */
   unavailable: { kind: 'skill' | 'mcp' | 'web'; id: number | null; title: string; reason?: string }[];
 }
-/** 平台联网搜索设置（密钥不回传） */
+/** 平台联网搜索设置（密钥不随设置回传，点击查看时单独取回） */
 export interface WebSearchSettings {
   enabled: boolean;
   provider: string;
