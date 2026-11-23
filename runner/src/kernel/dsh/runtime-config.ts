@@ -24,12 +24,28 @@ const GROUP_PLUGINS: Partial<Record<ToolGroup, Array<Record<string, unknown>>>> 
     { id: 'tool-goal', name: '@deepseek-ai/dsh-tool-goal' },
   ],
 };
-const WEB_SEARCH_PACKAGES: Record<WebSearchProvider, string> = {
-  'deepseek-official': '@deepseek-ai/dsh-web-search-deepseek',
-  'deepseek-search-api': '@deepseek-ai/dsh-web-deepseek-api',
-};
 /** 联网搜索密钥的环境变量名（含 KEY，dsh 不会把它传给 stdio MCP 子进程） */
 export const WEB_SEARCH_KEY_ENV = 'FORGE_WEB_SEARCH_API_KEY';
+/**
+ * 搜索服务 → 提供它的 dsh 包，以及该包里「密钥环境变量名 / 接口地址」两个配置项的名字。
+ * 各包字段名不同：dsh-web-deepseek-api 自 0.2.2-rc.5 起按搜索 / 抓取分开配置（search 前缀）；
+ * 写错字段名 dsh 不会报错而是静默忽略，由 contract-check 的「配置项」检查兜底。
+ */
+const WEB_SEARCH_PACKAGES: Record<
+  WebSearchProvider,
+  { name: string; keyField: string; baseUrlField: string }
+> = {
+  'deepseek-official': {
+    name: '@deepseek-ai/dsh-web-search-deepseek',
+    keyField: 'apiKeyEnv',
+    baseUrlField: 'baseURL',
+  },
+  'deepseek-search-api': {
+    name: '@deepseek-ai/dsh-web-deepseek-api',
+    keyField: 'searchApiKeyEnv',
+    baseUrlField: 'searchBaseURL',
+  },
+};
 const MCP_TOOL_TIMEOUT_MS = 60000;
 
 /** Forge 自有插件（本仓库内的 dsh 插件包），按给定顺序挂载 */
@@ -192,6 +208,15 @@ function mcpRows(plan: RuntimePlan) {
           },
   }));
 }
+function webSearchRow(provider: WebSearchProvider, baseUrl?: string) {
+  const pkg = WEB_SEARCH_PACKAGES[provider];
+  return {
+    id: 'forge-web-search',
+    name: pkg.name,
+    // 密钥只经环境变量传入，不写入落盘的 patch 文件
+    config: { [pkg.keyField]: WEB_SEARCH_KEY_ENV, ...(baseUrl ? { [pkg.baseUrlField]: baseUrl } : {}) },
+  };
+}
 function webRows(web: RuntimeWeb | null) {
   if (!web) return [];
   return [
@@ -200,16 +225,7 @@ function webRows(web: RuntimeWeb | null) {
       name: '@deepseek-ai/dsh-web',
       config: { ...(web.search ? { searchProvider: web.provider } : {}), fetchProvider: 'http' },
     },
-    ...(web.search
-      ? [
-          {
-            id: 'forge-web-search',
-            name: WEB_SEARCH_PACKAGES[web.provider!],
-            // 密钥只经环境变量传入，不写入落盘的 patch 文件
-            config: { apiKeyEnv: WEB_SEARCH_KEY_ENV, ...(web.baseUrl ? { baseURL: web.baseUrl } : {}) },
-          },
-        ]
-      : []),
+    ...(web.search ? [webSearchRow(web.provider!, web.baseUrl)] : []),
     { id: 'forge-web-fetch', name: '@deepseek-ai/dsh-web-fetch-http' },
     {
       id: 'forge-tool-web',
@@ -238,7 +254,7 @@ export const DSH_PACKAGES = [
   '@deepseek-ai/dsh-tool-skill',
   '@deepseek-ai/dsh-mcp-client',
   '@deepseek-ai/dsh-web',
-  ...Object.values(WEB_SEARCH_PACKAGES),
+  ...Object.values(WEB_SEARCH_PACKAGES).map((pkg) => pkg.name),
   '@deepseek-ai/dsh-web-fetch-http',
   '@deepseek-ai/dsh-tool-web',
 ];

@@ -33,7 +33,7 @@ browser :5173 ── Vue SPA + same-origin /api (FastAPI)
         user-configured OpenAI-compatible model service
 ```
 
-`dsh` is **pinned, not forked**: `@deepseek-ai/dsh@0.2.2-rc.1`.
+`dsh` is **pinned, not forked**: `@deepseek-ai/dsh@0.2.2-rc.5`.
 
 ## Layout
 
@@ -79,7 +79,7 @@ Run a single test:
 
 ```bash
 python3 -m pytest backend/tests/test_mcp_config.py       # only pytest test (MCP import validation)
-npm --prefix runner run contract                          # dsh extension-point contract check
+npm --prefix runner run contract                          # dsh extension-point contract check (incl. config keys written to dsh plugins)
 npm --prefix runner run test:workspace                    # workspace tool checks only
 node --import tsx runner/scripts/check-business.mjs       # isolated business-kernel fixture (fake gateway)
 npm --prefix frontend test                                # conversation-draft checks

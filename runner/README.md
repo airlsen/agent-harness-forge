@@ -1,6 +1,6 @@
 # Forge Harness Runner
 
-正式入口 `src/server.ts`，由控制面以内部 Bearer Token 调用；浏览器不直接访问 Runner。Node >=24.9.0，固定 `dsh@0.2.2-rc.1`。
+正式入口 `src/server.ts`，由控制面以内部 Bearer Token 调用；浏览器不直接访问 Runner。Node >=24.9.0，固定 `dsh@0.2.2-rc.5`。
 
 ## 业务路径
 
@@ -32,7 +32,7 @@
 ```bash
 npm ci
 npm run build
-npm run contract      # dsh 扩展点契约（期望值来自 src/kernel/dsh/ 的声明）
+npm run contract      # dsh 扩展点契约（期望值来自 src/kernel/dsh/ 的声明，含写给各插件的配置项是否仍被识别）
 npm test              # 清单 / 执行日志 / 文件边界 / 正式插件与真 dsh 协议夹具（非真实模型）
 npm run test:workspace # 仅文件执行器/配额边界，不代替审批集成
 

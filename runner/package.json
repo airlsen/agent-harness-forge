@@ -18,16 +18,16 @@
     "gen:manifest": "node scripts/gen-manifest-types.mjs"
   },
   "dependencies": {
-    "@deepseek-ai/dsh": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-mcp-client": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-skill": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-tool-fs-search": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-tool-skill": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-tool-web": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-web": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-web-deepseek-api": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-web-fetch-http": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-web-search-deepseek": "0.2.2-rc.1",
+    "@deepseek-ai/dsh": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-mcp-client": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-skill": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-tool-fs-search": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-tool-skill": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-tool-web": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-web": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-web-deepseek-api": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-web-fetch-http": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-web-search-deepseek": "0.2.2-rc.5",
     "fastify": "^5.2.0"
   },
   "devDependencies": {

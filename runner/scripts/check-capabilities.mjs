@@ -305,11 +305,12 @@ const server = http.createServer(async (req, res) => {
   for await (const chunk of req) raw += chunk;
   const body = JSON.parse(raw);
   requests.push(body);
+  // dsh 注入的会话上下文（工作目录等）也以 user 角色发送，0.2.2-rc.5 起为 <system-reminder> 包装
   const lastUser = body.messages.findLastIndex(
     (message) =>
       message.role === 'user' &&
       typeof message.content === 'string' &&
-      !message.content.startsWith('Current runtime context.'),
+      !message.content.startsWith('<system-reminder>'),
   );
   const instruction = body.messages[lastUser]?.content ?? '';
   const answered = body.messages.slice(lastUser + 1).some((message) => message.role === 'tool');
