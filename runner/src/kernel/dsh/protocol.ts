@@ -66,7 +66,8 @@ function translatePluginEvent(method: string, params: any): Translated[] | undef
 }
 const FAILED_TURN: Record<string, string> = {
   blocked: '任务被策略阻止',
-  'max-tokens': '模型输出达到长度上限，回答可能不完整；可继续对话或调整输出上限',
+  // 普通成员改不了输出上限，提示只给他们能做的下一步
+  'max-tokens': '回复内容太长，超出了单次输出上限，已保留生成的部分；可回复“继续”让它接着完成',
   aborted: '任务已中止',
   interrupted: '任务已中止',
 };

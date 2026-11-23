@@ -234,11 +234,12 @@ export class GatewayAdapter extends LlmAdapter {
       if (!completed) throw new Error('模型响应流提前结束，请重试');
       if (!['stop', 'tool_calls', 'length'].includes(finish))
         throw new Error('模型响应被拦截或未能正常完成，请检查模型服务');
-      if (calls.size && finish === 'length')
-        throw new Error('模型工具调用达到输出上限，未执行不完整的调用，请调整输出上限后重试');
+      // 输出到上限时，正在生成的工具调用参数必然不完整：不交给 dsh 执行，按 max-tokens 软结束本轮，
+      // 已输出的正文照常保留（dsh 组装消息时也会丢弃 max-tokens 下的工具调用块），用户回复“继续”即可接着做。
+      const truncated = finish === 'length';
       yield* closeReasoning();
       if (textIndex >= 0) yield { type: 'block-end', index: textIndex, block: { type: 'text', text } };
-      for (const call of calls.values()) {
+      for (const call of truncated ? [] : calls.values()) {
         if (!call.id || !call.name) throw new Error('模型返回了不完整的工具调用');
         yield {
           type: 'block-end',
@@ -246,7 +247,8 @@ export class GatewayAdapter extends LlmAdapter {
           block: { type: 'tool-call', id: call.id, name: call.name, arguments: call.arguments },
         };
       }
-      if (textIndex < 0 && !calls.size) throw new Error('模型返回了空响应');
+      // 思考就用完了输出额度时同样没有正文，此时应报告达到上限而不是空响应
+      if (textIndex < 0 && !calls.size && !truncated) throw new Error('模型返回了空响应');
       if (usage) {
         const cached = usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens ?? 0;
         yield {
@@ -263,7 +265,7 @@ export class GatewayAdapter extends LlmAdapter {
       }
       yield {
         type: 'finish',
-        reason: { kind: calls.size ? 'tool-calls' : finish === 'length' ? 'max-tokens' : 'stop' },
+        reason: { kind: truncated ? 'max-tokens' : calls.size ? 'tool-calls' : 'stop' },
         ...(reasoningAll ? { replayState: { response: { reasoningContent: reasoningAll } } } : {}),
       };
     } catch (error) {

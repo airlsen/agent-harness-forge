@@ -78,6 +78,36 @@ const server = http.createServer(async (req, res) => {
   }
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   const send = (value) => res.write(`data: ${JSON.stringify(value)}\n\n`);
+  // 输出到上限时正在生成工具调用：正文之后跟一段被截断的 workspace_write 参数
+  if (instruction.includes('CUT_TOOL')) {
+    send({ choices: [{ delta: { content: 'cut tool partial' } }] });
+    send({
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: 'cut-call',
+                type: 'function',
+                function: { name: 'workspace_write', arguments: '{"path":"cases.md","content":"# 用例' },
+              },
+            ],
+          },
+          finish_reason: 'length',
+        },
+      ],
+    });
+    res.end('data: [DONE]\n\n');
+    return;
+  }
+  // 思考就用完了输出额度：只有思考、没有正文和工具调用
+  if (instruction.includes('CUT_REASONING')) {
+    send({ choices: [{ delta: { reasoning_content: '需求很长，先逐条拆解' } }] });
+    send({ choices: [{ delta: {}, finish_reason: 'length' }] });
+    res.end('data: [DONE]\n\n');
+    return;
+  }
   if (['MAX_TOKENS', 'TRUNCATED', 'FILTERED'].some((value) => instruction.includes(value))) {
     send({
       choices: [
@@ -662,7 +692,7 @@ try {
     assert.equal(events.at(-1)?.payload.status, 'error');
   });
   for (const [instruction, expected] of [
-    ['MAX_TOKENS', /输出达到长度上限/],
+    ['MAX_TOKENS', /单次输出上限/],
     ['TRUNCATED', /响应流提前结束/],
     ['FILTERED', /被拦截/],
   ]) {
@@ -677,6 +707,44 @@ try {
       assert.equal(events.at(-1)?.payload.status, 'error');
     });
   }
+  events = await turn('CUT_TOOL');
+  check('tool call cut by the output cap ends softly: partial text kept, incomplete call never runs', () => {
+    assert.ok(
+      events.some((event) => event.kind === 'message_delta' && event.payload.text === 'cut tool partial'),
+    );
+    assert.equal(
+      events.some((event) => event.kind === 'tool_use_start'),
+      false,
+    );
+    assert.ok(events.some((event) => event.kind === 'error' && /单次输出上限/.test(event.payload.message)));
+    assert.equal(events.at(-1)?.payload.status, 'error');
+  });
+  events = await turn('PLAIN');
+  check('the next turn continues from the cut text without a dangling tool call', () => {
+    assert.ok(events.some((event) => event.kind === 'message'));
+    const history = requests.at(-1).messages;
+    assert.ok(
+      history.some(
+        (message) =>
+          message.role === 'assistant' &&
+          typeof message.content === 'string' &&
+          message.content.includes('cut tool partial'),
+      ),
+    );
+    assert.equal(
+      history.some((message) => (message.tool_calls ?? []).some((call) => call.id === 'cut-call')),
+      false,
+    );
+  });
+  events = await turn('CUT_REASONING');
+  check('reasoning that uses up the output cap is reported as the cap, not an empty response', () => {
+    assert.ok(events.some((event) => event.kind === 'error' && /单次输出上限/.test(event.payload.message)));
+    assert.equal(
+      events.some((event) => event.kind === 'error' && /空响应/.test(event.payload.message)),
+      false,
+    );
+    assert.equal(events.at(-1)?.payload.status, 'error');
+  });
   const switched = {
     baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
     model: 'switched-fixture-model',
