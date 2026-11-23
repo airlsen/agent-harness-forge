@@ -11,7 +11,8 @@ class Base(DeclarativeBase):
     pass
 
 
-_engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+# 取用前先检查连接是否有效；连接用满 30 分钟就换新，避免复用已被网络设备静默断开的旧连接。
+_engine = create_async_engine(settings.database_url, pool_pre_ping=True, pool_recycle=1800)
 SessionFactory = async_sessionmaker(_engine, expire_on_commit=False, class_=AsyncSession)
 if settings.database_url.startswith("sqlite"):
 
