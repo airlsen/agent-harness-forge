@@ -5,7 +5,12 @@ from ..core.database import get_session
 from ..models.platform import PlatformSetting
 from ..services.file_service import file_service
 from ..services.runner_client import runner_client
-from ..services.capability_service import WebSearchInput, save_web_settings, web_settings_view
+from ..services.capability_service import (
+    WebSearchInput,
+    reveal_web_key,
+    save_web_settings,
+    web_settings_view,
+)
 from ..services.settings_service import PolicyInput, get_policy
 from ..utils.response import ResponseUtil
 
@@ -40,13 +45,19 @@ async def save(payload: PolicyInput, db: AsyncSession = Depends(get_session)):
 
 @router.get("/web-search")
 async def web_search(db: AsyncSession = Depends(get_session)):
-    """联网搜索设置：密钥只保存加密值，不回传。"""
+    """联网搜索设置：密钥加密保存，这里不回传；需要查看时走 POST /web-search/key。"""
     return ResponseUtil.ok(await web_settings_view(db))
 
 
 @router.put("/web-search")
 async def save_web_search(payload: WebSearchInput, db: AsyncSession = Depends(get_session)):
     return ResponseUtil.ok(await save_web_settings(db, payload))
+
+
+@router.post("/web-search/key")
+async def reveal_web_search_key(db: AsyncSession = Depends(get_session)):
+    """查看已保存的联网搜索密钥（设置页点击眼睛图标）。"""
+    return ResponseUtil.ok({"apiKey": await reveal_web_key(db)})
 
 
 @router.get("/storage")

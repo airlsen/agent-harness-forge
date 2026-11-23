@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..core.security import decrypt, encrypt
+from ..core.security import decrypt, encrypt, reveal_secret
 from ..models.platform import ModelConnection, PlatformSetting
 
 TOOLS = [
@@ -244,6 +244,14 @@ async def get_connection(db: AsyncSession, *, secret=False, connection_id: int |
     if secret:
         data["apiKey"] = decrypt(row.credential)
     return data
+
+
+async def reveal_connection_key(db: AsyncSession, connection_id: int) -> str:
+    """模型编辑时管理员点击查看密钥：单独接口返回明文，列表与详情仍不回传。"""
+    row = await db.get(ModelConnection, connection_id)
+    if not row:
+        raise HTTPException(404, "模型配置不存在")
+    return reveal_secret(row.credential)
 
 
 async def list_connections(db: AsyncSession) -> list[dict]:

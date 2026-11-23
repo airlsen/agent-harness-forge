@@ -368,6 +368,12 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                 saved["apiKeyConfigured"]
                 and "secret-fixture-key" not in json.dumps(saved),
             )
+            check(
+                "saved model key is shown only via explicit reveal request",
+                "secret-fixture-key" not in json.dumps(api("GET", "/models"))
+                and api("POST", f"/models/{saved['id']}/key")["apiKey"]
+                == "secret-fixture-key",
+            )
             result = api("POST", "/models/connection/test")
             check(
                 "connection test performs actual HTTP protocol request",

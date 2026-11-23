@@ -449,12 +449,16 @@ async def test_web_settings_hide_keys_and_fall_back_to_deepseek_model_key(env): 
         assert (await caps_module._runtime_web(db, "chat"))["apiKey"] == "model-secret"
         view = await save_web_settings(db, WebSearchInput(enabled=True, apiKey="own-key"))
         assert view["keySource"] == "custom" and view["apiKeyConfigured"] is True
+        assert "own-key" not in json.dumps(view)
+        assert await caps_module.reveal_web_key(db) == "own-key"
         assert (await caps_module._runtime_web(db, "chat"))["apiKey"] == "own-key"
         # 保存时不传密钥会保留原密钥；clearKey 才会清除
         view = await save_web_settings(db, WebSearchInput(enabled=True, fetchEnabled=False))
         assert view["apiKeyConfigured"] is True
         view = await save_web_settings(db, WebSearchInput(enabled=True, clearKey=True, fetchEnabled=False))
         assert view["keySource"] == "model"
+        # 复用模型密钥时没有单独保存的搜索密钥可查看
+        assert await caps_module.reveal_web_key(db) == ""
         options = await caps_module.options(db)
         assert options["web"]["available"] is True and "apiKey" not in json.dumps(options)
 
