@@ -113,6 +113,12 @@ try {
     });
     assert.match(event('turn/end', { reason: { kind: 'max-tokens' } })[1].failure, /单次输出上限/);
   });
+  check('context compaction start / end / failure map to compaction status events', () => {
+    const phase = (type, data) => event(type, { compactionId: 'k1', turn: 1, ...data })[1]?.payload;
+    assert.deepEqual(phase('compaction/start'), { phase: 'start' });
+    assert.deepEqual(phase('compaction/end'), { phase: 'end' });
+    assert.deepEqual(phase('compaction/end', { error: 'boom' }), { phase: 'failed' });
+  });
   check('plugin notifications map to Forge events; gateway errors are explicit failures', () => {
     assert.deepEqual(translateNotification('forge.delta', { text: 'x' }, calls), [
       { kind: 'message_delta', payload: { text: 'x' }, source: 'llm' },

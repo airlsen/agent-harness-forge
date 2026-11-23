@@ -78,6 +78,35 @@ const server = http.createServer(async (req, res) => {
   }
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   const send = (value) => res.write(`data: ${JSON.stringify(value)}\n\n`);
+  // dsh 自动压缩上下文时的摘要请求（压缩指令作为最后一条 user 消息）
+  if (instruction.includes('compaction engine')) {
+    send({ choices: [{ delta: { reasoning_content: 'fixture summary thinking' } }] });
+    send({
+      choices: [
+        {
+          delta: { content: '## Primary Request and Intent\n- fixture compacted summary' },
+          finish_reason: 'stop',
+        },
+      ],
+      usage: { prompt_tokens: 100, completion_tokens: 10 },
+    });
+    res.end('data: [DONE]\n\n');
+    return;
+  }
+  // 超长回复（约 23 万字符）：下一次请求前对话超过压缩阈值，dsh 会自动压缩
+  if (instruction.includes('HUGE_CONTEXT')) {
+    send({
+      choices: [
+        {
+          delta: { content: 'fixture huge context ' + 'long fixture text. '.repeat(12000) },
+          finish_reason: 'stop',
+        },
+      ],
+      usage: { prompt_tokens: 60000, completion_tokens: 10 },
+    });
+    res.end('data: [DONE]\n\n');
+    return;
+  }
   // 输出到上限时正在生成工具调用：正文之后跟一段被截断的 workspace_write 参数
   if (instruction.includes('CUT_TOOL')) {
     send({ choices: [{ delta: { content: 'cut tool partial' } }] });
@@ -944,6 +973,28 @@ try {
       request.messages.some((message) => message.role === 'user' && message.content === 'AFTER_INTERRUPT'),
     );
   });
+  // 对话过长触发 dsh 自动压缩：摘要是后台请求，只显示“正在整理”状态，摘要文字不能进入实时回复
+  await restarted.sendTurn(id, 'HUGE_CONTEXT');
+  const beforeCompaction = restartedEvents.length;
+  await restarted.sendTurn(id, 'PLAIN');
+  const compacting = restartedEvents.slice(beforeCompaction);
+  check(
+    'context compaction runs in the background: status events only, summary never streams as a reply',
+    () => {
+      assert.ok(requests.some((request) => JSON.stringify(request.messages).includes('compaction engine')));
+      // 每次压缩都有开始与结束；第一次成功，之后 dsh 可能再试一次（摘要已无法更小时以 failed 结束，本轮照常完成）
+      const phases = compacting
+        .filter((event) => event.kind === 'compaction')
+        .map((event) => event.payload.phase);
+      assert.deepEqual(phases.slice(0, 2), ['start', 'end']);
+      phases.forEach((phase, index) => assert.equal(phase === 'start', index % 2 === 0));
+      assert.equal(phases.length % 2, 0);
+      for (const event of compacting.filter((item) => item.kind.endsWith('_delta')))
+        assert.doesNotMatch(event.payload.text, /compacted summary|summary thinking/);
+      assert.equal(compacting.find((event) => event.kind === 'message')?.payload.text, 'fixture response');
+      assert.equal(compacting.at(-1)?.payload.status, 'idle');
+    },
+  );
   await restarted.disposeSession(id);
   // 日志目录存在但内容无法恢复：返回 410，且不留下半成品会话（控制面据此走降级）
   const corruptId = '11111111-1111-4111-8111-111111111111';
