@@ -30,6 +30,8 @@ export const FORGE_EVENT_PREFIX = 'forge.';
  */
 export function notify(method, params) {
   if (!Object.hasOwn(FORGE_EVENTS, method))
-    process.stderr.write(`[forge-plugin] 未登记的插件事件 ${method}，请在 plugin-kit/events.js 中登记\n`);
+    process.stderr.write(
+      `[forge-plugin] 未登记的插件事件 ${method}，请在 internal-plugins/shared/events.js 中登记\n`,
+    );
   process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n');
 }

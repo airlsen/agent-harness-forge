@@ -5,7 +5,7 @@
  */
 import { mkdir, readFile, writeFile, readdir, lstat } from 'node:fs/promises';
 import { resolve, relative, dirname, sep } from 'node:path';
-import { notify } from '../plugin-kit/events.js';
+import { notify } from '../shared/events.js';
 import { checkedPath } from './path-guard.js';
 import {
   MAX_DEPTH,

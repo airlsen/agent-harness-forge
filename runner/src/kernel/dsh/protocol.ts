@@ -3,7 +3,7 @@
  * 内核只认 Forge 事件（message / tool_use_start / tool_result / cost_tick / error …），
  * dsh 的事件结构变化只需改这里，contract-check 会核对下面的方法名仍在 dsh-sdk-protocol 中。
  */
-import { FORGE_EVENTS, FORGE_EVENT_PREFIX } from '../../../plugin-kit/events.js';
+import { FORGE_EVENTS, FORGE_EVENT_PREFIX } from '../../../internal-plugins/shared/events.js';
 import type { KernelEvent } from '../types.js';
 
 /** dsh 启动 profile：只含 SDK 运行时，不带 CLI/TUI */
@@ -45,7 +45,7 @@ export type Translated =
 /** 已告警过的未登记插件事件：每种只告警一次，避免刷屏 */
 const unknownWarned = new Set<string>();
 /**
- * Forge 自有插件经 dsh 通知通道上报的事件：登记表在 plugin-kit/events.js（插件与这里共用）。
+ * Forge 自有插件经 dsh 通知通道上报的事件：登记表在 internal-plugins/shared/events.js（插件与这里共用）。
  * 未登记的 `forge.*` 不再静默丢弃，而是在 Runner 日志里告警一次。
  */
 function translatePluginEvent(method: string, params: any): Translated[] | undefined {
@@ -54,7 +54,9 @@ function translatePluginEvent(method: string, params: any): Translated[] | undef
     if (!method.startsWith(FORGE_EVENT_PREFIX)) return undefined;
     if (!unknownWarned.has(method)) {
       unknownWarned.add(method);
-      console.warn(`[dsh] 忽略未登记的插件事件 ${method}：请在 runner/plugin-kit/events.js 中登记`);
+      console.warn(
+        `[dsh] 忽略未登记的插件事件 ${method}：请在 runner/internal-plugins/shared/events.js 中登记`,
+      );
     }
     return [];
   }

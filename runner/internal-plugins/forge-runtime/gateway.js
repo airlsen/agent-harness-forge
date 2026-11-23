@@ -3,7 +3,7 @@
  * 负责历史回放（含 DeepSeek 思考内容）、流式解析与错误归一，流式增量经 Forge 事件实时推给 Runner。
  */
 import { LlmAdapter, attributionHeaders } from '@deepseek-ai/dsh-llm';
-import { notify } from '../plugin-kit/events.js';
+import { notify } from '../shared/events.js';
 
 const visibleText = (content) =>
   Array.isArray(content)

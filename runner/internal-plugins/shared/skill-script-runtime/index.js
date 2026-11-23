@@ -27,7 +27,9 @@ const MODES = new Set(['auto', 'bwrap', 'none']);
 
 /** 当前运行方式；非法取值按 auto 处理 */
 export function sandboxMode(env = process.env) {
-  const value = String(env.FORGE_SKILL_SCRIPT_SANDBOX ?? 'auto').trim().toLowerCase();
+  const value = String(env.FORGE_SKILL_SCRIPT_SANDBOX ?? 'auto')
+    .trim()
+    .toLowerCase();
   return MODES.has(value) ? value : 'auto';
 }
 
@@ -82,7 +84,8 @@ async function listOutputs(dir, prefix) {
       if (item.isDirectory()) await walk(full, path, depth + 1);
       else if (item.isFile()) {
         total += 1;
-        if (files.length < MAX_LISTED_OUTPUTS) files.push({ path: `${prefix}/${path}`, bytes: (await lstat(full)).size });
+        if (files.length < MAX_LISTED_OUTPUTS)
+          files.push({ path: `${prefix}/${path}`, bytes: (await lstat(full)).size });
       }
     }
   };
@@ -145,14 +148,42 @@ function runIsolated(root, path, args, work, nodeScript) {
     .flatMap((dir) => ['--symlink', readlinkSync(dir), dir]);
   // 联网：保留宿主网络，并只读挂载域名解析与 HTTPS 根证书（不存在的路径跳过）
   const network = [
-    '/etc/resolv.conf', '/etc/hosts', '/etc/nsswitch.conf', '/etc/ssl', '/etc/ca-certificates', '/etc/pki',
+    '/etc/resolv.conf',
+    '/etc/hosts',
+    '/etc/nsswitch.conf',
+    '/etc/ssl',
+    '/etc/ca-certificates',
+    '/etc/pki',
   ].flatMap((file) => ['--ro-bind-try', file, file]);
   const command = [
-    '--die-with-parent', '--new-session', '--unshare-all', '--share-net',
-    ...mounts, ...links, ...network, ...(nodeScript ? ['--ro-bind', process.execPath, '/node'] : []),
-    '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp',
-    '--dir', '/skill', '--ro-bind', root, '/skill/current', '--bind', work, '/work',
-    '--chdir', '/work', '--', interpreter, `/skill/current/${path}`, ...args,
+    '--die-with-parent',
+    '--new-session',
+    '--unshare-all',
+    '--share-net',
+    ...mounts,
+    ...links,
+    ...network,
+    ...(nodeScript ? ['--ro-bind', process.execPath, '/node'] : []),
+    '--proc',
+    '/proc',
+    '--dev',
+    '/dev',
+    '--tmpfs',
+    '/tmp',
+    '--dir',
+    '/skill',
+    '--ro-bind',
+    root,
+    '/skill/current',
+    '--bind',
+    work,
+    '/work',
+    '--chdir',
+    '/work',
+    '--',
+    interpreter,
+    `/skill/current/${path}`,
+    ...args,
   ];
   return execute(
     'bwrap',
@@ -202,12 +233,20 @@ function runDirect(root, path, args, work, nodeScript) {
 export async function runSkillScript(skillDir, path, args = [], options = {}) {
   if (typeof path !== 'string' || !SCRIPT.test(path))
     throw new Error('只能运行当前 Skill 的 scripts/ 下的 .py、.js 或 .sh 文件');
-  if (!Array.isArray(args) || args.length > 16 || args.some((arg) => typeof arg !== 'string' || arg.length > 1024 || arg.includes('\0')))
+  if (
+    !Array.isArray(args) ||
+    args.length > 16 ||
+    args.some((arg) => typeof arg !== 'string' || arg.length > 1024 || arg.includes('\0'))
+  )
     throw new Error('脚本参数无效（最多 16 个，每个不超过 1024 字符）');
   const root = resolve(skillDir);
   const file = resolve(root, path);
   if (!file.startsWith(root + sep) || !existsSync(file)) throw new Error(`脚本不存在：${path}`);
-  if (lstatSync(file).isSymbolicLink() || !lstatSync(file).isFile() || lstatSync(join(root, 'scripts')).isSymbolicLink())
+  if (
+    lstatSync(file).isSymbolicLink() ||
+    !lstatSync(file).isFile() ||
+    lstatSync(join(root, 'scripts')).isSymbolicLink()
+  )
     throw new Error('脚本文件必须是普通文件');
   const mode = MODES.has(options.mode) ? options.mode : sandboxMode();
   const nodeScript = path.endsWith('.js');

@@ -6,7 +6,7 @@
 import { lstatSync, realpathSync } from 'node:fs';
 import { lstat } from 'node:fs/promises';
 import { resolve, relative, dirname, sep } from 'node:path';
-import { PATH_TOOLS } from '../src/kernel/dsh/engine-tools.js';
+import { PATH_TOOLS } from '../../src/kernel/dsh/engine-tools.js';
 import { MAX_DEPTH, MAX_PATH_CHARS } from './limits.js';
 
 const SECRET_DIRS = new Set(['.git', '.ssh', '.aws', '.gnupg', '.docker', '.kube']);

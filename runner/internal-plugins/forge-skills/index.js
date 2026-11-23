@@ -7,7 +7,7 @@
  *   按修订号与内容哈希命名），正文中的相对路径按它解析；有附加文件时模型用 read 读取（路径由 forge-runtime
  *   收窄到本次装配的快照目录），脚本只能经 skill_run_script 逐次审批后运行。
  */
-import { notify } from '../plugin-kit/events.js';
+import { notify } from '../shared/events.js';
 
 export const name = 'forge-skills';
 export const inject = ['skills'];

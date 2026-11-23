@@ -1,9 +1,10 @@
 /**
  * 装配一致性检查（不启动 dsh、不调用模型）：几张「唯一登记表」之间是否对得上。
- * - 插件登记表（src/kernel/forge-plugins.ts）：入口存在，导出的 name 与登记名一致；
+ * - 插件登记表（src/kernel/forge-plugins.ts）：与 internal-plugins/ 下的目录一一对应（目录名 = 插件名），
+ *   导出的 name 与登记名一致；
  * - 平台契约（contracts/platform.json）：provider 为 Forge 插件的工具确实由该插件注册，
  *   该插件注册的工具也都登记在契约里（dsh 包提供的工具由 npm run contract 核对）；
- * - 插件事件表（plugin-kit/events.js）：插件源码里出现的每个 forge.* 都已登记，登记的每个事件都能被翻译，
+ * - 插件事件表（internal-plugins/shared/events.js）：插件源码里出现的每个 forge.* 都已登记，登记的每个事件都能被翻译，
  *   未登记的 forge.* 会告警而不是静默丢弃；
  * - dsh 原生工具表（src/kernel/dsh/engine-tools.js）：与契约、内核工具集一致。
  */
@@ -13,10 +14,16 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { FORGE_EVENTS, FORGE_EVENT_PREFIX } from '../plugin-kit/events.js';
+import { FORGE_EVENTS, FORGE_EVENT_PREFIX } from '../internal-plugins/shared/events.js';
 import { ENGINE_TOOLS, PATH_TOOLS } from '../src/kernel/dsh/engine-tools.js';
 import { translateNotification } from '../src/kernel/dsh/protocol.ts';
-import { FORGE_PLUGINS, MANIFEST_PLUGINS, forgePluginEntry } from '../src/kernel/forge-plugins.ts';
+import {
+  FORGE_PLUGINS,
+  INTERNAL_PLUGINS_DIR,
+  MANIFEST_PLUGINS,
+  SHARED_DIR_NAME,
+  forgePluginEntry,
+} from '../src/kernel/forge-plugins.ts';
 import { COMPANION_TOOLS, PLATFORM } from '../src/kernel/platform-contract.ts';
 import { CODE_READ_TOOL, SEARCH_TOOLS, sessionToolset } from '../src/kernel/toolset.ts';
 
@@ -59,20 +66,31 @@ process.env.FORGE_MODEL_SECRET_CONFIG = JSON.stringify({
   model: 'wiring-check',
 });
 try {
-  await check('every registered Forge plugin exists and exports its registered name', () => {
-    for (const name of pluginNames) {
-      assert.ok(existsSync(forgePluginEntry(name)), `${name} 入口不存在`);
-      const mod = modules.get(name);
-      assert.equal(mod.name, name, `${FORGE_PLUGINS[name].dir} 导出的 name 应为 ${name}`);
-      assert.equal(typeof mod.apply, 'function', `${name} 缺少 apply`);
-    }
-    assert.ok(MANIFEST_PLUGINS.has('forge-runtime'));
-    assert.ok(!MANIFEST_PLUGINS.has('forge-skills'), '自动装配的插件不应出现在清单白名单里');
-    assert.ok(
-      pluginNames.every((name) => !isDshPackage(name)),
-      'dsh 官方包不进插件登记表',
-    );
-  });
+  await check(
+    'registered Forge plugins match internal-plugins/ one to one and export their names',
+    async () => {
+      const dirs = (await readdir(INTERNAL_PLUGINS_DIR, { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory() && entry.name !== SHARED_DIR_NAME)
+        .map((entry) => entry.name);
+      assert.deepEqual(
+        dirs.toSorted(),
+        pluginNames.toSorted(),
+        'internal-plugins/ 下的插件目录与登记表不一致',
+      );
+      for (const name of pluginNames) {
+        assert.ok(existsSync(forgePluginEntry(name)), `${name} 入口不存在`);
+        const mod = modules.get(name);
+        assert.equal(mod.name, name, `internal-plugins/${name} 导出的 name 应为 ${name}`);
+        assert.equal(typeof mod.apply, 'function', `${name} 缺少 apply`);
+      }
+      assert.ok(MANIFEST_PLUGINS.has('forge-runtime'));
+      assert.ok(!MANIFEST_PLUGINS.has('forge-skills'), '自动装配的插件不应出现在清单白名单里');
+      assert.ok(
+        pluginNames.every((name) => !isDshPackage(name)),
+        'dsh 官方包不进插件登记表',
+      );
+    },
+  );
 
   await check('contract tools provided by Forge plugins are actually registered by them', async () => {
     const providers = new Set(PLATFORM.tools.map((tool) => tool.provider).filter((p) => !isDshPackage(p)));
@@ -122,7 +140,8 @@ try {
             used.add(match[1]);
       }
     };
-    for (const name of pluginNames) await scan(join(forgePluginEntry(name), '..'));
+    // 整个 internal-plugins/（含 shared/ 共享库）都扫描，共享库发出的事件同样要登记
+    await scan(INTERNAL_PLUGINS_DIR);
     assert.ok(used.size >= 8, `只扫描到 ${used.size} 个事件，扫描范围可能不对`);
     for (const method of used)
       assert.ok(Object.hasOwn(FORGE_EVENTS, method), `插件发出未登记的事件 ${method}`);

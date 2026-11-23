@@ -44,7 +44,7 @@ lint:
 	npm --prefix frontend run check:colors
 	npm --prefix frontend run check:fonts
 	npm --prefix frontend run check:antd-tokens
-	frontend/node_modules/.bin/prettier --check runner/src runner/forge-runtime-plugin runner/plugin-kit runner/scripts/check-wiring.mjs runner/scripts/check-business.mjs runner/scripts/check-code-projects.mjs runner/scripts/check-workspace.mjs scripts/check-ui-icons.mjs scripts/check-ui-colors.mjs scripts/check-ui-font-sizes.mjs scripts/check-antd-tokens.mjs .github/workflows/checks.yml
+	frontend/node_modules/.bin/prettier --check runner/src runner/internal-plugins runner/scripts/check-wiring.mjs runner/scripts/check-business.mjs runner/scripts/check-code-projects.mjs runner/scripts/check-workspace.mjs scripts/check-ui-icons.mjs scripts/check-ui-colors.mjs scripts/check-ui-font-sizes.mjs scripts/check-antd-tokens.mjs .github/workflows/checks.yml
 
 contracts: ## 会话清单：由控制面 Pydantic 模型导出 JSON Schema，再生成 Runner 的 TypeScript 类型
 	cd backend && python3 -m src.api.core.manifest

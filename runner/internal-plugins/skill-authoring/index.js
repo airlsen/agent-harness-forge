@@ -7,9 +7,9 @@
 import { lstat, mkdtemp, mkdir, readdir, writeFile, rm, rmdir, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
-import { notify } from '../plugin-kit/events.js';
-import { ENGINE_TOOLS } from '../src/kernel/dsh/engine-tools.js';
-import { OUTPUTS_DIR, runSkillScript, sandboxMode } from '../skill-script-runtime/index.js';
+import { notify } from '../shared/events.js';
+import { ENGINE_TOOLS } from '../../src/kernel/dsh/engine-tools.js';
+import { OUTPUTS_DIR, runSkillScript, sandboxMode } from '../shared/skill-script-runtime/index.js';
 export const name = 'skill-authoring';
 export const inject = ['tools'];
 
@@ -28,7 +28,8 @@ export const MAX_TOTAL_BYTES = 512000;
 /** 工作区中的草稿镜像目录（隐藏目录：不出现在会话文件清单，也不能被 workspace_write 覆盖） */
 export const MIRROR_DIR = '.skill';
 // 正文中的文件引用：references/x.md、assets/x.json、scripts/x.py
-const FILE_MENTION = /(?<![A-Za-z0-9_./-])((?:references|assets|scripts)\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)/g;
+const FILE_MENTION =
+  /(?<![A-Za-z0-9_./-])((?:references|assets|scripts)\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)/g;
 
 /** 校验附加文件路径，返回规范化路径；不合规时抛出中文错误（与控制面 validate_file_path 同义）。 */
 export function validateFilePath(value) {
@@ -38,7 +39,8 @@ export function validateFilePath(value) {
   if (path.includes('\\') || parts.length !== 2 || !parts.every(Boolean))
     throw new Error('文件路径应为“目录/文件名”，例如 references/rules.md');
   const [folder, name] = parts;
-  if (!Object.hasOwn(FILE_DIRS, folder)) throw new Error('文件只能放在 references/、assets/ 或 scripts/ 目录');
+  if (!Object.hasOwn(FILE_DIRS, folder))
+    throw new Error('文件只能放在 references/、assets/ 或 scripts/ 目录');
   if (!FILE_NAME.test(name))
     throw new Error('文件名只能使用英文字母、数字、点、下划线和短横线，以字母或数字开头，最长 120 个字符');
   const suffix = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : '';
@@ -61,9 +63,7 @@ export function checkFileReferences(content, paths) {
       warnings.push(`${path} 没有在 SKILL.md 中提到，使用时不会被读取：在对应步骤写明什么时候读或用它`);
   for (const path of mentioned)
     if (!paths.includes(path))
-      warnings.push(
-        `SKILL.md 提到了 ${path}，但文件不存在：用 skill_write_file 创建，或删掉这处引用`,
-      );
+      warnings.push(`SKILL.md 提到了 ${path}，但文件不存在：用 skill_write_file 创建，或删掉这处引用`);
   return warnings;
 }
 
@@ -101,9 +101,12 @@ export function checkSkillDocument(content, paths = []) {
   const name = frontField(front, 'name');
   const title = frontField(front, 'title');
   const description = frontField(front, 'description');
-  if (!name || !NAME_PATTERN.test(name)) errors.push('front matter 需要有效的英文 name 标识（字母或数字开头，最长 64 个字符）');
-  if (title !== undefined && (!title.trim() || title.trim().length > 120)) errors.push('title 展示名称应为 1–120 个字符');
-  if (!description || !description.trim() || description.length > 512) errors.push('description 用途说明应为 1–512 个字符');
+  if (!name || !NAME_PATTERN.test(name))
+    errors.push('front matter 需要有效的英文 name 标识（字母或数字开头，最长 64 个字符）');
+  if (title !== undefined && (!title.trim() || title.trim().length > 120))
+    errors.push('title 展示名称应为 1–120 个字符');
+  if (!description || !description.trim() || description.length > 512)
+    errors.push('description 用途说明应为 1–512 个字符');
   if (!body.trim()) errors.push('请补充 Skill 的工作步骤和说明');
 
   if (description && !/(时使用|时用|时调用|适用于|用于|当.{1,40}时)/.test(description))
@@ -165,7 +168,8 @@ export async function apply(ctx, config) {
   const files = new Map();
   if (Array.isArray(config.files)) {
     for (const item of config.files.slice(0, MAX_FILES))
-      if (item && typeof item.path === 'string' && typeof item.content === 'string') files.set(item.path, item.content);
+      if (item && typeof item.path === 'string' && typeof item.content === 'string')
+        files.set(item.path, item.content);
   } else if (Array.isArray(config.references)) {
     for (const item of config.references.slice(0, MAX_FILES))
       if (item && typeof item.filename === 'string' && typeof item.content === 'string')
@@ -188,7 +192,11 @@ export async function apply(ctx, config) {
   const fileBytes = (content) => Buffer.byteLength(content, 'utf8');
   const fileList = () => {
     const mentioned = mentionedFiles(draft);
-    return [...files].map(([path, content]) => ({ path, bytes: fileBytes(content), mentioned: mentioned.includes(path) }));
+    return [...files].map(([path, content]) => ({
+      path,
+      bytes: fileBytes(content),
+      mentioned: mentioned.includes(path),
+    }));
   };
   const guides = new Map(
     (Array.isArray(config.guides) ? config.guides : [])
@@ -198,29 +206,37 @@ export async function apply(ctx, config) {
   );
   const disposers = [];
   const add = (name, description, properties, required, execute) => {
-    disposers.push(ctx.tools.register({
-      name,
-      description,
-      parameters: { type: 'object', properties, required, additionalProperties: false },
-      output: {
-        schema: { type: 'object' },
-        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
-      },
-      execute,
-    }));
+    disposers.push(
+      ctx.tools.register({
+        name,
+        description,
+        parameters: { type: 'object', properties, required, additionalProperties: false },
+        output: {
+          schema: { type: 'object' },
+          render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+        },
+        execute,
+      }),
+    );
   };
   if (allowed.has('skill_read_draft')) {
-    add('skill_read_draft', 'Read the current Skill draft. This only reads the Skill currently open in the editor.', {}, [], async () => ({
-      skillId: config.skillId,
-      name: config.name,
-      description: config.description,
-      content: draft,
-    }));
+    add(
+      'skill_read_draft',
+      'Read the current Skill draft. This only reads the Skill currently open in the editor.',
+      {},
+      [],
+      async () => ({
+        skillId: config.skillId,
+        name: config.name,
+        description: config.description,
+        content: draft,
+      }),
+    );
   }
   if (allowed.has('skill_list_files')) {
     add(
       'skill_list_files',
-       '列出当前 Skill 的目录：SKILL.md 之外 references/、assets/、scripts/ 下的文件（路径、大小、正文是否提到），以及容量限制。',
+      '列出当前 Skill 的目录：SKILL.md 之外 references/、assets/、scripts/ 下的文件（路径、大小、正文是否提到），以及容量限制。',
       {},
       [],
       async () => ({
@@ -245,18 +261,24 @@ export async function apply(ctx, config) {
   if (allowed.has('skill_write_file')) {
     add(
       'skill_write_file',
-       '新建或整体覆盖 references/、assets/、scripts/ 下的一个文件，保存为草稿修订，不会自动发布。references/ 放按需读取的资料，assets/ 放输出模板和样例，scripts/ 放 .py/.js/.sh 脚本。写入后要在 SKILL.md 相应步骤写明什么时候调用。',
+      '新建或整体覆盖 references/、assets/、scripts/ 下的一个文件，保存为草稿修订，不会自动发布。references/ 放按需读取的资料，assets/ 放输出模板和样例，scripts/ 放 .py/.js/.sh 脚本。写入后要在 SKILL.md 相应步骤写明什么时候调用。',
       { path: { type: 'string' }, content: { type: 'string' }, summary: { type: 'string' } },
       ['path', 'content'],
       async ({ path: rawPath, content, summary }) => {
         const path = validateFilePath(rawPath);
         const next = String(content ?? '');
         if (next.includes('\0')) throw new Error('文件未保存：内容不能包含空字符');
-        if (fileBytes(next) > MAX_FILE_BYTES) throw new Error(`文件未保存：单个文件不能超过 ${MAX_FILE_BYTES / 1000} KB`);
+        if (fileBytes(next) > MAX_FILE_BYTES)
+          throw new Error(`文件未保存：单个文件不能超过 ${MAX_FILE_BYTES / 1000} KB`);
         const existed = files.has(path);
-        if (!existed && files.size >= MAX_FILES) throw new Error(`文件未保存：每个 Skill 最多 ${MAX_FILES} 个附加文件`);
-        const total = [...files].reduce((sum, [key, value]) => sum + (key === path ? 0 : fileBytes(value)), fileBytes(next));
-        if (total > MAX_TOTAL_BYTES) throw new Error(`文件未保存：附加文件合计不能超过 ${MAX_TOTAL_BYTES / 1000} KB`);
+        if (!existed && files.size >= MAX_FILES)
+          throw new Error(`文件未保存：每个 Skill 最多 ${MAX_FILES} 个附加文件`);
+        const total = [...files].reduce(
+          (sum, [key, value]) => sum + (key === path ? 0 : fileBytes(value)),
+          fileBytes(next),
+        );
+        if (total > MAX_TOTAL_BYTES)
+          throw new Error(`文件未保存：附加文件合计不能超过 ${MAX_TOTAL_BYTES / 1000} KB`);
         files.set(path, next);
         const changeSummary = String(summary ?? '').slice(0, 500);
         notify('forge.skill_revision', { action: 'write_file', path, content: next, summary: changeSummary });
@@ -276,7 +298,7 @@ export async function apply(ctx, config) {
   if (allowed.has('skill_delete_file')) {
     add(
       'skill_delete_file',
-       '从当前 Skill 草稿删除 references/、assets/、scripts/ 下的一个文件（历史修订和已发布版本不受影响）。删除后同步删掉 SKILL.md 中对它的引用。',
+      '从当前 Skill 草稿删除 references/、assets/、scripts/ 下的一个文件（历史修订和已发布版本不受影响）。删除后同步删掉 SKILL.md 中对它的引用。',
       { path: { type: 'string' }, summary: { type: 'string' } },
       ['path'],
       async ({ path, summary }) => {
@@ -288,7 +310,9 @@ export async function apply(ctx, config) {
         return {
           deleted: true,
           path,
-          warnings: mentionedFiles(draft).includes(path) ? [`SKILL.md 仍然提到 ${path}，记得删掉这处引用`] : [],
+          warnings: mentionedFiles(draft).includes(path)
+            ? [`SKILL.md 仍然提到 ${path}，记得删掉这处引用`]
+            : [],
         };
       },
     );
@@ -398,7 +422,8 @@ export async function apply(ctx, config) {
       ['content'],
       async ({ content, summary }) => {
         const next = String(content);
-        if (Buffer.byteLength(next, 'utf8') > MAX_SKILL_BYTES) throw new Error('Skill draft cannot exceed 64 KB');
+        if (Buffer.byteLength(next, 'utf8') > MAX_SKILL_BYTES)
+          throw new Error('Skill draft cannot exceed 64 KB');
         const check = checkSkillDocument(next, [...files.keys()]);
         if (!check.valid) throw new Error(`草稿未保存：${check.errors.join('；')}`);
         const changeSummary = String(summary ?? 'Agent 修改草稿').slice(0, 500);

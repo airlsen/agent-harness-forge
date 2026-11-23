@@ -107,16 +107,16 @@ The Runner never sees the Bundle. `runner_client` sends its projection, the vers
 
 ### Forge plugins
 
-Forge's own dsh plugins are registered in one place, `runner/src/kernel/forge-plugins.ts` (`FORGE_PLUGINS`: name → package dir, and whether a session manifest may request it). The kernel builds plugin rows only through `forgePlugin(name, config)`, and manifest validation uses `MANIFEST_PLUGINS`; dsh packages are not in this table (they belong to `dsh/runtime-config.ts`). Plugins report events to the Runner with `notify()` from `runner/plugin-kit/events.js`, whose `FORGE_EVENTS` table is also what `dsh/protocol.ts` translates; unregistered `forge.*` events are logged as warnings, and `check-wiring` asserts every `forge.*` used in plugin sources is registered and translatable.
+Forge's own dsh plugins are registered in one place, `runner/src/kernel/forge-plugins.ts` (`FORGE_PLUGINS`: plugin name and whether a session manifest may request it). Plugins live in `runner/internal-plugins/<name>/` — the directory name *is* the plugin name, and `internal-plugins/shared/` holds libraries shared by plugins (not plugins); `check-wiring` asserts the table and the directories match one to one. The kernel builds plugin rows only through `forgePlugin(name, config)`, and manifest validation uses `MANIFEST_PLUGINS`; dsh packages are not in this table (they belong to `dsh/runtime-config.ts`). Plugins report events to the Runner with `notify()` from `runner/internal-plugins/shared/events.js`, whose `FORGE_EVENTS` table is also what `dsh/protocol.ts` translates; unregistered `forge.*` events are logged as warnings, and `check-wiring` asserts every `forge.*` used in plugin sources is registered and translatable.
 
-`runner/forge-runtime-plugin/` (`inject: ['llm','tools','approval']`) is loaded into every dsh process. `index.js` only composes:
+`runner/internal-plugins/forge-runtime/` (`inject: ['llm','tools','approval']`) is loaded into every dsh process. `index.js` only composes:
 - `gateway.js` — the `forge-gateway` `LlmAdapter`, streaming from an OpenAI-compatible `/chat/completions` endpoint with the model config from `FORGE_MODEL_SECRET_CONFIG`. It is the only real model exit.
 - `workspace-tools.js` — `current_time`, `workspace_list/read/write/present`, with quotas from `limits.js`.
 - `policy-hooks.js` — `restrict` + allowlist `guard`, path narrowing for dsh `glob/grep/read` (`path-guard.js`, driven by `PATH_TOOLS`), secret filtering of search results, `bash` gating and output sanitizing (`bash-rules.js`), and per-call `ask` for admin-flagged MCP tools.
 
 The `bash` tool itself is dsh's persistent shell from the `sdk-minimal` profile (`@deepseek-ai/dsh-tool-bash-persistent`); forge-runtime only gates and sanitizes it.
 
-`runner/forge-poc-plugin/index.js` is the historical M0 security probe (fake model, `forge_probe` echo tool) — **not** part of business execution.
+The historical M0 POC (fake model + `forge_probe` security probe, `scripts/poc.mjs`) has been removed; it is in git history up to commit `1ca7e8e`, and `docs/05` keeps its report.
 
 ### Event stream & persistence
 

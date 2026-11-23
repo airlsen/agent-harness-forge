@@ -2,8 +2,8 @@
  * 执行策略钩子：工具白名单、带路径工具的路径收窄、搜索结果脱敏、bash 门控与输出脱敏、外部工具逐次确认。
  * 每次决定都经 forge.policy 事件通知 Runner。规则本身在 path-guard / bash-rules，这里只负责挂到 dsh 扩展点上。
  */
-import { ENGINE_TOOLS } from '../src/kernel/dsh/engine-tools.js';
-import { notify } from '../plugin-kit/events.js';
+import { ENGINE_TOOLS } from '../../src/kernel/dsh/engine-tools.js';
+import { notify } from '../shared/events.js';
 import { classifyBashCommand, sanitizeGitOutput } from './bash-rules.js';
 import { filterSecretResults, toolPathDenial } from './path-guard.js';
 

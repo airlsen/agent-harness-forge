@@ -3,7 +3,7 @@
  * declared tool is schema-only here and every execution crosses to the isolated
  * Forge Plugin Worker using a short-lived Runner-issued lease.
  */
-import { notify } from '../plugin-kit/events.js';
+import { notify } from '../shared/events.js';
 
 export const name = 'forge-plugin-bridge';
 export const inject = ['tools'];
@@ -34,7 +34,9 @@ function bindingSpec(binding) {
   // Uploaded packages never provide executable Node code to DSH. They target the generic
   // remote Worker protocol and can only use the exact tools frozen in their signed lease.
   if (binding?.runtime === 'forge-remote-worker-v1' && Array.isArray(binding.tools)) {
-    return { tools: Object.fromEntries(binding.tools.map((tool) => [tool.name, { permission: tool.permission }])) };
+    return {
+      tools: Object.fromEntries(binding.tools.map((tool) => [tool.name, { permission: tool.permission }])),
+    };
   }
   throw new Error(`Forge 未批准插件“${binding?.package ?? ''}”的运行时`);
 }
@@ -92,7 +94,9 @@ export function apply(ctx, config) {
               });
               const body = await response.json().catch(() => ({}));
               if (!response.ok || !body || typeof body !== 'object' || !('result' in body))
-                throw new Error(typeof body?.message === 'string' ? body.message : '受管插件 Worker 调用失败');
+                throw new Error(
+                  typeof body?.message === 'string' ? body.message : '受管插件 Worker 调用失败',
+                );
               notify('forge.plugin_call', {
                 package: binding.package,
                 version: binding.version,
@@ -121,7 +125,12 @@ export function apply(ctx, config) {
     disposers.push(
       ctx.on('tools/pre-execute', (exec, next) => {
         if (!approvalTools.has(exec.name)) return next();
-        notify('forge.policy', { tool: exec.name, callId: exec.callId, arguments: exec.arguments, decision: 'ask' });
+        notify('forge.policy', {
+          tool: exec.name,
+          callId: exec.callId,
+          arguments: exec.arguments,
+          decision: 'ask',
+        });
         return {
           kind: 'ask',
           reason: '该插件操作会写入 CRM 客户档案，需要用户批准',

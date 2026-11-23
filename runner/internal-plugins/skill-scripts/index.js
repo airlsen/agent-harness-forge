@@ -1,4 +1,4 @@
-import { runSkillScript } from '../skill-script-runtime/index.js';
+import { runSkillScript } from '../shared/skill-script-runtime/index.js';
 
 export const name = 'skill-scripts';
 export const inject = ['tools'];
@@ -19,11 +19,19 @@ export async function apply(ctx, config) {
       required: ['skill', 'path'],
       additionalProperties: false,
     },
-    output: { schema: { type: 'object' }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
+    output: {
+      schema: { type: 'object' },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+    },
     execute: async ({ skill, path, args }) => {
       const item = skills.get(skill);
       if (!item || !item.scripts.includes(path)) throw new Error('此 Skill 未授权该脚本');
-      return runSkillScript(item.dir, path, args ?? [], config.workspace ? { outputRoot: config.workspace } : {});
+      return runSkillScript(
+        item.dir,
+        path,
+        args ?? [],
+        config.workspace ? { outputRoot: config.workspace } : {},
+      );
     },
   });
 }
