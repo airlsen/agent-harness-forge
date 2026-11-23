@@ -10,6 +10,7 @@ import { mkdtemp, mkdir, readFile, stat, writeFile, rm, symlink } from 'node:fs/
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
+import { fixtureManifest } from './fixtures.mjs';
 
 const dir = await mkdtemp(join(tmpdir(), 'forge-contract-'));
 process.env.FORGE_RUNNER_DATA_DIR = join(dir, 'sessions');
@@ -27,16 +28,12 @@ await writeFile(join(codeRoot, 'alpha', '.git', 'refs', 'heads', 'main'), 'a'.re
 await writeFile(join(codeRoot, 'beta', 'lib', 'beta.py'), 'BETA_MARKER = True\n');
 await writeFile(join(dir, 'outside.txt'), 'outside-sentinel\n');
 await symlink(join(dir, 'outside.txt'), join(codeRoot, 'alpha', 'escape.txt'));
-const {
-  DshKernel,
-  compactionConfig,
-  effectiveOutputTokens,
-  turnTimeoutSeconds,
-  syncSkillDraft,
-  BASE_TOOLS,
-  SEARCH_TOOLS,
-} = await import('../src/kernel/dsh-kernel.ts');
-const kernel = new DshKernel(),
+const { SessionKernel, effectiveOutputTokens, turnTimeoutSeconds, syncSkillDraft } =
+  await import('../src/kernel/session-kernel.ts');
+const { BASE_TOOLS, SEARCH_TOOLS } = await import('../src/kernel/toolset.ts');
+const { compactionConfig } = await import('../src/kernel/dsh/index.ts');
+let restarted;
+const kernel = new SessionKernel(),
   requests = [],
   checks = [];
 function check(name, fn) {
@@ -286,46 +283,33 @@ const server = http.createServer(async (req, res) => {
 });
 server.listen(0, '127.0.0.1');
 await once(server, 'listening');
-const bundle = {
-  profile_patch: {
-    systemPrompt: {
-      identity: 'Integration contract test only.',
-      domain: 'Do not contact external services.',
-    },
+const manifest = fixtureManifest({
+  systemPrompt: {
+    identity: 'Integration contract test only.',
+    domain: 'Do not contact external services.',
   },
-  plugin_mounts: ['forge-runtime'],
-  skill_files: {},
-  mcp: [],
-  model_route: { primary: 'default', fallbacks: [] },
-  policy_ref: 'test',
-  meta: {
-    // 与「通用助手」一样只声明 current_time：文件读写与搜索由 Runner 基础能力补齐
-    builtin_tools: ['current_time'],
-    policy: {
-      allowedTools: ['current_time', 'workspace_list', 'workspace_read', 'workspace_write', 'bash'],
-      // 旧版本保存的策略字段：已下线，必须被忽略（写入不再逐次确认）
-      requireWriteApproval: true,
-      requestTimeoutSeconds: 20,
-      approvalTimeoutSeconds: 2,
-      maxOutputTokens: 512,
-    },
+  // 与「通用助手」一样只声明 current_time：文件读写与搜索由 Runner 基础能力补齐
+  tools: { builtin: ['current_time'] },
+  policy: {
+    allowedTools: ['current_time', 'workspace_list', 'workspace_read', 'workspace_write', 'bash'],
+    // 旧版本保存的策略字段：已下线，必须被忽略（写入不再逐次确认）
+    requireWriteApproval: true,
+    requestTimeoutSeconds: 20,
+    approvalTimeoutSeconds: 2,
+    maxOutputTokens: 512,
   },
-};
+});
 let id,
   allEvents = [],
   // 任何意外出现的确认请求都会被拒绝，从而让写入失败、断言暴露问题
   approvalAction = 'deny';
 try {
-  const handle = await kernel.createSession(
-    bundle,
-    { tenantId: 'test', userId: 'test', roles: [] },
-    {
-      baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
-      model: 'protocol-fixture-not-a-model',
-      apiKey: 'test-key-do-not-use',
-      contextWindow: 64000,
-    },
-  );
+  const handle = await kernel.createSession(manifest, {
+    baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+    model: 'protocol-fixture-not-a-model',
+    apiKey: 'test-key-do-not-use',
+    contextWindow: 64000,
+  });
   id = handle.sessionId;
   kernel.onEvent(id, (event) => {
     allEvents.push(event);
@@ -334,7 +318,7 @@ try {
   });
   async function turn(text, model, codeProjects) {
     const start = allEvents.length;
-    await kernel.sendTurn(id, text, undefined, model, codeProjects);
+    await kernel.sendTurn(id, text, model, codeProjects);
     return allEvents.slice(start);
   }
   check('a whole turn may run 30 minutes by default; env overrides with a 60s floor', () => {
@@ -454,7 +438,7 @@ try {
     );
   });
   check('actual artifact written', () => assert.ok(events.some((event) => event.kind === 'files')));
-  assert.equal(await kernel.readFile(id, 'report.md'), '# Integration fixture\n');
+  assert.equal(await kernel.files.readFile(id, 'report.md'), '# Integration fixture\n');
   events = await turn('TIME');
   check('current_time executor returns an actual ISO time', () =>
     assert.ok(JSON.parse(events.find((event) => event.kind === 'tool_result').payload.result).iso),
@@ -488,8 +472,8 @@ try {
       { path: 'report.md', bytes: 22, description: '集成报告' },
     ]);
   });
-  const listed = (await kernel.listFiles(id)).find((file) => file.path === 'report.md');
-  const raw = await kernel.readRaw(id, 'report.md');
+  const listed = (await kernel.files.listFiles(id)).find((file) => file.path === 'report.md');
+  const raw = await kernel.files.readRaw(id, 'report.md');
   check('Runner lists MIME/mtime and serves exact raw bytes', () => {
     assert.equal(listed.sha256, createHash('sha256').update('# Integration fixture\n').digest('hex'));
     assert.equal(listed.mime, 'text/markdown');
@@ -501,17 +485,17 @@ try {
   await mkdir(join(workspaceDir, 'nested', 'deep'), { recursive: true });
   await writeFile(join(workspaceDir, 'nested', 'deep', 'note.txt'), 'bye');
   await writeFile(join(workspaceDir, 'nested', 'keep.txt'), 'keep');
-  await kernel.deleteFile(id, 'nested/deep/note.txt');
-  const afterDelete = (await kernel.listFiles(id)).map((file) => file.path);
+  await kernel.files.deleteFile(id, 'nested/deep/note.txt');
+  const afterDelete = (await kernel.files.listFiles(id)).map((file) => file.path);
   check('deleting a file removes it and prunes only empty parent directories', () => {
     const paths = afterDelete;
     assert.ok(!paths.includes('nested/deep/note.txt'));
     assert.ok(paths.includes('nested/keep.txt'));
   });
-  await assert.rejects(() => kernel.deleteFile(id, 'nested/deep/note.txt'), /不存在/);
-  await assert.rejects(() => kernel.deleteFile(id, '../runtime.patch.json'), /超出/);
-  await assert.rejects(() => kernel.deleteFile(id, 'nested'), /普通文件/);
-  await kernel.deleteFile(id, 'nested/keep.txt');
+  await assert.rejects(() => kernel.files.deleteFile(id, 'nested/deep/note.txt'), /不存在/);
+  await assert.rejects(() => kernel.files.deleteFile(id, '../runtime.patch.json'), /超出/);
+  await assert.rejects(() => kernel.files.deleteFile(id, 'nested'), /普通文件/);
+  await kernel.files.deleteFile(id, 'nested/keep.txt');
   events = await turn('WRITE DENY');
   check('legacy requireWriteApproval policy is ignored: write lands without a confirmation step', () => {
     assert.equal(
@@ -520,20 +504,20 @@ try {
     );
     assert.equal(events.find((event) => event.kind === 'tool_result')?.payload.isError, false);
   });
-  assert.ok((await kernel.listFiles(id)).some((file) => file.path === 'denied.md'));
-  await kernel.deleteFile(id, 'denied.md');
+  assert.ok((await kernel.files.listFiles(id)).some((file) => file.path === 'denied.md'));
+  await kernel.files.deleteFile(id, 'denied.md');
   events = await turn('ESCAPE');
   check('path traversal rejected by actual tool executor', () =>
     assert.equal(events.find((event) => event.kind === 'tool_result')?.payload.isError, true),
   );
-  await assert.rejects(() => kernel.readFile(id, '../runtime.patch.json'));
+  await assert.rejects(() => kernel.files.readFile(id, '../runtime.patch.json'));
   const sentinel = join(dir, 'sentinel.txt');
   await writeFile(sentinel, 'protected');
   await symlink(sentinel, join(dir, 'sessions', id, 'workspace', 'link.txt'));
-  await assert.rejects(() => kernel.readFile(id, 'link.txt'));
-  await assert.rejects(() => kernel.readRaw(id, 'link.txt'), /符号链接/);
-  await assert.rejects(() => kernel.readRaw(id, '../runtime.patch.json'), /超出/);
-  await assert.rejects(() => kernel.readRaw(id, 'missing.png'), /不存在/);
+  await assert.rejects(() => kernel.files.readFile(id, 'link.txt'));
+  await assert.rejects(() => kernel.files.readRaw(id, 'link.txt'), /符号链接/);
+  await assert.rejects(() => kernel.files.readRaw(id, '../runtime.patch.json'), /超出/);
+  await assert.rejects(() => kernel.files.readRaw(id, 'missing.png'), /不存在/);
   check('Runner artifact reader also rejects traversal and symlinks', () => assert.ok(true));
   const toolResult = (list) => list.find((event) => event.kind === 'tool_result')?.payload;
   events = await turn('BASH_SAFE');
@@ -552,8 +536,8 @@ try {
     assert.equal(result?.isError, true);
     assert.match(result?.result ?? '', /安全策略|系统核心路径/);
   });
-  assert.ok(!(await kernel.listFiles(id)).some((file) => file.path === 'pwned.txt'));
-  assert.ok(!(await kernel.listFiles(id)).some((file) => file.path === 'bash-denied.txt'));
+  assert.ok(!(await kernel.files.listFiles(id)).some((file) => file.path === 'pwned.txt'));
+  assert.ok(!(await kernel.files.listFiles(id)).some((file) => file.path === 'bash-denied.txt'));
   events = await turn('GREP');
   check('DSH grep (pinned search plugin) searches the session workspace', () => {
     const result = toolResult(events);
@@ -592,13 +576,10 @@ try {
     assert.equal(requests.at(-1).messages[0].content.includes('关联代码'), false);
   });
   await assert.rejects(
-    () => kernel.sendTurn(id, 'CODE_GREP', undefined, undefined, ['missing-project']),
+    () => kernel.sendTurn(id, 'CODE_GREP', undefined, ['missing-project']),
     /代码项目不存在/,
   );
-  await assert.rejects(
-    () => kernel.sendTurn(id, 'CODE_GREP', undefined, undefined, ['../alpha']),
-    /代码项目不存在/,
-  );
+  await assert.rejects(() => kernel.sendTurn(id, 'CODE_GREP', undefined, ['../alpha']), /代码项目不存在/);
   events = await turn('CODE_GREP', undefined, ['alpha']);
   check('associating a project restarts dsh with read-only code tools and project context', () => {
     assert.ok(events.some((event) => event.kind === 'code_projects'));
@@ -702,7 +683,7 @@ try {
     contextWindow: 32000,
   };
   await assert.rejects(
-    () => kernel.sendTurn(id, 'PLAIN', undefined, { model: 'missing-base-url' }),
+    () => kernel.sendTurn(id, 'PLAIN', { model: 'missing-base-url' }),
     (error) => error.statusCode === 422,
   );
   assert.equal(kernel.isBusy(id), false);
@@ -779,9 +760,9 @@ try {
     assert.ok(restored.some((event) => event.kind === 'message')),
   );
   await kernel.disposeSession(id);
-  assert.equal(await kernel.readFile(id, 'report.md'), '# Integration fixture\n');
-  const restarted = new DshKernel();
-  assert.equal(await restarted.readFile(id, 'report.md'), '# Integration fixture\n');
+  assert.equal(await kernel.files.readFile(id, 'report.md'), '# Integration fixture\n');
+  restarted = new SessionKernel();
+  assert.equal(await restarted.files.readFile(id, 'report.md'), '# Integration fixture\n');
   check('artifacts remain readable after archive and Runner reconstruction', () =>
     assert.equal(kernel.size, 0),
   );
@@ -792,27 +773,49 @@ try {
     apiKey: 'test-key-do-not-use',
     contextWindow: 64000,
   });
-  const userCtx = { tenantId: 'test', userId: 'test', roles: [] };
   await assert.rejects(
     () => restarted.sendTurn(id, 'PLAIN'),
     (error) => error.statusCode === 404,
   );
-  await assert.rejects(
-    () =>
-      restarted.restoreSession('00000000-0000-4000-8000-000000000000', bundle, userCtx, fixtureModel('m')),
+  // 执行日志：Runner 重启后、会话尚未恢复时，控制面仍能从磁盘补读重启前产生的事件
+  const durableBefore = allEvents.filter((event) => !event.kind.endsWith('_delta'));
+  const lastSeqBefore = durableBefore.at(-1).seq;
+  const fromDisk = restarted.eventsAfter(id, lastSeqBefore - 5);
+  check('journal: an unloaded session serves persisted events from disk by seq', () => {
+    assert.deepEqual(
+      fromDisk.map((event) => event.seq),
+      durableBefore.slice(-5).map((event) => event.seq),
+    );
+    assert.equal(fromDisk.at(-1).kind, 'done');
+    assert.deepEqual(restarted.eventsAfter(id, lastSeqBefore), []);
+  });
+  check('journal: durable events have strictly increasing seq; deltas take no number of their own', () => {
+    durableBefore.forEach(
+      (event, index) => index && assert.equal(event.seq, durableBefore[index - 1].seq + 1),
+    );
+    const delta = allEvents.find((event) => event.kind === 'message_delta');
+    assert.ok(delta && durableBefore.some((event) => event.seq === delta.seq));
+    assert.ok(!fromDisk.some((event) => event.kind.endsWith('_delta')));
+  });
+  assert.throws(
+    () => restarted.eventsAfter('22222222-2222-4222-8222-222222222222', 0),
     (error) => error.statusCode === 404,
   );
   await assert.rejects(
-    () => restarted.restoreSession('../escape', bundle, userCtx, fixtureModel('m')),
+    () => restarted.restoreSession('00000000-0000-4000-8000-000000000000', manifest, fixtureModel('m')),
+    (error) => error.statusCode === 404,
+  );
+  await assert.rejects(
+    () => restarted.restoreSession('../escape', manifest, fixtureModel('m')),
     (error) => error.statusCode === 422,
   );
   await assert.rejects(
-    () => restarted.restoreSession(id, bundle, userCtx, { model: 'missing-base-url' }),
+    () => restarted.restoreSession(id, manifest, { model: 'missing-base-url' }),
     (error) => error.statusCode === 422,
   );
   const [restoredHandle, concurrentHandle] = await Promise.all([
-    restarted.restoreSession(id, bundle, userCtx, fixtureModel('restored-fixture-model')),
-    restarted.restoreSession(id, bundle, userCtx, fixtureModel('restored-fixture-model')),
+    restarted.restoreSession(id, manifest, fixtureModel('restored-fixture-model')),
+    restarted.restoreSession(id, manifest, fixtureModel('restored-fixture-model')),
   ]);
   const restartedEvents = [];
   restarted.onEvent(id, (event) => restartedEvents.push(event));
@@ -831,8 +834,38 @@ try {
         `history keeps ${earlier}`,
       );
   });
+  check('journal: seq continues across a Runner restart instead of starting over', () => {
+    // 恢复时引擎启动阶段的事件（插件加载等）同样接着编号
+    assert.ok(restoredHandle.lastSeq >= lastSeqBefore);
+    assert.equal(restarted.eventsAfter(id, 0)[0].seq <= lastSeqBefore, true);
+    assert.equal(restarted.eventsAfter(id, lastSeqBefore)[0].seq, lastSeqBefore + 1);
+  });
+  // 回合归属在 Runner：startTurn 立即返回，回合在后台执行到底；调用方不订阅也不影响执行与记录
+  const submitted = restarted.startTurn(id, 'PLAIN');
+  assert.throws(
+    () => restarted.startTurn(id, 'PLAIN'),
+    (error) => error.statusCode === 409,
+  );
+  assert.equal(restarted.state(id).turnActive, true);
+  await new Promise((resolve) => {
+    const off = restarted.onEvent(id, (event) => event.kind === 'done' && (off(), resolve()));
+  });
+  const detached = restarted.eventsAfter(id, submitted.after);
+  check('journal: a submitted turn runs detached and is fully recoverable from its start seq', () => {
+    assert.equal(detached[0].seq, submitted.after + 1);
+    assert.ok(detached.some((event) => event.kind === 'message'));
+    assert.deepEqual(detached.at(-1).payload, { status: 'idle', turnId: submitted.turnId });
+    assert.equal(restarted.state(id).turnActive, false);
+  });
+  restarted.ackEvents(id, detached.at(-2).seq);
+  check('journal: acknowledged events are dropped, the rest stay readable', () => {
+    assert.deepEqual(
+      restarted.eventsAfter(id, 0).map((event) => event.seq),
+      [detached.at(-1).seq],
+    );
+  });
   // 已在内存中：替换为新配置，下一轮以新配置重启并接续同一份日志
-  await restarted.restoreSession(id, bundle, userCtx, fixtureModel('reconfigured-fixture-model'));
+  await restarted.restoreSession(id, manifest, fixtureModel('reconfigured-fixture-model'));
   const beforeReconfigure = requests.length;
   await restarted.sendTurn(id, 'PLAIN');
   check('restoreSession on a live session swaps the config and resumes on the next turn', () => {
@@ -848,34 +881,34 @@ try {
   await mkdir(join(dir, 'sessions', corruptId, 'session-log'), { recursive: true });
   await writeFile(join(dir, 'sessions', corruptId, 'session-log', 'garbage.jsonl'), 'not a dsh log\n');
   await assert.rejects(
-    () => restarted.restoreSession(corruptId, bundle, userCtx, fixtureModel('m')),
+    () => restarted.restoreSession(corruptId, manifest, fixtureModel('m')),
     (error) => error.statusCode === 410,
   );
   check('unrecoverable session log fails with 410 and leaves no half-restored session', () =>
     assert.equal(restarted.has(corruptId), false),
   );
-  const authoring = {
-    meta: { skillAuthoring: { content: 'v1', files: [{ path: 'references/a.md', content: 'a1' }] } },
-  };
+  const authoring = fixtureManifest({
+    skillAuthoring: { content: 'v1', files: [{ path: 'references/a.md', content: 'a1' }] },
+  });
   syncSkillDraft(authoring, { action: 'update_draft', content: 'v2', summary: 's' });
   syncSkillDraft(authoring, { action: 'write_file', path: 'references/a.md', content: 'a2' });
   syncSkillDraft(authoring, { action: 'write_file', path: 'scripts/run.py', content: 'print(1)' });
   syncSkillDraft(authoring, { action: 'delete_file', path: 'references/a.md' });
-  syncSkillDraft({ meta: {} }, { action: 'update_draft', content: 'ignored' });
-  check('agent draft edits keep the bundle snapshot current for later dsh restarts', () =>
-    assert.deepEqual(authoring.meta.skillAuthoring, {
+  syncSkillDraft(fixtureManifest(), { action: 'update_draft', content: 'ignored' });
+  check('agent draft edits keep the manifest draft current for later engine restarts', () =>
+    assert.deepEqual(authoring.skillAuthoring, {
       content: 'v2',
       files: [{ path: 'scripts/run.py', content: 'print(1)' }],
     }),
   );
-  await restarted.purgeWorkspace(id);
-  const purgedList = await restarted.listFiles(id);
+  await restarted.files.purgeWorkspace(id);
+  const purgedList = await restarted.files.listFiles(id);
   const purgedDir = await stat(join(dir, 'sessions', id, 'workspace'));
   check('retention purge empties the workspace but keeps it usable', () => {
     assert.deepEqual(purgedList, []);
     assert.ok(purgedDir.isDirectory());
   });
-  await assert.rejects(() => restarted.purgeWorkspace('not-a-session-id'), /会话标识无效/);
+  await assert.rejects(() => restarted.files.purgeWorkspace('not-a-session-id'), /会话标识无效/);
   console.log(
     JSON.stringify({
       scope: 'test-only protocol fixture; NOT real-model acceptance',
@@ -892,6 +925,7 @@ try {
   process.exitCode = 1;
 } finally {
   await kernel.dispose();
+  await restarted?.dispose();
   server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
   await rm(dir, { recursive: true, force: true });

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { apply } from '../skill-scripts-plugin/index.js';
 import { OUTPUTS_DIR, resetSandboxProbe, runSkillScript, sandboxMode } from '../skill-script-runtime/index.js';
 import { resolveCapabilities } from '../src/kernel/capabilities.ts';
-import { sessionToolset } from '../src/kernel/dsh-kernel.ts';
+import { sessionToolset } from '../src/kernel/toolset.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'forge-script-check-'));
 try {

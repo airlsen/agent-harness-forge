@@ -11,15 +11,18 @@
 import re
 from pathlib import Path
 
+from ..core.contracts import limit
+
 FILE_DIRS: dict[str, frozenset[str]] = {
     "references": frozenset({".md", ".txt"}),
     "assets": frozenset({".md", ".txt", ".json", ".csv", ".yaml", ".yml", ".html"}),
     "scripts": frozenset({".py", ".js", ".sh"}),
 }
 FILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,119}")
-MAX_FILE_BYTES = 120_000
-MAX_FILES = 20
-MAX_TOTAL_BYTES = 512_000
+# 附加文件上限来自平台契约，Runner 物化快照时使用同一份
+MAX_FILE_BYTES = limit("skillFileBytes")
+MAX_FILES = limit("skillFiles")
+MAX_TOTAL_BYTES = limit("skillFilesTotalBytes")
 SOURCES = {"manual", "agent", "restore"}
 
 

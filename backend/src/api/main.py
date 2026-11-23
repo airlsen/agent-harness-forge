@@ -47,6 +47,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # 执行策略中设置的关联代码目录
         saved = await db.get(PlatformSetting, "codeRoot")
         runner_client.code_root = str((saved.value or {}).get("root") or "") if saved else ""
+    # 上次停止时未结束的会话：先问 Runner，再接回、补录或标记中断
+    await session_service.reconcile()
     # 按保留期限定期清理过期会话文件
     cleanup = asyncio.create_task(file_service.retention_loop(runner_client))
     yield

@@ -32,7 +32,7 @@ if not env.exists():
         "FORGE_RUNNER_TOKEN="
         + secrets.token_urlsafe(40)
         + "\nFORGE_RUNNER_ENDPOINTS=http://127.0.0.1:9000\nRUNNER_MAX_SESSIONS=4\n"
-        # 闲置回收：空闲超时回收 dsh 进程、热进程上限（见 runner/src/kernel/dsh-kernel.ts）
+        # 闲置回收：空闲超时回收 dsh 进程、热进程上限（见 runner/src/kernel/session-kernel.ts）
         + "RUNNER_SESSION_IDLE_TTL_SECONDS=900\nRUNNER_MAX_WARM_SESSIONS=20\n"
         # 会话「关联代码」的根目录（Runner 读取，一级子目录即可选项目，只读）
         + "FORGE_CODE_ROOT=/usr/data/git\n"

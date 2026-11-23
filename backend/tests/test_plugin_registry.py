@@ -231,11 +231,7 @@ def test_current_policy_restricts_frozen_bundle_tools():
     bundle = Bundle(
         profile_patch={},
         plugin_mounts=["forge-runtime", "forge-plugin-bridge"],
-        skill_files={},
-        mcp=[],
-        model_route={},
         policy_ref="previous-policy",
-        input_schema=None,
         meta={
             "builtin_tools": ["current_time", "workspace_write"],
             "plugin_tools": ["crm_find_customer", "crm_add_customer_note"],

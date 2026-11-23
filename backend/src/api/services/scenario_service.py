@@ -251,7 +251,7 @@ async def ensure_general_assistant_web(db) -> None:
                         }
                 updated["bundle"] = bundle
                 try:
-                    version.bundle_hash = Bundle(**bundle).bundle_hash
+                    version.bundle_hash = Bundle.from_dict(bundle).bundle_hash
                 except TypeError:
                     pass  # 早期快照字段不全：仅更新内容，摘要保持原值
             version.bundle_json = updated

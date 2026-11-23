@@ -15,14 +15,16 @@
  * 缺少的快照以 409 + missingSkills 告知控制面，控制面补发这几个 Skill 的全文后重试一次。
  */
 import { createHash } from 'node:crypto';
+import { LIMITS } from './platform-contract.js';
 
-export const MAX_SKILLS = 20;
+/** 与控制面共用的上限来自平台契约（contracts/platform.json），两端不再各写一份 */
+export const MAX_SKILLS = LIMITS.sessionSkills;
+export const MAX_SKILL_FILES = LIMITS.skillFiles;
+export const MAX_SKILL_FILE_BYTES = LIMITS.skillFileBytes;
+export const MAX_SKILL_FILES_TOTAL_BYTES = LIMITS.skillFilesTotalBytes;
+export const MAX_MCP_SERVERS = LIMITS.sessionMcpServers;
+/** 以下只是 Runner 侧的防御性上限（控制面有自己更严格的校验），不进契约 */
 export const MAX_SKILL_BYTES = 64_000;
-/** 与控制面 skill_files 一致：每个 Skill 最多 20 个附加文件、单个 120 KB、合计 512 KB */
-export const MAX_SKILL_FILES = 20;
-export const MAX_SKILL_FILE_BYTES = 120_000;
-export const MAX_SKILL_FILES_TOTAL_BYTES = 512_000;
-export const MAX_MCP_SERVERS = 10;
 export const MAX_MCP_TOOLS = 200;
 /** DSH 技能名语法（dsh-skill isSkillName）：小写 kebab-case */
 export const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -35,11 +37,9 @@ export const SKILL_FILE_PATH =
   /^(references|assets)\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}$|^scripts\/[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(?:py|js|sh)$/;
 const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
-export const WEB_SEARCH_PROVIDERS = {
-  'deepseek-official': '@deepseek-ai/dsh-web-search-deepseek',
-  'deepseek-search-api': '@deepseek-ai/dsh-web-deepseek-api',
-} as const;
-export type WebSearchProvider = keyof typeof WEB_SEARCH_PROVIDERS;
+/** 联网搜索提供方标识（控制面配置值）；对应哪个 dsh 包由 DSH 适配层决定 */
+export const WEB_SEARCH_PROVIDERS = ['deepseek-official', 'deepseek-search-api'] as const;
+export type WebSearchProvider = (typeof WEB_SEARCH_PROVIDERS)[number];
 
 export interface SkillFile {
   /** Skill 目录内的相对路径，如 references/rules.md */
@@ -137,7 +137,8 @@ function resolveSkillFiles(name: string, raw: Record<string, unknown>): SkillFil
     total += bytes(content);
     if (!SKILL_FILE_PATH.test(path) || seen.has(path) || bytes(content) > MAX_SKILL_FILE_BYTES)
       throw failure(`Skill ${name} 的附加文件无效：${path}`);
-    if (total > MAX_SKILL_FILES_TOTAL_BYTES) throw failure(`Skill ${name} 的附加文件合计超过 512 KB`);
+    if (total > MAX_SKILL_FILES_TOTAL_BYTES)
+      throw failure(`Skill ${name} 的附加文件合计超过 ${Math.round(MAX_SKILL_FILES_TOTAL_BYTES / 1000)} KB`);
     seen.add(path);
     return { path, content };
   });
@@ -305,7 +306,10 @@ function resolveWeb(raw: unknown): RuntimeWeb | null {
   if (!search && !fetch) return null;
   const web: RuntimeWeb = { search, fetch, source: source(raw.source) };
   if (search) {
-    if (typeof raw.provider !== 'string' || !(raw.provider in WEB_SEARCH_PROVIDERS))
+    if (
+      typeof raw.provider !== 'string' ||
+      !(WEB_SEARCH_PROVIDERS as readonly string[]).includes(raw.provider)
+    )
       throw failure('联网搜索提供方无效');
     web.provider = raw.provider as WebSearchProvider;
     web.apiKey = text(raw.apiKey, 2048, '联网搜索密钥')!;

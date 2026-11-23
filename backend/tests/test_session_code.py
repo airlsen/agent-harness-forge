@@ -112,8 +112,13 @@ async def test_runner_client_sends_the_selection_and_lists_projects(monkeypatch)
         if request.url.path == "/v1/code/projects":
             return httpx.Response(200, json={"root": "/usr/data/git", "available": True, "projects": []})
         if request.url.path == "/v1/sessions":
-            return httpx.Response(200, json={"sessionId": "s1"})
-        return httpx.Response(200, text='data: {"kind":"done","payload":{"status":"idle"}}\n\n')
+            return httpx.Response(200, json={"sessionId": "s1", "lastSeq": 0})
+        if request.url.path == "/v1/sessions/s1/turns":
+            return httpx.Response(200, json={"turnId": "t1", "after": 0})
+        assert request.url.path == "/v1/sessions/s1/events" and request.url.params["after"] == "0"
+        return httpx.Response(
+            200, text='data: {"seq":1,"kind":"done","payload":{"status":"idle","turnId":"t1"}}\n\n'
+        )
 
     client = RunnerClient()
     transport = httpx.MockTransport(handler)
@@ -121,14 +126,39 @@ async def test_runner_client_sends_the_selection_and_lists_projects(monkeypatch)
         client, "client", lambda **_: httpx.AsyncClient(base_url="http://runner", transport=transport)
     )
     assert (await client.code_projects())["root"] == "/usr/data/git"
-    await client.create_session({}, {}, {"model": "m"}, ["alpha"])
+    bundle = {
+        "profile_patch": {"systemPrompt": {"identity": "助手"}},
+        "plugin_mounts": ["forge-runtime"],
+        "policy_ref": "p1",
+        # 早期快照的废弃字段与会话记录字段都不进入下发的清单
+        "skill_files": {},
+        "model_route": {},
+        "meta": {"builtin_tools": ["current_time"], "scenarioName": "通用助手", "isTest": True},
+    }
+    await client.create_session(bundle, {"model": "m"}, ["alpha"])
     assert [event async for event in client.events("s1", "hi", None, [])][0]["kind"] == "done"
     [event async for event in client.events("s1", "hi")]
     import json
 
-    assert json.loads(seen[1][2])["codeProjects"] == ["alpha"]
-    assert json.loads(seen[2][2]) == {"message": "hi", "codeProjects": []}
-    assert json.loads(seen[3][2]) == {"message": "hi"}
+    created = json.loads(seen[1][2])
+    assert created["codeProjects"] == ["alpha"] and "bundle" not in created
+    assert created["manifest"] == {
+        "version": 1,
+        "systemPrompt": {"identity": "助手", "domain": "", "safety": [], "workspace": []},
+        "plugins": ["forge-runtime"],
+        "tools": {"builtin": ["current_time"], "plugin": []},
+        "pluginBindings": [],
+        "policy": {
+            "allowedTools": None,
+            "maxOutputTokens": None,
+            "requestTimeoutSeconds": None,
+            "approvalTimeoutSeconds": None,
+        },
+        "policyRef": "p1",
+        "skillAuthoring": None,
+    }
+    turns = [json.loads(body) for method, path, body in seen if path.endswith("/turns")]
+    assert turns == [{"message": "hi", "codeProjects": []}, {"message": "hi"}]
 
     # 控制面路由直接返回 Runner 的列表
     monkeypatch.setattr(code_routes, "runner_client", client)

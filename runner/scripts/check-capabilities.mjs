@@ -9,13 +9,15 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
+import { fixtureManifest } from './fixtures.mjs';
 
 const dir = await mkdtemp(join(tmpdir(), 'forge-caps-'));
 process.env.FORGE_RUNNER_DATA_DIR = join(dir, 'sessions');
 process.env.FORGE_CODE_ROOT = join(dir, 'code');
 // 模拟宿主上的敏感变量：stdio MCP 子进程不应看到
 process.env.FORGE_RUNNER_TOKEN = 'runner-token-sentinel';
-const { DshKernel, sessionToolset } = await import('../src/kernel/dsh-kernel.ts');
+const { SessionKernel } = await import('../src/kernel/session-kernel.ts');
+const { sessionToolset } = await import('../src/kernel/toolset.ts');
 const {
   resolveCapabilities,
   mcpPublicToolName,
@@ -229,7 +231,7 @@ await check('MCP public names mirror dsh-mcp-client (normalization + hash suffix
 });
 await check('session toolset adds skill/read, web tools and granted MCP tools only', () => {
   const toolset = sessionToolset(
-    { builtin_tools: ['current_time'], policy: { allowedTools: ['current_time'] } },
+    { tools: { builtin: ['current_time'] }, policy: { allowedTools: ['current_time'] } },
     false,
     resolveCapabilities(caps),
   );
@@ -251,7 +253,7 @@ await check('session toolset adds skill/read, web tools and granted MCP tools on
 await check('Skill workbench exposes editing tools only — no business skill snapshot', () => {
   // 编写会话不下发业务 Skill 快照（capabilities.skills 为空），因此不开放 skill / read / skill_run_script
   const workbench = sessionToolset(
-    { builtin_tools: ['skill_update_draft', 'skill_read_draft'],
+    { tools: { builtin: ['skill_update_draft', 'skill_read_draft'] },
       policy: { allowedTools: ['skill_update_draft', 'skill_read_draft'] } },
     false, resolveCapabilities({ skills: [] }),
   );
@@ -349,24 +351,17 @@ const server = http.createServer(async (req, res) => {
 });
 server.listen(0, '127.0.0.1');
 await once(server, 'listening');
-const bundle = {
-  profile_patch: { systemPrompt: { identity: 'Capability contract test.' } },
-  plugin_mounts: ['forge-runtime'],
-  skill_files: {},
-  mcp: [],
-  model_route: { primary: 'default', fallbacks: [] },
-  policy_ref: 'test',
-  meta: {
-    builtin_tools: ['current_time'],
-    policy: {
-      allowedTools: ['current_time'],
-      requestTimeoutSeconds: 20,
-      approvalTimeoutSeconds: 5,
-      maxOutputTokens: 512,
-    },
+const manifest = fixtureManifest({
+  systemPrompt: { identity: 'Capability contract test.' },
+  tools: { builtin: ['current_time'] },
+  policy: {
+    allowedTools: ['current_time'],
+    requestTimeoutSeconds: 20,
+    approvalTimeoutSeconds: 5,
+    maxOutputTokens: 512,
   },
-};
-const kernel = new DshKernel();
+});
+const kernel = new SessionKernel();
 const events = [];
 let id;
 let approval = 'approve';
@@ -377,14 +372,13 @@ const toolNames = () =>
     .sort();
 async function turn(text, capabilities) {
   const start = events.length;
-  await kernel.sendTurn(id, text, undefined, undefined, undefined, capabilities);
+  await kernel.sendTurn(id, text, undefined, undefined, capabilities);
   return events.slice(start);
 }
 const result = (list) => list.find((event) => event.kind === 'tool_result')?.payload;
 try {
   const handle = await kernel.createSession(
-    bundle,
-    { tenantId: 't', userId: 'u', roles: [] },
+    manifest,
     {
       baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
       model: 'fixture',
@@ -415,8 +409,7 @@ try {
     ]);
   });
   await check('runtime skills are registered at boot', async () => {
-    const replay = [];
-    for await (const event of kernel.replay(id)) replay.push(event);
+    const replay = kernel.eventsAfter(id, 0);
     assert.deepEqual(replay.find((event) => event.kind === 'skills_loaded')?.payload.skills, [
       'report-style',
     ]);
@@ -533,7 +526,7 @@ try {
     );
     // 新进程（缓存为空）只收到引用：同样要求补发全文
     assert.throws(
-      () => new DshKernel().resolveTurnCapabilities({ skills: [refOf(skill)] }),
+      () => new SessionKernel().resolveTurnCapabilities({ skills: [refOf(skill)] }),
       (error) => error.statusCode === 409 && error.missingSkills[0] === SNAPSHOT,
     );
   });

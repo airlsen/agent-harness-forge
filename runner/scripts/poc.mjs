@@ -12,7 +12,7 @@ const PREVIEW_ROOT = join(ROOT, 'data', 'preview', 'runs') + sep
 if (OUT !== join(ROOT, '.poc') && !OUT.startsWith(PREVIEW_ROOT)) {
   throw new Error('FORGE_POC_OUT must be inside runner/data/preview/runs/')
 }
-const DSH_BIN = join(ROOT, 'scripts', 'dsh-launch.mjs')
+const { DshProcess, DSH_BIN } = await import('../src/kernel/dsh/process.ts')
 const PLUGIN_ENTRY = join(ROOT, 'forge-poc-plugin', 'index.js')
 const state = { startedAt: new Date().toISOString(), finishedAt: null, checks: [], error: null }
 let failures = 0
@@ -49,7 +49,6 @@ async function main() {
   report(dump.code === 0 && !dump.stderr.includes('dsh:'), 'A1', 'sdk-minimal + forge patch 配置装配')
   report(dump.stdout.includes('forge-poc'), 'A2', '配置树包含 out-of-tree 插件')
 
-  const { DshProcess } = await import('../src/kernel/dsh-process.ts')
   const frames = []
   const proc = new DshProcess()
   proc.hostHandlers.set('approval/request', async () => ({ decision: 'denied', reason: 'poc host policy' }))

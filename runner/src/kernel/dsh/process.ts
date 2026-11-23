@@ -1,9 +1,16 @@
-/** dsh sdk-minimal 子进程 + 换行 JSON-RPC。控制面不直接依赖此协议。 */
+/** dsh 子进程 + 换行 JSON-RPC 传输层（只管收发与请求关联，不理解业务语义）。控制面不直接依赖此协议。 */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { fileURLToPath } from 'node:url';
+
+/**
+ * dsh CLI 入口：直接按包导出解析，随 node_modules 中的 dsh 版本走，不依赖 .bin 链接或启动包装器。
+ * （bin.js 以 import.meta.main 自启动，Node >=24 已支持，Runner 本身也要求 Node >=24.9。）
+ */
+export const DSH_BIN = fileURLToPath(import.meta.resolve('@deepseek-ai/dsh/lib/bin.js'));
 
 export interface DshSpawnOptions {
-  binPath: string;
+  binPath?: string;
   profile: string;
   patchPaths: string[];
   env?: NodeJS.ProcessEnv;
@@ -20,7 +27,7 @@ export class DshProcess {
   async start(opts: DshSpawnOptions): Promise<void> {
     if (this.child) throw new Error('dsh is already started');
     this.rawFrameSink = opts.rawFrameSink;
-    const args = [opts.binPath, '--profile', opts.profile];
+    const args = [opts.binPath ?? DSH_BIN, '--profile', opts.profile];
     for (const p of opts.patchPaths) args.push('--patch', p);
     // 显式复用当前 Node，避免子进程 shebang 意外落回系统旧版 Node。
     const child = spawn(process.execPath, args, {

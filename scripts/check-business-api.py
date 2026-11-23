@@ -260,6 +260,7 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
         from src.api.core.database import SessionFactory, init_db
         from src.api.models.agent_session import AgentSession, SessionEventIndex
         from src.api.models.approval_ticket import ApprovalTicket
+        from src.api.services.session_service import session_service
 
         with TestClient(app) as client:
 
@@ -633,7 +634,9 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                         )
                     )
                     await db.commit()
+                # 模拟控制面重启：迁移后由会话服务对账（先问 Runner，联系不上或没有执行会话则标记中断）
                 await init_db()
+                await session_service.reconcile()
 
             client.portal.call(seed_recovery)
             check(

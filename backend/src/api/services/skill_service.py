@@ -26,7 +26,7 @@ from ..models.skill import (
     SkillAuthoringSession,
     SkillRevision,
 )
-from ..services.runner_client import ensure_session, runner_client
+from ..services.runner_client import ensure_session, journal_seq, runner_client
 from .file_service import file_service
 from . import space_service
 from .settings_service import get_connection, get_policy
@@ -865,9 +865,6 @@ def authoring_system_prompt(history: str, unavailable: str = "") -> dict:
     }
 
 
-AUTHORING_USER_CTX_ROLES = ["admin"]
-
-
 async def _authoring_connection(db: AsyncSession, model_id: int | None, *, secret: bool = False) -> dict:
     """编辑对话使用的模型配置：选过模型用所选配置（须仍存在且已启用），否则跟随平台默认模型。
 
@@ -933,11 +930,7 @@ async def _authoring_runtime(
             "systemPrompt": authoring_system_prompt(history, problem or ""),
         },
         "plugin_mounts": ["forge-runtime", "skill-authoring"],
-        "skill_files": {},
-        "mcp": [],
-        "model_route": {"primary": "default", "fallbacks": []},
         "policy_ref": f"skill-workbench-v1-{policy_digest}",
-        "input_schema": None,
         "meta": {
             "builtin_tools": allowed,
             "policy": runtime_policy,
@@ -962,10 +955,6 @@ async def _authoring_runtime(
     return bundle, model_config, {"skills": [], "mcp": [], "web": None}
 
 
-def _authoring_user_ctx(created_by: str) -> dict:
-    return {"tenantId": "sandbox", "userId": created_by, "roles": AUTHORING_USER_CTX_ROLES}
-
-
 async def _recent_authoring_history(db: AsyncSession, skill_id: int) -> str:
     context = (
         await db.scalars(
@@ -981,9 +970,7 @@ async def _recent_authoring_history(db: AsyncSession, skill_id: int) -> str:
     return authoring_history(list(reversed(context)))
 
 
-async def create_authoring_session(
-    db: AsyncSession, skill_id: int, created_by: str, model_id: int | None = None
-) -> dict:
+async def create_authoring_session(db: AsyncSession, skill_id: int, model_id: int | None = None) -> dict:
     """新建对话：全新的执行上下文（草稿保留）。同一对话的后续轮次、Runner 重启、手动改草稿都接续这一条会话。
 
     model_id 为新对话选择的模型（与工作台一致）；不传则跟随平台默认模型。
@@ -993,9 +980,7 @@ async def create_authoring_session(
     if not revision:
         raise HTTPException(409, "Skill 草稿不存在")
     bundle, model_config, capabilities = await _authoring_runtime(db, skill, revision, model_id=model_id)
-    runner = await runner_client.create_session(
-        bundle, _authoring_user_ctx(created_by), model_config, capabilities=capabilities
-    )
+    runner = await runner_client.create_session(bundle, model_config, capabilities=capabilities)
     row = SkillAuthoringSession(
         skill_id=skill.id,
         runner_session_id=runner["sessionId"],
@@ -1009,9 +994,7 @@ async def create_authoring_session(
     return await authoring_session_view(db, row)
 
 
-async def _prepare_authoring_runner(
-    db: AsyncSession, session: SkillAuthoringSession, created_by: str
-) -> dict:
+async def _prepare_authoring_runner(db: AsyncSession, session: SkillAuthoringSession) -> dict:
     """发送前确保执行会话可用且持有最新草稿，返回本轮模型配置：
     - Runner 重启过：按最新草稿重新装配，从磁盘会话日志接续（dsh session/resume），上下文完整保留；
     - 草稿在对话外被修改过（手动编辑、上传文件、恢复版本）：替换为最新草稿，本轮重启接续同一份日志；
@@ -1022,19 +1005,17 @@ async def _prepare_authoring_runner(
         raise HTTPException(409, "Skill 草稿不存在")
     model_id = session.model_connection_id
     bundle, model_config, capabilities = await _authoring_runtime(db, skill, revision, model_id=model_id)
-    user_ctx = _authoring_user_ctx(created_by)
     if session.runner_session_id:
         try:
             if session.current_revision_id != revision.id:
                 await runner_client.restore_session(
-                    session.runner_session_id, bundle, user_ctx, model_config, capabilities=capabilities
+                    session.runner_session_id, bundle, model_config, capabilities=capabilities
                 )
             else:
                 await ensure_session(
                     runner_client,
                     session.runner_session_id,
                     bundle,
-                    user_ctx,
                     model_config,
                     capabilities=capabilities,
                     expected_policy_ref=bundle["policy_ref"],
@@ -1048,7 +1029,7 @@ async def _prepare_authoring_runner(
     bundle, model_config, capabilities = await _authoring_runtime(
         db, skill, revision, history, model_id=model_id
     )
-    runner = await runner_client.create_session(bundle, user_ctx, model_config, capabilities=capabilities)
+    runner = await runner_client.create_session(bundle, model_config, capabilities=capabilities)
     session.runner_session_id = runner["sessionId"]
     session.current_revision_id = revision.id
     return model_config
@@ -1207,10 +1188,8 @@ async def sync_trial_files(session_id: int, runner_session_id: str) -> dict | No
     return {"kind": "trial_files", "source": "tools", "payload": {"count": len(items)}}
 
 
-async def run_authoring_turn(
-    skill_id: int, session_id: int, message: str, created_by: str = "admin", model_id: int | None = None
-):
-    """Persist the user turn and stream DSH events while checkpointing revisions/messages.
+async def run_authoring_turn(skill_id: int, session_id: int, message: str, model_id: int | None = None):
+    """记录用户消息并转发执行事件，同时保存草稿检查点与对话消息。
 
     model_id：从本轮起使用的模型（与工作台一致，只在两轮之间切换）；不传沿用对话当前模型。
     """
@@ -1224,7 +1203,7 @@ async def run_authoring_turn(
             await _authoring_connection(db, model_id)
             session.model_connection_id = model_id
         # Runner 比对模型指纹：模型变化时以新配置重启 dsh 并接续同一份会话日志，上下文保留
-        model_config = await _prepare_authoring_runner(db, session, created_by)
+        model_config = await _prepare_authoring_runner(db, session)
         try:
             connection = await _authoring_connection(db, session.model_connection_id)
             model_ref = {
@@ -1242,9 +1221,12 @@ async def run_authoring_turn(
     partial_text, partial_reasoning = "", ""
     revisions: list[dict] = []  # 工具执行期间产生的草稿修订，挂到该次调用的工具结果上
     trial_synced = False  # 本轮结束时是否已同步试用文件
+    last_seq = 0  # 已处理到的 Runner 执行日志序号：本轮结束后回执
     try:
         # 每轮下发当前模型配置：模型管理中修改后，Runner 比对指纹并以新配置重启接续
         async for event in runner_client.events(runner_id, message, model_config):
+            if isinstance(event, dict) and (seq := journal_seq(event)) is not None:
+                last_seq = max(last_seq, seq)
             payload = event.get("payload") if isinstance(event, dict) else {}
             payload = payload if isinstance(payload, dict) else {}
             kind = event.get("kind") if isinstance(event, dict) else ""
@@ -1328,3 +1310,5 @@ async def run_authoring_turn(
         # 中途出错或断开：会话已恢复空闲后再补一次试用文件同步
         if not trial_synced:
             await sync_trial_files(session_id, runner_id)
+        # 编辑对话的过程已逐条落库：回执后 Runner 可清理这部分执行日志
+        await runner_client.ack(runner_id, last_seq)

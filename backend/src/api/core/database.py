@@ -154,6 +154,11 @@ async def init_db() -> None:
                 sync_conn.execute(text("ALTER TABLE agent_session ADD COLUMN code_projects JSON NULL"))
             if "capability_selection" not in existing:
                 sync_conn.execute(text("ALTER TABLE agent_session ADD COLUMN capability_selection JSON NULL"))
+            # Runner 执行日志续读位置：旧会话从 0 开始（Runner 侧的执行日志同样是新的）
+            if "runner_event_seq" not in existing:
+                sync_conn.execute(
+                    text("ALTER TABLE agent_session ADD COLUMN runner_event_seq BIGINT NOT NULL DEFAULT 0")
+                )
 
         await conn.run_sync(ensure_session_file_columns)
 
@@ -214,12 +219,8 @@ async def init_db() -> None:
                     )
 
         await conn.run_sync(ensure_space_columns)
-    # 重启时关闭所有孤立审批，为未完成的运行保留明确的中断记录。
     import json
-    from datetime import datetime, timezone
-    from sqlalchemy import select, func
-    from ..models.agent_session import AgentSession, SessionEventIndex
-    from ..models.approval_ticket import ApprovalTicket
+    from sqlalchemy import select
     from ..models.platform import PlatformSetting
     from ..models.agent_scenario import AgentScenario, AgentScenarioVersion
 
@@ -227,39 +228,7 @@ async def init_db() -> None:
 
     async with SessionFactory() as db:
         await ensure_public_space(db)
-        active = (await db.scalars(select(AgentSession).where(AgentSession.status == "running"))).all()
-        pending = (await db.scalars(select(ApprovalTicket).where(ApprovalTicket.status == "pending"))).all()
-        affected = {row.id for row in active} | {ticket.session_id for ticket in pending}
-        for session_id in affected:
-            cursor = (
-                await db.scalar(
-                    select(func.max(SessionEventIndex.seq)).where(SessionEventIndex.session_id == session_id)
-                )
-                or 0
-            )
-
-            def append(kind, payload, source="system"):
-                nonlocal cursor
-                cursor += 1
-                db.add(
-                    SessionEventIndex(
-                        session_id=session_id, seq=cursor, kind=kind, source=source, attrs=payload
-                    )
-                )
-
-            for ticket in (ticket for ticket in pending if ticket.session_id == session_id):
-                ticket.status, ticket.decided_at = "cancelled", datetime.now(timezone.utc)
-                append(
-                    "approval_resolved",
-                    {"ticketId": ticket.id, "action": "cancelled", "reason": "控制面重启"},
-                    "tools",
-                )
-            for row in (row for row in active if row.id == session_id):
-                row.status, row.ended_at = "interrupted", datetime.now(timezone.utc)
-                append(
-                    "error", {"message": "控制面重启，未完成的任务已标记中断；可继续发送消息，上下文会保留"}
-                )
-                append("done", {"status": "error", "reason": "control-plane-restart"})
+        # 运行中会话的对账（接回 / 补录 / 标记中断）需要询问 Runner，由 session_service.reconcile 在启动时完成
 
         # Additive compatibility for existing platform policies and official scenarios to include bash
         policy_row = await db.get(PlatformSetting, "policy")

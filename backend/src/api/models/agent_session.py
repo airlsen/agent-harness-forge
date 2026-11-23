@@ -37,6 +37,8 @@ class AgentSession(Base):
     code_projects: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
     # 聊天中临时选择的扩展能力 {skillIds, mcpServerIds, webSearch}；与场景绑定取并集，下一轮生效。旧会话为 NULL。
     capability_selection: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=dict)
+    # 已落库的 Runner 执行日志序号：断线续读、重启对账都从这里之后读取，同一事件不会重复落库
+    runner_event_seq: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
 
 
 class SessionEventIndex(Base):

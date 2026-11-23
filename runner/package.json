@@ -2,7 +2,7 @@
   "name": "@forge/runner",
   "version": "0.2.0",
   "private": true,
-  "description": "AgentHarness Forge 执行内核适配层：AgentKernel 端口 + dsh 实现 + 平台插件包",
+  "description": "AgentHarness Forge 执行内核：会话内核 + DSH 适配层（src/kernel/dsh）+ 平台插件包",
   "type": "module",
   "engines": {
     "node": ">=24.9.0"
@@ -10,13 +10,14 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "test": "node scripts/check-workspace.mjs && node --import tsx scripts/check-system-prompt.mjs && node --import tsx scripts/check-code-projects.mjs && node --import tsx scripts/check-business.mjs && node --import tsx scripts/check-capabilities.mjs && node scripts/check-skill-authoring.mjs && node --import tsx scripts/check-skill-scripts.mjs && node scripts/check-plugin-bridge.mjs && node --import tsx scripts/check-plugin-worker.mjs",
+    "test": "node scripts/check-workspace.mjs && node --import tsx scripts/check-manifest.mjs && node --import tsx scripts/check-journal.mjs && node --import tsx scripts/check-system-prompt.mjs && node --import tsx scripts/check-code-projects.mjs && node --import tsx scripts/check-business.mjs && node --import tsx scripts/check-capabilities.mjs && node scripts/check-skill-authoring.mjs && node --import tsx scripts/check-skill-scripts.mjs && node scripts/check-plugin-bridge.mjs && node --import tsx scripts/check-plugin-worker.mjs",
     "test:workspace": "node scripts/check-workspace.mjs",
     "poc": "tsx scripts/poc.mjs",
     "poc:boot-only": "tsx scripts/poc.mjs --boot-only",
     "contract": "tsx scripts/contract-check.mjs",
     "start": "node --import tsx src/server.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "gen:manifest": "node scripts/gen-manifest-types.mjs"
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.2-rc.1",
@@ -33,6 +34,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "json-schema-to-typescript": "^15.0.4",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }
