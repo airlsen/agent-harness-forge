@@ -1878,8 +1878,17 @@ onBeforeUnmount(() => {
                 aria-label="给 Skill 助手的要求"
                 @keydown="onPromptKeydown"
               />
+              <!-- 与工作台输入框一致：模型在左；附件在右侧，紧挨发送按钮 -->
               <div class="composer-actions">
                 <div class="composer-tools">
+                  <ModelSelect
+                    v-model="authoringModelId"
+                    :disabled="busy || preparing || streaming"
+                    :stale-name="staleModelName"
+                    @opened="refreshModels"
+                  />
+                </div>
+                <div class="composer-submit">
                   <a-upload
                     :accept="acceptFor('references')"
                     :file-list="[]"
@@ -1898,37 +1907,31 @@ onBeforeUnmount(() => {
                       <Icon name="paperclip" :size="18" />
                     </button>
                   </a-upload>
-                  <ModelSelect
-                    v-model="authoringModelId"
-                    :disabled="busy || preparing || streaming"
-                    :stale-name="staleModelName"
-                    @opened="refreshModels"
-                  />
+                  <button
+                    v-if="busy && turnStarted"
+                    type="button"
+                    class="stop-button"
+                    :disabled="stopping"
+                    aria-label="中止执行"
+                    title="中止执行"
+                    @click="stop"
+                  >
+                    <span aria-hidden="true"></span>
+                  </button>
+                  <a-button
+                    v-else
+                    class="task-send"
+                    type="primary"
+                    shape="circle"
+                    html-type="submit"
+                    :loading="busy || preparing"
+                    :disabled="!canSend && !busy && !preparing"
+                    aria-label="发送"
+                    title="发送 · Enter"
+                  >
+                    <Icon v-if="!busy && !preparing" name="ri-arrow-up-line" :size="18" />
+                  </a-button>
                 </div>
-                <button
-                  v-if="busy && turnStarted"
-                  type="button"
-                  class="stop-button"
-                  :disabled="stopping"
-                  aria-label="中止执行"
-                  title="中止执行"
-                  @click="stop"
-                >
-                  <span aria-hidden="true"></span>
-                </button>
-                <a-button
-                  v-else
-                  class="task-send"
-                  type="primary"
-                  shape="circle"
-                  html-type="submit"
-                  :loading="busy || preparing"
-                  :disabled="!canSend && !busy && !preparing"
-                  aria-label="发送"
-                  title="发送 · Enter"
-                >
-                  <Icon v-if="!busy && !preparing" name="ri-arrow-up-line" :size="18" />
-                </a-button>
               </div>
             </div>
           </form>
@@ -2774,9 +2777,16 @@ onBeforeUnmount(() => {
 }
 .composer-tools {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 4px;
   min-width: 0;
+}
+.composer-submit {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
 }
 /* 只显示图标，尺寸与工作台输入框的附件按钮一致；说明放在 title 提示中 */
 .composer-attach {

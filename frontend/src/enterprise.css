@@ -1288,20 +1288,6 @@ textarea:focus-visible {
   outline: 2px solid var(--accent-focus);
   outline-offset: 2px;
 }
-.task-composer-footnote {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 3px 0;
-  gap: 12px;
-  font-size: 12px;
-  color: var(--text-subtle);
-}
-.task-composer-footnote > span {
-  display: inline-flex;
-  gap: 5px;
-  align-items: center;
-}
 .task-composer .attachment-chips {
   padding: 0 0 8px;
 }
@@ -3703,10 +3689,6 @@ textarea:focus-visible {
     width: 40px;
     height: 44px;
   }
-  .task-composer-footnote {
-    font-size: 12px;
-    padding-inline: 1px;
-  }
   .enterprise-model-prompt.connect-model-prompt {
     padding: 11px 10px;
     gap: 7px;
@@ -4761,11 +4743,14 @@ textarea:focus-visible {
 .change-review-body.single {
   grid-template-columns: minmax(0, 1fr);
 }
+/* 文件列表固定在左栏宽度内：列表和每行都允许收窄，长文件名省略，不再撑出去盖住右侧对比区 */
 .change-review-files {
   position: sticky;
   top: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
+  min-width: 0;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -4784,6 +4769,13 @@ textarea:focus-visible {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+}
+.change-review-files li {
+  min-width: 0;
+}
+.change-review-files button > .turn-changes-lines {
+  flex: none;
+  gap: 4px;
 }
 .change-review-files button:hover {
   background: var(--accent-wash);
