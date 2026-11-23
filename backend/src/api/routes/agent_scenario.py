@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.database import get_session
 from ..core.config import settings
-from ..schemas.agent_scenario import CreateScenarioRequest, UpdateScenarioRequest
+from ..schemas.agent_scenario import CreateScenarioRequest, GenerateScenarioRequest, UpdateScenarioRequest
+from ..services import scenario_generator
 from ..services.scenario_service import scenario_service
 from ..services.space_service import current_space
 from ..utils.response import ResponseUtil
@@ -27,6 +28,18 @@ async def create_scenario(
 ):
     # 创建在当前空间（新建对话框里可改目标空间，前端以请求头传入）
     return ResponseUtil.ok(await scenario_service.create(db, settings.admin_username, req, space_id=space_id))
+
+
+@router.post("/generate")
+async def generate_scenario(
+    req: GenerateScenarioRequest,
+    db: AsyncSession = Depends(get_session),
+    space_id: int | None = Depends(current_space),
+):
+    # AI 生成场景草稿：只返回结果供编辑器填充，不保存。编辑已有场景时按场景所在空间匹配能力
+    if req.scenarioId is not None:
+        space_id = (await scenario_service.row(db, req.scenarioId)).space_id
+    return ResponseUtil.ok(await scenario_generator.generate(db, req, space_id))
 
 
 @router.get("/{scenario_id}")
