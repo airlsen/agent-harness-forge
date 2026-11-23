@@ -103,6 +103,9 @@ export class GatewayAdapter extends LlmAdapter {
     };
   }
   async *stream(options) {
+    // 带 purpose 的是 dsh 的后台请求（如上下文压缩生成摘要），不是给用户的回复：
+    // 不推实时片段（否则摘要会显示在“正在回复”里并被存成部分输出），失败也交给 dsh 自己处理与上报
+    const live = !options.purpose;
     const headers = {
       'Content-Type': 'application/json',
       ...attributionHeaders(),
@@ -175,7 +178,7 @@ export class GatewayAdapter extends LlmAdapter {
           }
           reasoning += delta.reasoning_content;
           reasoningAll += delta.reasoning_content;
-          notify('forge.reasoning_delta', { text: delta.reasoning_content });
+          if (live) notify('forge.reasoning_delta', { text: delta.reasoning_content });
           yield { type: 'reasoning-delta', index: reasoningIndex, text: delta.reasoning_content };
         }
         if (delta.content && typeof delta.content === 'string') {
@@ -185,7 +188,7 @@ export class GatewayAdapter extends LlmAdapter {
             yield { type: 'block-start', index: textIndex, blockType: 'text' };
           }
           text += delta.content;
-          notify('forge.delta', { text: delta.content });
+          if (live) notify('forge.delta', { text: delta.content });
           yield { type: 'text-delta', index: textIndex, text: delta.content };
         }
         if (delta.tool_calls?.length) yield* closeReasoning();
@@ -274,7 +277,7 @@ export class GatewayAdapter extends LlmAdapter {
         : error instanceof Error && /^模型/.test(error.message)
           ? error.message
           : '模型请求失败或超时，请检查模型中心配置';
-      notify('forge.error', { message });
+      if (live) notify('forge.error', { message });
       throw new Error(message);
     }
   }

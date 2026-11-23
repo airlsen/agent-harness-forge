@@ -101,6 +101,10 @@ export function translateNotification(method: string, params: any, calls: Map<st
     const reason = data.reason?.kind;
     if (reason === 'error') out.push({ failure: data.reason.error?.message ?? '执行内核报告错误' });
     else if (FAILED_TURN[reason]) out.push({ failure: FAILED_TURN[reason] });
+  } else if (event.type === 'compaction/start' || event.type === 'compaction/end') {
+    // 对话过长时 dsh 自动压缩上下文（期间模型在后台生成摘要）：给页面一个“正在整理”的状态
+    const phase = event.type === 'compaction/start' ? 'start' : data.error ? 'failed' : 'end';
+    out.push({ kind: 'compaction', payload: { phase }, source: 'agent' });
   } else if (event.type === 'tool/call') {
     calls.set(data.callId, data);
     out.push({

@@ -32,6 +32,7 @@ export const PROCESS_KINDS = [
   'approval_resolved',
   'error',
   'message',
+  'compaction',
 ];
 const PROCESS_KIND_SET = new Set(PROCESS_KINDS);
 let openGeneration = 0;
@@ -194,6 +195,8 @@ export const useConversation = defineStore('conversation', {
     connectionWarning: '',
     /** 本轮正在排队等待并发额度；null 表示未排队 */
     queue: null as null | { position: number; capacity: number },
+    /** 对话过长，执行内核正在后台整理（压缩）上下文 */
+    compacting: false,
     panel: 'files' as 'context' | 'trajectory' | 'files',
     panelOpen: false,
   }),
@@ -238,7 +241,8 @@ export const useConversation = defineStore('conversation', {
       if (!PROCESS_KIND_SET.has(event.kind)) return;
       this.events.push(markRaw(event));
       const data = event.payload ?? {};
-      if (event.kind === 'tool_use_start') {
+      if (event.kind === 'compaction') this.compacting = data.phase === 'start';
+      else if (event.kind === 'tool_use_start') {
         const id = String(data.toolCallId ?? `tool-${event.seq}`);
         if (!this.activeTools.some((call) => call.id === id))
           this.activeTools.push({ id, tool: data.tool, arguments: data.arguments, pending: true });
@@ -296,6 +300,7 @@ export const useConversation = defineStore('conversation', {
       this.runError = '';
       this.connectionWarning = '';
       this.queue = null;
+      this.compacting = false;
       this.sending = false;
       this.outgoing = null;
       this.loading = false;
@@ -737,8 +742,11 @@ export const useConversation = defineStore('conversation', {
             this.approvals = this.approvals.filter((approval) => approval.ticketId !== data.ticketId);
           else if (event.kind === 'error') this.runError = data.message;
           else if (event.kind === 'queued') this.queue = { position: data.position, capacity: data.capacity };
-          else if (event.kind === 'dequeued' || event.kind === 'done') this.queue = null;
-          else if (event.kind === 'model_switched') {
+          else if (event.kind === 'dequeued') this.queue = null;
+          else if (event.kind === 'done') {
+            this.queue = null;
+            this.compacting = false;
+          } else if (event.kind === 'model_switched') {
             this.applyModel({ ...data.to, contextWindow: data.contextWindow });
             this.selectedModelId = this.sessionModel(this.selectedModelId);
           } else if (event.kind === 'cost_tick') {
@@ -783,6 +791,7 @@ export const useConversation = defineStore('conversation', {
         this.liveReasoning = '';
         this.activeTools = [];
         this.queue = null;
+        this.compacting = false;
         await usePlatform().refreshSessions();
         await this.refreshFiles();
       } catch (error) {

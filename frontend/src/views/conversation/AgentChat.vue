@@ -514,6 +514,12 @@ function eventText(event: KernelEvent) {
   if (event.kind === 'model_switched')
     return `模型切换 · ${event.payload.from?.name ?? '未记录'} → ${event.payload.to?.name ?? '未记录'}`;
   if (event.kind === 'error') return '执行出现异常';
+  if (event.kind === 'compaction')
+    return event.payload.phase === 'start'
+      ? '对话较长 · 开始整理上下文'
+      : event.payload.phase === 'failed'
+        ? '上下文未能进一步整理 · 不影响继续执行'
+        : '对话上下文已整理';
   if (event.kind === 'workspace_changes') return `文件改动 · ${event.payload.total ?? 0} 个文件`;
   return event.payload.partial ? '保留了部分输出' : '收到一条回复';
 }
@@ -714,6 +720,9 @@ async function quoteMessage(text: string) {
           </div>
           <div v-if="chat.connectionWarning" class="form-alert" role="status">
             <Icon name="info" :size="16" />{{ chat.connectionWarning }}
+          </div>
+          <div v-if="chat.compacting && chat.running" class="form-alert" role="status">
+            <Icon name="clock" :size="16" />对话较长，正在整理上下文，完成后会继续回复…
           </div>
           <div v-if="chat.queue" class="form-alert" role="status">
             <Icon name="clock" :size="16" />排队中 · 第 {{ chat.queue.position }} 位，等待执行额度释放…
@@ -999,9 +1008,11 @@ async function quoteMessage(text: string) {
                         ? 'message'
                         : event.kind === 'model_switched'
                           ? 'model'
-                          : event.kind === 'workspace_changes'
-                            ? 'folder'
-                            : 'wrench'
+                          : event.kind === 'compaction'
+                            ? 'clock'
+                            : event.kind === 'workspace_changes'
+                              ? 'folder'
+                              : 'wrench'
                 "
                 :size="14"
             /></span>
