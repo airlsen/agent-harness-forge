@@ -6,6 +6,7 @@ import { formatBytes } from '../../utils/presentation';
 import { usePlatform } from '../../stores/platform';
 import type { Tool, WebSearchSettings } from '../../types/platform';
 import Icon from '../../components/base/ForgeIcon.vue';
+import SecretInput from '../../components/base/SecretInput.vue';
 const app = usePlatform(),
   saving = ref(false),
   loaded = ref(false);
@@ -110,6 +111,7 @@ const webForm = reactive({
   fetchEnabled: true,
   apiKey: '',
 });
+const webRevealedKey = ref('');
 
 // 联网表单校验规则：服务地址可选，填写时需为 http/https 地址。
 const webRules: Record<string, Rule[]> = {
@@ -142,6 +144,7 @@ function applyWeb(value: WebSearchSettings) {
     fetchEnabled: value.fetchEnabled,
     apiKey: '',
   });
+  webRevealedKey.value = '';
 }
 async function loadWeb() {
   try {
@@ -149,6 +152,9 @@ async function loadWeb() {
   } catch {
     web.value = null;
   }
+}
+async function revealWebKey() {
+  return (await post<{ apiKey: string }>('/governance/web-search/key')).apiKey;
 }
 async function saveWeb(clearKey = false) {
   webSaving.value = true;
@@ -158,7 +164,9 @@ async function saveWeb(clearKey = false) {
       provider: webForm.provider,
       baseUrl: webForm.baseUrl.trim(),
       fetchEnabled: webForm.fetchEnabled,
-      ...(webForm.apiKey.trim() ? { apiKey: webForm.apiKey.trim() } : {}),
+      ...(webForm.apiKey.trim() && webForm.apiKey !== webRevealedKey.value
+        ? { apiKey: webForm.apiKey.trim() }
+        : {}),
       clearKey,
     });
     applyWeb(result);
@@ -214,7 +222,7 @@ async function codeRootRequest(save: boolean) {
   }
 }
 const KEY_SOURCE: Record<WebSearchSettings['keySource'], string> = {
-  custom: '已单独配置搜索密钥',
+  custom: '已单独配置搜索密钥，点右侧眼睛图标可查看',
   model: '复用模型中心的 DeepSeek 官方模型密钥',
   none: '未配置密钥：仅能读取网页，无法搜索',
 };
@@ -493,10 +501,12 @@ async function save() {
               <a-select v-model:value="webForm.provider" :options="providerOptions" />
             </a-form-item>
             <a-form-item label="DeepSeek API Key" name="apiKey">
-              <a-input-password
+              <SecretInput
                 v-model:value="webForm.apiKey"
-                autocomplete="off"
-                :placeholder="web.apiKeyConfigured ? '已保存，留空则不修改' : '留空则复用 DeepSeek 模型密钥'"
+                :saved="web.apiKeyConfigured"
+                :reveal="revealWebKey"
+                placeholder="留空则复用 DeepSeek 模型密钥"
+                @revealed="webRevealedKey = $event"
               />
               <small class="field-hint"
                 >{{ KEY_SOURCE[web.keySource]

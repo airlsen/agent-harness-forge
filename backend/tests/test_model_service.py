@@ -115,3 +115,40 @@ async def test_legacy_single_connection_save_still_creates_a_connection():
         assert isinstance(saved["id"], int)
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_saved_key_is_revealed_only_on_request(monkeypatch, tmp_path):
+    """编辑时点击查看：单独接口返回明文；列表仍不含密钥；无法解密时提示重新填写。"""
+    from cryptography.fernet import Fernet
+    from fastapi import HTTPException
+
+    from src.api.core import security
+    from src.api.services.settings_service import reveal_connection_key
+
+    key_file = tmp_path / "encryption.key"
+    key_file.write_bytes(Fernet.generate_key())
+    monkeypatch.setattr(security, "KEY_FILE", key_file)
+    monkeypatch.setattr(settings_service, "encrypt", security.encrypt)
+    monkeypatch.setattr(settings_service, "decrypt", security.decrypt)
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with sessions() as db:
+        saved = await create_connection(db, model_payload("Chat", "chat-v1", key="sk-visible-123"))
+        empty = await create_connection(db, model_payload("Local", "local-v1", key=""))
+        assert "sk-visible-123" not in str(await list_connections(db))
+        assert await reveal_connection_key(db, saved["id"]) == "sk-visible-123"
+        assert await reveal_connection_key(db, empty["id"]) == ""
+        with pytest.raises(HTTPException) as missing:
+            await reveal_connection_key(db, 999)
+        assert missing.value.status_code == 404
+
+        # 加密密钥被更换后，旧密文无法读取
+        key_file.write_bytes(Fernet.generate_key())
+        with pytest.raises(HTTPException) as unreadable:
+            await reveal_connection_key(db, saved["id"])
+        assert unreadable.value.status_code == 409
+    await engine.dispose()

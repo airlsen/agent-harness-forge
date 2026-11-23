@@ -439,6 +439,11 @@ async def web_settings_view(db: AsyncSession) -> dict:
     }
 
 
+async def reveal_web_key(db: AsyncSession) -> str:
+    """查看联网搜索单独保存的密钥；复用模型密钥时这里为空，到模型中心查看。"""
+    return security.reveal_secret((await _web_row(db))["credential"])
+
+
 async def save_web_settings(db: AsyncSession, payload: WebSearchInput) -> dict:
     value = await _web_row(db)
     credential = value["credential"]

@@ -10,6 +10,7 @@ from ..services.settings_service import (
     get_connection,
     list_connections,
     list_model_options,
+    reveal_connection_key,
     save_connection,
     set_connection_availability,
     set_default_connection,
@@ -55,6 +56,12 @@ async def test(db: AsyncSession = Depends(get_session)):
 @router.post("/{connection_id}/test")
 async def test_one(connection_id: int, db: AsyncSession = Depends(get_session)):
     return ResponseUtil.ok(await test_connection(db, connection_id=connection_id))
+
+
+@router.post("/{connection_id}/key")
+async def reveal_key(connection_id: int, db: AsyncSession = Depends(get_session)):
+    """查看已保存的 API Key（编辑时点击眼睛图标）。用 POST：经 CSRF 校验且不被缓存。"""
+    return ResponseUtil.ok({"apiKey": await reveal_connection_key(db, connection_id)})
 
 
 @router.patch("/{connection_id}/availability")
