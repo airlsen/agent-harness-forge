@@ -364,7 +364,7 @@ export function resolveCapabilities(raw: unknown, lookup?: SkillLookup): Runtime
 }
 
 /**
- * 与 dsh-mcp-client@0.2.2-rc.1 的 publicToolName 保持一致：模型看到的工具名。
+ * 与 dsh-mcp-client@0.2.2-rc.5 的 publicToolName 保持一致：模型看到的工具名。
  * 纯函数：mcp__<server>__<tool>，字符替换或截断到 64 字符时附加 12 位身份哈希。
  */
 export function mcpPublicToolName(serverName: string, rawName: string) {

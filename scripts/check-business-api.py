@@ -71,7 +71,8 @@ class GatewayFixture(BaseHTTPRequestHandler):
                 i
                 for i, item in enumerate(body["messages"])
                 if item["role"] == "user"
-                and not item.get("content", "").startswith("Current runtime context.")
+                # dsh 注入的会话上下文（工作目录等）也以 user 角色发送，0.2.2-rc.5 起为 <system-reminder> 包装
+                and not item.get("content", "").startswith("<system-reminder>")
             ),
             default=0,
         )
