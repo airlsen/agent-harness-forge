@@ -1,5 +1,5 @@
 {
-  "$comment": "控制面与 Runner 共用的平台契约（唯一来源）：平台策略可管控的内置工具目录与能力上限。改这里，两端同时生效；runner contract 检查会核对 dsh 提供的工具名仍然存在。",
+  "$comment": "控制面与 Runner 共用的平台契约（唯一来源）：平台内置工具目录与能力上限。provider 为 dsh 包名或 Forge 插件名；带 follows 的工具随被跟随的工具一同开放，不在平台策略中单独管控。改这里，两端同时生效；npm run contract 核对 dsh 包仍提供对应工具，npm test 的 check-wiring 核对 Forge 插件确实注册了对应工具。",
   "version": 1,
   "tools": [
     {
@@ -39,13 +39,23 @@
       "provider": "forge-runtime"
     },
     {
+      "name": "workspace_present",
+      "title": "交付文件",
+      "description": "把工作区中已完成的文件声明为交付物，在回复下方以文件卡片展示；随「生成文本产物」一同开放。",
+      "permission": "read",
+      "icon": "file",
+      "group": "base",
+      "provider": "forge-runtime",
+      "follows": "workspace_write"
+    },
+    {
       "name": "bash",
       "title": "终端命令执行",
       "description": "在会话工作区执行终端命令（运行脚本、编译、Git 等），直接执行无需确认；仅拦截少数高危命令。",
       "permission": "write",
       "icon": "terminal",
       "group": "base",
-      "provider": "forge-runtime"
+      "provider": "@deepseek-ai/dsh-tool-bash-persistent"
     },
     {
       "name": "skill_run_script",

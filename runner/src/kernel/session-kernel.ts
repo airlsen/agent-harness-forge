@@ -32,6 +32,7 @@ import { failure, isSessionId } from './errors.js';
 import { effectiveOutputTokens, modelFingerprint, validModel, type RuntimeModel } from './runtime-model.js';
 import { materializeSkills } from './skill-snapshots.js';
 import { GROUP_TOOLS, SKILL_SCRIPT_TOOL, sessionToolset } from './toolset.js';
+import { MANIFEST_PLUGINS, forgePlugin } from './forge-plugins.js';
 import { WorkspaceFiles } from './workspace-files.js';
 import type { PluginWorkerClient } from '../plugin-worker-client.js';
 import { parseManifest, type PluginBinding, type SessionManifest } from './manifest.js';
@@ -54,8 +55,6 @@ const SESSION_IDLE_TTL_SECONDS = nonNegativeInt(process.env.RUNNER_SESSION_IDLE_
 const MAX_WARM_SESSIONS = nonNegativeInt(process.env.RUNNER_MAX_WARM_SESSIONS, 20);
 /** 回收扫描间隔（毫秒） */
 const REAP_INTERVAL_MS = 60_000;
-/** Runner 允许装配的 Forge 插件（会话清单的 plugins 只能取这些） */
-const APPROVED_PLUGINS = new Set(['forge-runtime', 'skill-authoring', 'forge-plugin-bridge']);
 
 type Pending = { resolve: (outcome: ApprovalOutcome) => void; timer: NodeJS.Timeout };
 type Entry = {
@@ -321,7 +320,7 @@ export class SessionKernel {
     const code = resolveCodeProjects(codeProjects);
     const caps = this.resolveTurnCapabilities(capabilities);
     const { plugins, pluginBindings } = manifest;
-    if (plugins.some((p) => !APPROVED_PLUGINS.has(p))) throw failure('包含未审核的插件', 422);
+    if (plugins.some((p) => !MANIFEST_PLUGINS.has(p))) throw failure('包含未审核的插件', 422);
     if (plugins.includes('skill-authoring') && !manifest.skillAuthoring)
       throw failure('Skill 编辑插件缺少当前 Skill 草稿上下文', 422);
     const pluginTools = manifest.tools.plugin;
@@ -394,11 +393,6 @@ export class SessionKernel {
     const scriptSkills = entry.caps.skills.filter((skill) =>
       skill.files.some((file) => file.path.startsWith('scripts/')),
     );
-    const plugin = (name: string, config: Record<string, unknown>) => ({
-      id: name,
-      entry: join(ROOT, `${name}-plugin`, 'index.js'),
-      config,
-    });
     const plan: RuntimePlan = {
       sessionLogDir: join(dir, 'session-log'),
       contextWindow,
@@ -406,7 +400,7 @@ export class SessionKernel {
       allowed: toolset.allowed,
       search: toolset.search,
       read: toolset.read,
-      runtime: plugin('forge-runtime', {
+      runtime: forgePlugin('forge-runtime', {
         workspace: entry.workspace,
         allowedTools: toolset.allowed,
         approvalTools: toolset.approval,
@@ -418,29 +412,25 @@ export class SessionKernel {
       plugins: [
         ...(mounts.includes('forge-plugin-bridge')
           ? [
-              {
-                id: 'forge-plugin-bridge',
-                entry: join(ROOT, 'forge-plugin-bridge', 'index.js'),
-                config: {
-                  bindings: pluginBindings.map((binding) => ({
-                    package: binding.package,
-                    displayName: binding.displayName,
-                    version: binding.version,
-                    artifactHash: binding.artifactHash,
-                    runtime: binding.runtime,
-                    tools: binding.tools,
-                  })),
-                  allowedTools: manifest.tools.plugin,
-                  gatewayUrl: this.pluginWorker!.url,
-                  // execution metadata stays inside the signed Worker lease, rather than engine config.
-                  lease: this.pluginWorker!.issueLease(entry.id, pluginBindings),
-                },
-              },
+              forgePlugin('forge-plugin-bridge', {
+                bindings: pluginBindings.map((binding) => ({
+                  package: binding.package,
+                  displayName: binding.displayName,
+                  version: binding.version,
+                  artifactHash: binding.artifactHash,
+                  runtime: binding.runtime,
+                  tools: binding.tools,
+                })),
+                allowedTools: manifest.tools.plugin,
+                gatewayUrl: this.pluginWorker!.url,
+                // 执行元数据只放在 Runner 签发的 Worker 租约里，不进引擎配置
+                lease: this.pluginWorker!.issueLease(entry.id, pluginBindings),
+              }),
             ]
           : []),
         ...(mounts.includes('skill-authoring')
           ? [
-              plugin('skill-authoring', {
+              forgePlugin('skill-authoring', {
                 ...(manifest.skillAuthoring ?? {}),
                 allowedTools: toolset.allowed,
                 // 会话工作区：草稿镜像写到其中的 .skill/（供 bash 运行），脚本产出写到 outputs/
@@ -450,7 +440,7 @@ export class SessionKernel {
           : []),
         ...(toolset.allowed.includes(SKILL_SCRIPT_TOOL)
           ? [
-              plugin('skill-scripts', {
+              forgePlugin('skill-scripts', {
                 // 脚本在会话工作区的 outputs/<脚本名>-<时间>/ 下运行，产出随会话文件同步
                 workspace: entry.workspace,
                 skills: scriptSkills.map((skill) => ({
@@ -466,19 +456,15 @@ export class SessionKernel {
       ],
       skills: entry.caps.skills.length
         ? {
-            plugin: {
-              id: 'forge-skills',
-              entry: join(ROOT, 'forge-skills-plugin', 'index.js'),
-              config: {
-                skills: entry.caps.skills.map((skill) => ({
-                  name: skill.name,
-                  description: skill.description,
-                  ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
-                  content: skill.content,
-                  dir: skillDirs[skill.name],
-                })),
-              },
-            },
+            plugin: forgePlugin('forge-skills', {
+              skills: entry.caps.skills.map((skill) => ({
+                name: skill.name,
+                description: skill.description,
+                ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
+                content: skill.content,
+                dir: skillDirs[skill.name],
+              })),
+            }),
           }
         : null,
       mcp: { servers: entry.caps.mcp, cwd: mcpCwd },

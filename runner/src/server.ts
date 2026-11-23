@@ -8,7 +8,7 @@ import { listCodeProjects, resolveCodeProjects, setCodeRoot } from './kernel/cod
 import { SKILL_CONTENT_REQUIRED, WEB_SEARCH_PROVIDERS } from './kernel/capabilities.js';
 import { DSH_VERSION } from './kernel/dsh/index.js';
 import { PLATFORM } from './kernel/platform-contract.js';
-import { BASE_TOOLS } from './kernel/toolset.js';
+import { BASE_TOOLS, SHELL_TOOL } from './kernel/toolset.js';
 
 const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
 if (nodeMajor < 24 || (nodeMajor === 24 && nodeMinor < 9))
@@ -58,7 +58,7 @@ app.get('/v1/runtime', async () => ({
     mcp: ['stdio', 'streamable-http'],
     webSearch: WEB_SEARCH_PROVIDERS,
     // 受控终端命令（bash）属于基础能力，是否开放由平台策略决定
-    shell: BASE_TOOLS.includes('bash'),
+    shell: BASE_TOOLS.includes(SHELL_TOOL),
     fork: false,
     resume: true,
     // 回合由 Runner 执行到底，事件写入执行日志，可按 seq 断线续读

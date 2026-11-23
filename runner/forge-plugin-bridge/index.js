@@ -3,11 +3,10 @@
  * declared tool is schema-only here and every execution crosses to the isolated
  * Forge Plugin Worker using a short-lived Runner-issued lease.
  */
+import { notify } from '../plugin-kit/events.js';
+
 export const name = 'forge-plugin-bridge';
 export const inject = ['tools'];
-
-const notify = (method, params) =>
-  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n');
 
 // This is defense in depth against a forged Bundle: risk/approval behavior comes
 // from the reviewed Runner image, not from a scenario-controlled Manifest copy.

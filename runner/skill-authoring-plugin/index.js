@@ -7,10 +7,9 @@
 import { lstat, mkdtemp, mkdir, readdir, writeFile, rm, rmdir, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
+import { notify } from '../plugin-kit/events.js';
+import { ENGINE_TOOLS } from '../src/kernel/dsh/engine-tools.js';
 import { OUTPUTS_DIR, runSkillScript, sandboxMode } from '../skill-script-runtime/index.js';
-const notify = (method, params) =>
-  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n');
-
 export const name = 'skill-authoring';
 export const inject = ['tools'];
 
@@ -316,7 +315,7 @@ export async function apply(ctx, config) {
       async () => checkSkillDocument(draft, [...files.keys()]),
     );
   }
-  const bashAllowed = allowed.has('bash');
+  const bashAllowed = allowed.has(ENGINE_TOOLS.shell);
   if (allowed.has('skill_test_script')) {
     add(
       'skill_test_script',

@@ -1,6 +1,6 @@
 /**
  * 控制面与 Runner 共用的平台契约（仓库根目录 contracts/platform.json，唯一来源）：
- * 平台策略可管控的内置工具目录（按 group 决定装配哪个插件）与能力上限。
+ * 平台内置工具目录（按 group 决定装配哪个插件，provider 标明由谁提供）与能力上限。
  * 两端读同一份文件，不再各自手抄；分开部署时可用 FORGE_PLATFORM_CONTRACT 指定路径。
  */
 import { readFileSync } from 'node:fs';
@@ -16,8 +16,13 @@ export interface PlatformTool {
   permission: 'read' | 'write';
   icon: string;
   group: ToolGroup;
-  /** 提供者：Forge 自有插件名，或 dsh 包名（@deepseek-ai/…，contract 检查会核对工具名仍在该包中） */
+  /**
+   * 提供者：dsh 包名（@deepseek-ai/…，npm run contract 核对工具名仍在该包中），
+   * 或 Forge 自有插件名（forge-plugins.ts 中登记，check-wiring 核对该插件确实注册了此工具）
+   */
   provider: string;
+  /** 附属工具：随被跟随的工具一同开放，不在平台策略中单独管控（如 workspace_present 跟随 workspace_write） */
+  follows?: string;
 }
 export interface PlatformLimits {
   sessionSkills: number;
@@ -59,6 +64,12 @@ export function loadPlatformContract(path = PLATFORM_CONTRACT_PATH): PlatformCon
     if (names.has(tool.name)) throw new Error(`平台契约中的工具重复：${tool.name}`);
     names.add(tool.name);
   }
+  for (const tool of data.tools) {
+    if (tool.follows === undefined) continue;
+    const leader = data.tools.find((item) => item.name === tool.follows);
+    if (!leader || leader.follows !== undefined)
+      throw new Error(`平台契约中的工具 ${tool.name} 跟随的 ${tool.follows} 不存在或本身是附属工具`);
+  }
   for (const key of LIMIT_KEYS)
     if (!Number.isSafeInteger(data.limits?.[key]) || data.limits[key] <= 0)
       throw new Error(`平台契约缺少上限 ${key}`);
@@ -67,10 +78,16 @@ export function loadPlatformContract(path = PLATFORM_CONTRACT_PATH): PlatformCon
 
 export const PLATFORM = loadPlatformContract();
 export const LIMITS = PLATFORM.limits;
-/** 某一组的工具名（保持契约中的顺序） */
+/** 某一组中受平台策略管控的工具名（不含附属工具，保持契约中的顺序） */
 export function toolsInGroup(group: ToolGroup): string[] {
-  return PLATFORM.tools.filter((tool) => tool.group === group).map((tool) => tool.name);
+  return PLATFORM.tools
+    .filter((tool) => tool.group === group && tool.follows === undefined)
+    .map((tool) => tool.name);
 }
+/** 附属工具：被跟随的工具名 → 随它一同开放的工具名 */
+export const COMPANION_TOOLS: Record<string, string[]> = {};
+for (const tool of PLATFORM.tools)
+  if (tool.follows !== undefined) (COMPANION_TOOLS[tool.follows] ??= []).push(tool.name);
 /** 只有一个工具的组（如 todo、skill-script）取其工具名；契约改坏时启动即失败 */
 export function singleTool(group: ToolGroup): string {
   const tools = toolsInGroup(group);

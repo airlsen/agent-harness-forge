@@ -13,7 +13,8 @@
 - `src/kernel/journal.ts`：每会话执行日志。持久事件带序号落盘，控制面回执后清理；流式增量（`transient`）只推给在线订阅者。
 - `src/kernel/manifest.ts`：会话清单入口校验。类型 `manifest.generated.ts` 由 `contracts/session-manifest.schema.json` 生成（根目录 `make contracts`），请勿手改。
 - `src/kernel/platform-contract.ts`：读取 `contracts/platform.json`（内置工具目录与能力上限）。
-- `forge-runtime-plugin/index.js`：OpenAI-compatible 模型适配器、工作区工具、agent 级 restrict 与单调拒绝 guard；会话工作区写入直接执行，受路径与配额约束。
+- `forge-runtime-plugin/`：每个会话都装配的业务插件，`index.js` 只做组装——`gateway.js`（OpenAI-compatible 模型适配器）、`workspace-tools.js`（工作区工具，配额见 `limits.js`）、`policy-hooks.js`（agent 级 restrict、单调拒绝 guard、dsh 搜索/读取的路径收窄、bash 门控与输出脱敏、外部工具逐次确认；规则在 `path-guard.js`、`bash-rules.js`）。
+- `src/kernel/forge-plugins.ts`：Forge 自有插件的唯一登记处（插件名 → 目录、会话清单能否声明）；`plugin-kit/events.js`：插件事件的唯一登记表，插件与 DSH 适配层共用；`src/kernel/dsh/engine-tools.js`：dsh 原生工具名与路径参数形状，内核与插件共用。`scripts/check-wiring.mjs` 核对这几张表与平台契约彼此一致。
 
 ## 控制面接口（内部 Bearer Token）
 

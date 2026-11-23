@@ -5,7 +5,7 @@
 import { ENGINE_TOOLS } from './dsh/index.js';
 import { EMPTY_CAPABILITIES, mcpToolNames, type RuntimeCapabilities } from './capabilities.js';
 import type { SessionManifest } from './manifest.js';
-import { PLATFORM, singleTool, toolsInGroup } from './platform-contract.js';
+import { COMPANION_TOOLS, PLATFORM, singleTool, toolsInGroup } from './platform-contract.js';
 
 /**
  * 基础能力：每个会话默认加载，不需要场景逐个授权。仍以平台策略（allowedTools）为上限，
@@ -17,11 +17,11 @@ export const SEARCH_TOOLS = ENGINE_TOOLS.search;
 /** 只读 read（带行号、分页、字节上限），关联代码或 Skill 带附加文件时开放，路径同样由 forge-runtime 收窄 */
 export const CODE_READ_TOOL = ENGINE_TOOLS.read;
 export const SKILL_TOOL = ENGINE_TOOLS.skill;
+/** 终端工具（dsh 内置持久 bash，属于基础能力，仍以平台策略为上限） */
+export const SHELL_TOOL = ENGINE_TOOLS.shell;
 export const SKILL_SCRIPT_TOOL = singleTool('skill-script');
 export const WEB_SEARCH_TOOL = ENGINE_TOOLS.webSearch;
 export const WEB_FETCH_TOOL = ENGINE_TOOLS.webFetch;
-/** forge-runtime 的交付声明工具：写入开放时附带，不受平台策略单独管控 */
-export const PRESENT_TOOL = 'workspace_present';
 /** 平台契约各工具组的工具名（DSH 适配层据此决定挂载哪些插件） */
 export const GROUP_TOOLS: Record<string, readonly string[]> = Object.fromEntries(
   [...new Set(PLATFORM.tools.map((tool) => tool.group))].map((group) => [group, toolsInGroup(group)]),
@@ -75,7 +75,8 @@ export function sessionToolset(
   const allowed = [
     // bash 已在 BASE_TOOLS 中并经过平台策略筛选：策略未勾选时，即使关联了代码也不开放
     ...builtin,
-    ...(builtin.includes('workspace_write') ? [PRESENT_TOOL] : []),
+    // 附属工具（契约中带 follows，如交付声明跟随写入）随被跟随的工具开放，不受平台策略单独管控
+    ...builtin.flatMap((name) => COMPANION_TOOLS[name] ?? []),
     ...(search ? SEARCH_TOOLS : []),
     ...(read ? [CODE_READ_TOOL] : []),
     // 受管插件工具已由控制面按企业插件策略与场景授权筛选，不再按内置工具策略过滤

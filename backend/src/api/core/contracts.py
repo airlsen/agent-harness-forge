@@ -1,7 +1,8 @@
 """控制面与 Runner 共用的平台契约（仓库根目录 contracts/platform.json，唯一来源）。
 
-内置工具目录（平台策略可管控的工具）与能力上限只在契约文件里维护一份：
-控制面据此展示与校验，Runner 据此装配与限额，两端不再各自手抄。
+内置工具目录与能力上限只在契约文件里维护一份：控制面据此展示与校验，Runner 据此装配与限额，
+两端不再各自手抄。带 follows 的附属工具（如交付声明 workspace_present）随被跟随的工具一同开放，
+不在平台策略中单独管控，但名称同样保留给平台。
 """
 
 import json
@@ -28,8 +29,14 @@ def platform_contract() -> dict:
 
 
 def builtin_tools() -> list[dict]:
-    """平台策略可管控的内置工具（展示字段）。"""
-    return [{field: tool[field] for field in TOOL_FIELDS} for tool in platform_contract()["tools"]]
+    """平台策略可管控的内置工具（展示字段，不含附属工具）。"""
+    tools = platform_contract()["tools"]
+    return [{field: tool[field] for field in TOOL_FIELDS} for tool in tools if not tool.get("follows")]
+
+
+def platform_tool_names() -> set[str]:
+    """平台保留的全部工具名（含附属工具）：受管插件的工具不得与之重名。"""
+    return {tool["name"] for tool in platform_contract()["tools"]}
 
 
 def limit(name: str) -> int:

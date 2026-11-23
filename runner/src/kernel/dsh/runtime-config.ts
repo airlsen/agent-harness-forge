@@ -9,18 +9,8 @@ import { pathToFileURL } from 'node:url';
 import type { ToolGroup } from '../platform-contract.js';
 import type { RuntimeMcpServer, RuntimeWeb, WebSearchProvider } from '../capabilities.js';
 
-/** dsh 原生工具名：随对应插件提供，内核据此计算白名单与系统提示 */
-export const ENGINE_TOOLS = {
-  /** dsh-tool-fs-search */
-  search: ['glob', 'grep'],
-  /** tool-fs 的只读 read（带行号、分页、字节上限） */
-  read: 'read',
-  /** dsh-tool-skill */
-  skill: 'skill',
-  /** dsh-tool-web */
-  webSearch: 'web_search',
-  webFetch: 'web_fetch',
-} as const;
+/** dsh 原生工具名与路径参数形状在 engine-tools.js（内核与 forge-runtime 插件共用的唯一一份） */
+export { ENGINE_TOOLS, PATH_TOOLS } from './engine-tools.js';
 
 /** 平台契约中由 dsh 提供的工具组 → 需要挂载的插件（工具是否开放仍由 forge-runtime 白名单决定） */
 const GROUP_PLUGINS: Partial<Record<ToolGroup, Array<Record<string, unknown>>>> = {
@@ -106,7 +96,8 @@ export function buildRuntimePatch(plan: RuntimePlan, groupTools: Record<string, 
   return [
     { id: 'sessions', config: { root: plan.sessionLogDir, compression: 'none' } },
     { id: 'compaction-basic', config: compactionConfig(plan.contextWindow, plan.outputTokens) },
-    // 终端由 forge-runtime 的 bash 提供；dsh 自带的终端与工作目录工具全部关闭
+    // 终端只用 sdk-minimal 内置的持久 bash（dsh-tool-bash-persistent，forge-runtime 负责门控与输出脱敏）；
+    // PowerShell 终端与工作目录工具全部关闭
     ...['persistent-pwsh', 'terminal-pwsh', 'tool-working-directory', ...(plan.read ? [] : ['tool-fs'])].map(
       (id) => ({ id, disabled: true }),
     ),
