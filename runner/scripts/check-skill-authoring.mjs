@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MIRROR_DIR, apply, checkSkillDocument, validateFilePath } from '../skill-authoring-plugin/index.js';
+import { MIRROR_DIR, apply, checkSkillDocument, validateFilePath } from '../internal-plugins/skill-authoring/index.js';
 
 const tools = new Map();
 const ctx = {

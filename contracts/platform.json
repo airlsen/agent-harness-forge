@@ -1,0 +1,140 @@
+{
+  "$comment": "控制面与 Runner 共用的平台契约（唯一来源）：平台内置工具目录与能力上限。provider 为 dsh 包名或 Forge 插件名；带 follows 的工具随被跟随的工具一同开放，不在平台策略中单独管控。改这里，两端同时生效；npm run contract 核对 dsh 包仍提供对应工具，npm test 的 check-wiring 核对 Forge 插件确实注册了对应工具。",
+  "version": 1,
+  "tools": [
+    {
+      "name": "current_time",
+      "title": "当前时间",
+      "description": "读取当前日期与时区，不访问外部网络。",
+      "permission": "read",
+      "icon": "clock",
+      "group": "base",
+      "provider": "forge-runtime"
+    },
+    {
+      "name": "workspace_list",
+      "title": "列出工作区文件",
+      "description": "仅列出当前会话工作区内的文件。",
+      "permission": "read",
+      "icon": "folder",
+      "group": "base",
+      "provider": "forge-runtime"
+    },
+    {
+      "name": "workspace_read",
+      "title": "读取工作区文件",
+      "description": "读取当前会话生成的文本文件，禁止越界路径与符号链接。",
+      "permission": "read",
+      "icon": "file",
+      "group": "base",
+      "provider": "forge-runtime"
+    },
+    {
+      "name": "workspace_write",
+      "title": "生成文本产物",
+      "description": "直接写入当前会话的受限工作区，无需逐次确认；受文件数量与容量配额约束。",
+      "permission": "write",
+      "icon": "edit",
+      "group": "base",
+      "provider": "forge-runtime"
+    },
+    {
+      "name": "workspace_present",
+      "title": "交付文件",
+      "description": "把工作区中已完成的文件声明为交付物，在回复下方以文件卡片展示；随「生成文本产物」一同开放。",
+      "permission": "read",
+      "icon": "file",
+      "group": "base",
+      "provider": "forge-runtime",
+      "follows": "workspace_write"
+    },
+    {
+      "name": "bash",
+      "title": "终端命令执行",
+      "description": "在会话工作区执行终端命令（运行脚本、编译、Git 等），直接执行无需确认；仅拦截少数高危命令。",
+      "permission": "write",
+      "icon": "terminal",
+      "group": "base",
+      "provider": "@deepseek-ai/dsh-tool-bash-persistent"
+    },
+    {
+      "name": "skill_run_script",
+      "title": "运行 Skill 脚本",
+      "description": "运行当前会话授权的 Skill 自带脚本，直接执行无需确认；单次最长 5 分钟。",
+      "permission": "write",
+      "icon": "terminal",
+      "group": "skill-script",
+      "provider": "skill-scripts"
+    },
+    {
+      "name": "todo_write",
+      "title": "维护任务清单",
+      "description": "记录、更新当前任务的待办与进度，纯会话内状态，不访问外部系统。",
+      "permission": "write",
+      "icon": "check",
+      "group": "todo",
+      "provider": "@deepseek-ai/dsh-tool-todo"
+    },
+    {
+      "name": "job_output",
+      "title": "读取后台任务输出",
+      "description": "读取当前会话后台任务的输出结果。",
+      "permission": "read",
+      "icon": "file",
+      "group": "jobs",
+      "provider": "@deepseek-ai/dsh-tool-jobs"
+    },
+    {
+      "name": "job_list",
+      "title": "列出后台任务",
+      "description": "列出当前会话正在运行与已结束的后台任务。",
+      "permission": "read",
+      "icon": "grid",
+      "group": "jobs",
+      "provider": "@deepseek-ai/dsh-tool-jobs"
+    },
+    {
+      "name": "job_kill",
+      "title": "终止后台任务",
+      "description": "终止当前会话的一个后台任务。",
+      "permission": "write",
+      "icon": "close",
+      "group": "jobs",
+      "provider": "@deepseek-ai/dsh-tool-jobs"
+    },
+    {
+      "name": "create_goal",
+      "title": "创建目标",
+      "description": "为当前会话创建并记录一个执行目标。",
+      "permission": "write",
+      "icon": "check",
+      "group": "goal",
+      "provider": "@deepseek-ai/dsh-tool-goal"
+    },
+    {
+      "name": "get_goal",
+      "title": "查看目标",
+      "description": "查看当前会话已记录的目标及其状态。",
+      "permission": "read",
+      "icon": "eye",
+      "group": "goal",
+      "provider": "@deepseek-ai/dsh-tool-goal"
+    },
+    {
+      "name": "update_goal",
+      "title": "更新目标",
+      "description": "更新当前会话目标的进度或状态。",
+      "permission": "write",
+      "icon": "edit",
+      "group": "goal",
+      "provider": "@deepseek-ai/dsh-tool-goal"
+    }
+  ],
+  "limits": {
+    "sessionSkills": 20,
+    "sessionMcpServers": 10,
+    "skillFiles": 20,
+    "skillFileBytes": 120000,
+    "skillFilesTotalBytes": 512000
+  }
+}

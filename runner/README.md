@@ -4,18 +4,36 @@
 
 ## 业务路径
 
-- `src/kernel/types.ts`：AgentKernel 端口。
-- `dsh-kernel.ts`：会话独立进程、runtime patch、事件桥、审批、受限文件、容量与清理。
-- `dsh-process.ts`：换行 JSON-RPC、请求关联、host 请求与安全中止。
-- `forge-runtime-plugin/index.js`：OpenAI-compatible 模型适配器、4 个文本工作区工具、agent 级 restrict 与单调拒绝 guard；会话工作区写入直接执行，受路径与配额约束。
+- `src/kernel/session-kernel.ts`：会话、回合、执行日志、审批、容量与清理；与执行引擎无关，只产出 `RuntimePlan`。
+- `src/kernel/dsh/`：**DSH 适配层，dsh 相关代码只在这里**。升级 dsh 时通常只需改这个目录，再跑 `npm run contract`。
+  - `process.ts`：换行 JSON-RPC、请求关联、host 请求与安全中止；
+  - `protocol.ts`：dsh 通知 → Forge 事件；
+  - `runtime-config.ts`：`RuntimePlan` → dsh runtime patch；
+  - `engine.ts`：`DshEngine`。
+- `src/kernel/journal.ts`：每会话执行日志。持久事件带序号落盘，控制面回执后清理；流式增量（`transient`）只推给在线订阅者。
+- `src/kernel/manifest.ts`：会话清单入口校验。类型 `manifest.generated.ts` 由 `contracts/session-manifest.schema.json` 生成（根目录 `make contracts`），请勿手改。
+- `src/kernel/platform-contract.ts`：读取 `contracts/platform.json`（内置工具目录与能力上限）。
+- `internal-plugins/`：Forge 自带、随 Runner 发布的 DSH 插件，**目录名 = 插件名**（`forge-runtime`、`forge-skills`、`skill-authoring`、`skill-scripts`、`forge-plugin-bridge`）；`shared/` 是插件共用的库（`events.js` 插件事件表、`skill-script-runtime/` 脚本执行逻辑），不是插件。
+- `internal-plugins/forge-runtime/`：每个会话都装配的业务插件，`index.js` 只做组装——`gateway.js`（OpenAI-compatible 模型适配器）、`workspace-tools.js`（工作区工具，配额见 `limits.js`）、`policy-hooks.js`（agent 级 restrict、单调拒绝 guard、dsh 搜索/读取的路径收窄、bash 门控与输出脱敏、外部工具逐次确认；规则在 `path-guard.js`、`bash-rules.js`）。
+- `src/kernel/forge-plugins.ts`：Forge 自有插件的唯一登记处（插件名、会话清单能否声明；新增插件 = 建 `internal-plugins/<插件名>/` + 在这里登记一行）；`internal-plugins/shared/events.js`：插件事件的唯一登记表，插件与 DSH 适配层共用；`src/kernel/dsh/engine-tools.js`：dsh 原生工具名与路径参数形状，内核与插件共用。`scripts/check-wiring.mjs` 核对这几张表与平台契约彼此一致。
+
+## 控制面接口（内部 Bearer Token）
+
+| 接口 | 说明 |
+| --- | --- |
+| `POST /v1/sessions`、`POST /v1/sessions/:id/restore` | 用会话清单（`manifest`）创建 / 重新装配会话 |
+| `GET /v1/sessions/:id` | 会话状态：`policyRef`、`lastSeq`、`turnActive`、`turnId`（控制面对账用） |
+| `POST /v1/sessions/:id/turns` | 提交一轮，立即返回 `{turnId, after}`；回合在 Runner 内执行到底，不依赖控制面连接 |
+| `GET /v1/sessions/:id/events?after=seq` | SSE：先补发 `seq > after` 的持久事件，再推送实时事件；断线后按最后的 seq 续读 |
+| `POST /v1/sessions/:id/events/ack` | 回执已落库的位置，Runner 清理该位置之前的执行日志 |
 
 模型配置只能由控制面传入。没有配置模型时拒绝创建执行会话，不会回落到历史假模型。模型凭据只经环境传入 dsh 子进程，不写入 runtime patch。
 
 ```bash
 npm ci
 npm run build
-npm run contract      # 19 项扩展点契约
-npm test              # 21 项真实文件边界 + 20 项正式插件/真 dsh 协议夹具（非真实模型）
+npm run contract      # dsh 扩展点契约（期望值来自 src/kernel/dsh/ 的声明）
+npm test              # 清单 / 执行日志 / 文件边界 / 正式插件与真 dsh 协议夹具（非真实模型）
 npm run test:workspace # 仅文件执行器/配额边界，不代替审批集成
 
 # 仓库根目录，先初始化 data/business.env
@@ -43,8 +61,4 @@ bash scripts/start-runner.sh
 
 ## 历史 M0
 
-`forge-poc-plugin/`、`scripts/poc.mjs`、`patches/forge-poc.patch.yml` 保留研究证据：固定假模型 + 安全探针验证 `tools/pre-execute` 的 allow / deny。探针不执行真实 Shell，不计入业务模型验收。
-
-```bash
-npm run poc
-```
+早期验证代码（固定假模型 + 安全探针，验证 `tools/pre-execute` 的 allow / deny）已完成使命并移除，提交 `1ca7e8e` 及之前的 git 历史中仍可查看；结论见 `docs/05-M0-技术验证报告.md`。

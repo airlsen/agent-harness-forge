@@ -9,7 +9,7 @@ import {
   searchPathDenial,
   classifyBashCommand,
   sanitizeGitOutput,
-} from '../forge-runtime-plugin/index.js';
+} from '../internal-plugins/forge-runtime/index.js';
 
 const temporary = await mkdtemp(join(tmpdir(), 'forge-workspace-check-'));
 const root = join(temporary, 'workspace');

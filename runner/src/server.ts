@@ -1,11 +1,14 @@
 /** 业务 Runner 入口。仅控制面凭内部 Token 可访问，浏览器永不直连。 */
 import Fastify from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
-import { DshKernel, MAX_LISTED_FILES, validModel, type RuntimeModel } from './kernel/dsh-kernel.js';
+import { SessionKernel, MAX_LISTED_FILES, validModel, type RuntimeModel } from './kernel/session-kernel.js';
 import { PluginWorkerClient } from './plugin-worker-client.js';
-import type { Bundle, UserCtx } from './kernel/types.js';
+import type { KernelEvent } from './kernel/types.js';
 import { listCodeProjects, resolveCodeProjects, setCodeRoot } from './kernel/code-projects.js';
-import { SKILL_CONTENT_REQUIRED } from './kernel/capabilities.js';
+import { SKILL_CONTENT_REQUIRED, WEB_SEARCH_PROVIDERS } from './kernel/capabilities.js';
+import { DSH_VERSION } from './kernel/dsh/index.js';
+import { PLATFORM } from './kernel/platform-contract.js';
+import { BASE_TOOLS, SHELL_TOOL } from './kernel/toolset.js';
 
 const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
 if (nodeMajor < 24 || (nodeMajor === 24 && nodeMinor < 9))
@@ -14,7 +17,9 @@ const token = process.env.FORGE_RUNNER_TOKEN;
 if (!token || token.length < 24) throw new Error('FORGE_RUNNER_TOKEN (>=24 chars) is required');
 const expected = Buffer.from(`Bearer ${token}`);
 const pluginWorker = await PluginWorkerClient.start();
-const kernel = new DshKernel(pluginWorker);
+const kernel = new SessionKernel(pluginWorker);
+/** 事件流心跳：长时间无事件（等待审批、模型思考）时保持连接，控制面据此判断连接仍然存活 */
+const HEARTBEAT_MS = 15000;
 const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 12 * 1024 * 1024 });
 app.addHook('onRequest', async (req, reply) => {
   if (req.url === '/healthz') return;
@@ -32,10 +37,12 @@ app.setErrorHandler((error: any, _req, reply) =>
   }),
 );
 app.get('/healthz', async () => ({ status: 'ok', service: 'forge-runner', mode: 'business' }));
+// 能力如实上报：工具目录来自平台契约（与控制面同一份），dsh 版本取自已安装的包
 app.get('/v1/runtime', async () => ({
   status: 'online',
   node: process.version,
-  dshVersion: '0.2.2-rc.1',
+  dshVersion: DSH_VERSION,
+  contractVersion: PLATFORM.version,
   sessions: kernel.size,
   capacity: kernel.capacity,
   active: kernel.active,
@@ -49,10 +56,14 @@ app.get('/v1/runtime', async () => ({
     skills: true,
     skillSnapshots: true,
     mcp: ['stdio', 'streamable-http'],
-    webSearch: true,
-    shell: false,
+    webSearch: WEB_SEARCH_PROVIDERS,
+    // 受控终端命令（bash）属于基础能力，是否开放由平台策略决定
+    shell: BASE_TOOLS.includes(SHELL_TOOL),
     fork: false,
     resume: true,
+    // 回合由 Runner 执行到底，事件写入执行日志，可按 seq 断线续读
+    journal: true,
+    tools: PLATFORM.tools.map((tool) => tool.name),
   },
 }));
 app.post<{
@@ -70,31 +81,23 @@ app.post<{
 });
 app.post('/v1/sessions', async (req, reply) => {
   const body = req.body as {
-    bundle: Bundle;
-    userCtx: UserCtx;
+    manifest: unknown;
     modelConfig: RuntimeModel;
     codeProjects?: string[];
     codeRoot?: string;
     capabilities?: unknown;
   };
-  if (!body?.bundle || !body?.modelConfig)
-    return reply.code(422).send({ message: 'bundle and modelConfig are required' });
+  if (!body?.manifest || !body?.modelConfig)
+    return reply.code(422).send({ message: 'manifest and modelConfig are required' });
   setCodeRoot(body.codeRoot);
-  return kernel.createSession(
-    body.bundle,
-    body.userCtx,
-    body.modelConfig,
-    body.codeProjects,
-    body.capabilities,
-  );
+  return kernel.createSession(body.manifest, body.modelConfig, body.codeProjects, body.capabilities);
 });
 // 以原 id 重新装配执行会话：Runner 重启后由控制面按数据库快照重新下发配置，从磁盘会话日志接续上下文。
 // 日志缺失 404、日志无法恢复 410；会话已在内存中时替换配置，下一轮以新配置重启并接续。
 app.post<{
   Params: { id: string };
   Body: {
-    bundle: Bundle;
-    userCtx: UserCtx;
+    manifest: unknown;
     modelConfig: RuntimeModel;
     codeProjects?: string[];
     codeRoot?: string;
@@ -102,13 +105,12 @@ app.post<{
   };
 }>('/v1/sessions/:id/restore', async (req, reply) => {
   const body = req.body;
-  if (!body?.bundle || !body?.modelConfig)
-    return reply.code(422).send({ message: 'bundle and modelConfig are required' });
+  if (!body?.manifest || !body?.modelConfig)
+    return reply.code(422).send({ message: 'manifest and modelConfig are required' });
   setCodeRoot(body.codeRoot);
   return kernel.restoreSession(
     req.params.id,
-    body.bundle,
-    body.userCtx,
+    body.manifest,
     body.modelConfig,
     body.codeProjects,
     body.capabilities,
@@ -121,9 +123,11 @@ app.get<{ Querystring: { root?: string } }>('/v1/code/projects', async (req) =>
 );
 app.get<{ Params: { id: string } }>('/v1/sessions/:id', async (req, reply) =>
   kernel.has(req.params.id)
-    ? { exists: true, busy: kernel.isBusy(req.params.id), policyRef: kernel.policyRef(req.params.id) }
+    ? kernel.state(req.params.id)
     : reply.code(404).send({ message: '执行会话不存在，Runner 可能已重启' }),
 );
+// 提交一轮：校验通过后立即返回 turnId 与订阅起点 after，回合在 Runner 内执行到结束，与本连接无关。
+// 缺少 Skill 内容时在这里以 409 + missingSkills 返回（尚未产生任何事件）。
 app.post<{
   Params: { id: string };
   Body: {
@@ -133,44 +137,89 @@ app.post<{
     codeRoot?: string;
     capabilities?: unknown;
   };
-}>('/v1/sessions/:id/stream', async (req, reply) => {
+}>('/v1/sessions/:id/turns', async (req, reply) => {
   const id = req.params.id;
   if (!kernel.has(id)) return reply.code(404).send({ message: '执行会话不存在，请新建会话' });
-  if (kernel.isBusy(id)) return reply.code(409).send({ message: '会话正在执行' });
-  if (kernel.isQueued(id)) return reply.code(409).send({ message: '会话正在排队等待执行，请稍候' });
   if (!req.body?.message || req.body.message.length > 64000)
     return reply.code(422).send({ message: 'message is required (<=64000 chars)' });
-  // 必须在接管响应流之前校验，否则错误无法以 422 返回给控制面。
   if (req.body.modelConfig !== undefined && !validModel(req.body.modelConfig))
     return reply.code(422).send({ message: 'modelConfig requires baseUrl and model' });
   setCodeRoot(req.body.codeRoot);
   if (req.body.codeProjects !== undefined) resolveCodeProjects(req.body.codeProjects);
-  // 解析结果直接交给 sendTurn（不会重复解析）；缺少 Skill 内容时在这里以 409 返回
-  if (req.body.capabilities !== undefined)
-    req.body.capabilities = kernel.resolveTurnCapabilities(req.body.capabilities, id);
-  reply.hijack();
-  reply.raw.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'X-Accel-Buffering': 'no',
-  });
-  const unsubscribe = kernel.onEvent(id, (event) => {
-    if (!reply.raw.destroyed) reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
-  });
-  reply.raw.on('close', unsubscribe);
-  try {
-    await kernel.sendTurn(
-      id,
-      req.body.message,
-      undefined,
-      req.body.modelConfig,
-      req.body.codeProjects,
-      req.body.capabilities,
-    );
-  } finally {
-    unsubscribe();
-    if (!reply.raw.destroyed) reply.raw.end();
-  }
+  return kernel.startTurn(
+    id,
+    req.body.message,
+    req.body.modelConfig,
+    req.body.codeProjects,
+    req.body.capabilities,
+  );
+});
+/**
+ * 事件流（SSE）：先补发 after 之后的持久事件，再推送实时事件（含流式增量），回合结束（done）后关闭。
+ * 没有进行中的回合时补发完即关闭；Runner 重启后尚未恢复的会话直接读磁盘执行日志。
+ * 控制面断线后用最后收到的 seq 重新订阅即可续上，不会丢失或重复持久事件。
+ */
+app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
+  '/v1/sessions/:id/events',
+  async (req, reply) => {
+    const id = req.params.id;
+    const after = Number(req.query.after ?? 0);
+    if (!Number.isSafeInteger(after) || after < 0) return reply.code(422).send({ message: 'after 无效' });
+    const live = kernel.has(id);
+    // 先订阅再读积压：两者之间产生的事件按 seq 去重，不会漏
+    const buffered: KernelEvent[] = [];
+    let forward: ((event: KernelEvent) => void) | null = null;
+    const unsubscribe = live
+      ? kernel.onEvent(id, (event) => (forward ? forward(event) : buffered.push(event)))
+      : () => {};
+    let backlog: KernelEvent[];
+    try {
+      backlog = kernel.eventsAfter(id, after);
+    } catch (error) {
+      unsubscribe();
+      throw error;
+    }
+    reply.hijack();
+    const raw = reply.raw;
+    raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'X-Accel-Buffering': 'no',
+    });
+    let lastSeq = after;
+    let closed = false;
+    const heartbeat = setInterval(() => {
+      if (!raw.destroyed) raw.write(': ping\n\n');
+    }, HEARTBEAT_MS);
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(heartbeat);
+      unsubscribe();
+      if (!raw.destroyed) raw.end();
+    };
+    raw.on('close', close);
+    const send = (event: KernelEvent) => {
+      if (closed) return;
+      // 流式增量不占编号，原样转发；持久事件按 seq 去重（已补发过的不再发送）
+      if (!event.transient) {
+        if (event.seq <= lastSeq) return;
+        lastSeq = event.seq;
+      }
+      if (!raw.destroyed) raw.write(`data: ${JSON.stringify(event)}\n\n`);
+      if (event.kind === 'done') close();
+    };
+    for (const event of backlog) send(event);
+    // 没有进行中的回合：积压就是全部
+    if (!closed && (!live || !kernel.state(id).turnActive)) return close();
+    for (const event of buffered) send(event);
+    forward = send;
+  },
+);
+// 控制面已把 seq 及之前的事件落库：Runner 执行日志移除这些事件
+app.post<{ Params: { id: string }; Body: { seq: number } }>('/v1/sessions/:id/events/ack', async (req) => {
+  kernel.ackEvents(req.params.id, Number(req.body?.seq));
+  return { ok: true };
 });
 app.post<{ Params: { id: string } }>('/v1/sessions/:id/interrupt', async (req) => {
   await kernel.interrupt(req.params.id);
@@ -188,27 +237,27 @@ app.post<{ Params: { id: string; ticket: string } }>(
   },
 );
 app.get<{ Params: { id: string } }>('/v1/sessions/:id/files', async (req) => {
-  const items = await kernel.listFiles(req.params.id);
+  const items = await kernel.files.listFiles(req.params.id);
   return { items, truncated: items.length >= MAX_LISTED_FILES };
 });
 app.delete<{ Params: { id: string }; Querystring: { path: string } }>(
   '/v1/sessions/:id/file',
   async (req) => {
-    await kernel.deleteFile(req.params.id, req.query.path);
+    await kernel.files.deleteFile(req.params.id, req.query.path);
     return { ok: true };
   },
 );
 app.delete<{ Params: { id: string } }>('/v1/sessions/:id/workspace', async (req) => {
-  await kernel.purgeWorkspace(req.params.id);
+  await kernel.files.purgeWorkspace(req.params.id);
   return { ok: true };
 });
 app.get<{ Params: { id: string }; Querystring: { path: string } }>('/v1/sessions/:id/file', async (req) => ({
-  content: await kernel.readFile(req.params.id, req.query.path),
+  content: await kernel.files.readFile(req.params.id, req.query.path),
 }));
 app.get<{ Params: { id: string }; Querystring: { path: string } }>(
   '/v1/sessions/:id/raw',
   async (req, reply) => {
-    const file = await kernel.readRaw(req.params.id, req.query.path);
+    const file = await kernel.files.readRaw(req.params.id, req.query.path);
     return reply
       .header('content-type', file.mime)
       .header('content-length', String(file.bytes))
@@ -225,4 +274,4 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const)
     void app.close().then(() => process.exit(0));
   });
 await app.listen({ port: Number(process.env.PORT ?? 9000), host: '0.0.0.0' });
-console.log('Forge business Runner ready — real models only; shell disabled');
+console.log(`Forge business Runner ready — dsh ${DSH_VERSION}, platform contract v${PLATFORM.version}`);

@@ -14,7 +14,14 @@ from ..models.platform import PlatformSetting, SessionMessage
 from ..models.approval_ticket import ApprovalTicket
 from ..schemas.agent_scenario import ScenarioPayload
 from .file_service import file_service
-from .runner_client import SkillContentRequired, ensure_session, runner_client
+from .runner_client import (
+    JOURNAL_RESET,
+    RunnerEventsUnavailable,
+    SkillContentRequired,
+    ensure_session,
+    journal_seq,
+    runner_client,
+)
 from .scenario_service import scenario_service, iso
 from .scenario_assembler import Bundle, apply_current_policy
 from .plugin_service import ensure_bindings_available
@@ -141,6 +148,8 @@ class SessionService:
     def __init__(self):
         self.tasks: dict[int, asyncio.Task] = {}
         self.locks: dict[int, asyncio.Lock] = {}
+        # 控制面正在停止：后台任务被取消时不中止 Runner 上的回合（重启后对账接回）
+        self.stopping = False
 
     async def row(self, db, session_id):
         row = await db.get(AgentSession, session_id)
@@ -218,7 +227,7 @@ class SessionService:
             if stored_bundle:
                 # Scenario versions freeze requested capabilities; current governance remains a ceiling
                 # for new sessions. Existing sessions keep their already-materialized Bundle snapshot.
-                bundle = apply_current_policy(Bundle(**stored_bundle), current_policy)
+                bundle = apply_current_policy(Bundle.from_dict(stored_bundle), current_policy)
             else:
                 # 兼容早期版本；新场景发布后始终使用版本内的不可变能力快照。
                 bundle = await scenario_service.assembler.compile(
@@ -426,11 +435,6 @@ class SessionService:
                     config = await resolve_session_connection(db, model_id)
                     segment = segment_from_connection(session_id, config)
                 runtime = runtime_config(segment)
-                user_ctx = {
-                    "tenantId": "sandbox",
-                    "userId": settings.admin_username,
-                    "roles": ["workspace-admin"],
-                }
                 if row.runner_session_id:
                     # Runner 重启后按会话快照重新装配，从磁盘会话日志接续完整上下文（dsh session/resume）
                     async def ensure(caps):
@@ -438,7 +442,6 @@ class SessionService:
                             runner_client,
                             row.runner_session_id,
                             row.bundle_snapshot,
-                            user_ctx,
                             runtime,
                             code,
                             caps,
@@ -465,9 +468,7 @@ class SessionService:
                 else:
 
                     async def create(caps):
-                        return await runner_client.create_session(
-                            row.bundle_snapshot, user_ctx, runtime, code, caps
-                        )
+                        return await runner_client.create_session(row.bundle_snapshot, runtime, code, caps)
 
                     try:
                         handle = await create(runtime_caps)
@@ -540,12 +541,9 @@ class SessionService:
                 runner_id = row.runner_session_id
                 turn = {"segmentId": segment.id, "ref": model_ref(segment), "messageId": user.id}
                 current = segment_view(segment)
-            task = asyncio.create_task(
-                self.pump(session_id, runner_id, message, pump_cursor, runtime, turn, code, runtime_caps)
-            )
-            self.tasks[session_id] = task
-            task.add_done_callback(
-                lambda done: self.tasks.pop(session_id, None) if self.tasks.get(session_id) is done else None
+            self._spawn(
+                session_id,
+                self.pump(session_id, runner_id, message, pump_cursor, runtime, turn, code, runtime_caps),
             )
             # 返回切换事件之前的游标，客户端订阅时会收到 model_switched。
             return {
@@ -560,30 +558,93 @@ class SessionService:
             }
 
     @staticmethod
-    async def runner_events(runner_id, message, runtime, code_projects, capabilities):
-        """转发 Runner 事件流。Skill 通常只带快照引用；Runner 缺少内容时（在产生任何事件之前返回 409），
-        补发这些 Skill 的全文并重试一次。"""
+    async def runner_events(runner_id, message, runtime, code_projects, capabilities, since=None):
+        """提交一轮并转发 Runner 事件。Skill 通常只带快照引用；Runner 缺少内容时（提交即返回 409，
+        尚未产生任何事件）补发这些 Skill 的全文并重试一次。since 见 RunnerClient.events。"""
         try:
-            async for event in runner_client.events(runner_id, message, runtime, code_projects, capabilities):
+            async for event in runner_client.events(
+                runner_id, message, runtime, code_projects, capabilities, since=since
+            ):
                 yield event
             return
         except SkillContentRequired as missing:
             async with SessionFactory() as db:
                 capabilities = await capability_service.expand_skills(db, capabilities, missing.snapshots)
-        async for event in runner_client.events(runner_id, message, runtime, code_projects, capabilities):
+        async for event in runner_client.events(
+            runner_id, message, runtime, code_projects, capabilities, since=since
+        ):
             yield event
 
     async def pump(
         self, session_id, runner_id, message, cursor, runtime, turn, code_projects=None, capabilities=None
     ):
-        """转发一轮执行事件并落库。turn 为本轮模型分段：回复署名与计费都以它为准。"""
-        failed, got_done, partial, partial_reasoning = False, False, "", ""
+        """提交一轮并把事件落库。turn 为本轮模型分段：回复署名与计费都以它为准。"""
+        # 轮前文件快照：本轮结束时与之对比得到改动记录（旧会话先补一次同步，避免把已有文件算作新增）。
+        baseline = None
+        try:
+            async with SessionFactory() as db:
+                await file_service.ensure_synced(await self.row(db, session_id), runner_client)
+            baseline = await file_service.snapshot(session_id)
+        except Exception:  # 文件记录失败不影响执行
+            log.warning("会话 %s 的轮前文件快照失败", session_id, exc_info=True)
+        async with SessionFactory() as db:
+            since = (await self.row(db, session_id)).runner_event_seq or 0
 
-        async def persist(kind, payload, source="system"):
+        def events():
+            # 每轮下发完整的关联代码列表（空列表表示不关联），Runner 与数据库始终一致
+            return self.runner_events(
+                runner_id,
+                message,
+                runtime,
+                list(code_projects or []),
+                capabilities or {"skills": [], "mcp": [], "web": None},
+                since,
+            )
+
+        await self._consume(session_id, runner_id, cursor, turn, events, baseline=baseline, announce=True)
+
+    async def reattach(self, session_id, runner_id, cursor, turn, after, lost_message, turn_id=None):
+        """接回控制面重启前的回合：从已落库的位置续读 Runner 执行日志。
+
+        回合仍在执行时继续跟随到结束；已结束则补齐未落库的事件（回复、用量、审批记录）；
+        Runner 也重启过、回合没有结束标记时，补齐已有事件后以 lost_message 标记中断。
+        """
+        await self._consume(
+            session_id,
+            runner_id,
+            cursor,
+            turn,
+            lambda: runner_client.follow(runner_id, after, turn_id=turn_id),
+            baseline=None,
+            announce=False,
+            lost_message=lost_message,
+        )
+
+    async def _consume(
+        self,
+        session_id,
+        runner_id,
+        cursor,
+        turn,
+        events,
+        *,
+        baseline,
+        announce,
+        lost_message="执行内核事件流提前结束，任务未正常完成",
+    ):
+        """转发一轮执行事件并落库：按 Runner 序号去重，结束后回执，Runner 据此清理执行日志。"""
+        failed, got_done, detached, partial, partial_reasoning = False, False, False, "", ""
+        async with SessionFactory() as db:
+            seen = (await self.row(db, session_id)).runner_event_seq or 0
+
+        async def persist(kind, payload, source="system", runner_seq=None):
             nonlocal cursor
             cursor += 1
             async with SessionFactory() as db:
                 row = await self.row(db, session_id)
+                # 与事件同一事务记录续读位置：落库与位置要么都成功、要么都不生效
+                if runner_seq is not None and runner_seq > (row.runner_event_seq or 0):
+                    row.runner_event_seq = runner_seq
                 if kind == "approval_required":
                     ticket = ApprovalTicket(
                         session_id=session_id,
@@ -675,25 +736,23 @@ class SessionService:
                 )
                 await db.commit()
 
-        # 轮前文件快照：本轮结束时与之对比得到改动记录（旧会话先补一次同步，避免把已有文件算作新增）。
-        baseline = None
         try:
-            async with SessionFactory() as db:
-                await file_service.ensure_synced(await self.row(db, session_id), runner_client)
-            baseline = await file_service.snapshot(session_id)
-        except Exception:  # 文件记录失败不影响执行
-            log.warning("会话 %s 的轮前文件快照失败", session_id, exc_info=True)
-        try:
-            await persist("session", {"sessionId": session_id, "workspaceUri": "session://" + runner_id})
-            # 每轮下发完整的关联代码列表（空列表表示不关联），Runner 与数据库始终一致
-            async for event in self.runner_events(
-                runner_id,
-                message,
-                runtime,
-                list(code_projects or []),
-                capabilities or {"skills": [], "mcp": [], "web": None},
-            ):
+            if announce:
+                await persist("session", {"sessionId": session_id, "workspaceUri": "session://" + runner_id})
+            async for event in events():
                 kind, payload = event["kind"], event.get("payload") or {}
+                if kind == JOURNAL_RESET:
+                    seen = int(payload.get("after") or 0)
+                    log.warning("会话 %s 的 Runner 执行日志已重置，续读位置退回 %s", session_id, seen)
+                    async with SessionFactory() as db:
+                        (await self.row(db, session_id)).runner_event_seq = seen
+                        await db.commit()
+                    continue
+                seq = journal_seq(event)
+                if seq is not None:
+                    if seq <= seen:
+                        continue  # 断线续读或对账时重复收到的事件：已落库
+                    seen = seq
                 if kind == "files":
                     # 先同步再发布事件：客户端收到事件后刷新清单时即可看到新文件
                     try:
@@ -713,51 +772,73 @@ class SessionService:
                     got_done = True
                     failed = failed or payload.get("status") == "error"
                     continue  # 所有消息/审批落库后，再发布最终状态。
-                await persist(kind, payload, event.get("source", "system"))
+                await persist(kind, payload, event.get("source", "system"), seq)
             if not got_done:
                 failed = True
-                await persist("error", {"message": "执行内核事件流提前结束，任务未正常完成"})
+                await persist("error", {"message": lost_message})
         except asyncio.CancelledError:
+            if self.stopping:
+                # 控制面停止：回合归 Runner 所有，继续执行到底；重启后对账从已落库的位置补齐，这里什么都不结算
+                detached = True
+                raise
             failed = True
             try:
                 await runner_client.call("POST", f"/v1/sessions/{runner_id}/interrupt")
             except Exception:
                 pass
-            await persist("error", {"message": "控制面停止，任务已中止"})
+            await persist("error", {"message": "任务已中止"})
         except Exception as error:
             failed = True
-            text = error.detail if isinstance(error, HTTPException) else str(error)
+            if isinstance(error, RunnerEventsUnavailable):
+                text = lost_message
+            else:
+                text = error.detail if isinstance(error, HTTPException) else str(error)
             await persist("error", {"message": text[:600] or "执行连接中断，请稍后重试"})
         finally:
-            if partial or partial_reasoning:
-                meta = {"partial": True, **turn["ref"]}
-                if partial_reasoning:
-                    meta["reasoning"] = partial_reasoning
-                async with SessionFactory() as db:
-                    db.add(
-                        SessionMessage(session_id=session_id, role="assistant", content=partial, meta=meta)
-                    )
-                    await db.commit()
+            if not detached:
+                await self._finish_turn(
+                    session_id, runner_id, turn, baseline, failed, partial, partial_reasoning, persist, seen
+                )
+                await runner_client.ack(runner_id, seen)
+
+    async def _finish_turn(
+        self, session_id, runner_id, turn, baseline, failed, partial, partial_reasoning, persist, seen
+    ):
+        """结算一轮：保留未结算的部分输出、取消遗留审批、记录文件改动，最后发布 done。
+
+        seen 为本轮处理到的 Runner 序号（含 Runner 的 done）：随最终状态一起记录。
+        """
+        if partial or partial_reasoning:
+            meta = {"partial": True, **turn["ref"]}
+            if partial_reasoning:
+                meta["reasoning"] = partial_reasoning
             async with SessionFactory() as db:
-                pending = (
-                    await db.scalars(
-                        select(ApprovalTicket.tool_call_id).where(
-                            ApprovalTicket.session_id == session_id, ApprovalTicket.status == "pending"
-                        )
+                db.add(SessionMessage(session_id=session_id, role="assistant", content=partial, meta=meta))
+                await db.commit()
+        async with SessionFactory() as db:
+            pending = (
+                await db.scalars(
+                    select(ApprovalTicket.tool_call_id).where(
+                        ApprovalTicket.session_id == session_id, ApprovalTicket.status == "pending"
                     )
-                ).all()
-            for ticket_id in pending:
-                await persist("approval_resolved", {"ticketId": ticket_id, "action": "cancelled"}, "tools")
-            if baseline is not None and turn.get("messageId"):
-                try:
+                )
+            ).all()
+        for ticket_id in pending:
+            await persist("approval_resolved", {"ticketId": ticket_id, "action": "cancelled"}, "tools")
+        if turn.get("messageId"):
+            try:
+                if baseline is not None:
                     summary = await file_service.finish_turn(
                         session_id, runner_id, turn["messageId"], baseline, runner_client
                     )
                     if summary:
                         await persist("workspace_changes", summary, "tools")
-                except Exception:
-                    log.warning("会话 %s 的本轮文件改动记录失败", session_id, exc_info=True)
-            await persist("done", {"status": "error" if failed else "idle"})
+                else:
+                    # 接回的回合没有轮前快照：只同步文件清单
+                    await file_service.sync(session_id, runner_id, runner_client)
+            except Exception:
+                log.warning("会话 %s 的本轮文件改动记录失败", session_id, exc_info=True)
+        await persist("done", {"status": "error" if failed else "idle"}, runner_seq=seen)
 
     async def events(self, session_id, after=0, source=None, limit=1000):
         async with SessionFactory() as db:
@@ -861,7 +942,108 @@ class SessionService:
             else failure_message or "模型试运行失败，请查看该次执行轨迹",
         }
 
+    def _spawn(self, session_id, coroutine):
+        """登记会话的后台执行任务：同一会话同时只有一个，结束后自动移除。"""
+        task = asyncio.create_task(coroutine)
+        self.tasks[session_id] = task
+        task.add_done_callback(
+            lambda done: self.tasks.pop(session_id, None) if self.tasks.get(session_id) is done else None
+        )
+        return task
+
+    async def reconcile(self):
+        """控制面启动对账：回合归 Runner 所有，先问 Runner 再决定怎么处理上次停止时未结束的会话。
+
+        - Runner 上仍在执行：从已落库的位置接回，继续跟随到结束；
+        - 已在 Runner 上结束（或 Runner 也重启过）：补录执行日志里未落库的回复、用量与审批记录后结算；
+        - Runner 不可达或没有快照：取消遗留审批、标记中断（下次提问时从已落库的位置补齐）。
+        """
+        lost = "控制面重启，未完成的任务已标记中断；可继续发送消息，上下文会保留"
+        async with SessionFactory() as db:
+            active = (await db.scalars(select(AgentSession).where(AgentSession.status == "running"))).all()
+            resumed: set[int] = set()
+            for row in active:
+                if not row.runner_session_id:
+                    continue
+                try:
+                    state = await runner_client.session_state(row.runner_session_id)
+                except HTTPException:
+                    continue  # Runner 不可达
+                segment = await self._current_segment(db, row)
+                message = await db.scalar(
+                    select(SessionMessage)
+                    .where(SessionMessage.session_id == row.id, SessionMessage.role == "user")
+                    .order_by(SessionMessage.id.desc())
+                    .limit(1)
+                )
+                if not segment or not message:
+                    continue
+                cursor = (
+                    await db.scalar(
+                        select(func.max(SessionEventIndex.seq)).where(SessionEventIndex.session_id == row.id)
+                    )
+                    or 0
+                )
+                turn = {"segmentId": segment.id, "ref": model_ref(segment), "messageId": message.id}
+                running = bool(state and state.get("turnActive"))
+                self._spawn(
+                    row.id,
+                    self.reattach(
+                        row.id,
+                        row.runner_session_id,
+                        cursor,
+                        turn,
+                        row.runner_event_seq or 0,
+                        lost,
+                        turn_id=state.get("turnId") if running else None,
+                    ),
+                )
+                resumed.add(row.id)
+                log.info(
+                    "会话 %s %s", row.id, "已接回 Runner 上执行中的回合" if running else "正在补录执行日志"
+                )
+            await self._interrupt_leftovers(
+                db, [row for row in active if row.id not in resumed], resumed, lost
+            )
+
+    async def _interrupt_leftovers(self, db, rows, resumed, message):
+        """无法接回的会话：取消遗留审批并留下明确的中断记录。"""
+        pending = (await db.scalars(select(ApprovalTicket).where(ApprovalTicket.status == "pending"))).all()
+        pending = [ticket for ticket in pending if ticket.session_id not in resumed]
+        affected = {row.id for row in rows} | {ticket.session_id for ticket in pending}
+        now = datetime.now(timezone.utc)
+        for session_id in affected:
+            cursor = (
+                await db.scalar(
+                    select(func.max(SessionEventIndex.seq)).where(SessionEventIndex.session_id == session_id)
+                )
+                or 0
+            )
+
+            def append(kind, payload, source="system", session_id=session_id):
+                nonlocal cursor
+                cursor += 1
+                db.add(
+                    SessionEventIndex(
+                        session_id=session_id, seq=cursor, kind=kind, source=source, attrs=payload
+                    )
+                )
+
+            for ticket in (ticket for ticket in pending if ticket.session_id == session_id):
+                ticket.status, ticket.decided_at = "cancelled", now
+                append(
+                    "approval_resolved",
+                    {"ticketId": ticket.id, "action": "cancelled", "reason": "控制面重启"},
+                    "tools",
+                )
+            for row in (row for row in rows if row.id == session_id):
+                row.status, row.ended_at = "interrupted", now
+                append("error", {"message": message})
+                append("done", {"status": "error", "reason": "control-plane-restart"})
+        await db.commit()
+
     async def shutdown(self):
+        self.stopping = True
         active = [task for task in self.tasks.values() if not task.done()]
         for task in active:
             task.cancel()

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { apply } from '../forge-plugin-bridge/index.js';
+import { apply } from '../internal-plugins/forge-plugin-bridge/index.js';
 
 const tools = new Map();
 const preExecuteHooks = [];

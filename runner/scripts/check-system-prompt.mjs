@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-/** 系统提示词拼装检查：渲染说明由 runner 统一追加，不依赖场景 Bundle 快照。 */
+/** 系统提示词拼装检查：渲染说明由 runner 统一追加，不依赖会话清单里的场景快照。 */
 import assert from 'node:assert/strict';
 import { buildSystemPrompt, codeGuide, RENDER_GUIDE, workspaceGuide } from '../src/kernel/system-prompt.ts';
-import { sessionToolset, BASE_TOOLS, SEARCH_TOOLS } from '../src/kernel/dsh-kernel.ts';
+import { sessionToolset, BASE_TOOLS, SEARCH_TOOLS } from '../src/kernel/toolset.ts';
 const s = buildSystemPrompt({
   identity: 'I',
   domain: 'D',
@@ -36,7 +36,7 @@ assert.deepEqual(workspaceGuide(['skill_read_draft']), []);
 
 // 基础能力：只声明 current_time 的场景（如「通用助手」）也获得文件读写与搜索
 const policy = { allowedTools: [...BASE_TOOLS] };
-assert.deepEqual(sessionToolset({ builtin_tools: ['current_time'], policy }), {
+assert.deepEqual(sessionToolset({ tools: { builtin: ['current_time'] }, policy }), {
   allowed: [...BASE_TOOLS, 'workspace_present', ...SEARCH_TOOLS],
   search: true,
   code: false,
@@ -44,8 +44,8 @@ assert.deepEqual(sessionToolset({ builtin_tools: ['current_time'], policy }), {
   skills: false,
   approval: [],
 });
-// 旧 Bundle 没有 policy/builtin_tools 时同样补齐
-assert.deepEqual(sessionToolset(undefined).allowed, [...BASE_TOOLS, 'workspace_present', ...SEARCH_TOOLS]);
+// 清单没有策略上限与场景工具时同样补齐
+assert.deepEqual(sessionToolset().allowed, [...BASE_TOOLS, 'workspace_present', ...SEARCH_TOOLS]);
 // 平台策略仍是上限：关闭写入 → 无交付声明；关闭读取 → 不加载搜索插件
 const noWrite = sessionToolset({
   policy: { allowedTools: ['current_time', 'workspace_list', 'workspace_read'] },
@@ -57,11 +57,11 @@ assert.equal(noRead.search, false);
 assert.ok(!noRead.allowed.includes('grep') && noRead.allowed.includes('workspace_present'));
 // 受管插件工具由控制面筛选，不再被内置工具策略误过滤
 assert.ok(
-  sessionToolset({ policy, plugin_tools: ['crm_find_customer'] }).allowed.includes('crm_find_customer'),
+  sessionToolset({ policy, tools: { plugin: ['crm_find_customer'] } }).allowed.includes('crm_find_customer'),
 );
 // Skill 编辑会话的策略只含 skill_*：保持受限，不附加基础能力
 const authoring = ['skill_read_draft', 'skill_update_draft'];
-assert.deepEqual(sessionToolset({ builtin_tools: authoring, policy: { allowedTools: authoring } }), {
+assert.deepEqual(sessionToolset({ tools: { builtin: authoring }, policy: { allowedTools: authoring } }), {
   allowed: authoring,
   search: false,
   code: false,

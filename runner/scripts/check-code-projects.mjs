@@ -10,7 +10,7 @@ const root = join(dir, 'git');
 process.env.FORGE_CODE_ROOT = root;
 const { listCodeProjects, resolveCodeProjects, gitHead, projectOverview, sameProjects, validProjectName } =
   await import('../src/kernel/code-projects.ts');
-const { toolPathDenial, filterSecretResults } = await import('../forge-runtime-plugin/index.js');
+const { toolPathDenial, filterSecretResults } = await import('../internal-plugins/forge-runtime/index.js');
 let checks = 0;
 const check = async (name, test) => {
   await test();

@@ -29,6 +29,9 @@ class FakeWorkspaceRunner:
         self.deleted: list[tuple[str, str]] = []
         self.purged: list[str] = []
 
+    async def ack(self, _runner_id, _seq):
+        return None
+
     @staticmethod
     def _runner(path: str) -> str:
         return path.split("/v1/sessions/", 1)[1].split("/", 1)[0]
@@ -208,7 +211,7 @@ async def test_gc_keeps_trial_contents_and_retention_purges_stale_conversations(
 async def test_authoring_turn_pushes_trial_file_updates(env, monkeypatch):
     runner, skill_id, authoring_id = env["runner"], env["skill_id"], env["authoring_id"]
 
-    async def fake_prepare(db, session, created_by):
+    async def fake_prepare(db, session):
         return {"model": "m"}
 
     async def fake_events(runner_id, message, model_config=None):

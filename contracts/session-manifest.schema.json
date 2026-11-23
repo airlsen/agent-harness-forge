@@ -1,0 +1,338 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/contracts/session-manifest.schema.json",
+  "$comment": "由 backend/src/api/core/manifest.py 生成，请勿手改；修改后执行 make contracts",
+  "$defs": {
+    "DesignGuide": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "content"
+      ],
+      "title": "DesignGuide",
+      "type": "object"
+    },
+    "DraftFile": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ],
+      "title": "DraftFile",
+      "type": "object"
+    },
+    "ManifestTools": {
+      "additionalProperties": false,
+      "properties": {
+        "builtin": {
+          "description": "场景声明的 Forge 内置工具，Runner 以 policy.allowedTools 为上限",
+          "items": {
+            "type": "string"
+          },
+          "title": "Builtin",
+          "type": "array"
+        },
+        "plugin": {
+          "description": "已按企业插件策略筛选的受管插件工具",
+          "items": {
+            "type": "string"
+          },
+          "title": "Plugin",
+          "type": "array"
+        }
+      },
+      "required": [
+        "builtin",
+        "plugin"
+      ],
+      "title": "ManifestTools",
+      "type": "object"
+    },
+    "PluginBinding": {
+      "additionalProperties": true,
+      "description": "受管插件绑定：审核冻结的版本、制品摘要与授权工具（工具定义原样透传）。",
+      "properties": {
+        "package": {
+          "title": "Package",
+          "type": "string"
+        },
+        "displayName": {
+          "title": "Displayname",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "artifactHash": {
+          "title": "Artifacthash",
+          "type": "string"
+        },
+        "runtime": {
+          "title": "Runtime",
+          "type": "string"
+        },
+        "execution": {
+          "additionalProperties": true,
+          "title": "Execution",
+          "type": "object"
+        },
+        "tools": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Tools",
+          "type": "array"
+        }
+      },
+      "required": [
+        "package",
+        "displayName",
+        "version",
+        "artifactHash",
+        "runtime",
+        "execution",
+        "tools"
+      ],
+      "title": "PluginBinding",
+      "type": "object"
+    },
+    "RuntimePolicy": {
+      "additionalProperties": true,
+      "description": "执行策略：Runner 读取下列字段，其余企业策略字段原样保留供审计。",
+      "properties": {
+        "allowedTools": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Allowedtools"
+        },
+        "maxOutputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxoutputtokens"
+        },
+        "requestTimeoutSeconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requesttimeoutseconds"
+        },
+        "approvalTimeoutSeconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approvaltimeoutseconds"
+        }
+      },
+      "required": [
+        "allowedTools",
+        "maxOutputTokens",
+        "requestTimeoutSeconds",
+        "approvalTimeoutSeconds"
+      ],
+      "title": "RuntimePolicy",
+      "type": "object"
+    },
+    "SkillAuthoringDraft": {
+      "additionalProperties": false,
+      "description": "Skill 编写会话的草稿上下文（仅 skill-authoring 插件使用）。",
+      "properties": {
+        "skillId": {
+          "title": "Skillid",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "revisionId": {
+          "title": "Revisionid",
+          "type": "integer"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/DraftFile"
+          },
+          "title": "Files",
+          "type": "array"
+        },
+        "guides": {
+          "items": {
+            "$ref": "#/$defs/DesignGuide"
+          },
+          "title": "Guides",
+          "type": "array"
+        }
+      },
+      "required": [
+        "skillId",
+        "name",
+        "description",
+        "revisionId",
+        "content",
+        "files",
+        "guides"
+      ],
+      "title": "SkillAuthoringDraft",
+      "type": "object"
+    },
+    "SystemPrompt": {
+      "additionalProperties": false,
+      "description": "系统提示的四个部分；平台运行说明由 Runner 按会话实际能力追加。",
+      "properties": {
+        "identity": {
+          "title": "Identity",
+          "type": "string"
+        },
+        "domain": {
+          "default": "",
+          "title": "Domain",
+          "type": "string"
+        },
+        "safety": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Safety",
+          "type": "array"
+        },
+        "workspace": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Workspace",
+          "type": "array"
+        }
+      },
+      "required": [
+        "identity",
+        "domain",
+        "safety",
+        "workspace"
+      ],
+      "title": "SystemPrompt",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "一个执行会话的完整装配输入（随创建 / 恢复请求下发；模型与扩展能力按轮下发，不在此处）。",
+  "properties": {
+    "version": {
+      "const": 1,
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "systemPrompt": {
+      "$ref": "#/$defs/SystemPrompt"
+    },
+    "plugins": {
+      "description": "挂载的 Forge 插件包，Runner 只接受白名单内的名称",
+      "items": {
+        "type": "string"
+      },
+      "title": "Plugins",
+      "type": "array"
+    },
+    "tools": {
+      "$ref": "#/$defs/ManifestTools"
+    },
+    "pluginBindings": {
+      "items": {
+        "$ref": "#/$defs/PluginBinding"
+      },
+      "title": "Pluginbindings",
+      "type": "array"
+    },
+    "policy": {
+      "$ref": "#/$defs/RuntimePolicy"
+    },
+    "policyRef": {
+      "description": "执行策略指纹：Runner 会话的指纹与控制面不一致时按新清单重新装配",
+      "title": "Policyref",
+      "type": "string"
+    },
+    "skillAuthoring": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SkillAuthoringDraft"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "version",
+    "systemPrompt",
+    "plugins",
+    "tools",
+    "pluginBindings",
+    "policy",
+    "policyRef",
+    "skillAuthoring"
+  ],
+  "title": "SessionManifest",
+  "type": "object"
+}

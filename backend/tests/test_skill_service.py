@@ -216,7 +216,7 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
     async def fake_connection(db, secret=False):
         return {'configured': True, 'baseUrl': 'https://model.example', 'model': 'm', 'apiKey': 'k'}
 
-    async def fake_create_session(bundle, user_ctx, model_config, *, capabilities=None):
+    async def fake_create_session(bundle, model_config, *, capabilities=None):
         captured['bundle'] = bundle
         captured['capabilities'] = capabilities
         return {'sessionId': f'runner-{len(captured)}'}
@@ -232,7 +232,7 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
     try:
         async with sessions() as db:
             created = await create_skill(db, '周报', '写周报时使用', None, 'tester')
-            first = await skill_service.create_authoring_session(db, created['id'], 'tester')
+            first = await skill_service.create_authoring_session(db, created['id'])
             bundle = captured['bundle']
             prompt = bundle['profile_patch']['systemPrompt']
             assert '# Skill 设计方法' in prompt['workspace'][0]
@@ -264,7 +264,7 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
             await skill_service._append_message(db, row, 'user', '给财务团队用的周报')
             await skill_service._append_message(db, row, 'assistant', '好的，先确认数据来源。')
             policy['maxOutputTokens'] = 16384
-            await skill_service.create_authoring_session(db, created['id'], 'tester')
+            await skill_service.create_authoring_session(db, created['id'])
             fresh = captured['bundle']
             assert fresh['profile_patch']['systemPrompt']['workspace'][1] == ''
             assert fresh['meta']['policy']['maxOutputTokens'] == 16384
@@ -275,7 +275,7 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
 
             monkeypatch.setattr(skill_service.runner_client, 'call', missing_log)
             monkeypatch.setattr(skill_service.runner_client, 'restore_session', missing_log)
-            await skill_service._prepare_authoring_runner(db, row, 'tester')
+            await skill_service._prepare_authoring_runner(db, row)
             rebuilt = captured['bundle']
             history = rebuilt['profile_patch']['systemPrompt']['workspace'][1]
             assert '维护者：给财务团队用的周报' in history and '助手：好的，先确认数据来源。' in history
@@ -350,7 +350,7 @@ class FakeAuthoringRunner:
             raise HTTPException(404, "执行会话不存在，Runner 可能已重启")
         return {"exists": True, "busy": False, "policyRef": self.policy_ref}
 
-    async def restore_session(self, runner_session_id, bundle, user_ctx, model_config, *args, **kwargs):
+    async def restore_session(self, runner_session_id, bundle, model_config, *args, **kwargs):
         if self.restore_error:
             raise self.restore_error
         self.restored.append((runner_session_id, bundle, kwargs.get('capabilities', args[-1] if args else None)))
@@ -358,7 +358,7 @@ class FakeAuthoringRunner:
         self.alive = True
         return {"sessionId": runner_session_id}
 
-    async def create_session(self, bundle, user_ctx, model_config, **kwargs):
+    async def create_session(self, bundle, model_config, **kwargs):
         self.created.append(bundle)
         return {"sessionId": f"fresh-{len(self.created)}"}
 
@@ -829,12 +829,12 @@ async def test_authoring_conversation_selects_and_switches_model(monkeypatch):
             skill_id = created["id"]
 
             # 不选模型：跟随平台默认
-            default_view = await skill_service.create_authoring_session(db, skill_id, "tester")
+            default_view = await skill_service.create_authoring_session(db, skill_id)
             assert default_view["modelId"] is None
             assert default_view["model"]["model"] == "model-a" and default_view["model"]["available"]
 
             # 新对话显式选择模型
-            chosen = await skill_service.create_authoring_session(db, skill_id, "tester", 2)
+            chosen = await skill_service.create_authoring_session(db, skill_id, 2)
             assert chosen["modelId"] == 2
             assert chosen["model"] == {
                 "modelId": 2,
@@ -847,7 +847,7 @@ async def test_authoring_conversation_selects_and_switches_model(monkeypatch):
             # 停用或不存在的模型不能选
             for bad in (3, 99):
                 with pytest.raises(HTTPException) as error:
-                    await skill_service.create_authoring_session(db, skill_id, "tester", bad)
+                    await skill_service.create_authoring_session(db, skill_id, bad)
                 assert error.value.status_code == 409
                 with pytest.raises(HTTPException):
                     await skill_service.ensure_authoring_model(db, bad)

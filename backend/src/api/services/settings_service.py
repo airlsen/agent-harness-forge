@@ -11,102 +11,12 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.contracts import builtin_tools
 from ..core.security import decrypt, encrypt, reveal_secret
 from ..models.platform import ModelConnection, PlatformSetting
 
-TOOLS = [
-    {
-        "name": "current_time",
-        "title": "当前时间",
-        "description": "读取当前日期与时区，不访问外部网络。",
-        "permission": "read",
-        "icon": "clock",
-    },
-    {
-        "name": "workspace_list",
-        "title": "列出工作区文件",
-        "description": "仅列出当前会话工作区内的文件。",
-        "permission": "read",
-        "icon": "folder",
-    },
-    {
-        "name": "workspace_read",
-        "title": "读取工作区文件",
-        "description": "读取当前会话生成的文本文件，禁止越界路径与符号链接。",
-        "permission": "read",
-        "icon": "file",
-    },
-    {
-        "name": "workspace_write",
-        "title": "生成文本产物",
-        "description": "直接写入当前会话的受限工作区，无需逐次确认；受文件数量与容量配额约束。",
-        "permission": "write",
-        "icon": "edit",
-    },
-    {
-        "name": "bash",
-        "title": "终端命令执行",
-        "description": "在会话工作区执行终端命令（运行脚本、编译、Git 等），直接执行无需确认；仅拦截少数高危命令。",
-        "permission": "write",
-        "icon": "terminal",
-    },
-    {
-        "name": "skill_run_script",
-        "title": "运行 Skill 脚本",
-        "description": "运行当前会话授权的 Skill 自带脚本，直接执行无需确认；单次最长 5 分钟。",
-        "permission": "write",
-        "icon": "terminal",
-    },
-    {
-        "name": "todo_write",
-        "title": "维护任务清单",
-        "description": "记录、更新当前任务的待办与进度，纯会话内状态，不访问外部系统。",
-        "permission": "write",
-        "icon": "check",
-    },
-    {
-        "name": "job_output",
-        "title": "读取后台任务输出",
-        "description": "读取当前会话后台任务的输出结果。",
-        "permission": "read",
-        "icon": "file",
-    },
-    {
-        "name": "job_list",
-        "title": "列出后台任务",
-        "description": "列出当前会话正在运行与已结束的后台任务。",
-        "permission": "read",
-        "icon": "grid",
-    },
-    {
-        "name": "job_kill",
-        "title": "终止后台任务",
-        "description": "终止当前会话的一个后台任务。",
-        "permission": "write",
-        "icon": "close",
-    },
-    {
-        "name": "create_goal",
-        "title": "创建目标",
-        "description": "为当前会话创建并记录一个执行目标。",
-        "permission": "write",
-        "icon": "check",
-    },
-    {
-        "name": "get_goal",
-        "title": "查看目标",
-        "description": "查看当前会话已记录的目标及其状态。",
-        "permission": "read",
-        "icon": "eye",
-    },
-    {
-        "name": "update_goal",
-        "title": "更新目标",
-        "description": "更新当前会话目标的进度或状态。",
-        "permission": "write",
-        "icon": "edit",
-    },
-]
+# 内置工具目录来自平台契约（contracts/platform.json），与 Runner 共用一份
+TOOLS = builtin_tools()
 TOOL_NAMES = {x["name"] for x in TOOLS}
 DEFAULT_POLICY = {
     "allowedTools": [x["name"] for x in TOOLS],

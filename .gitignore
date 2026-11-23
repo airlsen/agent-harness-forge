@@ -29,6 +29,6 @@ out/
 data/
 tmp/
 
-# ---- Forge POC 运行产物 ----
+# ---- 历史 M0 POC 运行产物（POC 代码已移除，保留忽略规则以免旧产物误提交） ----
 runner/.poc/
 runner/patches/.generated.*.yml

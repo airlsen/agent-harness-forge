@@ -100,18 +100,16 @@ python3 scripts/check-business-ui.py              # 当前无模型部署的实�
 python3 scripts/check-iframe-auth.py              # 本地双 TLS 域 Cookie 登录
 python3 scripts/check-iframe-auth.py --block-cookies  # 强制剥离全部 Cookie 的预览登录
 python3 scripts/check-business-api.py --browser --cookie-blocked  # 无 Cookie 的完整执行 UI
-
-# 历史 M0：只验证插件拦截，不等于产品验收
-npm --prefix runner run poc
 ```
 
 ## 仓库导航
 
 ```text
 backend/src/api/             正式控制面、认证、场景/会话/审批/审计 API
-runner/src/kernel/          AgentKernel 与 dsh JSON-RPC 适配
-runner/forge-runtime-plugin 正式模型出口和受限工具插件
-runner/forge-poc-plugin/     历史 M0 安全探针（非业务运行）
+runner/src/kernel/          会话内核；dsh/ 为 DSH 协议与装配适配
+runner/internal-plugins/    Forge 自带、随 Runner 发布的 DSH 插件（目录名 = 插件名，shared/ 为共用库）
+plugins/                    可登记的受管插件清单
+examples/remote-plugin/     远程受管插件示例
 frontend/src/               企业工作台 / 公共目录 / 会话 / 管理页面
 scripts/                    初始化、启动、隔离集成与浏览器回归
 .github/workflows/          构建与隔离测试工作流（须推送后才会执行）

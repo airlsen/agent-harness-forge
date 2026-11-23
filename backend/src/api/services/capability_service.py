@@ -27,13 +27,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import space_service
 from ..core import security
+from ..core.contracts import limit
 from ..models.platform import ModelConnection, PlatformSetting
 from ..models.registry import McpServer
 from ..models.skill import Skill, SkillRevision
 from .skill_service import MAX_SKILL_BYTES, skill_file_snapshot, skill_files_missing
 
-MAX_SESSION_SKILLS = 20
-MAX_SESSION_MCP = 10
+# 会话能力上限来自平台契约，Runner 使用同一份
+MAX_SESSION_SKILLS = limit("sessionSkills")
+MAX_SESSION_MCP = limit("sessionMcpServers")
 RUNNABLE_MCP_TRANSPORTS = ("stdio", "streamable-http")
 WEB_SETTING_KEY = "web-search"
 WEB_PROVIDERS = {

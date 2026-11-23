@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, readdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { apply } from '../skill-scripts-plugin/index.js';
-import { OUTPUTS_DIR, resetSandboxProbe, runSkillScript, sandboxMode } from '../skill-script-runtime/index.js';
+import { apply } from '../internal-plugins/skill-scripts/index.js';
+import { OUTPUTS_DIR, resetSandboxProbe, runSkillScript, sandboxMode } from '../internal-plugins/shared/skill-script-runtime/index.js';
 import { resolveCapabilities } from '../src/kernel/capabilities.ts';
-import { sessionToolset } from '../src/kernel/dsh-kernel.ts';
+import { sessionToolset } from '../src/kernel/toolset.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'forge-script-check-'));
 try {

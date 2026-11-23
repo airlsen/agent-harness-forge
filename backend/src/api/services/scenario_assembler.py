@@ -1,9 +1,13 @@
-"""Scenario → 不变 Bundle；只装配审核过、版本冻结的能力。"""
+"""Scenario → 不变 Bundle；只装配审核过、版本冻结的能力。
+
+Bundle 是控制面保存的装配快照（场景版本与会话各存一份），既含执行需要的部分，也含会话记录的业务事实。
+下发给 Runner 的只是它的投影：core/manifest.py 的 SessionManifest（带版本、有类型）。
+"""
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
-from typing import Any
+from dataclasses import asdict, dataclass, fields
+from typing import Any, TypedDict
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,16 +19,45 @@ from .settings_service import TOOL_NAMES
 from .space_service import ensure_caps_visible
 
 
+class BundleMeta(TypedDict, total=False):
+    """Bundle.meta 的全部字段（文档与类型检查用）；早期快照可能缺少其中一部分，读取时需给默认值。"""
+
+    # —— 执行相关：投影进 SessionManifest ——
+    builtin_tools: list[str]
+    plugin_tools: list[str]
+    pluginBindings: list[dict]
+    policy: dict
+    skillAuthoring: dict  # 仅 Skill 编写会话
+    # —— 场景能力引用：每轮由控制面解析成扩展能力下发，不进入清单 ——
+    skills: list[dict]
+    mcpServers: list[dict]
+    webSearch: bool
+    # —— 会话记录的业务事实：只在控制面使用 ——
+    scenarioName: str
+    scenarioDescription: str
+    scenarioIcon: str
+    isTest: bool
+    environmentRef: str
+    model: str  # 以下模型字段只用于没有模型分段的早期会话
+    modelName: str
+    modelConnectionId: int
+    modelRevision: str
+    inputPrice: float | None
+    outputPrice: float | None
+
+
 @dataclass
 class Bundle:
     profile_patch: dict[str, Any]
     plugin_mounts: list[str]
-    skill_files: dict[str, str]
-    mcp: list[dict[str, Any]]
-    model_route: dict[str, Any]
     policy_ref: str
-    input_schema: dict | None
-    meta: dict
+    meta: BundleMeta
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Bundle":
+        """读取保存的快照；早期快照中已废弃的字段（skill_files / mcp / model_route / input_schema）忽略。"""
+        known = {field.name for field in fields(cls)}
+        return cls(**{key: value for key, value in data.items() if key in known})
 
     @property
     def bundle_hash(self) -> str:
@@ -127,11 +160,7 @@ class ScenarioAssembler:
                 },
             },
             plugin_mounts=["forge-runtime", *(["forge-plugin-bridge"] if bindings else [])],
-            skill_files={},
-            mcp=[],
-            model_route={"primary": "default", "fallbacks": []},
             policy_ref=hashlib.sha256(policy_json.encode()).hexdigest()[:16],
-            input_schema=scenario.input_schema,
             meta={
                 "builtin_tools": builtin_tools,
                 "plugin_tools": plugin_tools,

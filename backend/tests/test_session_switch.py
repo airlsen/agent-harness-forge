@@ -40,6 +40,8 @@ class FakeRunner:
         # 模拟 Runner 的 Skill 内容缓存：收到过全文的快照才能只发引用；缺少时记录并按 409 拒绝
         self.known_snapshots: set[str] = set()
         self.missing_requests: list[list[str]] = []
+        # 每轮结束后的执行日志回执
+        self.acks: list[tuple[str, int]] = []
 
     def check_skills(self, capabilities):
         skills = (capabilities or {}).get("skills") or []
@@ -53,7 +55,7 @@ class FakeRunner:
             raise SkillContentRequired(missing)
         self.known_snapshots.update(skill["snapshot"] for skill in skills if skill.get("snapshot"))
 
-    async def create_session(self, _bundle, _user, config, code_projects=None, capabilities=None):
+    async def create_session(self, _bundle, config, code_projects=None, capabilities=None):
         self.check_skills(capabilities)
         self.created.append(config)
         self.created_code.append(code_projects)
@@ -72,7 +74,7 @@ class FakeRunner:
             raise HTTPException(404, "执行会话不存在，Runner 可能已重启")
         return {"exists": True, "busy": False}
 
-    async def restore_session(self, runner_id, bundle, _user, config, code_projects=None, capabilities=None):
+    async def restore_session(self, runner_id, bundle, config, code_projects=None, capabilities=None):
         if self.restore_error:
             raise self.restore_error
         self.check_skills(capabilities)
@@ -80,7 +82,12 @@ class FakeRunner:
         self.alive = True
         return {"sessionId": runner_id}
 
-    async def events(self, runner_id, message, model_config=None, code_projects=None, capabilities=None):
+    async def ack(self, runner_id, seq):
+        self.acks.append((runner_id, seq))
+
+    async def events(
+        self, runner_id, message, model_config=None, code_projects=None, capabilities=None, *, since=None
+    ):
         self.check_skills(capabilities)
         self.turns.append((runner_id, message, model_config))
         self.code.append(code_projects)
@@ -430,7 +437,9 @@ class FileRunner(FakeRunner):
 
         return self.files[unquote(path.split("path=", 1)[1])], "text/plain"
 
-    async def events(self, runner_id, message, model_config=None, code_projects=None, capabilities=None):
+    async def events(
+        self, runner_id, message, model_config=None, code_projects=None, capabilities=None, *, since=None
+    ):
         if message == "第一轮":
             self.files = {"report.md": b"# v1\n", "notes.txt": b"a\n"}
         else:

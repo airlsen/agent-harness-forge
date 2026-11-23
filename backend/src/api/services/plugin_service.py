@@ -22,10 +22,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import space_service
 from ..core.config import ROOT, settings
+from ..core.contracts import platform_tool_names
 from ..models.registry import PluginRegistry
 from ..models.agent_scenario import AgentScenario, AgentScenarioVersion
 from ..models.agent_session import SessionEventIndex
-from .settings_service import TOOL_NAMES
 
 CATALOG_ROOT = ROOT / "plugins"
 ARTIFACT_ROOT = settings.data_dir / "plugin-artifacts"
@@ -148,7 +148,7 @@ def validate_manifest(value: object, *, uploaded: bool = False) -> dict:
         or any(not name or not name.replace("_", "").replace("-", "").isalnum() for name in tool_names)
     ):
         raise HTTPException(422, "插件工具标识无效")
-    if len(set(tool_names)) != len(tool_names) or set(tool_names) & TOOL_NAMES:
+    if len(set(tool_names)) != len(tool_names) or set(tool_names) & platform_tool_names():
         raise HTTPException(422, "插件工具标识重复或与平台保留工具冲突")
     for tool in tools:
         required_tool = {"name", "title", "description", "permission", "risk", "inputSchema", "outputSchema"}
@@ -619,7 +619,7 @@ async def approved_bindings(
             raise HTTPException(
                 422, f"插件“{row.display_name or plugin_id}”包含未登记工具：" + "、".join(sorted(unknown))
             )
-        if set(names) & TOOL_NAMES or set(names) & bound_tools:
+        if set(names) & platform_tool_names() or set(names) & bound_tools:
             raise HTTPException(422, "插件工具与平台或其他插件工具冲突")
         bound_tools.update(names)
         bindings.append(

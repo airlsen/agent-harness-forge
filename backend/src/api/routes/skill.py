@@ -155,9 +155,7 @@ async def new_authoring_session(
     db: AsyncSession = Depends(get_session),
 ):
     return ResponseUtil.ok(
-        await skill_service.create_authoring_session(
-            db, skill_id, settings.admin_username, payload.modelId if payload else None
-        )
+        await skill_service.create_authoring_session(db, skill_id, payload.modelId if payload else None)
     )
 
 
@@ -173,7 +171,7 @@ async def authoring_turn(
     async def stream():
         try:
             async for event in skill_service.run_authoring_turn(
-                skill_id, session_id, payload.message, settings.admin_username, payload.modelId
+                skill_id, session_id, payload.message, payload.modelId
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as error:
