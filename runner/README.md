@@ -32,7 +32,7 @@
 ```bash
 npm ci
 npm run build
-npm run contract      # dsh 扩展点契约（期望值来自 src/kernel/dsh/ 的声明，含写给各插件的配置项是否仍被识别）
+npm run contract      # dsh 扩展点契约（期望值来自 src/kernel/dsh/ 的声明，含写给各插件的配置项是否仍被识别、所有 dsh 包同一版本且不重复安装）
 npm test              # 清单 / 执行日志 / 文件边界 / 正式插件与真 dsh 协议夹具（非真实模型）
 npm run test:workspace # 仅文件执行器/配额边界，不代替审批集成
 

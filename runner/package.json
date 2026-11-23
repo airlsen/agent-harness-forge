@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.5",
     "@deepseek-ai/dsh-mcp-client": "0.2.2-rc.5",
     "@deepseek-ai/dsh-skill": "0.2.2-rc.5",
     "@deepseek-ai/dsh-tool-fs-search": "0.2.2-rc.5",

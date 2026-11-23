@@ -146,5 +146,46 @@ for (const row of rows) {
   check(label, best.length === 0, best.length ? `插件不认识：${best.join('、')}` : '');
 }
 
+// 6. 所有 dsh 包同一版本、每个 @deepseek-ai 包只装一份。
+//    升级时漏改某个版本号，npm 会把同一模块装出两份不同版本：Forge 插件（如继承 dsh-llm LlmAdapter 的模型网关）
+//    与 dsh 用到的不是同一份，问题隐蔽且难查。基准是 package.json 中 @deepseek-ai/dsh 的锁定版本；
+//    cordis、schemastery 等 @deepseek-ai 通用库版本独立，只要求不重复。
+const manifest = JSON.parse(await readFile(join(ROOT, 'package.json'), 'utf8'));
+const pinned = manifest.dependencies['@deepseek-ai/dsh'];
+const isDsh = (name) => /^@deepseek-ai\/dsh(-|$)/.test(name);
+const drifted = Object.entries(manifest.dependencies).filter(
+  ([name, version]) => isDsh(name) && version !== pinned,
+);
+check(
+  `package.json 中 dsh 包都锁定为 ${pinned}`,
+  drifted.length === 0,
+  drifted.map(([name, version]) => `${name}@${version}`).join('、'),
+);
+const installed = new Map();
+const lock = JSON.parse(await readFile(join(ROOT, 'package-lock.json'), 'utf8'));
+for (const [path, entry] of Object.entries(lock.packages)) {
+  const name = /node_modules\/(@deepseek-ai\/[^/]+)$/.exec(path)?.[1];
+  if (name) installed.set(name, [...(installed.get(name) ?? []), entry.version]);
+}
+const dshNames = [...installed.keys()].filter(isDsh);
+const offVersion = dshNames.filter((name) => installed.get(name).some((version) => version !== pinned));
+check(
+  `锁文件中 ${dshNames.length} 个 dsh 包都是 ${pinned}`,
+  dshNames.length > 0 && offVersion.length === 0,
+  offVersion.map((name) => `${name}@${installed.get(name).join('/')}`).join('、'),
+);
+const duplicated = [...installed].filter(([, versions]) => versions.length > 1);
+check(
+  '每个 @deepseek-ai 包只装一份',
+  duplicated.length === 0,
+  duplicated.map(([name, versions]) => `${name}（${versions.join('、')}）`).join('；'),
+);
+const actual = JSON.parse(await readFile(join(DSH, 'dsh', 'package.json'), 'utf8')).version;
+check(
+  `实际安装的 dsh 与锁定版本一致`,
+  actual === pinned,
+  actual === pinned ? '' : `node_modules 中为 ${actual}，请重新 npm ci`,
+);
+
 console.log(`\n契约检查：${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
