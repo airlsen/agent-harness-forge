@@ -638,10 +638,22 @@ async function requestDeleteFile(path: string) {
 // ---------- 试用文件：本次对话的会话工作区（试用产出、脚本输出 outputs/），不属于 Skill、不随发布 ----------
 const trialFiles = ref<FileRef[]>([]);
 const trialOpen = ref(true);
+/** 各试用分组的展开状态；未操作过的分组只展开最新一次运行 */
+const trialGroupOpen = ref<Record<string, boolean>>({});
 const trialBusy = ref('');
 const trialPreview = ref<FileRef | null>(null);
 let trialRequest = 0;
-/** 按所在目录分组，最近更新的目录在前；脚本输出目录名形如 parse-20261122-101530 */
+/** 脚本输出目录 outputs/<脚本名>-YYYYMMDD-HHMMSS(-序号) → 「脚本名」与「11/22 10:15」；其他目录原样显示 */
+function trialRunLabel(dir: string) {
+  const match = /^outputs\/(.+)-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})\d{2}(?:-(\d+))?$/.exec(dir);
+  if (!match) return { name: dir, time: '' };
+  const [, name, , month, day, hour, minute, index] = match;
+  return { name, time: `${month}/${day} ${hour}:${minute}${index ? ` #${index}` : ''}` };
+}
+function trialGroupExpanded(dir: string, index: number) {
+  return trialGroupOpen.value[dir] ?? index === 0;
+}
+/** 按所在目录分组，最近更新的目录在前；工作区根目录的文件不分组 */
 const trialGroups = computed(() => {
   const groups = new Map<string, { dir: string; files: FileRef[]; latest: string }>();
   for (const file of trialFiles.value) {
@@ -651,7 +663,15 @@ const trialGroups = computed(() => {
     if ((file.modifiedAt ?? '') > group.latest) group.latest = file.modifiedAt ?? '';
     groups.set(dir, group);
   }
-  return [...groups.values()].sort((a, b) => b.latest.localeCompare(a.latest) || a.dir.localeCompare(b.dir));
+  return [...groups.values()]
+    .sort((a, b) => b.latest.localeCompare(a.latest) || a.dir.localeCompare(b.dir))
+    .map((group) => ({ ...group, label: trialRunLabel(group.dir) }));
+});
+/** 分组目录（不含根目录文件）按新旧排序后的序号，用来默认只展开最新一次运行 */
+const trialGroupIndex = computed(() => {
+  const index: Record<string, number> = {};
+  trialGroups.value.filter((group) => group.dir).forEach((group, i) => (index[group.dir] = i));
+  return index;
 });
 async function loadTrialFiles(refresh = false) {
   const current = session.value;
@@ -1082,7 +1102,7 @@ const {
   follow: followChat,
   jumpToLatest: jumpChatToLatest,
 } = useStickToBottom(chatLog);
-const treeWidth = ref(240);
+const treeWidth = ref(260);
 const chatWidth = ref(380);
 const totalFiles = computed(() => 1 + (skill.value?.files.length ?? 0));
 const currentPath = computed(() => selectedPath.value);
@@ -1298,7 +1318,7 @@ function resizePanel(event: PointerEvent, panel: 'tree' | 'chat') {
   const initial = panel === 'tree' ? treeWidth.value : chatWidth.value;
   const move = (next: PointerEvent) => {
     const value = initial + (next.clientX - start) * (panel === 'tree' ? 1 : -1);
-    if (panel === 'tree') treeWidth.value = Math.max(160, Math.min(300, value));
+    if (panel === 'tree') treeWidth.value = Math.max(180, Math.min(380, value));
     else chatWidth.value = Math.max(300, Math.min(520, value));
   };
   stopDrag = () => {
@@ -1463,10 +1483,11 @@ onBeforeUnmount(() => {
                   :title="folder.hint"
                   @click="openDirs[folder.dir] = !openDirs[folder.dir]"
                 >
-                  <span class="folder-caret">{{ openDirs[folder.dir] ? '⌄' : '›' }}</span><Icon
-                    name="folder-line"
-                    :size="15"
-                  /><span>{{ folder.dir }}</span
+                  <Icon
+                    name="arrow-right-s-line"
+                    :size="14"
+                    :class="['folder-caret', { open: openDirs[folder.dir] }]"
+                  /><Icon name="folder-line" :size="15" /><span>{{ folder.dir }}</span
                   ><small v-if="folder.files.length" class="folder-count">{{ folder.files.length }}</small>
                 </button>
                 <div class="folder-actions">
@@ -1498,7 +1519,7 @@ onBeforeUnmount(() => {
                   </a-upload>
                 </div>
               </div>
-              <template v-if="openDirs[folder.dir]">
+              <div v-if="openDirs[folder.dir]" class="folder-children">
                 <div v-for="file in folder.files" :key="file.path" class="file-line">
                   <button
                     :class="['file-row', 'reference-row', { selected: selectedPath === file.path }]"
@@ -1525,7 +1546,7 @@ onBeforeUnmount(() => {
                   </button>
                 </div>
                 <p v-if="!folder.files.length" class="tree-empty folder-empty">{{ folder.hint }}</p>
-              </template>
+              </div>
             </template>
           </nav>
           <section v-if="session" class="trial-files" aria-label="试用文件">
@@ -1536,10 +1557,11 @@ onBeforeUnmount(() => {
                 title="本次对话中试用、运行脚本产生的文件，不属于 Skill，不随发布"
                 @click="trialOpen = !trialOpen"
               >
-                <span class="folder-caret">{{ trialOpen ? '⌄' : '›' }}</span><Icon
-                  name="folder-line"
-                  :size="15"
-                /><span>试用文件 · 本次对话</span
+                <Icon
+                  name="arrow-right-s-line"
+                  :size="14"
+                  :class="['folder-caret', { open: trialOpen }]"
+                /><span class="trial-title">试用文件<em>本次对话</em></span
                 ><small v-if="trialFiles.length" class="folder-count">{{ trialFiles.length }}</small>
               </button>
               <div class="folder-actions">
@@ -1553,57 +1575,129 @@ onBeforeUnmount(() => {
                 </button>
               </div>
             </div>
-            <template v-if="trialOpen">
+            <div v-if="trialOpen" class="folder-children">
               <template v-for="group in trialGroups" :key="group.dir">
-                <p v-if="group.dir" class="trial-dir" :title="group.dir">{{ group.dir }}/</p>
-                <div v-for="file in group.files" :key="file.path" class="file-line trial-line">
+                <template v-if="group.dir">
                   <button
-                    class="file-row reference-row"
-                    :title="`${file.path} · ${formatBytes(file.bytes)}${previewable(file) ? '' : ' · 点击下载'}`"
-                    :disabled="trialBusy === file.path"
-                    @click="openTrialFile(file)"
+                    class="file-row folder-row trial-run"
+                    :aria-expanded="trialGroupExpanded(group.dir, trialGroupIndex[group.dir])"
+                    :title="`${group.dir}/`"
+                    @click="
+                      trialGroupOpen[group.dir] = !trialGroupExpanded(group.dir, trialGroupIndex[group.dir])
+                    "
                   >
-                    <Icon name="file" :size="14" /><span>{{ fileName(file.path) }}</span>
+                    <Icon
+                      name="arrow-right-s-line"
+                      :size="14"
+                      :class="[
+                        'folder-caret',
+                        { open: trialGroupExpanded(group.dir, trialGroupIndex[group.dir]) },
+                      ]"
+                    /><Icon name="folder-line" :size="14" /><span>{{ group.label.name }}</span
+                    ><time v-if="group.label.time">{{ group.label.time }}</time>
                   </button>
-                  <div class="trial-actions">
-                    <button
-                      class="icon-action"
-                      :title="`下载 ${fileName(file.path)}`"
-                      :aria-label="`下载 ${file.path}`"
-                      :disabled="trialBusy === file.path"
-                      @click="downloadTrialFile(file)"
-                    >
-                      <Icon name="download" :size="13" />
-                    </button>
-                    <button
-                      v-if="trialTargetDir(file.path)"
-                      class="icon-action"
-                      :title="`存入 Skill 的 ${trialTargetDir(file.path)}/`"
-                      :aria-label="`把 ${file.path} 存入 Skill`"
-                      :disabled="isNew || busy || saving || publishing || fileBusy || trialBusy === file.path"
-                      @click="saveTrialToSkill(file)"
-                    >
-                      <Icon name="save-line" :size="13" />
-                    </button>
-                    <button
-                      class="icon-action"
-                      :title="`删除 ${fileName(file.path)}`"
-                      :aria-label="`删除试用文件 ${file.path}`"
-                      :disabled="busy || trialBusy === file.path"
-                      @click="deleteTrialFile(file)"
-                    >
-                      <Icon name="delete-bin-line" :size="13" />
-                    </button>
+                  <div
+                    v-if="trialGroupExpanded(group.dir, trialGroupIndex[group.dir])"
+                    class="folder-children"
+                  >
+                    <div v-for="file in group.files" :key="file.path" class="file-line trial-line">
+                      <button
+                        class="file-row reference-row"
+                        :title="`${file.path} · ${formatBytes(file.bytes)}${previewable(file) ? '' : ' · 点击下载'}`"
+                        :disabled="trialBusy === file.path"
+                        @click="openTrialFile(file)"
+                      >
+                        <Icon name="file" :size="14" /><span>{{ fileName(file.path) }}</span>
+                      </button>
+                      <div class="trial-actions">
+                        <button
+                          class="icon-action"
+                          :title="`下载 ${fileName(file.path)}`"
+                          :aria-label="`下载 ${file.path}`"
+                          :disabled="trialBusy === file.path"
+                          @click="downloadTrialFile(file)"
+                        >
+                          <Icon name="download" :size="13" />
+                        </button>
+                        <button
+                          v-if="trialTargetDir(file.path)"
+                          class="icon-action"
+                          :title="`存入 Skill 的 ${trialTargetDir(file.path)}/`"
+                          :aria-label="`把 ${file.path} 存入 Skill`"
+                          :disabled="
+                            isNew || busy || saving || publishing || fileBusy || trialBusy === file.path
+                          "
+                          @click="saveTrialToSkill(file)"
+                        >
+                          <Icon name="save-line" :size="13" />
+                        </button>
+                        <button
+                          class="icon-action"
+                          :title="`删除 ${fileName(file.path)}`"
+                          :aria-label="`删除试用文件 ${file.path}`"
+                          :disabled="busy || trialBusy === file.path"
+                          @click="deleteTrialFile(file)"
+                        >
+                          <Icon name="delete-bin-line" :size="13" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                </template>
+                <template v-else>
+                  <div v-for="file in group.files" :key="file.path" class="file-line trial-line">
+                    <button
+                      class="file-row reference-row"
+                      :title="`${file.path} · ${formatBytes(file.bytes)}${previewable(file) ? '' : ' · 点击下载'}`"
+                      :disabled="trialBusy === file.path"
+                      @click="openTrialFile(file)"
+                    >
+                      <Icon name="file" :size="14" /><span>{{ fileName(file.path) }}</span>
+                    </button>
+                    <div class="trial-actions">
+                      <button
+                        class="icon-action"
+                        :title="`下载 ${fileName(file.path)}`"
+                        :aria-label="`下载 ${file.path}`"
+                        :disabled="trialBusy === file.path"
+                        @click="downloadTrialFile(file)"
+                      >
+                        <Icon name="download" :size="13" />
+                      </button>
+                      <button
+                        v-if="trialTargetDir(file.path)"
+                        class="icon-action"
+                        :title="`存入 Skill 的 ${trialTargetDir(file.path)}/`"
+                        :aria-label="`把 ${file.path} 存入 Skill`"
+                        :disabled="
+                          isNew || busy || saving || publishing || fileBusy || trialBusy === file.path
+                        "
+                        @click="saveTrialToSkill(file)"
+                      >
+                        <Icon name="save-line" :size="13" />
+                      </button>
+                      <button
+                        class="icon-action"
+                        :title="`删除 ${fileName(file.path)}`"
+                        :aria-label="`删除试用文件 ${file.path}`"
+                        :disabled="busy || trialBusy === file.path"
+                        @click="deleteTrialFile(file)"
+                      >
+                        <Icon name="delete-bin-line" :size="13" />
+                      </button>
+                    </div>
+                  </div>
+                </template>
               </template>
               <p v-if="!trialFiles.length" class="tree-empty folder-empty">
                 试用和运行脚本的产出会出现在这里
               </p>
-            </template>
+            </div>
           </section>
           <div class="files-footer">
-            <span class="files-count">共 {{ totalFiles }} 个文件</span>
+            <span class="files-count" title="Skill 自身的文件，不含试用文件"
+              >Skill 共 {{ totalFiles }} 个文件</span
+            >
           </div>
           <p class="files-note">助手可读写全部文件<br />业务会话中只读</p>
         </aside>
@@ -1615,8 +1709,8 @@ onBeforeUnmount(() => {
           aria-orientation="vertical"
           tabindex="0"
           @pointerdown="resizePanel($event, 'tree')"
-          @keydown.left.prevent="treeWidth = Math.max(160, treeWidth - 20)"
-          @keydown.right.prevent="treeWidth = Math.min(300, treeWidth + 20)"
+          @keydown.left.prevent="treeWidth = Math.max(180, treeWidth - 20)"
+          @keydown.right.prevent="treeWidth = Math.min(380, treeWidth + 20)"
         />
         <section class="studio-document" aria-label="文件内容">
           <header class="pane-header document-header">
@@ -2189,7 +2283,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--surface-shell);
+  background: var(--surface-content);
 }
 .studio-document {
   min-width: 0;
@@ -2230,7 +2324,8 @@ onBeforeUnmount(() => {
   letter-spacing: 0.02em;
 }
 .studio-files .pane-header {
-  background: var(--surface-shell);
+  background: var(--surface-content);
+  border-bottom: 1px solid var(--border-light);
 }
 .studio-files .pane-header strong {
   color: var(--color-text-secondary);
@@ -2259,18 +2354,19 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: auto;
   margin: 0;
-  padding: 10px 6px;
+  padding: 8px 6px;
 }
 .file-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  min-height: 34px;
-  padding: 6px 10px;
+  min-height: 30px;
+  padding: 4px 8px;
   text-align: left;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 13px;
+  color: var(--color-text-primary);
 }
 .file-row > span {
   overflow: hidden;
@@ -2301,15 +2397,24 @@ onBeforeUnmount(() => {
   color: var(--color-text-tertiary);
   font-size: 12px;
 }
-.folder-caret {
-  width: 12px;
-  text-align: center;
+.file-row svg.folder-caret {
   color: var(--color-text-tertiary);
-  font-size: 12px;
-  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+.file-row svg.folder-caret.open {
+  transform: rotate(90deg);
+}
+.folder-row > span {
+  font-weight: 500;
+}
+/* 目录内的文件：左侧一条缩进参考线，对齐目录的展开箭头 */
+.folder-children {
+  margin-left: 15px;
+  padding-left: 4px;
+  border-left: 1px solid var(--border-default);
 }
 .folder-count {
-  background: var(--surface-content);
+  background: var(--surface-muted);
   border: none;
   border-radius: 999px;
   padding: 2px 7px;
@@ -2318,10 +2423,10 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--color-text-secondary);
 }
-.reference-row {
-  padding-left: 28px;
+.reference-row > span {
+  font-weight: 400;
 }
-/* 目录行与文件行：右侧操作按钮悬停或聚焦时出现，触屏设备始终显示 */
+/* 目录行与文件行：右侧操作按钮悬停或聚焦时才出现、才占位，平时文件名可用整行宽度；触屏设备始终显示 */
 .folder-line,
 .file-line {
   display: flex;
@@ -2334,24 +2439,26 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 .folder-actions {
-  display: flex;
+  display: none;
   flex-shrink: 0;
 }
-.folder-actions,
 .file-delete {
-  opacity: 0;
-  transition: opacity 0.15s;
+  display: none;
 }
 .folder-line:hover .folder-actions,
-.folder-line:focus-within .folder-actions,
+.folder-line:focus-within .folder-actions {
+  display: flex;
+}
 .file-line:hover .file-delete,
 .file-line:focus-within .file-delete {
-  opacity: 1;
+  display: inline-flex;
 }
 @media (hover: none) {
-  .folder-actions,
+  .folder-actions {
+    display: flex;
+  }
   .file-delete {
-    opacity: 1;
+    display: inline-flex;
   }
 }
 .file-delete {
@@ -2366,11 +2473,11 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   font-weight: 600;
   color: var(--color-brand);
-  background: var(--surface-shell);
+  background: var(--color-brand-subtle);
 }
 .folder-empty {
   margin: 0;
-  padding: 2px 10px 6px 28px;
+  padding: 4px 8px 6px;
 }
 /* 试用文件：本次对话的会话工作区，与上方 Skill 文件分隔，内容多时自身滚动 */
 .trial-files {
@@ -2381,29 +2488,33 @@ onBeforeUnmount(() => {
   padding: 8px 6px 10px;
   border-top: 1px solid var(--border-light);
 }
-.trial-dir {
-  margin: 4px 0 0;
-  padding: 2px 10px 2px 28px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--color-text-tertiary);
+.trial-title em {
+  margin-left: 6px;
+  font-style: normal;
+  font-weight: 400;
   font-size: 12px;
-  font-family: var(--font-mono, monospace);
+  color: var(--color-text-tertiary);
+}
+/* 每次脚本运行一个子目录：显示脚本名与运行时间，最新一次默认展开 */
+.trial-run time {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-tertiary);
 }
 .trial-actions {
-  display: flex;
+  display: none;
   flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.15s;
 }
 .trial-line:hover .trial-actions,
 .trial-line:focus-within .trial-actions {
-  opacity: 1;
+  display: flex;
 }
 @media (hover: none) {
   .trial-actions {
-    opacity: 1;
+    display: flex;
   }
 }
 .skill-changes-footer {
@@ -2423,15 +2534,15 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 12px;
-  background: var(--surface-shell);
+  padding: 8px 14px;
+  background: var(--surface-content);
   font-size: 12px;
   color: var(--color-text-tertiary);
-  border-top: none;
+  border-top: 1px solid var(--border-light);
 }
 .files-count {
-  font-weight: 600;
-  color: var(--color-text-secondary);
+  font-weight: 400;
+  color: var(--color-text-tertiary);
   white-space: nowrap;
 }
 .files-note {
