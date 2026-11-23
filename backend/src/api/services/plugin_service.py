@@ -25,7 +25,7 @@ from ..core.config import ROOT, settings
 from ..core.contracts import platform_tool_names
 from ..models.registry import PluginRegistry
 from ..models.agent_scenario import AgentScenario, AgentScenarioVersion
-from ..models.agent_session import SessionEventIndex
+from ..models.agent_session import AgentSession, SessionEventIndex
 
 CATALOG_ROOT = ROOT / "plugins"
 ARTIFACT_ROOT = settings.data_dir / "plugin-artifacts"
@@ -510,7 +510,7 @@ async def plugin_usage_counts(db: AsyncSession) -> dict[str, int]:
     return counts
 
 
-async def plugin_detail(db: AsyncSession, plugin_id: str) -> dict:
+async def plugin_detail(db: AsyncSession, plugin_id: str, user_id: str) -> dict:
     releases = (await db.scalars(select(PluginRegistry))).all()
     versions = [row for row in releases if _row_plugin_id(row) == plugin_id]
     if not versions:
@@ -551,7 +551,8 @@ async def plugin_detail(db: AsyncSession, plugin_id: str) -> dict:
     events = (
         await db.scalars(
             select(SessionEventIndex)
-            .where(SessionEventIndex.kind == "plugin_call")
+            .join(AgentSession, AgentSession.id == SessionEventIndex.session_id)
+            .where(SessionEventIndex.kind == "plugin_call", AgentSession.user_id == user_id)
             .order_by(SessionEventIndex.id.desc())
             .limit(200)
         )

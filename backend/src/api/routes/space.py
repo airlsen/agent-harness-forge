@@ -1,10 +1,12 @@
 """空间：增删改查、删除时转移内容、基础工具开关、把内容移动到别的空间。"""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import select
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.database import get_session
+from ..models.agent_session import AgentSession
 from ..services import space_service
 from ..services.space_service import SpaceInput
 from ..utils.response import ResponseUtil
@@ -67,9 +69,18 @@ async def delete_check(
 
 @router.delete("/{space_id}")
 async def delete_space(
-    space_id: int, target: int | None = Query(default=None, gt=0), db: AsyncSession = Depends(get_session)
+    space_id: int,
+    request: Request,
+    target: int | None = Query(default=None, gt=0),
+    db: AsyncSession = Depends(get_session),
 ):
     """删除空间：有内容时全部转移到 target（默认公共空间）；不提供连内容一起删除。"""
+    if request.state.user.role != "admin" and await db.scalar(
+        select(AgentSession.id)
+        .where(AgentSession.space_id == space_id, AgentSession.user_id != request.state.user.id)
+        .limit(1)
+    ):
+        raise HTTPException(403, "空间内有其他用户的会话，请联系管理员处理")
     return ResponseUtil.ok(await space_service.delete_space(db, space_id, target))
 
 

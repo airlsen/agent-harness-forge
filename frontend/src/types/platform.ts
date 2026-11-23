@@ -91,6 +91,8 @@ export interface Scenario {
 }
 export interface Conversation {
   id: number;
+  /** 所属账号；全局审计按此识别会话创建者。 */
+  userId?: string;
   sessionId: number;
   title: string;
   scenarioId: number;

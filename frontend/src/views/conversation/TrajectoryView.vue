@@ -24,9 +24,25 @@ const filtered = computed(() =>
 async function load() {
   loading.value = true;
   try {
-    const data = await api(`/audit/sessions/${route.params.sessionId}/replay`);
+    const id = route.params.sessionId;
+    const data =
+      app.user?.role === 'admin'
+        ? await api(`/audit/sessions/${id}/replay`)
+        : await api(`/agent/sessions/${id}`);
     detail.value = data;
-    events.value = data.events;
+    if (app.user?.role === 'admin') {
+      events.value = data.events;
+    } else {
+      const items: KernelEvent[] = [];
+      let cursor = 0;
+      while (true) {
+        const page = await api(`/agent/sessions/${id}/trajectory?cursor=${cursor}`);
+        items.push(...page.events);
+        if (!page.events.length || page.nextCursor === cursor) break;
+        cursor = page.nextCursor;
+      }
+      events.value = items;
+    }
   } catch (e) {
     app.toast((e as Error).message, 'error');
   } finally {
@@ -36,7 +52,9 @@ async function load() {
 async function exportEvidence() {
   try {
     await downloadResponse(
-      `/agent/sessions/${route.params.sessionId}/export`,
+      app.user?.role === 'admin'
+        ? `/audit/sessions/${route.params.sessionId}/export`
+        : `/agent/sessions/${route.params.sessionId}/export`,
       `forge-session-${route.params.sessionId}.json`,
     );
   } catch (error) {
@@ -48,8 +66,10 @@ onMounted(load);
 <template>
   <main class="page-content trajectory-page">
     <div class="enterprise-page-inner">
-      <RouterLink to="/agent/audit" class="back-link"
-        ><Icon name="ri-arrow-go-back-fill" :size="15" />返回审计中心</RouterLink
+      <RouterLink :to="app.user?.role === 'admin' ? '/agent/audit' : '/agent/conversations'" class="back-link"
+        ><Icon name="ri-arrow-go-back-fill" :size="15" />{{
+          app.user?.role === 'admin' ? '返回审计中心' : '返回我的会话'
+        }}</RouterLink
       >
       <div class="page-heading">
         <div>

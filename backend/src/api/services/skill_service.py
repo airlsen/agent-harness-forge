@@ -718,6 +718,19 @@ async def get_authoring_session(db: AsyncSession, skill_id: int, session_id: int
     return row
 
 
+async def owned_authoring_session(db: AsyncSession, skill_id: int, session_id: int, user_id: str):
+    row = await db.scalar(
+        select(SkillAuthoringSession).where(
+            SkillAuthoringSession.id == session_id,
+            SkillAuthoringSession.skill_id == skill_id,
+            SkillAuthoringSession.owner_id == user_id,
+        )
+    )
+    if not row:
+        raise HTTPException(404, "Skill 编辑会话不存在")
+    return row
+
+
 async def _authoring_model_view(db: AsyncSession, model_id: int | None) -> dict | None:
     """对话当前模型的展示信息；所选模型已删除或尚无可用模型时返回 None。"""
     try:
@@ -765,11 +778,11 @@ async def authoring_session_view(db: AsyncSession, row: SkillAuthoringSession) -
     }
 
 
-async def latest_authoring_session(db: AsyncSession, skill_id: int) -> dict | None:
+async def latest_authoring_session(db: AsyncSession, skill_id: int, user_id: str) -> dict | None:
     await get_skill(db, skill_id)
     row = await db.scalar(
         select(SkillAuthoringSession)
-        .where(SkillAuthoringSession.skill_id == skill_id)
+        .where(SkillAuthoringSession.skill_id == skill_id, SkillAuthoringSession.owner_id == user_id)
         .order_by(SkillAuthoringSession.id.desc())
         .limit(1)
     )
@@ -955,14 +968,14 @@ async def _authoring_runtime(
     return bundle, model_config, {"skills": [], "mcp": [], "web": None}
 
 
-async def _recent_authoring_history(db: AsyncSession, skill_id: int) -> str:
+async def _recent_authoring_history(db: AsyncSession, skill_id: int, user_id: str) -> str:
     context = (
         await db.scalars(
             select(SkillAuthoringMessage)
             .join(
                 SkillAuthoringSession, SkillAuthoringSession.id == SkillAuthoringMessage.authoring_session_id
             )
-            .where(SkillAuthoringSession.skill_id == skill_id)
+            .where(SkillAuthoringSession.skill_id == skill_id, SkillAuthoringSession.owner_id == user_id)
             .order_by(SkillAuthoringMessage.id.desc())
             .limit(AUTHORING_HISTORY_MESSAGES)
         )
@@ -970,7 +983,9 @@ async def _recent_authoring_history(db: AsyncSession, skill_id: int) -> str:
     return authoring_history(list(reversed(context)))
 
 
-async def create_authoring_session(db: AsyncSession, skill_id: int, model_id: int | None = None) -> dict:
+async def create_authoring_session(
+    db: AsyncSession, skill_id: int, user_id: str, model_id: int | None = None
+) -> dict:
     """新建对话：全新的执行上下文（草稿保留）。同一对话的后续轮次、Runner 重启、手动改草稿都接续这一条会话。
 
     model_id 为新对话选择的模型（与工作台一致）；不传则跟随平台默认模型。
@@ -983,6 +998,7 @@ async def create_authoring_session(db: AsyncSession, skill_id: int, model_id: in
     runner = await runner_client.create_session(bundle, model_config, capabilities=capabilities)
     row = SkillAuthoringSession(
         skill_id=skill.id,
+        owner_id=user_id,
         runner_session_id=runner["sessionId"],
         status="idle",
         current_revision_id=revision.id,
@@ -1025,7 +1041,7 @@ async def _prepare_authoring_runner(db: AsyncSession, session: SkillAuthoringSes
         except HTTPException as error:
             if error.status_code not in (404, 410):
                 raise
-    history = await _recent_authoring_history(db, skill.id)
+    history = await _recent_authoring_history(db, skill.id, session.owner_id)
     bundle, model_config, capabilities = await _authoring_runtime(
         db, skill, revision, history, model_id=model_id
     )

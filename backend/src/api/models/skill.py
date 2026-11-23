@@ -49,6 +49,7 @@ class SkillAuthoringSession(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     skill_id: Mapped[int] = mapped_column(ForeignKey("skill.id", ondelete="CASCADE"), index=True)
+    owner_id: Mapped[str] = mapped_column(String(64), index=True)
     runner_session_id: Mapped[str] = mapped_column(String(80), default="", index=True)
     status: Mapped[str] = mapped_column(String(20), default="idle")  # idle/running/interrupted
     current_revision_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

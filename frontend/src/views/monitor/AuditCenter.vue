@@ -19,7 +19,7 @@ const visible = computed(() =>
     (r) =>
       (filter.value === 'all' || r.status === filter.value) &&
       (spaceFilter.value === 'all' || String(r.spaceId ?? PUBLIC_SPACE_ID) === spaceFilter.value) &&
-      (r.title + r.scenarioName + r.id).toLowerCase().includes(query.value.toLowerCase()),
+      (r.title + r.scenarioName + r.id + (r.userId ?? '')).toLowerCase().includes(query.value.toLowerCase()),
   ),
 );
 const tokens = computed(() => rows.value.reduce((n, r) => n + r.tokensIn + r.tokensOut, 0));
@@ -121,6 +121,7 @@ function status(value: string) {
             <thead>
               <tr>
                 <th>会话</th>
+                <th>用户</th>
                 <th>场景版本</th>
                 <th>空间</th>
                 <th>状态</th>
@@ -136,6 +137,7 @@ function status(value: string) {
                     >#{{ row.id }}<span v-if="row.isTest"> · 场景试运行</span></small
                   >
                 </td>
+                <td>{{ row.userId ?? '—' }}</td>
                 <td>
                   {{ row.scenarioName }}<span class="tag neutral">v{{ row.scenarioVersion }}</span>
                 </td>

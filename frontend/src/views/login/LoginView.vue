@@ -174,7 +174,7 @@ async function login() {
             app.previewHeaderAuth ? 'Cookie 优先 · 支持预览兼容会话' : 'HttpOnly 会话保护'
           }}</span>
         </div>
-        <div class="login-footnote">当前账号可独立登录；会话和空间的数据隔离将在下一阶段接入。</div>
+        <div class="login-footnote">会话由本人管理；企业空间与能力配置目前仍为共享。</div>
       </a-form>
       <a-form
         v-else
@@ -227,7 +227,7 @@ async function login() {
         <button type="button" class="button secondary large" :disabled="busy" @click="switchMode('login')">
           返回登录
         </button>
-        <div class="login-footnote">注册账号暂时共用平台内容；后续会按用户隔离会话和文件。</div>
+        <div class="login-footnote">会话与 Skill 编辑记录按账号隔离；企业空间和能力配置仍为共享。</div>
       </a-form>
       <span class="login-version">AgentHarness Forge · 企业版前端预览</span>
     </section>

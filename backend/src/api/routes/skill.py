@@ -3,7 +3,7 @@ from typing import Literal
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +23,12 @@ from ..services.space_service import current_space
 from ..utils.response import ResponseUtil
 
 router = APIRouter()
+
+
+async def require_authoring_owner(
+    skill_id: int, session_id: int, request: Request, db: AsyncSession = Depends(get_session)
+):
+    return await skill_service.owned_authoring_session(db, skill_id, session_id, request.state.user.id)
 
 
 @router.get("")
@@ -144,22 +150,27 @@ async def delete_file(skill_id: int, path: str = Query(...), db: AsyncSession = 
 
 
 @router.get("/{skill_id}/authoring-session/latest")
-async def latest_authoring_session(skill_id: int, db: AsyncSession = Depends(get_session)):
-    return ResponseUtil.ok(await skill_service.latest_authoring_session(db, skill_id))
+async def latest_authoring_session(skill_id: int, request: Request, db: AsyncSession = Depends(get_session)):
+    return ResponseUtil.ok(await skill_service.latest_authoring_session(db, skill_id, request.state.user.id))
 
 
 @router.post("/{skill_id}/authoring-sessions")
 async def new_authoring_session(
     skill_id: int,
+    request: Request,
     payload: SkillAuthoringSessionCreate | None = None,
     db: AsyncSession = Depends(get_session),
 ):
     return ResponseUtil.ok(
-        await skill_service.create_authoring_session(db, skill_id, payload.modelId if payload else None)
+        await skill_service.create_authoring_session(
+            db, skill_id, request.state.user.id, payload.modelId if payload else None
+        )
     )
 
 
-@router.post("/{skill_id}/authoring-sessions/{session_id}/turns")
+@router.post(
+    "/{skill_id}/authoring-sessions/{session_id}/turns", dependencies=[Depends(require_authoring_owner)]
+)
 async def authoring_turn(
     skill_id: int, session_id: int, payload: SkillTurn, db: AsyncSession = Depends(get_session)
 ):
@@ -185,7 +196,9 @@ async def authoring_turn(
     )
 
 
-@router.post("/{skill_id}/authoring-sessions/{session_id}/interrupt")
+@router.post(
+    "/{skill_id}/authoring-sessions/{session_id}/interrupt", dependencies=[Depends(require_authoring_owner)]
+)
 async def interrupt_authoring_turn(skill_id: int, session_id: int, db: AsyncSession = Depends(get_session)):
     """停止 Skill 助手当前这一轮（与工作台「中止执行」一致）；没有正在处理的消息时什么也不做。"""
     session = await skill_service.get_authoring_session(db, skill_id, session_id)
@@ -199,7 +212,10 @@ async def interrupt_authoring_turn(skill_id: int, session_id: int, db: AsyncSess
     return ResponseUtil.ok({"interrupted": True})
 
 
-@router.post("/{skill_id}/authoring-sessions/{session_id}/approvals/{ticket_id}/resolve")
+@router.post(
+    "/{skill_id}/authoring-sessions/{session_id}/approvals/{ticket_id}/resolve",
+    dependencies=[Depends(require_authoring_owner)],
+)
 async def resolve_authoring_approval(
     skill_id: int,
     session_id: int,
@@ -222,7 +238,9 @@ def _attachment_name(name: str) -> str:
     return f"attachment; filename*=UTF-8''{quote(name or 'file', safe='')}"
 
 
-@router.get("/{skill_id}/authoring-sessions/{session_id}/files")
+@router.get(
+    "/{skill_id}/authoring-sessions/{session_id}/files", dependencies=[Depends(require_authoring_owner)]
+)
 async def trial_files(
     skill_id: int, session_id: int, refresh: bool = Query(False), db: AsyncSession = Depends(get_session)
 ):
@@ -230,7 +248,9 @@ async def trial_files(
     return ResponseUtil.ok(await skill_service.trial_files(db, skill_id, session_id, refresh))
 
 
-@router.get("/{skill_id}/authoring-sessions/{session_id}/files/raw")
+@router.get(
+    "/{skill_id}/authoring-sessions/{session_id}/files/raw", dependencies=[Depends(require_authoring_owner)]
+)
 async def trial_file_raw(
     skill_id: int,
     session_id: int,
@@ -251,7 +271,9 @@ async def trial_file_raw(
     )
 
 
-@router.delete("/{skill_id}/authoring-sessions/{session_id}/files")
+@router.delete(
+    "/{skill_id}/authoring-sessions/{session_id}/files", dependencies=[Depends(require_authoring_owner)]
+)
 async def delete_trial_file(
     skill_id: int,
     session_id: int,

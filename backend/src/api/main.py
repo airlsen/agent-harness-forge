@@ -141,7 +141,7 @@ async def runtime():
             "authMode": "local-accounts",
             "deployment": "sandbox",
             "limitations": [
-                "支持本地账号注册与登录；资源和会话仍在单工作空间共享，OIDC 与多租户 RBAC 尚未接入",
+                "支持本地账号与会话所有者校验；空间和能力配置仍共享，OIDC 与多租户 RBAC 尚未接入",
                 "会话工作区文件工具与终端命令（bash）直接执行，仅拦截少数高危命令，受平台策略约束；不是容器级隔离",
                 "原生 fork 与跨 Runner 重启恢复尚未接入；历史消息和事件持久化保留",
                 "本地数据库与文件存储，尚未接入 S3/WORM 和生产容器隔离",

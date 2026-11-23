@@ -6,7 +6,6 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy import select, func
-from ..core.config import settings
 from ..core.database import SessionFactory
 from ..core.security import encrypt, decrypt
 from ..models.agent_session import AgentSession, AgentSessionModel, SessionEventIndex
@@ -158,6 +157,15 @@ class SessionService:
             raise HTTPException(404, "会话不存在")
         return row
 
+    async def owned_row(self, db, session_id: int, user_id: str):
+        """Public API boundary: do not reveal whether another user's session exists."""
+        row = await db.scalar(
+            select(AgentSession).where(AgentSession.id == session_id, AgentSession.user_id == user_id)
+        )
+        if not row:
+            raise HTTPException(404, "会话不存在")
+        return row
+
     def view(
         self,
         row,
@@ -170,6 +178,7 @@ class SessionService:
         space_key = getattr(row, "space_id", None) or PUBLIC_SPACE_ID
         return {
             "id": row.id,
+            "userId": row.user_id,
             "sessionId": row.id,
             "title": row.title,
             "scenarioId": row.scenario_id,
@@ -205,7 +214,7 @@ class SessionService:
             },
         }
 
-    async def create(self, scenario_id, *, model_id=None, is_test=False, space_id=None):
+    async def create(self, scenario_id, *, user_id: str, model_id=None, is_test=False, space_id=None):
         async with SessionFactory() as db:
             scenario = await scenario_service.row(db, scenario_id)
             # 会话所在空间：发起时的当前空间（场景须在本空间或公共）；否则跟随场景所在空间
@@ -252,7 +261,7 @@ class SessionService:
             row = AgentSession(
                 tenant_id="sandbox",
                 space_id=session_space,
-                user_id=settings.admin_username,
+                user_id=user_id,
                 scenario_id=scenario.id,
                 scenario_version=chosen_version,
                 bundle_hash=bundle.bundle_hash,
@@ -268,10 +277,12 @@ class SessionService:
             await db.refresh(row)
             return self.view(row, segment, spaces=await space_map(db))
 
-    async def list(self, *, include_tests=False, include_archived=False, space_id=None):
+    async def list(self, *, user_id: str | None, include_tests=False, include_archived=False, space_id=None):
         """会话列表；传入 space_id 时只列这个空间的会话（会话不显示公共空间的）。"""
         async with SessionFactory() as db:
             query = select(AgentSession).order_by(AgentSession.id.desc()).limit(150)
+            if user_id is not None:
+                query = query.where(AgentSession.user_id == user_id)
             if not include_archived:
                 query = query.where(AgentSession.status != "archived")
             if space_id is not None:
@@ -941,8 +952,8 @@ class SessionService:
             row.status = "archived"
             await db.commit()
 
-    async def test_scenario(self, scenario_id):
-        created = await self.create(scenario_id, is_test=True)
+    async def test_scenario(self, scenario_id, *, user_id: str):
+        created = await self.create(scenario_id, user_id=user_id, is_test=True)
         session_id, failure_message = created["id"], ""
         try:
             await self.start(session_id, "请用一小段话说明你在此场景中如何帮助用户。不需要调用工具。")

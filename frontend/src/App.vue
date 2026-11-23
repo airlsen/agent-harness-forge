@@ -83,6 +83,13 @@ const management = [
   { path: '/agent/audit', label: '运行审计', icon: 'activity' },
   { path: '/agent/spaces', label: '空间管理', icon: 'stack-line' },
 ];
+const visibleManagement = computed(() =>
+  management.filter((item) => item.path !== '/agent/audit' || app.user?.role === 'admin'),
+);
+watch([() => app.authenticated, () => app.user?.role, () => route.path], () => {
+  if (app.authenticated && app.user?.role !== 'admin' && route.path === '/agent/audit')
+    void router.replace('/agent/workbench');
+});
 /**
  * 手动切换空间。打开的是某条具体内容（会话、插件、Skill 详情）时，它可能不属于新空间，
  * 回到对应的列表页；其余页面原地刷新为新空间的内容。
@@ -378,7 +385,7 @@ onUnmounted(() => {
                   aria-label="平台管理页面"
                 >
                   <RouterLink
-                    v-for="item in management"
+                    v-for="item in visibleManagement"
                     :key="item.path"
                     :to="item.path"
                     :class="{ selected: route.path === item.path }"

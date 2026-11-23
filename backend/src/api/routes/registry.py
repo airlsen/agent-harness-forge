@@ -41,8 +41,8 @@ async def plugins(db: AsyncSession = Depends(get_session), space_id: int | None 
 
 
 @router.get("/plugins/{plugin_id}")
-async def plugin_releases(plugin_id: str, db: AsyncSession = Depends(get_session)):
-    return ResponseUtil.ok(await plugin_detail(db, plugin_id))
+async def plugin_releases(plugin_id: str, request: Request, db: AsyncSession = Depends(get_session)):
+    return ResponseUtil.ok(await plugin_detail(db, plugin_id, request.state.user.id))
 
 
 class PluginReview(BaseModel):

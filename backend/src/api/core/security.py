@@ -8,11 +8,14 @@ import time
 
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from .config import settings
 from .database import SessionFactory
 from ..models.user import LoginSession, User
+from ..models.skill import SkillAuthoringSession
+from ..models.agent_session import AgentSession
+from ..models.platform import PlatformSetting
 
 COOKIE = "forge_session"
 AUTH_FILE = settings.data_dir / "auth.json"
@@ -38,20 +41,35 @@ async def seed_admin() -> None:
     """Keep the original admin password and ID on an existing installation."""
     legacy = _auth()
     async with SessionFactory() as db:
-        if await db.scalar(select(User.id).limit(1)) is not None:
-            return
-        db.add(
-            User(
-                id=legacy["username"],
-                username=legacy["username"].lower(),
-                email=None,
-                display_name="管理员",
-                password_salt=legacy["salt"],
-                password_digest=legacy["digest"],
-                role="admin",
-                status="active",
+        if await db.scalar(select(User.id).limit(1)) is None:
+            db.add(
+                User(
+                    id=legacy["username"],
+                    username=legacy["username"].lower(),
+                    email=None,
+                    display_name="管理员",
+                    password_salt=legacy["salt"],
+                    password_digest=legacy["digest"],
+                    role="admin",
+                    status="active",
+                )
             )
-        )
+        if not await db.get(PlatformSetting, "session-owner-migration-v1"):
+            # Before account ownership, chat sessions used the configured admin ID and
+            # authoring sessions had no owner. Backfill only once: later users may use those names.
+            if legacy["username"] != settings.admin_username:
+                await db.execute(
+                    update(AgentSession)
+                    .where(AgentSession.user_id == settings.admin_username)
+                    .values(user_id=legacy["username"])
+                )
+            if legacy["username"] != "admin":
+                await db.execute(
+                    update(SkillAuthoringSession)
+                    .where(SkillAuthoringSession.owner_id == "admin")
+                    .values(owner_id=legacy["username"])
+                )
+            db.add(PlatformSetting(key="session-owner-migration-v1", value={"adminId": legacy["username"]}))
         await db.commit()
 
 

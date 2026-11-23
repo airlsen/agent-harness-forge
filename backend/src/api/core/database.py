@@ -219,6 +219,27 @@ async def init_db() -> None:
                     )
 
         await conn.run_sync(ensure_space_columns)
+
+        def ensure_authoring_owner(sync_conn):
+            from sqlalchemy import inspect, text
+
+            inspector = inspect(sync_conn)
+            if "skill_authoring_session" not in inspector.get_table_names():
+                return
+            existing = {column["name"] for column in inspector.get_columns("skill_authoring_session")}
+            if "owner_id" not in existing:
+                sync_conn.execute(
+                    text(
+                        "ALTER TABLE skill_authoring_session ADD COLUMN owner_id VARCHAR(64) NOT NULL DEFAULT 'admin'"
+                    )
+                )
+            sync_conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_skill_authoring_session_owner_id ON skill_authoring_session (owner_id)"
+                )
+            )
+
+        await conn.run_sync(ensure_authoring_owner)
     import json
     from sqlalchemy import select
     from ..models.platform import PlatformSetting

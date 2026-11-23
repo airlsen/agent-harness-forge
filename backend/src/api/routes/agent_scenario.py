@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.database import get_session
 from ..core.config import settings
@@ -81,10 +81,10 @@ async def copy_scenario(
 
 
 @router.post("/{scenario_id}/run-test")
-async def run_test(scenario_id: int):
+async def run_test(scenario_id: int, request: Request):
     from ..services.session_service import session_service
 
-    result = await session_service.test_scenario(scenario_id)
+    result = await session_service.test_scenario(scenario_id, user_id=request.state.user.id)
     return ResponseUtil.ok(result)
 
 

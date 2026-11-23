@@ -57,4 +57,5 @@ test: ## 不吞错误；草稿状态单测与隔离协议夹具，不消耗真�
 	npm --prefix runner test
 	python3 scripts/check-preview-auth.py
 	python3 scripts/check-user-auth.py
+	python3 scripts/check-session-ownership.py
 	python3 scripts/check-business-api.py

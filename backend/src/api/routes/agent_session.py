@@ -18,6 +18,13 @@ from ..utils.response import ResponseUtil
 router = APIRouter()
 
 
+async def require_session_owner(session_id: int, request: Request, db: AsyncSession = Depends(get_session)):
+    return await session_service.owned_row(db, session_id, request.state.user.id)
+
+
+owned_routes = APIRouter(dependencies=[Depends(require_session_owner)])
+
+
 class NewSession(BaseModel):
     scenarioId: int = Field(gt=0)
     # 本次会话使用的模型配置；不传则使用平台默认模型。
@@ -36,28 +43,35 @@ class Turn(BaseModel):
 
 @router.get("")
 async def list_sessions(
+    request: Request,
     space: Literal["current", "all"] = Query("current"),
     space_id: int | None = Depends(current_space),
 ):
     """会话列表：默认只列当前空间的会话；space=all 列出全部空间（我的会话 ·「全部空间」）。"""
     return ResponseUtil.ok(
-        {"items": await session_service.list(space_id=None if space == "all" else space_id)}
+        {
+            "items": await session_service.list(
+                user_id=request.state.user.id, space_id=None if space == "all" else space_id
+            )
+        }
     )
 
 
 @router.post("")
-async def create(payload: NewSession, space_id: int | None = Depends(current_space)):
+async def create(payload: NewSession, request: Request, space_id: int | None = Depends(current_space)):
     return ResponseUtil.ok(
-        await session_service.create(payload.scenarioId, model_id=payload.modelId, space_id=space_id)
+        await session_service.create(
+            payload.scenarioId, user_id=request.state.user.id, model_id=payload.modelId, space_id=space_id
+        )
     )
 
 
-@router.get("/{session_id}")
+@owned_routes.get("/{session_id}")
 async def detail(session_id: int):
     return ResponseUtil.ok(await session_service.detail(session_id))
 
 
-@router.post("/{session_id}/turns", status_code=202)
+@owned_routes.post("/{session_id}/turns", status_code=202)
 async def turn(session_id: int, payload: Turn):
     return ResponseUtil.ok(
         await session_service.start(
@@ -80,7 +94,7 @@ def _kernel(event: dict) -> str:
 LIVE_HEARTBEAT_SECONDS = 15
 
 
-@router.get("/{session_id}/events")
+@owned_routes.get("/{session_id}/events")
 async def events(session_id: int, request: Request, after: int = Query(default=0, ge=0)):
     """会话事件流：已落库的事件按序号补齐；进行中的回合订阅实时通道，流式片段只在这里推送。"""
     await session_service.status(session_id)
@@ -154,19 +168,19 @@ async def events(session_id: int, request: Request, after: int = Query(default=0
     )
 
 
-@router.post("/{session_id}/interrupt")
+@owned_routes.post("/{session_id}/interrupt")
 async def interrupt(session_id: int, db: AsyncSession = Depends(get_session)):
     await session_service.interrupt(session_id)
     return ResponseUtil.ok()
 
 
-@router.delete("/{session_id}")
+@owned_routes.delete("/{session_id}")
 async def archive(session_id: int):
     await session_service.archive(session_id)
     return ResponseUtil.ok()
 
 
-@router.get("/{session_id}/trajectory")
+@owned_routes.get("/{session_id}/trajectory")
 async def trajectory(
     session_id: int,
     source: str | None = None,
@@ -193,14 +207,14 @@ async def _file_session(db: AsyncSession, session_id: int):
     return row
 
 
-@router.get("/{session_id}/files")
+@owned_routes.get("/{session_id}/files")
 async def files(session_id: int, db: AsyncSession = Depends(get_session)):
     """会话文件清单（来自服务端存储，Runner 离线或重启后依然可用）与保留期限。"""
     row = await _file_session(db, session_id)
     return ResponseUtil.ok(await file_service.list(db, row))
 
 
-@router.get("/{session_id}/files/raw")
+@owned_routes.get("/{session_id}/files/raw")
 async def file_raw(
     session_id: int, path: str = Query(min_length=1, max_length=256), db: AsyncSession = Depends(get_session)
 ):
@@ -222,7 +236,7 @@ async def file_raw(
     )
 
 
-@router.delete("/{session_id}/files")
+@owned_routes.delete("/{session_id}/files")
 async def delete_file(
     session_id: int, path: str = Query(min_length=1, max_length=256), db: AsyncSession = Depends(get_session)
 ):
@@ -232,7 +246,7 @@ async def delete_file(
     return ResponseUtil.ok({"deleted": path})
 
 
-@router.get("/{session_id}/files/archive")
+@owned_routes.get("/{session_id}/files/archive")
 async def file_archive(
     session_id: int, dir: str = Query("", max_length=256), db: AsyncSession = Depends(get_session)
 ):
@@ -248,14 +262,14 @@ async def file_archive(
     )
 
 
-@router.get("/{session_id}/files/changes/{change_id}")
+@owned_routes.get("/{session_id}/files/changes/{change_id}")
 async def file_change(session_id: int, change_id: int, db: AsyncSession = Depends(get_session)):
     """一次文件改动的 unified diff；二进制或过大文件只返回元数据。"""
     await session_service.row(db, session_id)
     return ResponseUtil.ok(await file_service.diff(db, session_id, change_id))
 
 
-@router.get("/{session_id}/file")
+@owned_routes.get("/{session_id}/file")
 async def file(
     session_id: int, path: str = Query(min_length=1, max_length=256), db: AsyncSession = Depends(get_session)
 ):
@@ -270,7 +284,7 @@ async def file(
         raise HTTPException(422, "这是二进制文件，请使用下载") from error
 
 
-@router.get("/{session_id}/export")
+@owned_routes.get("/{session_id}/export")
 async def export(session_id: int):
     data = await session_service.detail(session_id)
     all_events, cursor = [], 0
@@ -286,3 +300,6 @@ async def export(session_id: int):
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="forge-session-{session_id}.json"'},
     )
+
+
+router.include_router(owned_routes)
