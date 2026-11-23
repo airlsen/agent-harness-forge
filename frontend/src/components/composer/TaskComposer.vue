@@ -274,11 +274,4 @@ defineExpose({ focus: () => textarea.value?.focus() });
       </a-button>
     </div>
   </div>
-  <div v-if="!hero" class="task-composer-footnote">
-    <span
-      ><Icon name="layers" :size="12" />{{
-        chat.current ? '场景与策略已锁定 · 模型可在两轮之间切换' : '新会话将使用所选场景与模型'
-      }}</span
-    >
-  </div>
 </template>
