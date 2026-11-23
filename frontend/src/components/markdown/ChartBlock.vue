@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import CodeBlock from './CodeBlock.vue';
-import { useCopy } from '../../utils/useCopy';
-import { VEGA_CONFIG } from '../../utils/vizTheme';
+import { useCopy } from '../../composables/useCopy';
+import { VEGA_CONFIG } from '../../utils/markdown/vizTheme';
 import Icon from '../base/ForgeIcon.vue';
 
 const props = withDefaults(defineProps<{ code: string; closed: boolean; live?: boolean }>(), {

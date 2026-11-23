@@ -1,7 +1,7 @@
 /** Skill 上线与下线：状态、下线与删除前的确认（技能列表与编辑页共用）。 */
-import { api, post, remove } from '../api/client';
-import type { SkillDetail, SkillSummary, SkillUsageScenario } from '../types/skill';
-import { confirm } from './feedback';
+import { api, post, remove } from '../../api/client';
+import type { SkillDetail, SkillSummary, SkillUsageScenario } from '../../types/skill';
+import { confirm } from '../common/feedback';
 
 /**
  * - draft：从未发布；

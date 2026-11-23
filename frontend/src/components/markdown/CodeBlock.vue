@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { highlightCode, normalizeLang } from '../../utils/highlight';
-import { useCopy } from '../../utils/useCopy';
+import { highlightCode, normalizeLang } from '../../utils/markdown/highlight';
+import { useCopy } from '../../composables/useCopy';
 import Icon from '../base/ForgeIcon.vue';
 
 const props = withDefaults(defineProps<{ code: string; lang?: string; live?: boolean }>(), {

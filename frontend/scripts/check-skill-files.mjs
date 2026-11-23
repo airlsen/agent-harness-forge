@@ -9,7 +9,7 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: false },
 });
 try {
-  const files = await vite.ssrLoadModule('/src/utils/skillFiles.ts');
+  const files = await vite.ssrLoadModule('/src/utils/skill/files.ts');
   const file = (path, bytes = 10) => ({ path, bytes, source: 'manual' });
 
   // 三个目录始终显示，文件按名称排序归入各自目录

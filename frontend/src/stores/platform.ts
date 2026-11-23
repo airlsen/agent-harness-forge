@@ -8,8 +8,8 @@ import type {
   Scenario,
   Tool,
 } from '../types/platform';
-import { isAvailableScenario } from '../utils/presentation';
-import { notify } from '../utils/feedback';
+import { isAvailableScenario } from '../utils/conversation/sessionState';
+import { notify } from '../utils/common/feedback';
 
 export const usePlatform = defineStore('platform', {
   state: () => ({

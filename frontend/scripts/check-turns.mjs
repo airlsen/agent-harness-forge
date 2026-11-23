@@ -28,7 +28,7 @@ const tool = (id, callId, name = 'workspace_read') => ({
 });
 try {
   const { buildTurns, latestUnavailable, processStats, processSummary, toolArgSummary } =
-    await vite.ssrLoadModule('/src/utils/turns.ts');
+    await vite.ssrLoadModule('/src/utils/conversation/turns.ts');
 
   check('一轮 = 用户消息 + 一个 AI 块；思考与正文是同一块内的步骤', () => {
     const turns = buildTurns([user(1), assistant(2, '回答', { reasoning: '先想想' })], idle);

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { usePlatform } from '../../stores/platform';
-import { toolArgSummary, type ToolCallView } from '../../utils/turns';
+import { toolArgSummary, type ToolCallView } from '../../utils/conversation/turns';
 import Icon from '../base/ForgeIcon.vue';
-import { builtinToolTitle } from '../../utils/files';
+import { builtinToolTitle } from '../../utils/conversation/toolTitles';
 
 // flat：只渲染调用行（无分组标题），用于过程块内的时间线；waiting：进行中的调用正在等待用户确认
 const props = defineProps<{ calls: ToolCallView[]; flat?: boolean; waiting?: boolean }>();

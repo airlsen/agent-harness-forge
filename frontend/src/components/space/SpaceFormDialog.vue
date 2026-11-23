@@ -4,7 +4,7 @@ import Icon from '../base/ForgeIcon.vue';
 import SpaceMark from './SpaceMark.vue';
 import { MAX_SPACE_DESCRIPTION, MAX_SPACE_NAME, SPACE_COLORS, useSpace } from '../../stores/space';
 import type { Space, SpaceColor } from '../../types/platform';
-import { notify } from '../../utils/feedback';
+import { notify } from '../../utils/common/feedback';
 
 /** 新建 / 编辑空间。公共空间只能改说明。 */
 const props = defineProps<{ open: boolean; space?: Space | null }>();

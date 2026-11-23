@@ -9,7 +9,7 @@ import { api, put } from '../../api/client';
 import { PUBLIC_SPACE_ID, useSpace } from '../../stores/space';
 import { usePlatform } from '../../stores/platform';
 import type { Space, SpaceBrief, Tool } from '../../types/platform';
-import { confirm, notify } from '../../utils/feedback';
+import { confirm, notify } from '../../utils/common/feedback';
 
 /**
  * 空间管理：新建 / 编辑 / 删除空间，按空间关闭基础工具。

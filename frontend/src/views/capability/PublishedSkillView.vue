@@ -6,7 +6,7 @@ import Icon from '../../components/base/ForgeIcon.vue';
 import Markdown from '../../components/markdown/MarkdownContent.vue';
 import { usePlatform } from '../../stores/platform';
 import type { PublishedSkillDetail } from '../../types/skill';
-import { formatBytes } from '../../utils/presentation';
+import { formatBytes } from '../../utils/common/format';
 
 const route = useRoute();
 const app = usePlatform();

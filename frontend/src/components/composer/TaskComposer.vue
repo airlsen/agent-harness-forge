@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type VNode 
 import { useRouter } from 'vue-router';
 import { useConversation } from '../../stores/conversation';
 import { usePlatform } from '../../stores/platform';
-import { isAvailableScenario } from '../../utils/presentation';
+import { isAvailableScenario } from '../../utils/conversation/sessionState';
 import Icon from '../base/ForgeIcon.vue';
 import ModelPicker from './ModelPicker.vue';
 import CodePicker from './CodePicker.vue';

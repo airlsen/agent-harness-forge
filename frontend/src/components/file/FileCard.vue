@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import Icon from '../base/ForgeIcon.vue';
-import { formatBytes } from '../../utils/presentation';
-import { KIND_META, fileDir, fileKind, fileName, previewable, type FileRef } from '../../utils/files';
+import { formatBytes } from '../../utils/common/format';
+import { KIND_META, fileDir, fileKind, fileName, previewable, type FileRef } from '../../utils/file/files';
 
 /** 会话文件卡片：点击卡片预览（不可预览的类型直接下载），右侧提供下载（及可选的删除）按钮。 */
 const props = withDefaults(

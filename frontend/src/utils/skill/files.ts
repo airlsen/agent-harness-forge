@@ -2,7 +2,7 @@
  * Skill 目录：SKILL.md 之外 references/、assets/、scripts/ 下的文件。规则与控制面 skill_files.py 保持一致，
  * 前端只用于提前提示，最终以接口校验为准。
  */
-import type { SkillFile } from '../types/skill';
+import type { SkillFile } from '../../types/skill';
 
 export const SKILL_MAIN_FILE = 'SKILL.md';
 export type SkillFileDir = 'references' | 'assets' | 'scripts';

@@ -10,7 +10,7 @@
 ## 组件
 
 - `MarkdownPreview.vue` — Markdown 漂亮渲染（系统品牌色主题）
-  - 能力：GFM、代码高亮（复用 `utils/highlight` Shiki）、表格、引用（note/warning/tip/error/info）、任务列表、链接/图片、数学公式占位、Mermaid / Vega 委托给 `MermaidBlock` / `ChartBlock`、流式光标、行号、复制/展开
+  - 能力：GFM、代码高亮（复用 `utils/markdown/highlight` Shiki）、表格、引用（note/warning/tip/error/info）、任务列表、链接/图片、数学公式占位、Mermaid / Vega 委托给 `MermaidBlock` / `ChartBlock`、流式光标、行号、复制/展开
   - 主题：默认使用系统品牌色系（`var(--brand-600)` ~ `var(--brand-800)`），支持 `accent="brand" | "yellow" | "indigo"`
   - Props：`content`、`streaming`、`enableMath`、`enableMermaid`、`showLineNumbers`、`maxHeight`、`compact`、`accent`、`theme`
 - `JsonPreview.vue` — JSON 美化预览

@@ -6,8 +6,9 @@ import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
 import { usePlatform } from '../../stores/platform';
 import { MAX_SESSION_MCP, MAX_SESSION_SKILLS, useConversation } from '../../stores/conversation';
 import { api, post, put, remove } from '../../api/client';
-import { formatDate, isAvailableScenario, scenarioSource, scenarioState } from '../../utils/presentation';
-import { catalogDate, orderScenarios, scenarioPublished } from '../../utils/catalogOrdering';
+import { formatDate } from '../../utils/common/format';
+import { isAvailableScenario, scenarioSource, scenarioState } from '../../utils/conversation/sessionState';
+import { catalogDate, orderScenarios, scenarioPublished } from '../../utils/common/catalogOrdering';
 import type {
   CapabilityOptions,
   Scenario,
@@ -17,9 +18,9 @@ import type {
 } from '../../types/platform';
 import type { PluginPackage } from '../../types/plugin';
 import Icon from '../../components/base/ForgeIcon.vue';
-import { drawerA11y } from '../../utils/overlay';
+import { drawerA11y } from '../../utils/common/overlay';
 import CatalogCard from '../../components/catalog/CatalogCard.vue';
-import { missingSkillInfo } from '../../utils/skillLifecycle';
+import { missingSkillInfo } from '../../utils/skill/lifecycle';
 import CatalogEmpty from '../../components/catalog/CatalogEmpty.vue';
 import CatalogFilter from '../../components/catalog/CatalogFilter.vue';
 import CatalogGrid from '../../components/catalog/CatalogGrid.vue';

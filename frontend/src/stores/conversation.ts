@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { api, post, remove } from '../api/client';
 import { openEventStream } from '../api/events';
 import { usePlatform } from './platform';
-import { fileUrl, type FileRetention, type WorkspaceFile } from '../utils/files';
+import { fileUrl, type FileRetention, type WorkspaceFile } from '../utils/file/files';
 import type {
   Approval,
   CapabilityChoice,

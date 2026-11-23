@@ -3,7 +3,7 @@ import { computed, ref, watch, type VNode } from 'vue';
 import { useConversation } from '../../stores/conversation';
 import { usePlatform } from '../../stores/platform';
 import type { ModelOption } from '../../types/platform';
-import { contextPressure, tokenLabel } from '../../utils/modelContext';
+import { contextPressure, tokenLabel } from '../../utils/conversation/modelContext';
 import Icon from '../base/ForgeIcon.vue';
 
 /**

@@ -16,7 +16,7 @@ import 'highlight.js/styles/atom-one-dark.css';
 import CodeBlock from './CodeBlock.vue';
 import MermaidBlock from './MermaidBlock.vue';
 import ChartBlock from './ChartBlock.vue';
-import { useCopy } from '../../utils/useCopy';
+import { useCopy } from '../../composables/useCopy';
 
 interface Props {
   content: string;

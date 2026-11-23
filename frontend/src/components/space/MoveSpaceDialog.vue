@@ -4,7 +4,7 @@ import Icon from '../base/ForgeIcon.vue';
 import SpaceMark from './SpaceMark.vue';
 import { PUBLIC_SPACE_ID, useSpace } from '../../stores/space';
 import type { MoveCheck, SpaceResourceKind } from '../../types/platform';
-import { notify } from '../../utils/feedback';
+import { notify } from '../../utils/common/feedback';
 
 /**
  * 把场景 / Skill / MCP / 插件移到另一个空间。

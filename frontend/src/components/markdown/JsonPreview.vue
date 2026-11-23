@@ -6,7 +6,7 @@
  * 主题：黄色系 #eab308，与 MarkdownPreview 保持一致
  */
 import { ref, computed, watch, defineComponent, h } from 'vue';
-import { useCopy } from '../../utils/useCopy';
+import { useCopy } from '../../composables/useCopy';
 
 interface Props {
   data: unknown;

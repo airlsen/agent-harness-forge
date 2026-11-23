@@ -3,7 +3,7 @@ import { nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useConversation } from '../../stores/conversation';
 import ConversationStart from '../../components/composer/ConversationStart.vue';
-import { animateComposerArrival, captureComposerOrigin } from '../../utils/composerTransition';
+import { animateComposerArrival, captureComposerOrigin } from '../../utils/conversation/composerTransition';
 
 const router = useRouter();
 const chat = useConversation();

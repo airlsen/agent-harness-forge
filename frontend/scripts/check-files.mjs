@@ -18,7 +18,7 @@ const check = (name, fn) => {
   console.log('PASS', name);
 };
 try {
-  const files = await vite.ssrLoadModule('/src/utils/files.ts');
+  const files = await vite.ssrLoadModule('/src/utils/file/files.ts');
 
   check('file kinds follow extensions first, then MIME', () => {
     const cases = {

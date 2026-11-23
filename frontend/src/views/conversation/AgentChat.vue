@@ -5,14 +5,15 @@ import { usePlatform } from '../../stores/platform';
 import { useConversation } from '../../stores/conversation';
 import { useSpace } from '../../stores/space';
 import { downloadResponse } from '../../api/client';
-import { formatBytes, sessionState } from '../../utils/presentation';
-import { trapTabKey } from '../../utils/focus';
-import { confirm } from '../../utils/feedback';
-import { animateComposerArrival, captureComposerOrigin } from '../../utils/composerTransition';
+import { formatBytes } from '../../utils/common/format';
+import { sessionState } from '../../utils/conversation/sessionState';
+import { trapTabKey } from '../../utils/common/focus';
+import { confirm } from '../../utils/common/feedback';
+import { animateComposerArrival, captureComposerOrigin } from '../../utils/conversation/composerTransition';
 import type { KernelEvent } from '../../types/platform';
-import { useStickToBottom } from '../../utils/useStickToBottom';
-import { buildTurns, latestUnavailable, type ToolCallView, type Turn } from '../../utils/turns';
-import { missingSkillInfo } from '../../utils/skillLifecycle';
+import { useStickToBottom } from '../../composables/useStickToBottom';
+import { buildTurns, latestUnavailable, type ToolCallView, type Turn } from '../../utils/conversation/turns';
+import { missingSkillInfo } from '../../utils/skill/lifecycle';
 import Icon from '../../components/base/ForgeIcon.vue';
 import Markdown from '../../components/markdown/MarkdownContent.vue';
 import ProcessBlock from '../../components/message/ProcessBlock.vue';
@@ -24,8 +25,8 @@ import FilePreview from '../../components/file/FilePreview.vue';
 import FileTree from '../../components/file/FileTree.vue';
 import FileDiff from '../../components/file/FileDiff.vue';
 import TurnChanges from '../../components/message/TurnChanges.vue';
+import { builtinToolTitle } from '../../utils/conversation/toolTitles';
 import {
-  builtinToolTitle,
   archiveUrl,
   fileName,
   previewable,
@@ -34,7 +35,7 @@ import {
   type Deliverable,
   type FileChange,
   type FileRef,
-} from '../../utils/files';
+} from '../../utils/file/files';
 
 const app = usePlatform();
 const chat = useConversation();

@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import type { Rule } from 'ant-design-vue/es/form';
 import { api, post, put } from '../../api/client';
-import { formatBytes } from '../../utils/presentation';
+import { formatBytes } from '../../utils/common/format';
 import { usePlatform } from '../../stores/platform';
 import type { Tool, WebSearchSettings } from '../../types/platform';
 import Icon from '../../components/base/ForgeIcon.vue';

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { api, post, put, remove as del, setSpaceHeader, SPACE_STORAGE_KEY } from '../api/client';
 import type { MoveCheck, Space, SpaceBrief, SpaceColor, SpaceResourceKind } from '../types/platform';
-import { notify } from '../utils/feedback';
+import { notify } from '../utils/common/feedback';
 import { usePlatform } from './platform';
 import { useConversation } from './conversation';
 

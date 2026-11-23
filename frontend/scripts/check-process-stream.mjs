@@ -53,7 +53,7 @@ try {
   await build({
     stdin: {
       contents: `export { default as ProcessBlock } from './src/components/message/ProcessBlock.vue';
-export { useStickToBottom } from './src/utils/useStickToBottom';
+export { useStickToBottom } from './src/composables/useStickToBottom';
 export { createApp, h, reactive, ref, nextTick, defineComponent } from 'vue';`,
       resolveDir: root,
     },

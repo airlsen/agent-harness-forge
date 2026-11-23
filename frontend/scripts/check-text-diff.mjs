@@ -9,7 +9,9 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: false },
 });
 try {
-  const { diffText, foldRows, splitRows, splitLines } = await vite.ssrLoadModule('/src/utils/textDiff.ts');
+  const { diffText, foldRows, splitRows, splitLines } = await vite.ssrLoadModule(
+    '/src/utils/file/textDiff.ts',
+  );
   const lines = (count, prefix = '第') => Array.from({ length: count }, (_, i) => `${prefix}${i + 1} 行`);
 
   // 换行符与末尾换行不算改动

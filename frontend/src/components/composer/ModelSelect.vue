@@ -2,7 +2,7 @@
 import { computed, ref, type VNode } from 'vue';
 import { usePlatform } from '../../stores/platform';
 import type { ModelOption } from '../../types/platform';
-import { tokenLabel } from '../../utils/modelContext';
+import { tokenLabel } from '../../utils/conversation/modelContext';
 import Icon from '../base/ForgeIcon.vue';
 
 /**

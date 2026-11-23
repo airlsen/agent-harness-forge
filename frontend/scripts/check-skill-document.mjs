@@ -10,7 +10,7 @@ const vite = await createServer({
 });
 try {
   const { readSkillDocument, updateSkillMetadata, initialSkillDocument } = await vite.ssrLoadModule(
-    '/src/utils/skillDocument.ts',
+    '/src/utils/skill/document.ts',
   );
   const initial = initialSkillDocument('中文名称');
   assert.equal(readSkillDocument(initial).data.title, '中文名称');

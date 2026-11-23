@@ -9,9 +9,9 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: false, watch: { ignored: ['**/*'] } },
 });
 try {
-  const authoring = await vite.ssrLoadModule('/src/utils/skillAuthoring.ts');
-  const { buildTurns } = await vite.ssrLoadModule('/src/utils/turns.ts');
-  const { builtinToolTitle } = await vite.ssrLoadModule('/src/utils/files.ts');
+  const authoring = await vite.ssrLoadModule('/src/utils/skill/authoring.ts');
+  const { buildTurns } = await vite.ssrLoadModule('/src/utils/conversation/turns.ts');
+  const { builtinToolTitle } = await vite.ssrLoadModule('/src/utils/conversation/toolTitles.ts');
   const idle = (live) => authoring.authoringLiveTurn(live ?? authoring.emptyAuthoringLive(), false);
 
   // 1. 刷新后从落库消息还原：思考 + 工具调用归入过程块，最后一次调用之后的正文为最终回答

@@ -2,9 +2,9 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, apiFetch, downloadResponse } from '../../api/client';
-import { formatBytes } from '../../utils/presentation';
-import { catalogDate, orderByCreated, orderPublishedSkills } from '../../utils/catalogOrdering';
-import { confirm } from '../../utils/feedback';
+import { formatBytes } from '../../utils/common/format';
+import { catalogDate, orderByCreated, orderPublishedSkills } from '../../utils/common/catalogOrdering';
+import { confirm } from '../../utils/common/feedback';
 import { usePlatform } from '../../stores/platform';
 import { useConversation } from '../../stores/conversation';
 import type { Scenario, Tool } from '../../types/platform';
@@ -23,7 +23,8 @@ import CatalogFilter from '../../components/catalog/CatalogFilter.vue';
 import CatalogGrid from '../../components/catalog/CatalogGrid.vue';
 import CatalogSearch from '../../components/catalog/CatalogSearch.vue';
 import CatalogEmpty from '../../components/catalog/CatalogEmpty.vue';
-import { drawerA11y, useRetained } from '../../utils/overlay';
+import { drawerA11y } from '../../utils/common/overlay';
+import { useRetained } from '../../composables/useRetained';
 
 type RuntimeComponent = PluginPackage;
 type McpServer = {

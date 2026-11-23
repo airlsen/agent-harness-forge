@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { diffText, foldRows, splitRows, type DiffBlock, type DiffRow } from '../../utils/textDiff';
+import { diffText, foldRows, splitRows, type DiffBlock, type DiffRow } from '../../utils/file/textDiff';
 
 /**
  * 两段文本的对比（与工作台「本轮改动」同一套红绿样式）：

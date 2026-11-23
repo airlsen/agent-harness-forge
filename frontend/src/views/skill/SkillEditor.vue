@@ -17,15 +17,15 @@ import MarkdownPreview from '../../components/markdown/MarkdownPreview.vue';
 import FilePreview from '../../components/file/FilePreview.vue';
 import ChangeReview, { type ReviewFile } from '../../components/file/ChangeReview.vue';
 import ModelSelect from '../../components/composer/ModelSelect.vue';
-import { useCopy } from '../../utils/useCopy';
+import { useCopy } from '../../composables/useCopy';
 import MonacoEditor from '../../components/editor/MonacoEditor.vue';
-import { loadMonaco } from '../../utils/monaco';
+import { loadMonaco } from '../../utils/editor/monaco';
 import { lexer } from 'marked';
-import { readSkillDocument, updateSkillMetadata, initialSkillDocument } from '../../utils/skillDocument';
+import { readSkillDocument, updateSkillMetadata, initialSkillDocument } from '../../utils/skill/document';
 import { usePlatform } from '../../stores/platform';
 import { PUBLIC_SPACE_ID, useSpace } from '../../stores/space';
-import { confirm } from '../../utils/feedback';
-import { deleteSkill, skillState, unpublishSkill } from '../../utils/skillLifecycle';
+import { confirm } from '../../utils/common/feedback';
+import { deleteSkill, skillState, unpublishSkill } from '../../utils/skill/lifecycle';
 import {
   SKILL_FILE_DIRS,
   SKILL_MAIN_FILE,
@@ -41,8 +41,8 @@ import {
   summarizeAssistantChanges,
   type AssistantFileChange,
   type SkillFileDir,
-} from '../../utils/skillFiles';
-import { formatBytes } from '../../utils/presentation';
+} from '../../utils/skill/files';
+import { formatBytes } from '../../utils/common/format';
 import {
   fileDir,
   fileName,
@@ -51,15 +51,15 @@ import {
   trialFilesUrl,
   trialRawUrl,
   type FileRef,
-} from '../../utils/files';
-import { buildTurns, type Turn } from '../../utils/turns';
-import { useStickToBottom } from '../../utils/useStickToBottom';
+} from '../../utils/file/files';
+import { buildTurns, type Turn } from '../../utils/conversation/turns';
+import { useStickToBottom } from '../../composables/useStickToBottom';
 import {
   applyAuthoringEvent,
   authoringChatMessages,
   authoringLiveTurn,
   emptyAuthoringLive,
-} from '../../utils/skillAuthoring';
+} from '../../utils/skill/authoring';
 import type {
   SkillAuthoringMessage,
   SkillAuthoringSession,

@@ -3,9 +3,9 @@
  * - authoringChatMessages：把落库的编写消息转换成工作台的消息格式，交给 buildTurns 聚合；
  * - applyAuthoringEvent：处理流式事件，结算的回复与工具结果追加为消息，其余进入实时状态。
  */
-import type { ChatMessage } from '../types/platform';
-import type { SkillAuthoringMessage } from '../types/skill';
-import type { LiveTurn, ToolCallView } from './turns';
+import type { ChatMessage } from '../../types/platform';
+import type { SkillAuthoringMessage } from '../../types/skill';
+import type { LiveTurn, ToolCallView } from '../conversation/turns';
 
 /** 旧版本单独记录的草稿修改说明（没有对应的工具调用），显示为一次「更新草稿」 */
 export const LEGACY_REVISION_TOOL = 'skill_revision';

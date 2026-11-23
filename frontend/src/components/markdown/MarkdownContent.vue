@@ -5,7 +5,7 @@
  * 流式中块的 key 稳定，只有正在增长的最后一个块会重新渲染。
  */
 import { computed } from 'vue';
-import { splitMarkdown } from '../../utils/markdownBlocks';
+import { splitMarkdown } from '../../utils/markdown/blocks';
 import CodeBlock from './CodeBlock.vue';
 import MermaidBlock from './MermaidBlock.vue';
 import ChartBlock from './ChartBlock.vue';
