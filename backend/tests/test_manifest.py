@@ -38,7 +38,7 @@ def legacy_bundle():
         "policy_ref": "abc",
         "input_schema": None,
         "meta": {
-            "builtin_tools": ["current_time"],
+            "builtin_tools": ["todo_write"],
             "plugin_tools": ["crm_find"],
             "pluginBindings": [
                 {
@@ -50,7 +50,7 @@ def legacy_bundle():
                     "tools": [{"name": "crm_find", "permission": "read"}],
                 }
             ],
-            "policy": {"allowedTools": ["current_time"], "approvalTimeoutSeconds": 60, "maxTurns": 30},
+            "policy": {"allowedTools": ["todo_write"], "approvalTimeoutSeconds": 60, "maxTurns": 30},
             "skills": [{"id": 1}],
             "scenarioName": "客服",
             "isTest": False,
@@ -68,7 +68,7 @@ def test_legacy_snapshot_projects_to_a_manifest_without_control_plane_facts():
         "safety": ["诚实"],
         "workspace": [],
     }
-    assert manifest["tools"] == {"builtin": ["current_time"], "plugin": ["crm_find"]}
+    assert manifest["tools"] == {"builtin": ["todo_write"], "plugin": ["crm_find"]}
     assert manifest["pluginBindings"][0]["execution"] == {}
     # 企业策略的其他字段原样保留；Runner 读取的字段齐全
     assert manifest["policy"]["maxTurns"] == 30 and manifest["policy"]["approvalTimeoutSeconds"] == 60

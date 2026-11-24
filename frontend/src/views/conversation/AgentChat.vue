@@ -25,7 +25,7 @@ import FilePreview from '../../components/file/FilePreview.vue';
 import FileTree from '../../components/file/FileTree.vue';
 import FileDiff from '../../components/file/FileDiff.vue';
 import TurnChanges from '../../components/message/TurnChanges.vue';
-import { builtinToolTitle } from '../../utils/conversation/toolTitles';
+import { builtinToolTitle, canonicalToolName } from '../../utils/conversation/toolTitles';
 import {
   archiveUrl,
   fileName,
@@ -105,17 +105,17 @@ const sceneIcon = computed(
 const sceneDescription = computed(
   () => chat.current?.bundle?.meta?.scenarioDescription ?? selected.value?.payload.description ?? '',
 );
-// Runner 为每个会话补齐基础能力（时间、文件列表/读取/写入），平台策略 allowedTools 仍是上限
-const BASE_TOOLS = ['current_time', 'workspace_list', 'workspace_read', 'workspace_write'];
+// Runner 为每个会话补齐基础能力（读取、生成与修改文件、终端），平台策略 allowedTools 仍是上限；
+// 旧会话快照里的旧工具名（workspace_* 等）先换成新名
+const BASE_TOOLS = ['read', 'write', 'bash'];
+const canonicalList = (names: string[]) => names.map(canonicalToolName).filter(Boolean);
 const selectedTools = computed(() => {
-  const declared =
-    chat.current?.bundle?.meta?.builtin_tools ??
-    selected.value?.payload.capabilities.builtin_tool_names ??
-    [];
-  const ceiling = chat.current?.bundle?.meta?.policy?.allowedTools;
-  const names = new Set(
-    [...BASE_TOOLS, ...declared].filter((name) => !Array.isArray(ceiling) || ceiling.includes(name)),
+  const declared = canonicalList(
+    chat.current?.bundle?.meta?.builtin_tools ?? selected.value?.payload.capabilities.builtin_tool_names ?? [],
   );
+  const rawCeiling = chat.current?.bundle?.meta?.policy?.allowedTools;
+  const ceiling = Array.isArray(rawCeiling) ? canonicalList(rawCeiling) : null;
+  const names = new Set([...BASE_TOOLS, ...declared].filter((name) => !ceiling || ceiling.includes(name)));
   return app.tools.filter((t) => names.has(t.name));
 });
 const welcome = computed(() => !chat.messages.length && !chat.outgoing && !loadError.value);

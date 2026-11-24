@@ -48,6 +48,8 @@ app.get('/v1/runtime', async () => ({
   active: kernel.active,
   queued: kernel.queued,
   mode: 'real-model-only',
+  // 终端沙箱：enforced（命令只能写会话工作区）/ unavailable（本机不支持，已降级为不限制）/ unknown（尚未启动过会话）
+  sandbox: kernel.sandbox,
   capabilities: {
     stream: true,
     approvals: true,

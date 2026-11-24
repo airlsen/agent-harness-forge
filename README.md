@@ -36,13 +36,13 @@
 
 - 不 fork dsh；版本固定为 `@deepseek-ai/dsh@0.2.2-rc.5`。
 - 会话锁定场景版本、策略、模型和价格；模型凭据的加密快照不进入 Bundle / 导出接口。
-- 工具仅有 `current_time`、`workspace_list`、`workspace_read`、`workspace_write`，以及随写入权限开放的 `workspace_present`（声明交付文件，只读元数据）。不开放任意 Shell / 外部网络工具 / 外部插件安装。
+- 执行底座是 DSH 官方 `sdk` 组合：读取 `read`、生成与修改 `write` / `edit`、交付声明 `present`（随写入开放）、终端 `bash`（系统沙箱中执行，只能写会话工作区）都用 DSH 官方插件，当前时间作为上下文自动提供；Forge 只叠加路径守卫、配额、文件同步与命令规则。没选中的能力整块关闭。不允许外部插件安装。
 - 默认 SQLite（WAL），本地工作区；**不是容器级安全沙箱，不具备多租户生产隔离**。
 
 ### 会话文件
 
-- **基础能力**：Runner 为每个会话默认加载时间、`workspace_list` / `workspace_read`（支持 `offset`/`limit` 分页）/
-  `workspace_write`，以及版本固定的 DSH 搜索插件 `@deepseek-ai/dsh-tool-fs-search`（`glob` / `grep`），
+- **基础能力**：Runner 为每个会话默认加载 `read`（支持 `offset`/`limit` 分页）、`write` / `edit`、`bash`，
+  以及 DSH 搜索插件 `@deepseek-ai/dsh-tool-fs-search`（`glob` / `grep`），
   场景无需逐个授权即可生成、查找和读取文件。「治理」中的平台策略仍是上限：关闭写入即不加载写入与交付声明，
   关闭读取即不加载搜索插件；Skill 编辑会话只保留 `skill_*` 工具。搜索路径在执行前被限制在会话工作区内
   （拒绝 `..`、绝对路径越界、隐藏目录与符号链接）。写入会话工作区直接执行、无需确认，受文件数量与容量配额约束。

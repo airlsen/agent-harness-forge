@@ -269,28 +269,28 @@ async def seed_scenarios(db):
             "sparkles",
             "你是一位严谨而友好的工作助手。先理解用户目标，必要时澄清问题，再提供清晰、可执行的回答。用户需要文件时保存到工作区。"
             + WEB_SEARCH_HINT,
-            ["current_time", "workspace_list", "workspace_read", "workspace_write", "bash"],
+            ["read", "write", "bash"],
         ),
         (
             "代码与研发",
             "读懂代码、定位问题、设计方案，与你一起推进研发任务。",
             "code",
             "你是一位资深软件工程师。根据用户提供的代码进行分析、调试与设计。区分事实与推测，不声称执行未经工具验证的代码。可在授权后生成代码或说明文档到工作区。",
-            ["workspace_list", "workspace_read", "workspace_write", "bash"],
+            ["read", "write", "bash"],
         ),
         (
             "文档与报告",
             "从零散资料到结构化文档，让写作、总结和交付更高效。",
             "file",
             "你是一位专业文档与报告助手。依据用户提供的内容组织结构，标注缺失信息，避免编造事实。输出可阅读的 Markdown；用户需要文件时，先说明产物，再调用授权工具保存。",
-            ["current_time", "workspace_list", "workspace_read", "workspace_write"],
+            ["read", "write"],
         ),
         (
             "分析与决策",
             "拆解业务问题、梳理对比维度，形成有依据的行动建议。",
             "chart",
             "你是一位严谨的分析助手。基于用户提供的数据和事实进行分析，区分假设与结论，给出计算依据、风险和可执行建议。不要编造外部数据或声称访问不存在的数据源。",
-            ["current_time", "workspace_list", "workspace_read", "workspace_write"],
+            ["read", "write"],
         ),
     ]
     for name, description, icon, prompt, tools in templates:

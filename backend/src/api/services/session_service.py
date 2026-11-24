@@ -375,6 +375,7 @@ class SessionService:
                         "tool": ticket.tool,
                         "arguments": ticket.decision_payload.get("arguments", ticket.args_digest),
                         "status": ticket.status,
+                        **({"reason": ticket.decision_payload["reason"]} if ticket.decision_payload.get("reason") else {}),
                     }
                     for ticket in approvals
                 ],
@@ -679,6 +680,8 @@ class SessionService:
                         decision_payload={
                             "runnerTicketId": payload["ticketId"],
                             "arguments": payload.get("arguments", {}),
+                            # 需要确认的原因（如终端命令请求突破沙箱时模型给出的理由），刷新页面后确认卡片照样显示
+                            **({"reason": payload["reason"]} if payload.get("reason") else {}),
                         },
                     )
                     db.add(ticket)

@@ -1,31 +1,91 @@
 #!/usr/bin/env node
-/** 正式插件执行器的真实文件边界检查。不使用模型、不替代业务 API/审批集成。 */
+/**
+ * forge-runtime 平台层的真实文件边界检查（不启动 dsh、不使用模型）：
+ * 文件工具本身来自 dsh 官方插件，这里用最小的替身执行写入 / 修改 / 交付，核对 Forge 叠加的
+ * 路径守卫、工作区配额、文件与交付物同步事件、终端门控与输出脱敏、系统提示段落。
+ * 真实 dsh 下的端到端行为由 check-business 覆盖。
+ */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, stat, truncate } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import {
   apply,
   searchPathDenial,
   classifyBashCommand,
   sanitizeGitOutput,
+  sanitizeShellValue,
 } from '../internal-plugins/forge-runtime/index.js';
 
 const temporary = await mkdtemp(join(tmpdir(), 'forge-workspace-check-'));
 const root = join(temporary, 'workspace');
-const tools = new Map();
 const guards = [];
 const hooks = new Map();
+const sections = [];
 const oldConfig = process.env.FORGE_MODEL_SECRET_CONFIG;
 process.env.FORGE_MODEL_SECRET_CONFIG = JSON.stringify({
   baseUrl: 'http://unused.invalid/v1',
   model: 'executor-check-no-model',
 });
+// 插件经 stdout 发出 forge.* 通知：截获下来核对，不打印到测试输出
+const notices = [];
+const stdoutWrite = process.stdout.write.bind(process.stdout);
+process.stdout.write = (chunk, ...rest) => {
+  const text = String(chunk);
+  if (text.startsWith('{"jsonrpc"')) {
+    notices.push(JSON.parse(text));
+    return true;
+  }
+  return stdoutWrite(chunk, ...rest);
+};
+const noticesOf = (method) => notices.filter((item) => item.method === method).map((item) => item.params);
 let dispose;
 let checks = 0;
-const execute = (name, args = {}) => tools.get(name).execute(args);
-const write = (path, content = 'text') => execute('workspace_write', { path, content });
-const read = (path) => execute('workspace_read', { path });
+
+/** dsh 文件工具的最小替身：write 整篇写入、edit 精确替换、present 返回绝对路径（与 dsh-tool-fs / dsh-tool-present 一致） */
+async function body(exec) {
+  const args = exec.arguments;
+  if (exec.name === 'write') {
+    const full = resolve(root, args.file_path);
+    await mkdir(dirname(full), { recursive: true });
+    await writeFile(full, args.content);
+    return { isError: false, value: { path: full, operation: 'create' } };
+  }
+  if (exec.name === 'edit') {
+    const full = resolve(root, args.file_path);
+    const current = await readFile(full, 'utf8');
+    if (!current.includes(args.old_string)) return { isError: true, value: 'old_string not found' };
+    await writeFile(
+      full,
+      args.replace_all
+        ? current.split(args.old_string).join(args.new_string)
+        : current.replace(args.old_string, args.new_string),
+    );
+    return { isError: false, value: { path: full, operation: 'edit' } };
+  }
+  if (exec.name === 'present')
+    return {
+      isError: false,
+      value: {
+        files: args.files.map((file) => ({ path: resolve(root, file.path), description: file.description })),
+      },
+    };
+  return { isError: false, value: 'ok' };
+}
+/** 按 dsh 的顺序执行一次工具调用：guard → tools/execute 洋葱链 → 工具本体；拒绝与抛错都变成 Error */
+async function execute(name, args = {}) {
+  const exec = { name, callId: `call-${Math.random()}`, arguments: args };
+  const denial = guards.map((guard) => guard(exec)).find(Boolean);
+  if (denial) throw new Error(denial);
+  const chain = hooks.get('tools/execute') ?? [];
+  const run = (index) => (index < chain.length ? chain[index](exec, () => run(index + 1)) : body(exec));
+  const result = await run(0);
+  if (result?.isError) throw new Error(String(result.value));
+  return result;
+}
+const write = (path, content = 'text') => execute('write', { file_path: path, content });
+const edit = (path, old_string, new_string, extra = {}) =>
+  execute('edit', { file_path: path, old_string, new_string, ...extra });
 const clear = async () => {
   await rm(root, { recursive: true, force: true });
   await mkdir(root, { recursive: true });
@@ -39,39 +99,40 @@ try {
   dispose = await apply(
     {
       llm: { registerAdapter: () => () => {} },
-      tools: {
-        register: (tool) => {
-          tools.set(tool.name, tool);
-          return () => {};
-        },
-        guard: (guard) => {
-          guards.push(guard);
-          return () => {};
-        },
+      tools: { guard: (guard) => (guards.push(guard), () => {}) },
+      systemPrompt: {
+        getSectionOrder: (name) => (name === 'DEPLOYMENT_PERSONA_PREFIX' ? 5 : 0),
+        section: (section) => (sections.push(section), () => {}),
       },
       on: (name, hook) => {
-        hooks.set(name, hook);
+        hooks.set(name, [...(hooks.get(name) ?? []), hook]);
         return () => {};
       },
     },
     {
       workspace: root,
+      systemPrompt: '场景提示词，保留 {{placeholder}} 原样',
       // 旧版本策略字段：已下线，写入不再逐次确认
       requireWriteApproval: true,
-      allowedTools: ['workspace_list', 'workspace_read', 'workspace_write', 'glob', 'grep', 'bash'],
+      allowedTools: ['read', 'write', 'edit', 'present', 'glob', 'grep', 'bash'],
     },
   );
 
+  await check('scenario system prompt is one literal section at the persona position', () => {
+    assert.deepEqual(sections, [
+      { name: 'forge:system-prompt', order: 5, text: '场景提示词，保留 {{placeholder}} 原样', interpolate: false },
+    ]);
+  });
   await check('workspace writes run directly; only non-whitelisted tools are denied', async () => {
     const decide = (name) =>
-      hooks.get('tools/pre-execute')({ name, callId: 'c', arguments: {} }, () => 'next');
-    assert.equal(await decide('workspace_write'), 'next');
-    assert.equal(await decide('workspace_read'), 'next');
+      hooks.get('tools/pre-execute')[0]({ name, callId: 'c', arguments: {} }, () => 'next');
+    assert.equal(await decide('write'), 'next');
+    assert.equal(await decide('read'), 'next');
     assert.equal((await decide('not_allowed')).kind, 'deny');
   });
   await check('bash gate is deny-list-only: ordinary commands run, dangerous ones are denied', async () => {
     const decide = (command) =>
-      hooks.get('tools/pre-execute')({ name: 'bash', callId: 'c', arguments: { command } }, () => 'next');
+      hooks.get('tools/pre-execute')[0]({ name: 'bash', callId: 'c', arguments: { command } }, () => 'next');
     // 只读、写文件、编译运行等普通命令直接执行，不再逐次确认
     assert.equal(await decide('cd project && ls 2>/dev/null'), 'next');
     assert.equal(await decide('find . -delete'), 'next');
@@ -100,45 +161,33 @@ try {
     }
   });
   const MB10 = 10 * 1024 * 1024;
-  await check('10 MB file is accepted; large reads are paged instead of rejected', async () => {
+  await check('10 MB file is accepted and reported as an artifact with its size', async () => {
     await write('limit.txt', 'x'.repeat(MB10));
     assert.equal((await stat(join(root, 'limit.txt'))).size, MB10);
-    // 单行超过 256000 字符：截断返回并提示用更小的 limit
-    const page = await read('limit.txt');
-    assert.equal(page.content.length, 256000);
-    assert.equal(page.truncated, true);
-    assert.match(page.note, /截断/);
+    assert.deepEqual(noticesOf('forge.artifact').at(-1), { path: 'limit.txt', bytes: MB10 });
   });
   await check('single-byte over-limit write is rejected without overwriting', async () => {
+    const before = notices.length;
     await assert.rejects(() => write('limit.txt', 'x'.repeat(MB10 + 1)), /10 MB/);
     assert.equal((await stat(join(root, 'limit.txt'))).size, MB10);
+    assert.equal(notices.length, before, '被拒绝的写入不发同步事件');
   });
   await check('file limit counts UTF-8 bytes, not characters', async () => {
     await assert.rejects(() => write('unicode.txt', '汉'.repeat(Math.ceil(MB10 / 3) + 1)), /10 MB/);
   });
-  await check('oversized existing file cannot be read', async () => {
-    await writeFile(join(root, 'external.txt'), '');
-    await truncate(join(root, 'external.txt'), MB10 + 1);
-    await assert.rejects(() => read('external.txt'), /10 MB/);
-  });
-  await check('large text files return the first 2000 lines with a continuation hint', async () => {
-    const row = 'x'.repeat(100);
-    await write('long.md', Array.from({ length: 2500 }, (_, index) => `${index + 1} ${row}`).join('\n'));
-    const first = await read('long.md');
-    assert.equal(first.startLine, 1);
-    assert.equal(first.endLine, 2000);
-    assert.equal(first.totalLines, 2500);
-    assert.equal(first.truncated, true);
-    assert.match(first.note, /offset=2001/);
-    const rest = await execute('workspace_read', { path: 'long.md', offset: 2001 });
-    assert.equal(rest.endLine, 2500);
-    assert.equal(rest.truncated, undefined);
+  await check('edit is counted against the file limit by its projected size', async () => {
+    await write('grow.txt', 'ab'.repeat(10));
+    await assert.rejects(() => edit('grow.txt', 'ab', 'x'.repeat(MB10), { replace_all: true }), /10 MB/);
+    await edit('grow.txt', 'ab', 'cd');
+    assert.equal(await readFile(join(root, 'grow.txt'), 'utf8'), 'cd' + 'ab'.repeat(9));
+    assert.deepEqual(noticesOf('forge.artifact').at(-1), { path: 'grow.txt', bytes: 20 });
   });
   await clear();
   const deep = Array.from({ length: 15 }, (_, index) => `d${index + 1}`).join('/') + '/report.md';
   await check('sixteen path components are allowed', async () => {
     await write(deep, 'nested artifact');
-    assert.equal((await read(deep)).content, 'nested artifact');
+    assert.equal(await readFile(join(root, deep), 'utf8'), 'nested artifact');
+    assert.deepEqual(noticesOf('forge.artifact').at(-1), { path: deep, bytes: 15 });
   });
   await check('seventeenth path component is rejected', async () => {
     await assert.rejects(
@@ -146,42 +195,37 @@ try {
       /16 层/,
     );
   });
-  await check('listing recursively returns relative paths and exact byte counts', async () => {
-    assert.deepEqual((await execute('workspace_list')).files, [{ path: deep, bytes: 15 }]);
-  });
   for (const [path, pattern, title] of [
-    ['../escape.txt', /超出/, 'path traversal'],
+    ['../escape.txt', /只能写入/, 'path traversal'],
+    [join(temporary, 'outside.txt'), /只能写入/, 'absolute path outside the workspace'],
     ['.hidden/report.txt', /隐藏/, 'hidden directory'],
+    ['.skill/SKILL.md', /隐藏/, 'Skill draft mirror'],
     ['bad\0name', /无效/, 'NUL path'],
-    ['x'.repeat(257), /无效/, 'oversized path'],
+    ['x'.repeat(257), /256/, 'oversized path'],
+    ['', /无效/, 'empty path'],
   ]) {
     await check(`${title} write is rejected`, () => assert.rejects(() => write(path), pattern));
   }
-  await check('hidden folders such as the .skill/ mirror are readable, secrets are not', async () => {
-    await mkdir(join(root, '.skill', 'scripts'), { recursive: true });
-    await writeFile(join(root, '.skill', 'SKILL.md'), '# 草稿');
-    await writeFile(join(root, '.env'), 'TOKEN=1');
-    await mkdir(join(root, '.git'), { recursive: true });
-    await writeFile(join(root, '.git', 'config'), '[core]');
-    assert.equal((await read('.skill/SKILL.md')).content, '# 草稿');
-    await assert.rejects(() => read('.env'), /密钥/);
-    await assert.rejects(() => read('.git/config'), /密钥/);
-    await assert.rejects(() => write('.skill/SKILL.md', 'x'), /隐藏/);
-    await rm(join(root, '.skill'), { recursive: true });
-    await rm(join(root, '.env'));
-    await rm(join(root, '.git'), { recursive: true });
+  await check('absolute paths inside the workspace are accepted and synced as relative paths', async () => {
+    await write(join(root, 'abs.md'), 'abs');
+    assert.deepEqual(noticesOf('forge.artifact').at(-1), { path: 'abs.md', bytes: 3 });
   });
   const sentinel = join(temporary, 'sentinel.txt');
   await writeFile(sentinel, 'protected');
   await symlink(sentinel, join(root, 'link.txt'));
-  await check('symlink reads and writes both fail closed', async () => {
-    await assert.rejects(() => read('link.txt'), /符号链接/);
+  await mkdir(join(temporary, 'elsewhere'));
+  await symlink(join(temporary, 'elsewhere'), join(root, 'linkdir'));
+  await check('writes, edits and deliveries through symlinks fail closed', async () => {
     await assert.rejects(() => write('link.txt', 'changed'), /符号链接/);
+    await assert.rejects(() => write('linkdir/new.txt', 'changed'), /符号链接/);
+    await assert.rejects(() => edit('link.txt', 'protected', 'changed'), /符号链接/);
+    await assert.rejects(() => execute('present', { files: [{ path: 'link.txt' }] }), /符号链接/);
     assert.equal(await readFile(sentinel, 'utf8'), 'protected');
   });
-  // glob/grep 由 DSH 搜索插件执行，guard 在执行前把 path 收窄到工作区
+  // glob / grep / read 由 DSH 插件执行，guard 在执行前把 path 收窄到工作区
   const guarded = (name, args) => guards.map((guard) => guard({ name, arguments: args })).find(Boolean);
   await check('search tools may only target workspace-relative paths', async () => {
+    await mkdir(join(root, '.skill'), { recursive: true });
     assert.equal(guarded('grep', { pattern: 'x' }), undefined);
     assert.equal(guarded('glob', { pattern: '*.md', path: '.' }), undefined);
     assert.equal(guarded('grep', { pattern: 'x', path: 'one/two' }), undefined);
@@ -194,31 +238,32 @@ try {
     assert.match(guarded('grep', { pattern: 'x', path: 'link.txt' }), /符号链接/);
     assert.match(guarded('grep', { pattern: 'x', path: '' }), /无效/);
     assert.match(guarded('grep', { pattern: 'x', path: 7 }), /无效/);
-    // 其他工具不受搜索路径规则影响；未授权工具由白名单 guard 拒绝
-    assert.equal(guarded('workspace_read', { path: '/etc/passwd' }), undefined);
     assert.match(guarded('not_allowed', { command: 'ls' }), /禁止/);
     assert.equal(searchPathDenial(root, undefined), undefined);
   });
-  await check('symlinks and hidden files are absent from listing', async () => {
-    await writeFile(join(root, '.private'), 'hidden');
-    assert.deepEqual(
-      (await execute('workspace_list')).files.map((file) => file.path),
-      [deep],
-    );
+  await check('read may open the .skill/ mirror but never secrets, links or paths outside', async () => {
+    assert.equal(guarded('read', { file_path: '.skill/SKILL.md' }), undefined);
+    assert.equal(guarded('read', { file_path: deep }), undefined);
+    assert.match(guarded('read', { file_path: '.env' }), /密钥/);
+    assert.match(guarded('read', { file_path: '.git/config' }), /密钥/);
+    assert.match(guarded('read', { file_path: 'link.txt' }), /符号链接/);
+    assert.match(guarded('read', { file_path: '/etc/passwd' }), /超出/);
   });
 
   await clear();
   await Promise.all(Array.from({ length: 999 }, (_, index) => writeFile(join(root, `${index}.txt`), 'x')));
-  await check('the thousandth file is accepted', async () => {
-    await write('1000.txt');
-    assert.equal((await execute('workspace_list')).files.length, 1000);
-  });
+  await check('the thousandth file is accepted', () => write('1000.txt'));
   await check('the thousand-and-first file is rejected', () =>
     assert.rejects(() => write('1001.txt'), /1000 个/),
   );
   await check('overwriting at the file-count limit remains allowed', async () => {
     await write('1000.txt', 'updated');
-    assert.equal((await read('1000.txt')).content, 'updated');
+    assert.equal(await readFile(join(root, '1000.txt'), 'utf8'), 'updated');
+  });
+  await check('hidden files and symlinks do not count against the file quota', async () => {
+    await writeFile(join(root, '.private'), 'hidden');
+    await symlink(sentinel, join(root, 'extra-link.txt'));
+    await write('1000.txt', 'again');
   });
 
   await clear();
@@ -229,13 +274,7 @@ try {
     await truncate(join(root, name), bytes);
   };
   for (let index = 0; index < 199; index += 1) await sparse(`${index}.bin`, MB);
-  await check('exactly 200 MB in total is allowed', async () => {
-    await write('last.txt', 'y'.repeat(MB));
-    assert.equal(
-      (await execute('workspace_list')).files.reduce((sum, file) => sum + file.bytes, 0),
-      200 * MB,
-    );
-  });
+  await check('exactly 200 MB in total is allowed', () => write('last.txt', 'y'.repeat(MB)));
   await check('one byte over the total quota is rejected', () =>
     assert.rejects(() => write('extra.txt', 'x'), /200 MB/),
   );
@@ -250,7 +289,6 @@ try {
   await check('concurrent writes cannot race past the file-count quota', async () => {
     const results = await Promise.allSettled([write('a.txt'), write('b.txt')]);
     assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
-    assert.equal((await execute('workspace_list')).files.length, 1000);
   });
   await clear();
   for (let index = 0; index < 200; index += 1) await sparse(`${index}.bin`, MB - 3);
@@ -260,89 +298,46 @@ try {
       write('b.txt', 'x'.repeat(400)),
     ]);
     assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
-    assert.equal(
-      (await execute('workspace_list')).files.reduce((sum, file) => sum + file.bytes, 0),
-      200 * (MB - 3) + 400,
-    );
   });
   await clear();
-  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff]);
-  await check('base64 writes save exact binary bytes and count decoded size', async () => {
-    const result = await execute('workspace_write', {
-      path: 'img/chart.png',
-      content: png.toString('base64'),
-      encoding: 'base64',
-    });
-    assert.equal(result.bytes, png.length);
-    assert.deepEqual(await readFile(join(root, 'img/chart.png')), png);
-  });
-  await check('invalid base64 and unknown encodings are rejected', async () => {
-    await assert.rejects(
-      () => execute('workspace_write', { path: 'bad.bin', content: '***', encoding: 'base64' }),
-      /base64/,
-    );
-    await assert.rejects(
-      () => execute('workspace_write', { path: 'bad.bin', content: 'x', encoding: 'latin1' }),
-      /encoding/,
-    );
-  });
-  await check('binary over 10 MB after decoding is rejected', () =>
-    assert.rejects(
-      () =>
-        execute('workspace_write', {
-          path: 'big.bin',
-          content: Buffer.alloc(MB10 + 1).toString('base64'),
-          encoding: 'base64',
-        }),
-      /10 MB/,
-    ),
-  );
-  await check('workspace_read returns a line range with totals for grep follow-ups', async () => {
-    await write('lines.md', ['a', 'b', 'c', 'd', 'e'].join('\n') + '\n');
-    assert.deepEqual(await execute('workspace_read', { path: 'lines.md', offset: 2, limit: 2 }), {
-      path: 'lines.md',
-      content: 'b\nc',
-      startLine: 2,
-      endLine: 3,
-      totalLines: 5,
-    });
-    const tail = await execute('workspace_read', { path: 'lines.md', offset: 5 });
-    assert.equal(tail.content, 'e');
-    assert.equal(tail.endLine, 5);
-    const past = await execute('workspace_read', { path: 'lines.md', offset: 9, limit: 3 });
-    assert.equal(past.content, '');
-    assert.equal(past.endLine, 8);
-    assert.equal((await read('lines.md')).content, 'a\nb\nc\nd\ne\n');
-  });
-  await check('binary files cannot be read back as text', () =>
-    assert.rejects(() => read('img/chart.png'), /二进制/),
-  );
-  await check('present declares existing workspace files with normalized paths and sizes', async () => {
+  await check('present reports relative paths, sizes and trimmed descriptions, deduplicated', async () => {
     await write('report.md', '# 报告');
-    const result = await execute('workspace_present', {
+    await write('img/chart.svg', '<svg/>');
+    const callStart = notices.length;
+    const result = await execute('present', {
       files: [
         { path: './report.md', description: '  最终报告  ' },
-        { path: 'img/chart.png' },
+        { path: join(root, 'img/chart.svg') },
         { path: 'report.md' },
       ],
     });
-    assert.deepEqual(result.files, [
+    // 模型看到的结果不暴露服务器绝对路径
+    assert.deepEqual(
+      result.value.files.map((file) => file.path),
+      ['report.md', 'img/chart.svg', 'report.md'],
+    );
+    const presented = notices.slice(callStart).filter((item) => item.method === 'forge.present');
+    assert.equal(presented.length, 1);
+    assert.deepEqual(presented[0].params.files, [
       { path: 'report.md', bytes: Buffer.byteLength('# 报告'), description: '最终报告' },
-      { path: 'img/chart.png', bytes: png.length },
+      { path: 'img/chart.svg', bytes: 6 },
     ]);
+    assert.ok(presented[0].params.callId.startsWith('call-'));
   });
-  await check('present rejects missing, escaping, hidden, directory and too many files', async () => {
-    const present = (files) => execute('workspace_present', { files });
-    await assert.rejects(() => present([{ path: 'missing.md' }]), /不存在/);
-    await assert.rejects(() => present([{ path: '../escape.md' }]), /超出/);
-    await assert.rejects(() => present([{ path: '.private' }]), /隐藏/);
-    await assert.rejects(() => present([{ path: 'img' }]), /普通文件/);
-    await assert.rejects(() => present([]), /1 到 4/);
-    await assert.rejects(() => present(Array.from({ length: 5 }, () => ({ path: 'report.md' }))), /1 到 4/);
+  await check('present may only declare non-hidden files inside the workspace', async () => {
+    await assert.rejects(() => execute('present', { files: [{ path: '../escape.md' }] }), /只能写入或交付/);
+    await assert.rejects(() => execute('present', { files: [{ path: '.private' }] }), /隐藏/);
   });
-  await check('present never follows symlinks', async () => {
-    await symlink(sentinel, join(root, 'linked.md'));
-    await assert.rejects(() => execute('workspace_present', { files: [{ path: 'linked.md' }] }), /符号链接/);
+
+  await check('shell results are sanitized field by field; the sandbox launcher notice is dropped', () => {
+    assert.deepEqual(
+      sanitizeShellValue({
+        stdout: 'https://u:ghp_abcdefghijklmnopqrstuvwxyz0123456789@github.com/x.git\n',
+        stderr: 'landlock-run: partial enforcement (older Landlock ABI)\nreal error\n',
+        exitCode: 1,
+      }),
+      { stdout: 'https://u:***@github.com/x.git\n', stderr: 'real error\n', exitCode: 1 },
+    );
   });
 
   await check('bash deny list blocks only a few clearly dangerous commands', () => {
@@ -488,12 +483,13 @@ try {
 
   console.log(
     JSON.stringify({
-      scope: 'formal workspace executors, no model, not approval integration',
+      scope: 'forge-runtime platform layer over dsh file tools, no dsh, no model',
       checks,
       result: 'passed',
     }),
   );
 } finally {
+  process.stdout.write = stdoutWrite;
   dispose?.();
   if (oldConfig === undefined) delete process.env.FORGE_MODEL_SECRET_CONFIG;
   else process.env.FORGE_MODEL_SECRET_CONFIG = oldConfig;

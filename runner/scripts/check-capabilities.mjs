@@ -231,12 +231,11 @@ await check('MCP public names mirror dsh-mcp-client (normalization + hash suffix
 });
 await check('session toolset adds skill/read, web tools and granted MCP tools only', () => {
   const toolset = sessionToolset(
-    { tools: { builtin: ['current_time'] }, policy: { allowedTools: ['current_time'] } },
+    { tools: { builtin: [] }, policy: { allowedTools: [] } },
     false,
     resolveCapabilities(caps),
   );
   assert.deepEqual(toolset.allowed, [
-    'current_time',
     'read',
     'skill',
     'web_search',
@@ -354,9 +353,10 @@ server.listen(0, '127.0.0.1');
 await once(server, 'listening');
 const manifest = fixtureManifest({
   systemPrompt: { identity: 'Capability contract test.' },
-  tools: { builtin: ['current_time'] },
+  // 策略不开放基础能力：只看扩展能力带来的工具
+  tools: { builtin: [] },
   policy: {
-    allowedTools: ['current_time'],
+    allowedTools: [],
     requestTimeoutSeconds: 20,
     approvalTimeoutSeconds: 5,
     maxOutputTokens: 512,
@@ -366,11 +366,8 @@ const kernel = new SessionKernel();
 const events = [];
 let id;
 let approval = 'approve';
-const toolNames = () =>
-  requests
-    .at(-1)
-    .tools.map((tool) => tool.function.name)
-    .sort();
+// 没有任何工具时请求里不带 tools 字段
+const toolNames = () => (requests.at(-1).tools ?? []).map((tool) => tool.function.name).sort();
 async function turn(text, capabilities) {
   const start = events.length;
   await kernel.sendTurn(id, text, undefined, undefined, capabilities);
@@ -400,7 +397,6 @@ try {
   void list;
   await check('model sees skill, read, web and granted MCP tools; ungranted MCP tool stays hidden', () => {
     assert.deepEqual(toolNames(), [
-      'current_time',
       'mcp__demo__echo',
       'mcp__demo__write_note',
       'read',
@@ -493,7 +489,7 @@ try {
   // 下一轮移除 MCP 与联网：Runner 以新配置重启接续，工具随之消失
   list = await turn('PLAIN', { skills: [skill], mcp: [], web: null });
   await check('capability changes apply from the next turn (restart + resume)', () => {
-    assert.deepEqual(toolNames(), ['current_time', 'read', 'skill']);
+    assert.deepEqual(toolNames(), ['read', 'skill']);
     const changed = list.find((event) => event.kind === 'capabilities');
     assert.deepEqual(changed?.payload.mcp, []);
     assert.equal(changed?.payload.web, null);
@@ -507,7 +503,7 @@ try {
       list.some((event) => event.kind === 'capabilities'),
       false,
     );
-    assert.deepEqual(toolNames(), ['current_time', 'read', 'skill']);
+    assert.deepEqual(toolNames(), ['read', 'skill']);
   });
   list = await turn('REFERENCE', { skills: [refOf(skill)], mcp: [], web: null });
   await check('a snapshot ref (no body, no files) reuses the content Runner already has without restarting', () => {
@@ -558,11 +554,11 @@ try {
     assert.equal(payload.isError, false, payload.result);
     assert.ok(payload.result.includes(skillDir(snapshotOf(bare))));
     assert.equal(await readFile(join(skillDir(snapshotOf(bare)), 'SKILL.md'), 'utf8'), bare.document);
-    assert.deepEqual(toolNames(), ['current_time', 'skill']);
+    assert.deepEqual(toolNames(), ['skill']);
   });
   list = await turn('PLAIN', { skills: [], mcp: [], web: null });
   await check('removing every capability drops skill and read tools', () =>
-    assert.deepEqual(toolNames(), ['current_time']),
+    assert.deepEqual(toolNames(), []),
   );
 } finally {
   await kernel.dispose();

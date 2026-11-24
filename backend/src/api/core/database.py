@@ -289,7 +289,80 @@ async def init_db() -> None:
                                     modified = True
                         if modified:
                             ver.bundle_json = bundle_data
+        await migrate_tool_names(db)
         await db.commit()
+
+
+TOOL_RENAME_MARKER = "tool-rename-v2"
+
+
+def _canonical_list(value, rename) -> tuple[list, bool]:
+    """把列表里的旧工具名换新（空串表示去掉），去重保持顺序；返回新列表与是否有变化。"""
+    if not isinstance(value, list):
+        return value, False
+    out = list(dict.fromkeys(rename.get(name, name) if isinstance(name, str) else name for name in value))
+    out = [name for name in out if name]
+    return out, out != value
+
+
+async def migrate_tool_names(db) -> None:
+    """一次性迁移（平台契约 v2）：执行策略、空间工具开关、场景各版本的能力快照里的旧工具名换成新名。
+
+    workspace_list / workspace_read → read，workspace_write → write，workspace_present → present，
+    current_time 去掉（当前时间已作为上下文自动提供）。已有会话的历史消息不改，界面按旧名兼容展示。
+    完成后写入标记，之后启动不再执行；Runner 与控制面读取旧数据时也会兜底换名。
+    """
+    import json
+    from sqlalchemy import select
+    from ..models.agent_scenario import AgentScenarioVersion
+    from ..models.platform import PlatformSetting
+    from ..models.space import Space
+    from ..services.scenario_assembler import Bundle
+    from .contracts import renamed_tools
+
+    if await db.get(PlatformSetting, TOOL_RENAME_MARKER):
+        return
+    rename = renamed_tools()
+    counts = {"policy": 0, "spaces": 0, "versions": 0}
+    policy_row = await db.get(PlatformSetting, "policy")
+    if policy_row and isinstance(policy_row.value, dict):
+        allowed, changed = _canonical_list(policy_row.value.get("allowedTools"), rename)
+        if changed:
+            policy_row.value = {**policy_row.value, "allowedTools": allowed}
+            counts["policy"] = 1
+    for space in (await db.scalars(select(Space))).all():
+        tools, changed = _canonical_list(space.disabled_tools, rename)
+        if changed:
+            space.disabled_tools = tools
+            counts["spaces"] += 1
+    for version in (await db.scalars(select(AgentScenarioVersion))).all():
+        if not isinstance(version.bundle_json, dict):
+            continue
+        data = json.loads(json.dumps(version.bundle_json))
+        modified = False
+        caps = (data.get("payload") or {}).get("capabilities") if isinstance(data.get("payload"), dict) else None
+        if isinstance(caps, dict):
+            caps["builtin_tool_names"], changed = _canonical_list(caps.get("builtin_tool_names"), rename)
+            modified |= changed
+        bundle = data.get("bundle")
+        meta = bundle.get("meta") if isinstance(bundle, dict) else None
+        if isinstance(meta, dict):
+            meta["builtin_tools"], changed = _canonical_list(meta.get("builtin_tools"), rename)
+            modified |= changed
+            policy = meta.get("policy")
+            if isinstance(policy, dict):
+                policy["allowedTools"], changed = _canonical_list(policy.get("allowedTools"), rename)
+                modified |= changed
+        if not modified:
+            continue
+        version.bundle_json = data
+        counts["versions"] += 1
+        if isinstance(bundle, dict):
+            try:
+                version.bundle_hash = Bundle.from_dict(bundle).bundle_hash
+            except TypeError:
+                pass  # 早期快照字段不全：仅更新内容，摘要保持原值
+    db.add(PlatformSetting(key=TOOL_RENAME_MARKER, value=counts))
 
 
 async def close_db() -> None:

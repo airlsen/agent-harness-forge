@@ -133,7 +133,7 @@ async def test_runner_client_sends_the_selection_and_lists_projects(monkeypatch)
         # 早期快照的废弃字段与会话记录字段都不进入下发的清单
         "skill_files": {},
         "model_route": {},
-        "meta": {"builtin_tools": ["current_time"], "scenarioName": "通用助手", "isTest": True},
+        "meta": {"builtin_tools": ["todo_write"], "scenarioName": "通用助手", "isTest": True},
     }
     await client.create_session(bundle, {"model": "m"}, ["alpha"])
     assert [event async for event in client.events("s1", "hi", None, [])][0]["kind"] == "done"
@@ -146,7 +146,7 @@ async def test_runner_client_sends_the_selection_and_lists_projects(monkeypatch)
         "version": 1,
         "systemPrompt": {"identity": "助手", "domain": "", "safety": [], "workspace": []},
         "plugins": ["forge-runtime"],
-        "tools": {"builtin": ["current_time"], "plugin": []},
+        "tools": {"builtin": ["todo_write"], "plugin": []},
         "pluginBindings": [],
         "policy": {
             "allowedTools": None,

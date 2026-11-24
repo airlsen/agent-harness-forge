@@ -20,30 +20,27 @@ export const RENDER_GUIDE: readonly string[] = [
 export function workspaceGuide(tools: readonly string[]): string[] {
   const has = (name: string) => tools.includes(name);
   const lines: string[] = [];
-  if (has('workspace_write'))
+  if (has('write'))
     lines.push(
-      '你可以在当前会话工作区创建文件。用户要求生成、保存或导出文件（例如 Markdown 报告、代码、CSV、HTML）时，必须调用 workspace_write 写入完整内容，路径使用工作区内的相对路径（如 report.md、docs/plan.md）；写入会直接执行，调用成功后才算保存。不要只在回复里贴出内容，也不要在没有成功调用工具时声称已经保存。',
+      '你可以在当前会话工作区创建和修改文件。用户要求生成、保存或导出文件（例如 Markdown 报告、代码、CSV、HTML）时，必须调用 write 写入完整内容，路径使用工作区内的相对路径（如 report.md、docs/plan.md）；修改已有文件的局部内容用 edit。写入会直接执行，调用成功后才算保存。不要只在回复里贴出内容，也不要在没有成功调用工具时声称已经保存。以 . 开头的隐藏目录不可写入。',
     );
-  if (has('workspace_present'))
+  if (has('present'))
     lines.push(
-      '文件写好后调用 workspace_present 声明最终交付物（通常 1–2 个），界面会在回复下方展示可预览、下载的文件卡片；回复里简要说明文件内容即可，不必再完整粘贴。',
+      '文件写好后调用 present 声明最终交付物（通常 1–2 个），界面会在回复下方展示可预览、下载的文件卡片；回复里简要说明文件内容即可，不必再完整粘贴。',
     );
   if (has('bash'))
     lines.push(
-      '你可以调用 bash 执行受限的终端与 Git 命令。命令直接执行，系统只拒绝破坏性系统命令、提权、读取凭据与密钥等危险操作。代码分析优先使用 glob、grep、read；需要生成文件时优先用 workspace_write，避免不必要的复杂 Shell 语法。默认目录是会话工作区，也可以在关联项目中执行。',
+      '你可以调用 bash 执行终端与 Git 命令。每次调用都是独立的 Shell，cd 不会保留到下一次调用：需要在其他目录执行时传 workdir 参数（默认是会话工作区），或在同一条命令里用 cd 目录 && 命令。命令在沙箱中执行，只能写入会话工作区；确需越界时系统会请用户确认，请在 justification 中写明原因。系统还会拒绝破坏性系统命令、提权、读取凭据与密钥等危险操作。代码分析优先使用 glob、grep、read；生成文件优先用 write，避免不必要的复杂 Shell 语法。',
     );
-  if (has('glob') || has('grep') || has('workspace_read'))
+  if (has('glob') || has('grep') || has('read'))
     lines.push(
       [
-        has('workspace_list') ? 'workspace_list 列出工作区文件' : '',
         has('glob') ? 'glob 按文件名模式查找' : '',
         has('grep') ? 'grep 按正则搜索文件内容' : '',
-        has('workspace_read')
-          ? 'workspace_read 只读读取文本文件（可用 offset/limit 读取 grep 命中附近的行）'
-          : '',
+        has('read') ? 'read 读取文本文件（可用 offset/limit 读取 grep 命中附近的行）' : '',
       ]
         .filter(Boolean)
-        .join('，') + '。访问工作区文件时路径一律使用相对路径。',
+        .join('，') + '。访问工作区文件时用相对路径，访问关联项目时用绝对路径。',
     );
   return lines;
 }

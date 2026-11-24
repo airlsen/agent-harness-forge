@@ -25,7 +25,7 @@ const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
 export const MAX_FILE_BYTES = 120000;
 export const MAX_FILES = 20;
 export const MAX_TOTAL_BYTES = 512000;
-/** 工作区中的草稿镜像目录（隐藏目录：不出现在会话文件清单，也不能被 workspace_write 覆盖） */
+/** 工作区中的草稿镜像目录（隐藏目录：不出现在会话文件清单，也不能被 write / edit 覆盖） */
 export const MIRROR_DIR = '.skill';
 // 正文中的文件引用：references/x.md、assets/x.json、scripts/x.py
 const FILE_MENTION =

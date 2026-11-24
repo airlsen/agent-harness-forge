@@ -142,7 +142,7 @@ async def test_event_stream_backfills_then_snapshots_then_follows_live(env, runn
 
     async def events(*_args, **_kwargs):
         yield delta("先想", "reasoning_delta")
-        yield durable(1, "tool_use_start", {"toolCallId": "c1", "tool": "current_time"}, "tools")
+        yield durable(1, "tool_use_start", {"toolCallId": "c1", "tool": "glob"}, "tools")
         yield delta("已经输出")
         paused.set()
         await release.wait()

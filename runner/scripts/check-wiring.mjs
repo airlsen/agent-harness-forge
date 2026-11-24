@@ -109,23 +109,32 @@ try {
   });
 
   await check('companion tools open with their leader and stay out of the policy list', () => {
-    assert.deepEqual(COMPANION_TOOLS, { workspace_write: ['workspace_present'] });
-    const withWrite = sessionToolset({ policy: { allowedTools: ['workspace_write'] } }).allowed;
-    assert.ok(withWrite.includes('workspace_present'));
-    const readOnly = sessionToolset({ policy: { allowedTools: ['workspace_read'] } }).allowed;
-    assert.ok(!readOnly.includes('workspace_present'));
+    assert.deepEqual(COMPANION_TOOLS, { write: ['edit', 'present'] });
+    const withWrite = sessionToolset({ policy: { allowedTools: ['write'] } }).allowed;
+    assert.ok(withWrite.includes('edit') && withWrite.includes('present'));
+    const readOnly = sessionToolset({ policy: { allowedTools: ['read'] } }).allowed;
+    assert.ok(!readOnly.includes('edit') && !readOnly.includes('present'));
   });
 
   await check('dsh engine tool table agrees with the contract and the kernel toolset', () => {
-    const shell = PLATFORM.tools.find((tool) => tool.name === ENGINE_TOOLS.shell);
-    assert.ok(shell && isDshPackage(shell.provider), '终端工具应登记在契约中且由 dsh 包提供');
+    for (const name of [ENGINE_TOOLS.shell, ENGINE_TOOLS.read, ENGINE_TOOLS.write, ENGINE_TOOLS.present]) {
+      const tool = PLATFORM.tools.find((item) => item.name === name);
+      assert.ok(tool && isDshPackage(tool.provider), `${name} 应登记在契约中且由 dsh 包提供`);
+    }
     assert.deepEqual(SEARCH_TOOLS, ENGINE_TOOLS.search);
     assert.equal(CODE_READ_TOOL, ENGINE_TOOLS.read);
     assert.deepEqual(
       Object.keys(PATH_TOOLS).toSorted(),
-      [...ENGINE_TOOLS.search, ENGINE_TOOLS.read].toSorted(),
+      [...ENGINE_TOOLS.search, ENGINE_TOOLS.read, ENGINE_TOOLS.write, ENGINE_TOOLS.edit, ENGINE_TOOLS.present].toSorted(),
     );
     for (const name of ENGINE_TOOLS.search) assert.ok(PATH_TOOLS[name].search && PATH_TOOLS[name].results);
+    for (const name of [ENGINE_TOOLS.write, ENGINE_TOOLS.edit, ENGINE_TOOLS.present])
+      assert.ok(PATH_TOOLS[name].workspace, `${name} 只能写会话工作区`);
+    // 旧工具名：换成的新名必须仍在契约里（空串表示已由 DSH 自动提供）
+    for (const [old, now] of Object.entries(PLATFORM.renamed)) {
+      assert.ok(!PLATFORM.tools.some((tool) => tool.name === old), `${old} 已改名，不应再登记`);
+      if (now) assert.ok(PLATFORM.tools.some((tool) => tool.name === now), `${old} → ${now} 不在契约中`);
+    }
   });
 
   await check('every forge.* event used in plugin sources is registered', async () => {

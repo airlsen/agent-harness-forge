@@ -99,7 +99,7 @@ try {
           seq: 4,
           kind: 'tool_use_start',
           source: 'tools',
-          payload: { toolCallId: 'c1', tool: 'current_time' },
+          payload: { toolCallId: 'c1', tool: 'glob' },
         },
       ].filter((event) => event.seq > cursor);
       return response({ events, nextCursor: events.at(-1)?.seq ?? cursor });

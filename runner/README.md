@@ -8,13 +8,13 @@
 - `src/kernel/dsh/`：**DSH 适配层，dsh 相关代码只在这里**。升级 dsh 时通常只需改这个目录，再跑 `npm run contract`。
   - `process.ts`：换行 JSON-RPC、请求关联、host 请求与安全中止；
   - `protocol.ts`：dsh 通知 → Forge 事件；
-  - `runtime-config.ts`：`RuntimePlan` → dsh runtime patch；
+  - `runtime-config.ts`：`RuntimePlan` → dsh runtime patch（底座是官方 `sdk` profile，每个内置插件都归入 `SDK_KEPT` / `SDK_SWITCHED` / `SDK_OFF` 之一，`npm run contract` 发现未归类的新插件直接报错）；
   - `engine.ts`：`DshEngine`。
 - `src/kernel/journal.ts`：每会话执行日志。持久事件带序号落盘，控制面回执后清理；流式增量（`transient`）只推给在线订阅者。
 - `src/kernel/manifest.ts`：会话清单入口校验。类型 `manifest.generated.ts` 由 `contracts/session-manifest.schema.json` 生成（根目录 `make contracts`），请勿手改。
 - `src/kernel/platform-contract.ts`：读取 `contracts/platform.json`（内置工具目录与能力上限）。
 - `internal-plugins/`：Forge 自带、随 Runner 发布的 DSH 插件，**目录名 = 插件名**（`forge-runtime`、`forge-skills`、`skill-authoring`、`skill-scripts`、`forge-plugin-bridge`）；`shared/` 是插件共用的库（`events.js` 插件事件表、`skill-script-runtime/` 脚本执行逻辑），不是插件。
-- `internal-plugins/forge-runtime/`：每个会话都装配的业务插件，`index.js` 只做组装——`gateway.js`（OpenAI-compatible 模型适配器）、`workspace-tools.js`（工作区工具，配额见 `limits.js`）、`policy-hooks.js`（agent 级 restrict、单调拒绝 guard、dsh 搜索/读取的路径收窄、bash 门控与输出脱敏、外部工具逐次确认；规则在 `path-guard.js`、`bash-rules.js`）。
+- `internal-plugins/forge-runtime/`：每个会话都装配的业务插件，文件、交付、终端、时间等工具都来自 DSH `sdk` 组合，这里只做平台层。`index.js` 只做组装——`gateway.js`（OpenAI-compatible 模型适配器）、场景系统提示（不做变量插值的段落）、`workspace-bridge.js`（`write` / `edit` 配额，配额见 `limits.js`；文件与交付物同步事件）、终端沙箱探测、`policy-hooks.js`（agent 级 restrict、单调拒绝 guard、dsh 搜索/读取的路径收窄、bash 门控与输出脱敏、外部工具逐次确认；规则在 `path-guard.js`、`bash-rules.js`）。
 - `src/kernel/forge-plugins.ts`：Forge 自有插件的唯一登记处（插件名、会话清单能否声明；新增插件 = 建 `internal-plugins/<插件名>/` + 在这里登记一行）；`internal-plugins/shared/events.js`：插件事件的唯一登记表，插件与 DSH 适配层共用；`src/kernel/dsh/engine-tools.js`：dsh 原生工具名与路径参数形状，内核与插件共用。`scripts/check-wiring.mjs` 核对这几张表与平台契约彼此一致。
 
 ## 控制面接口（内部 Bearer Token）
@@ -48,12 +48,14 @@ bash scripts/start-runner.sh
 | --- | --- | --- |
 | 整轮执行上限 | 30 分钟 | 环境变量 `RUNNER_TURN_TIMEOUT_SECONDS`（最少 60 秒）；一轮可包含多次模型请求与工具调用，超时后自动停止，可继续对话 |
 | 单次模型请求 / 输出上限 | 300 秒 / 16384 tokens | 平台策略（治理中心）下发；输出上限不超过模型上下文窗口的一半 |
-| bash 单条命令 / Skill 脚本单次 | 5 分钟 | 直接执行，仅拦截少数高危命令（见 `classifyBashCommand`） |
-| 工作区文件 | 单文件 10 MB、1000 个、总量 200 MB | 只约束 `workspace_write`；`workspace_read` 超过 256000 字符时分段返回 |
+| bash 单条命令 / Skill 脚本单次 | 5 分钟 | 直接执行，仅拦截少数高危命令（见 `classifyBashCommand`）；bash 在沙箱中运行，超时可转为后台任务（开放后台任务时） |
+| 工作区文件 | 单文件 10 MB、1000 个、总量 200 MB | 约束 `write` / `edit`；`read` 单次最多 2000 行 / 50 KB，超出部分用 `offset` 续读；超长工具结果转存为文件，模型用 `read` 读取 |
 
 ## 实际限制
 
-仅 `current_time / workspace_list / workspace_read / workspace_write`；可写工作区的会话另开放 `workspace_present`（把工作区文件声明为交付物，界面在该轮回复下展示文件卡片）。`workspace_write` 支持 `encoding: "base64"` 保存二进制文件；`GET /v1/sessions/:id/raw` 按原始字节读取任意类型文件供预览与下载。原生 shell、原生文件和工作目录工具在业务 patch 禁用，业务白名单进一步限制可见与可执行工具。不允许外部插件安装；这不是容器级隔离。
+基础工具为 DSH 官方的 `read`、`write` / `edit`（只能写会话工作区内的非隐藏路径）、`present`（随写入开放，把工作区文件声明为交付物，界面在该轮回复下展示文件卡片）与 `bash`；当前时间作为上下文自动提供。`write` 只写文本，二进制文件由 `bash`（如 Python 脚本）生成；`GET /v1/sessions/:id/raw` 按原始字节读取任意类型文件供预览与下载。
+
+终端沙箱：`bash` 每次调用是独立 Shell（`cd` 不保留，用 `workdir` 参数），在 DSH 沙箱中执行——可写会话时只能写会话工作区（与临时目录），否则只读；越界写入经确认卡片由用户批准。沙箱依赖 bubblewrap 或 Linux Landlock：首个会话启动时探测，服务器都不支持时降级为不限制写入（仍有 Forge 命令规则与写入路径守卫），`GET /v1/runtime` 的 `sandbox.status` 如实上报 `enforced` / `unavailable`。业务白名单限制可见与可执行工具，不允许外部插件安装；这不是容器级隔离。
 
 审批为一次性允许 / 拒绝 / 超时拒绝 / 中止取消；没有人工改参提交或 IM 审批。中止关闭进程，同 Runner 内下一轮可打开本地日志；整个 Runner 重启后不会恢复旧执行，但保留磁盘时文件读取仍可用。
 

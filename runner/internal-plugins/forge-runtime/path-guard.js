@@ -1,10 +1,12 @@
 /**
- * 路径守卫：把带路径参数的 dsh 原生工具（glob/grep/read）收窄到会话工作区与已关联的只读目录，
- * 剔除搜索结果中的密钥类文件，并校验 forge-runtime 自有工作区工具的路径。
+ * 路径守卫：把带路径参数的 dsh 原生工具收窄到允许的范围，并剔除搜索结果中的密钥类文件。
+ * - 读取与搜索（read / glob / grep）：会话工作区与已关联的只读目录（代码项目、Skill 快照、大结果转存目录）；
+ * - 写入、修改与交付（write / edit / present）：只能是会话工作区内的非隐藏路径——.skill/ 是 Skill 草稿的只读镜像
+ *   （草稿须经 skill_write_file 修改），隐藏文件也不会同步到会话文件区。dsh 的文件沙箱只限制写入、按工作区根目录放行，
+ *   这里再补上隐藏路径、目录层级与符号链接的约束。
  * 哪些工具带路径、路径在哪个参数，来自 DSH 适配层的 engine-tools.js（与内核共用的唯一一份）。
  */
 import { lstatSync, realpathSync } from 'node:fs';
-import { lstat } from 'node:fs/promises';
 import { resolve, relative, dirname, sep } from 'node:path';
 import { PATH_TOOLS } from '../../src/kernel/dsh/engine-tools.js';
 import { MAX_DEPTH, MAX_PATH_CHARS } from './limits.js';
@@ -61,6 +63,16 @@ export function toolPathDenial(workspace, projects, exec) {
   if (!tool) return undefined;
   const search = tool.search;
   const args = exec.arguments && typeof exec.arguments === 'object' ? exec.arguments : {};
+  if (tool.workspace) {
+    const items = tool.items ? args[tool.arg] : [args[tool.arg]];
+    // 数组参数的形状（数量、必填）由工具自己校验，这里只看每个路径
+    if (!Array.isArray(items)) return undefined;
+    for (const item of items) {
+      const denial = workspacePathDenial(workspace, tool.items ? item?.[tool.items] : item);
+      if (denial) return denial;
+    }
+    return undefined;
+  }
   const raw = args[tool.arg];
   // 不传 path 的搜索在会话工作目录（即工作区）内进行
   if (raw === undefined && search) return undefined;
@@ -69,10 +81,13 @@ export function toolPathDenial(workspace, projects, exec) {
   const full = resolve(workspace, raw);
   if (within(workspace, full)) return searchPathDenial(workspace, { path: full });
   const project = projects.find((item) => within(item.path, full));
-  if (!project)
-    return projects.length
-      ? `只能访问会话工作区与已关联的代码项目：${projects.map((item) => item.path).join('、')}`
+  if (!project) {
+    // 只列出用户关联的代码项目；Skill 快照与长输出转存目录由系统提示或工具结果给出，不在这里罗列
+    const code = projects.filter((item) => item.name !== 'spill' && !item.name.startsWith('skill:'));
+    return code.length
+      ? `只能访问会话工作区与已关联的代码项目：${code.map((item) => item.path).join('、')}`
       : '搜索路径超出当前会话工作区，请使用工作区内的相对路径';
+  }
   if (secretPath(relative(project.path, full).split(sep).filter(Boolean)))
     return '不允许读取版本库内部数据或密钥类文件';
   // 目标或其最近的已存在上级解析符号链接后必须仍在该项目内；不存在的路径交给工具报告「找不到」
@@ -116,28 +131,28 @@ export function filterSecretResults(workspace, projects, exec, result) {
 }
 
 /**
- * 校验工作区内的文件路径（forge-runtime 自有工作区工具用）：不允许越界与符号链接，目录不超过 MAX_DEPTH 层。
- * - 读取（hidden: true）：允许隐藏目录（如 Skill 草稿镜像 .skill/），但拒绝 .git、.env、私钥等密钥类文件；
- * - 写入与交付声明：不允许隐藏路径——.skill/ 是只读镜像（草稿须经 skill_write_file 修改），
- *   隐藏文件也不会同步到会话文件区。
+ * 写入、修改与交付的路径：只能在会话工作区内（相对路径或工作区内的绝对路径），不允许隐藏路径、符号链接，
+ * 目录不超过 MAX_DEPTH 层。不存在的路径（新建文件）允许。返回拒绝原因，允许时返回 undefined。
  */
-export async function checkedPath(root, name, { writing = false, hidden = false } = {}) {
-  if (typeof name !== 'string' || !name || name.length > MAX_PATH_CHARS || name.includes('\0'))
-    throw new Error('文件路径无效');
+export function workspacePathDenial(root, name) {
+  if (typeof name !== 'string' || !name.trim() || name.length > 1000 || name.includes('\0'))
+    return '文件路径无效';
   const full = resolve(root, name);
-  if (full === root || !full.startsWith(root + sep)) throw new Error('文件路径超出当前会话工作区');
-  let current = root;
+  if (full === root || !full.startsWith(root + sep))
+    return '只能写入或交付当前会话工作区内的文件，请使用工作区内的相对路径';
   const parts = relative(root, full).split(sep);
-  if (parts.length > MAX_DEPTH) throw new Error(`目录层级不能超过 ${MAX_DEPTH} 层`);
-  if (hidden ? secretPath(parts) : parts.some((part) => part.startsWith('.')))
-    throw new Error(hidden ? '不允许读取版本库内部数据或密钥类文件' : '不允许写入或交付隐藏文件');
+  if (parts.join('/').length > MAX_PATH_CHARS) return `文件路径不能超过 ${MAX_PATH_CHARS} 个字符`;
+  if (parts.length > MAX_DEPTH) return `目录层级不能超过 ${MAX_DEPTH} 层`;
+  if (parts.some((part) => part.startsWith('.'))) return '不允许写入或交付隐藏文件与隐藏目录（如 .skill/）';
+  let current = root;
   for (const part of parts) {
     current = resolve(current, part);
     try {
-      if ((await lstat(current)).isSymbolicLink()) throw new Error('不允许符号链接');
+      if (lstatSync(current).isSymbolicLink()) return '不允许通过符号链接写入或交付';
     } catch (error) {
-      if (error.code !== 'ENOENT' || !writing) throw error;
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return undefined;
+      return '文件路径无法访问';
     }
   }
-  return full;
+  return undefined;
 }

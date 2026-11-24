@@ -130,7 +130,7 @@ async def check_execution_ui(
             await expect(tool_call.locator(".tool-status.error")).to_have_count(0)
             await expect(page.locator(".approval-card")).to_have_count(0)
             passed(
-                "workspace_write appears as a successful process-block tool call without an approval prompt"
+                "write appears as a successful process-block tool call without an approval prompt"
             )
             await expect(page.locator(".context-panel")).to_have_count(0)
             await page.get_by_role("button", name="查看结果", exact=True).click()
@@ -208,7 +208,7 @@ async def check_execution_ui(
             await page.locator(".trajectory-event").first.locator("summary").click()
             await expect(
                 page.locator(".trajectory-event").first.locator("pre")
-            ).to_contain_text("workspace_write")
+            ).to_contain_text("write")
             for width, height in [(1440, 1000), (390, 844), (320, 720)]:
                 await page.set_viewport_size({"width": width, "height": height})
                 await page.locator(".trajectory-page").evaluate(

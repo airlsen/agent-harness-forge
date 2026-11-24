@@ -12,6 +12,7 @@ import {
   HOST_REQUEST,
   QUESTION_REPLY,
   RPC,
+  approvalReason,
   approvalReply,
   translateNotification,
   type ApprovalOutcome,
@@ -39,8 +40,9 @@ export interface EngineOptions {
   /** dsh 工作目录（会话工作区） */
   cwd: string;
   model: RuntimeModel;
-  systemPrompt: string;
   plan: RuntimePlan;
+  /** 是否等待 forge-runtime 的终端沙箱探测结果（Runner 尚不知道本机是否支持沙箱时） */
+  probeSandbox?: boolean;
   /** 平台契约中各工具组的工具名 */
   groupTools: Record<string, readonly string[]>;
   /** 有历史时以 session/resume 接续磁盘上的会话日志 */
@@ -53,8 +55,18 @@ export class EngineTimeout extends Error {
   }
 }
 
+/** 终端沙箱探测结果：available 为 false 表示本机既没有 bwrap 也不支持 Landlock */
+export interface SandboxProbe {
+  available: boolean;
+  enforcement?: string;
+  reason?: string;
+}
+const SANDBOX_PROBE_MS = 10000;
+
 export class DshEngine {
   private readonly calls = new Map<string, any>();
+  /** 沙箱探测结果（只在 probeSandbox 时等待；超时则为 undefined） */
+  sandbox: SandboxProbe | undefined;
   private constructor(private readonly proc: DshProcess) {}
 
   static async start(opts: EngineOptions, host: EngineHost): Promise<DshEngine> {
@@ -64,9 +76,12 @@ export class DshEngine {
     });
     const proc = new DshProcess();
     const engine = new DshEngine(proc);
+    let probed: (probe: SandboxProbe) => void = () => {};
+    const probe = new Promise<SandboxProbe>((resolve) => (probed = resolve));
     proc.onNotification((method, params) => {
       for (const item of translateNotification(method, params, engine.calls)) {
         if ('failure' in item) host.fail(item.failure, item.explicit);
+        else if (item.kind === 'sandbox') probed(item.payload as SandboxProbe);
         else host.emit(item.kind, item.payload, item.source);
       }
     });
@@ -76,7 +91,7 @@ export class DshEngine {
           tool: params.toolName,
           callId: params.callId,
           arguments: engine.calls.get(params.callId)?.arguments ?? {},
-          reason: params.reason,
+          reason: approvalReason(params.reason),
         }),
       ),
     );
@@ -88,7 +103,6 @@ export class DshEngine {
         // 密钥类变量名都含 SECRET/KEY：dsh 为 stdio MCP 子进程清洗环境变量时会剔除，外部程序拿不到
         env: {
           FORGE_MODEL_SECRET_CONFIG: JSON.stringify(opts.model),
-          DSH_SYSTEM_PROMPT: opts.systemPrompt,
           ...(opts.plan.web?.apiKey ? { [WEB_SEARCH_KEY_ENV]: opts.plan.web.apiKey } : {}),
         },
       });
@@ -104,6 +118,7 @@ export class DshEngine {
         30000,
       );
       if (opts.resume) await withTimeout(proc.request(RPC.resume, { sessionId: opts.sessionId }), 15000);
+      if (opts.probeSandbox) engine.sandbox = await withTimeout(probe, SANDBOX_PROBE_MS).catch(() => undefined);
     } catch (error) {
       await proc.dispose();
       throw error;

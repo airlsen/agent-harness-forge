@@ -17,6 +17,8 @@ import {
   type ApprovalOutcome,
   type ApprovalRequest,
   type RuntimePlan,
+  type SandboxMode,
+  type SandboxProbe,
 } from './dsh/index.js';
 import { buildSystemPrompt } from './system-prompt.js';
 import { projectOverview, resolveCodeProjects, sameProjects, type CodeProject } from './code-projects.js';
@@ -126,6 +128,18 @@ export class SessionKernel {
       reaper.unref?.();
       this.reaper = reaper;
     }
+  }
+  /**
+   * 本机是否支持终端沙箱（bwrap / Landlock）：首次启动会话时由 forge-runtime 探测，之后沿用。
+   * 不支持时 dsh 会拒绝执行每条命令，因此改用不限制模式（仍有 Forge 的命令规则与写入路径守卫），保证终端可用。
+   */
+  private sandboxSupport: SandboxProbe | undefined;
+  /** /v1/runtime 上报：unknown（尚未有会话启动）/ enforced / unavailable */
+  get sandbox() {
+    if (!this.sandboxSupport) return { status: 'unknown' as const };
+    return this.sandboxSupport.available
+      ? { status: 'enforced' as const, enforcement: this.sandboxSupport.enforcement }
+      : { status: 'unavailable' as const };
   }
   get size() {
     return this.sessions.size;
@@ -374,7 +388,7 @@ export class SessionKernel {
     };
   }
   /** 按会话当前配置启动执行引擎：先算出装配需求（RuntimePlan），具体怎么装配交给 DSH 适配层 */
-  private async boot(entry: Entry) {
+  private async boot(entry: Entry): Promise<void> {
     const dir = join(DATA, entry.id);
     await mkdir(entry.workspace, { recursive: true, mode: 0o700 });
     const { manifest } = entry;
@@ -393,21 +407,32 @@ export class SessionKernel {
     const scriptSkills = entry.caps.skills.filter((skill) =>
       skill.files.some((file) => file.path.startsWith('scripts/')),
     );
+    const spillDir = join(dir, 'spill');
+    await mkdir(spillDir, { recursive: true, mode: 0o700 });
+    const probeSandbox = this.sandboxSupport === undefined;
+    // 文件沙箱：开放写入时只能写会话工作区，否则只读；本机不支持沙箱时降级为不限制
+    const sandbox: SandboxMode =
+      this.sandboxSupport?.available === false ? 'danger-full-access' : toolset.write ? 'workspace-write' : 'read-only';
     const plan: RuntimePlan = {
       sessionLogDir: join(dir, 'session-log'),
+      spillDir,
+      workspace: entry.workspace,
       contextWindow,
       outputTokens,
       allowed: toolset.allowed,
-      search: toolset.search,
-      read: toolset.read,
+      sandbox,
       runtime: forgePlugin('forge-runtime', {
         workspace: entry.workspace,
         allowedTools: toolset.allowed,
         approvalTools: toolset.approval,
         codeProjects: entry.code.map(({ name, path }) => ({ name, path })),
         readRoots: Object.entries(skillDirs).map(([name, path]) => ({ name: `skill:${name}`, path })),
+        spillDir,
         maxOutputTokens: outputTokens,
         requestTimeoutSeconds: policy.requestTimeoutSeconds ?? 300,
+        probeSandbox,
+        // 系统提示在下面拼好后填入（forge-runtime 以不插值的段落注入）
+        systemPrompt: '',
       }),
       plugins: [
         ...(mounts.includes('forge-plugin-bridge')
@@ -494,16 +519,17 @@ export class SessionKernel {
         webFetch: Boolean(entry.caps.web?.fetch),
       },
     );
-    entry.engine = await DshEngine.start(
+    plan.runtime.config.systemPrompt = systemPrompt;
+    const engine = await DshEngine.start(
       {
         sessionId: entry.id,
         dir,
         cwd: entry.workspace,
         model: entry.model,
-        systemPrompt,
         plan,
         groupTools: GROUP_TOOLS,
         resume: entry.hasHistory,
+        probeSandbox,
       },
       {
         emit: (kind, payload, source) => this.emit(entry, kind, payload, source),
@@ -511,6 +537,19 @@ export class SessionKernel {
         approve: (request) => this.requestApproval(entry, request),
       },
     );
+    if (probeSandbox && engine.sandbox) {
+      this.sandboxSupport = engine.sandbox;
+      if (!engine.sandbox.available) {
+        console.warn(
+          `[runner] 本机不支持终端沙箱（${engine.sandbox.reason ?? '没有 bwrap，也不支持 Landlock'}）：` +
+            '终端命令改为不限制模式运行，仅保留 Forge 的命令规则与写入路径守卫。请在服务器上安装 bubblewrap 或使用 Linux 5.13 以上内核。',
+        );
+        // 已按沙箱模式启动：换成降级模式重启一次（此时会话还没开始执行）
+        await engine.dispose();
+        return this.boot(entry);
+      }
+    }
+    entry.engine = engine;
   }
 
   /**

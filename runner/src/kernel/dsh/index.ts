@@ -6,7 +6,13 @@
  * - process.ts：子进程与换行 JSON-RPC 传输。
  * dsh 升级时只改本目录，再跑 `npm run contract` 与 `npm test`。
  */
-export { DshEngine, EngineTimeout, type ApprovalRequest, type EngineHost } from './engine.js';
+export {
+  DshEngine,
+  EngineTimeout,
+  type ApprovalRequest,
+  type EngineHost,
+  type SandboxProbe,
+} from './engine.js';
 export type { ApprovalOutcome } from './protocol.js';
 export {
   ENGINE_TOOLS,
@@ -14,6 +20,7 @@ export {
   type LocalPlugin,
   type PlanSkill,
   type RuntimePlan,
+  type SandboxMode,
 } from './runtime-config.js';
 
 /** 当前装配的 dsh 版本（从已安装的包读取，/v1/runtime 上报，不再手写） */

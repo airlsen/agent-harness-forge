@@ -437,7 +437,7 @@ async def test_space_tool_switch_only_narrows_policy(env):
     async with env["sessions"]() as db:
         finance = (await make_space(db, "财务"))["id"]
         rd = (await make_space(db, "研发"))["id"]
-        tools = ["current_time", "bash"]
+        tools = ["todo_write", "bash"]
         finance_scenario = await scenario_service.create(
             db, "admin", scenario("报销助手", builtin_tool_names=tools), space_id=finance
         )
@@ -461,14 +461,14 @@ async def test_space_tool_switch_only_narrows_policy(env):
     rd_session = await service.detail(
         (await service.create(rd_scenario["id"], model_id=model_id, space_id=rd))["id"]
     )
-    assert finance_session["bundle"]["meta"]["builtin_tools"] == ["current_time"]
+    assert finance_session["bundle"]["meta"]["builtin_tools"] == ["todo_write"]
     assert rd_session["bundle"]["meta"]["builtin_tools"] == tools
     # Runner 以 policy.allowedTools 为基础能力上限：空间关闭的工具不在上限里，不会被默认补回
     assert "bash" not in finance_session["bundle"]["meta"]["policy"]["allowedTools"]
     assert "bash" in rd_session["bundle"]["meta"]["policy"]["allowedTools"]
     async with env["sessions"]() as db:
         # 执行策略不允许的工具，任何空间都不能开启
-        db.add(PlatformSetting(key="policy", value=PolicyInput(allowedTools=["current_time"]).model_dump()))
+        db.add(PlatformSetting(key="policy", value=PolicyInput(allowedTools=["todo_write"]).model_dump()))
         await db.commit()
         with pytest.raises(HTTPException) as error:
             await space_service.set_tool_enabled(db, finance, "bash", True)

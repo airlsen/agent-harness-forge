@@ -221,7 +221,7 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
         captured['capabilities'] = capabilities
         return {'sessionId': f'runner-{len(captured)}'}
 
-    policy = {'maxOutputTokens': 4096, 'allowedTools': ['workspace_read', 'bash']}
+    policy = {'maxOutputTokens': 4096, 'allowedTools': ['read', 'bash']}
 
     async def fake_policy(db):
         return dict(policy)
@@ -241,7 +241,7 @@ async def test_authoring_session_bundle_carries_method_history_guides_and_output
             meta = bundle['meta']
             assert 'skill_read_guide' in meta['builtin_tools']
             assert meta['policy']['allowedTools'] == meta['builtin_tools']
-            assert 'workspace_read' in meta['builtin_tools']
+            assert 'read' in meta['builtin_tools']
             # 平台策略允许 bash 时编辑会话也开放：最新草稿在 .skill/，产出写到 outputs/（试用文件）
             assert 'bash' in meta['builtin_tools']
             assert '.skill/' in prompt['domain']
@@ -441,12 +441,12 @@ async def test_manual_draft_edit_swaps_the_latest_draft_into_the_same_session(mo
         assert len(runner.restored) == 1
 
         async def changed_policy(db):
-            return {"maxOutputTokens": 4096, "allowedTools": ["current_time"]}
+            return {"maxOutputTokens": 4096, "allowedTools": ["read"]}
 
         monkeypatch.setattr(skill_service, "get_policy", changed_policy)
         [event async for event in skill_service.run_authoring_turn(skill_id, session_id, "继续试用")]
         assert len(runner.restored) == 2
-        assert "current_time" in runner.restored[-1][1]["meta"]["policy"]["allowedTools"]
+        assert "read" in runner.restored[-1][1]["meta"]["policy"]["allowedTools"]
         assert "skill_run_script" not in runner.restored[-1][1]["meta"]["policy"]["allowedTools"]
         assert "bash" not in runner.restored[-1][1]["meta"]["policy"]["allowedTools"]  # 仍以平台策略为上限
     finally:

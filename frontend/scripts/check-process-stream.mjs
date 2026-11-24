@@ -79,7 +79,7 @@ export { createApp, h, reactive, ref, nextTick, defineComponent } from 'vue';`,
             namespace: 'stub',
           }));
           builder.onLoad({ filter: /^platform$/, namespace: 'stub' }, () => ({
-            contents: `export const usePlatform = () => ({ tools: [{ name: 'bash', title: '终端命令执行' }, { name: 'workspace_read', title: '读取文件' }] });`,
+            contents: `export const usePlatform = () => ({ tools: [{ name: 'bash', title: '终端命令执行' }, { name: 'read', title: '读取文件' }] });`,
           }));
           builder.onLoad({ filter: /^markdown$/, namespace: 'stub' }, () => ({
             contents: `import { h } from 'vue'; export default { props: ['text', 'live'], setup: (p) => () => h('div', { class: 'md' }, p.text) };`,
@@ -114,7 +114,7 @@ export { createApp, h, reactive, ref, nextTick, defineComponent } from 'vue';`,
   const done = (n) =>
     Array.from({ length: n }, (_, i) => ({
       id: `d${i}`,
-      tool: 'workspace_read',
+      tool: 'read',
       result: 'ok',
       arguments: { path: `f${i}` },
     }));
