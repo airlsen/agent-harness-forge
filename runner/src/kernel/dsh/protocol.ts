@@ -11,13 +11,6 @@ import type { KernelEvent } from '../types.js';
  * 用不上的插件由 runtime-config.ts 关闭
  */
 export const DSH_PROFILE = 'sdk';
-/** Runner → dsh 的 JSON-RPC 请求 */
-export const RPC = {
-  initialize: 'initialize',
-  prompt: 'session/prompt',
-  wait: 'session/wait',
-  resume: 'session/resume',
-} as const;
 /** dsh → Runner 的宿主请求（需要回复） */
 export const HOST_REQUEST = {
   approval: 'approval/request',
@@ -25,8 +18,8 @@ export const HOST_REQUEST = {
 } as const;
 /** dsh → Runner 的会话日志通知 */
 export const SESSION_EVENT = 'session.event';
-/** contract-check 用：Forge 依赖的全部 SDK 方法 */
-export const SDK_METHODS = [...Object.values(RPC), ...Object.values(HOST_REQUEST), SESSION_EVENT];
+/** contract-check 用：高级 run API 与恢复会话所依赖的协议消息 */
+export const SDK_METHODS = ['initialize', 'session/query', 'session/resume', ...Object.values(HOST_REQUEST), SESSION_EVENT];
 
 /** 审批结论（Forge 侧）→ dsh 审批回复 */
 export type ApprovalOutcome = 'approve' | 'deny' | 'timeout' | 'cancelled';

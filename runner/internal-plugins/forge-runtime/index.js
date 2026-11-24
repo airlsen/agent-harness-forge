@@ -38,7 +38,7 @@ function registerSystemPrompt(ctx, text) {
 
 /**
  * 探测服务器是否支持终端沙箱（bwrap 或 Landlock）：结果经 forge.sandbox 通知 Runner。
- * 不支持时 dsh 会拒绝执行每条命令（不会裸跑），Runner 据此改用不限制模式重新启动会话，保证终端可用。
+ * 不支持时 dsh 会拒绝执行每条命令（不会裸跑），Runner 拒绝开放终端会话。
  */
 function probeSandbox(ctx, root) {
   return ctx.inject(['sandbox'], async (scope) => {

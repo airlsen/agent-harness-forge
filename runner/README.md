@@ -6,10 +6,10 @@
 
 - `src/kernel/session-kernel.ts`：会话、回合、执行日志、审批、容量与清理；与执行引擎无关，只产出 `RuntimePlan`。
 - `src/kernel/dsh/`：**DSH 适配层，dsh 相关代码只在这里**。升级 dsh 时通常只需改这个目录，再跑 `npm run contract`。
-  - 官方 `@deepseek-ai/dsh-sdk-client` 的 `HarnessClient`：子进程、JSON-RPC、通知与安全关闭；
+  - 官方 `@deepseek-ai/dsh-sdk-client` 的 `DeepSeekHarness`：子进程、会话执行、完成判定与安全关闭；底层 `HarnessClient` 接收平台通知和审批；
   - `protocol.ts`：dsh 通知 → Forge 事件；
   - `runtime-config.ts`：`RuntimePlan` → dsh runtime patch（底座是官方 `sdk` profile，每个内置插件都归入 `SDK_KEPT` / `SDK_SWITCHED` / `SDK_OFF` 之一，`npm run contract` 发现未归类的新插件直接报错）；
-  - `engine.ts`：用 `HarnessClient` 装配每会话的 `DshEngine`；每个会话使用独立的 DSH home。
+  - `engine.ts`：用 `DeepSeekHarness.run()` 执行每轮，不再自行拼接 `prompt` / `session/wait` / `turn/end`；每个会话使用独立的 DSH home。
 - `src/kernel/journal.ts`：每会话执行日志。持久事件带序号落盘，控制面回执后清理；流式增量（`transient`）只推给在线订阅者。
 - `src/kernel/manifest.ts`：会话清单入口校验。类型 `manifest.generated.ts` 由 `contracts/session-manifest.schema.json` 生成（根目录 `make contracts`），请勿手改。
 - `src/kernel/platform-contract.ts`：读取 `contracts/platform.json`（内置工具目录与能力上限）。

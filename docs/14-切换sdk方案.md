@@ -1,6 +1,6 @@
 # 14 · 执行底座切换到 DSH sdk 组合
 
-> 状态：第 1–4 步已实现；Runner 传输层已接入官方 `@deepseek-ai/dsh-sdk-client`；第 5 步以后再议。
+> 状态：第 1–4 步已实现；Runner 通过官方 `@deepseek-ai/dsh-sdk-client` 的高级 `DeepSeekHarness.run()` 执行回合；第 5 步以后再议。
 > DSH 版本固定 `0.2.2-rc.5`，不 fork、不改 DSH 的英文工具说明与压缩提示词。
 
 ## 为什么换
@@ -14,7 +14,9 @@
 - **能用 DSH 的就用 DSH**，Forge 只保留平台层：工具白名单、路径守卫、配额、文件同步、命令规则、外部工具逐次确认、Skill 编辑。
 - **场景仍然可配**：场景勾选的能力决定加载哪些 DSH 插件；**没选中的能力整块关闭插件**（只隐藏工具会留下多余的提示词）。
 - **每个 sdk 内置插件都必须归类**，DSH 升级新增插件时 `npm run contract` 直接报错，避免悄悄多出能力或提示词。
-- **运行配置和客户端各司其职**：`sdk` profile 提供 Agent 能力；Runner 用官方 `HarnessClient` 启动和驱动进程、收发协议、订阅通知、关闭进程。场景 patch 保持按会话装配。
+- **运行配置和客户端各司其职**：`sdk` profile 提供 Agent 能力；`DeepSeekHarness` 负责回合完成判定与进程生命周期，底层 `HarnessClient` 接收无会话 ID 的 Forge 插件通知和宿主审批。场景 patch 保持按会话装配。
+
+边界：SDK 不管理 Forge 的企业会话、租户权限、事件回放、配额、只读代码根目录、审批票据与场景装配；这些仍由平台负责。移除它们会改变已有产品能力和安全边界。`forge-runtime` 仅保留这些平台钩子和实时 UI 事件，不重写官方 Agent 循环、模型适配、文件工具或终端沙箱。
 
 ## 插件归类（`runner/src/kernel/dsh/runtime-config.ts`）
 

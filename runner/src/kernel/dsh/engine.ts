@@ -4,13 +4,12 @@
  */
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { HarnessClient, type NotificationSubscription } from '@deepseek-ai/dsh-sdk-client';
+import { DeepSeekHarness, type NotificationSubscription } from '@deepseek-ai/dsh-sdk-client';
 import type { KernelEvent } from '../types.js';
 import type { RuntimeModel } from '../runtime-model.js';
 import {
   DSH_PROFILE,
   HOST_REQUEST,
-  RPC,
   approvalReason,
   approvalReply,
   redact,
@@ -66,13 +65,8 @@ const SANDBOX_PROBE_MS = 10000;
 export class DshEngine {
   /** 沙箱探测结果（只在 probeSandbox 时等待；超时则为 undefined） */
   sandbox: SandboxProbe | undefined;
-  private turnEnd: {
-    sessionId: string;
-    resolve: () => void;
-    reject: (error: Error) => void;
-  } | undefined;
   private constructor(
-    private readonly client: HarnessClient,
+    private readonly harness: DeepSeekHarness,
     private readonly subscription: NotificationSubscription,
     private readonly notifications: Promise<void>,
   ) {}
@@ -82,10 +76,15 @@ export class DshEngine {
     await writeFile(patchPath, JSON.stringify(buildRuntimePatch(opts.plan, opts.groupTools), null, 2), {
       mode: 0o600,
     });
-    const client = new HarnessClient({
+    const harness = new DeepSeekHarness({
       profile: DSH_PROFILE,
       patches: [patchPath],
       dshHome: join(opts.dir, 'dsh-home'),
+      cwd: opts.cwd,
+      provider: MODEL_ROUTE,
+      model: opts.model.model,
+      maxTokens: opts.plan.outputTokens,
+      approvalRequests: true,
       initializeTimeoutMs: 30000,
       shutdownTimeoutMs: 500,
       disposeEofGraceMs: 500,
@@ -98,6 +97,7 @@ export class DshEngine {
       },
       onUserQuestion: async () => ({ cancelled: true as const }),
     });
+    const client = harness.client;
     client.start();
     const subscription = client.subscribe();
     const calls = new Map<string, any>();
@@ -112,19 +112,13 @@ export class DshEngine {
             else if (item.kind === 'sandbox') probed(item.payload as SandboxProbe);
             else host.emit(item.kind, item.payload, item.source);
           }
-          if (
-            method === 'session.event' &&
-            params.sessionId === engine?.turnEnd?.sessionId &&
-            (params.event as { type?: string } | undefined)?.type === 'turn/end'
-          ) engine?.turnEnd?.resolve();
         }
       } catch (error) {
         // Closing a subscription during interrupt/reap rejects its pending next().
         if (!engine?.closing) host.fail(redact(String(error), opts.model.apiKey));
-        engine?.turnEnd?.reject(error instanceof Error ? error : new Error(String(error)));
       }
     })();
-    engine = new DshEngine(client, subscription, notifications);
+    engine = new DshEngine(harness, subscription, notifications);
     client.onRequest(async (method, params) => {
       if (method !== HOST_REQUEST.approval) throw new Error(`Unsupported host request: ${method}`);
       const callId = String(params.callId ?? '');
@@ -138,18 +132,8 @@ export class DshEngine {
       );
     });
     try {
-      await withTimeout(
-        client.initialize({
-          cwd: opts.cwd,
-          // llm-pi-ai 中的会话模型路由（runtime-config.ts 的 modelRow）
-          provider: MODEL_ROUTE,
-          model: opts.model.model,
-          maxTokens: opts.plan.outputTokens,
-          approvalRequests: true,
-        }),
-        30000,
-      );
-      if (opts.resume) await withTimeout(client.resumeSession(opts.sessionId), 15000);
+      await withTimeout(harness.start(), 30000);
+      if (opts.resume) await withTimeout(harness.resumeSession(opts.sessionId), 15000);
       if (opts.probeSandbox) engine.sandbox = await withTimeout(probe, SANDBOX_PROBE_MS).catch(() => undefined);
     } catch (error) {
       await engine.dispose();
@@ -163,29 +147,21 @@ export class DshEngine {
    * accepted 在消息被引擎接收（已写入会话日志）后调用。
    */
   async prompt(sessionId: string, text: string, waitMs: number, accepted?: () => void) {
-    // SDK notifications are queued independently of request responses. A wait response can
-    // arrive before the subscriber has translated the last assistant/turn events.
-    const end = new Promise<void>((resolve, reject) => {
-      this.turnEnd = { sessionId, resolve, reject };
-    });
-    // The prompt may fail before we begin waiting for the end event.
-    void end.catch(() => {});
-    try {
-      await withTimeout(this.client.prompt(sessionId, [{ type: 'text', text }]), 30000);
-      accepted?.();
-      await withTimeout(Promise.all([this.client.request(RPC.wait, { sessionId }, waitMs), end]), waitMs);
-    } finally {
-      this.turnEnd = undefined;
-    }
+    await withTimeout(this.harness.run(text, {
+      sessionId,
+      onNotification: ({ method, params }) => {
+        if (method === 'session.event' && (params.event as { type?: string } | undefined)?.type === 'agent/inbox/spliced')
+          accepted?.();
+      },
+    }), waitMs);
   }
 
   /** 中止即关闭进程：dsh 没有原生中断 RPC，下一轮从会话日志接续 */
   private closing = false;
   async dispose() {
     this.closing = true;
-    this.turnEnd?.reject(new Error('dsh session closed'));
     this.subscription.close();
-    await this.client.close();
+    await this.harness.close();
     await this.notifications;
   }
 }
