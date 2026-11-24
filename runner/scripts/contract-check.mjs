@@ -56,6 +56,9 @@ check('ctx.approval 服务存在', approval.includes('approval: ApprovalService'
 check('审批策略 ask/never 存在', approval.includes("'ask'") && approval.includes("'never'"));
 
 const { SDK_METHODS } = await import('../src/kernel/dsh/protocol.ts');
+const { HarnessClient } = await import('@deepseek-ai/dsh-sdk-client');
+for (const method of ['start', 'onRequest', 'initialize', 'subscribe', 'prompt', 'resumeSession', 'request', 'close'])
+  check(`官方 HarnessClient.${method} 可用`, typeof HarnessClient.prototype[method] === 'function');
 const { DSH_PACKAGES, ENGINE_TOOL_PROVIDERS } = await import('../src/kernel/dsh/runtime-config.ts');
 const { PLATFORM } = await import('../src/kernel/platform-contract.ts');
 const { GROUP_TOOLS } = await import('../src/kernel/toolset.ts');

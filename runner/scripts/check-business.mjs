@@ -373,6 +373,20 @@ let id,
   // 任何意外出现的确认请求都会被拒绝，从而让写入失败、断言暴露问题
   approvalAction = 'deny';
 try {
+  const unsupportedSandbox = new SessionKernel();
+  unsupportedSandbox.sandboxSupport = { available: false, reason: 'fixture: no sandbox' };
+  await assert.rejects(
+    () => unsupportedSandbox.createSession(manifest, {
+      baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+      model: 'protocol-fixture-not-a-model',
+      apiKey: 'test-key-do-not-use',
+      contextWindow: 64000,
+    }),
+    (error) => error.statusCode === 503 && /终端沙箱不可用/.test(error.message),
+  );
+  await unsupportedSandbox.dispose();
+  checks.push('missing terminal sandbox rejects a bash-enabled session instead of removing confinement');
+  console.log('PASS', checks.at(-1));
   const handle = await kernel.createSession(manifest, {
     baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
     model: 'protocol-fixture-not-a-model',

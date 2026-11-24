@@ -33,7 +33,7 @@ import { EventJournal } from './journal.js';
 import { failure, isSessionId } from './errors.js';
 import { effectiveOutputTokens, modelFingerprint, validModel, type RuntimeModel } from './runtime-model.js';
 import { materializeSkills } from './skill-snapshots.js';
-import { GROUP_TOOLS, SKILL_SCRIPT_TOOL, sessionToolset } from './toolset.js';
+import { GROUP_TOOLS, SHELL_TOOL, SKILL_SCRIPT_TOOL, sessionToolset } from './toolset.js';
 import { MANIFEST_PLUGINS, forgePlugin } from './forge-plugins.js';
 import { WorkspaceFiles } from './workspace-files.js';
 import type { PluginWorkerClient } from '../plugin-worker-client.js';
@@ -131,7 +131,7 @@ export class SessionKernel {
   }
   /**
    * 本机是否支持终端沙箱（bwrap / Landlock）：首次启动会话时由 forge-runtime 探测，之后沿用。
-   * 不支持时 dsh 会拒绝执行每条命令，因此改用不限制模式（仍有 Forge 的命令规则与写入路径守卫），保证终端可用。
+   * 不支持时拒绝开放终端，绝不退回无沙箱的宿主机执行。
    */
   private sandboxSupport: SandboxProbe | undefined;
   /** /v1/runtime 上报：unknown（尚未有会话启动）/ enforced / unavailable */
@@ -410,9 +410,10 @@ export class SessionKernel {
     const spillDir = join(dir, 'spill');
     await mkdir(spillDir, { recursive: true, mode: 0o700 });
     const probeSandbox = this.sandboxSupport === undefined;
-    // 文件沙箱：开放写入时只能写会话工作区，否则只读；本机不支持沙箱时降级为不限制
-    const sandbox: SandboxMode =
-      this.sandboxSupport?.available === false ? 'danger-full-access' : toolset.write ? 'workspace-write' : 'read-only';
+    // 没有终端沙箱时终端不可用；写入仍由文件沙箱与 Forge 路径守卫约束。
+    if (this.sandboxSupport?.available === false && toolset.allowed.includes(SHELL_TOOL))
+      throw failure('终端沙箱不可用，已拒绝开放终端；请安装 bubblewrap 或启用 Landlock', 503);
+    const sandbox: SandboxMode = toolset.write ? 'workspace-write' : 'read-only';
     const plan: RuntimePlan = {
       sessionLogDir: join(dir, 'session-log'),
       spillDir,
@@ -545,9 +546,9 @@ export class SessionKernel {
       if (!engine.sandbox.available) {
         console.warn(
           `[runner] 本机不支持终端沙箱（${engine.sandbox.reason ?? '没有 bwrap，也不支持 Landlock'}）：` +
-            '终端命令改为不限制模式运行，仅保留 Forge 的命令规则与写入路径守卫。请在服务器上安装 bubblewrap 或使用 Linux 5.13 以上内核。',
+            '需要终端的会话将拒绝启动。请在服务器上安装 bubblewrap 或启用 Landlock。',
         );
-        // 已按沙箱模式启动：换成降级模式重启一次（此时会话还没开始执行）
+        // 探测发生在首轮执行前；释放本次引擎，再按安全边界决定是否开放会话。
         await engine.dispose();
         return this.boot(entry);
       }

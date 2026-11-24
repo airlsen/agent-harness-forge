@@ -4,13 +4,12 @@
  */
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { HarnessClient, type NotificationSubscription } from '@deepseek-ai/dsh-sdk-client';
 import type { KernelEvent } from '../types.js';
 import type { RuntimeModel } from '../runtime-model.js';
-import { DshProcess } from './process.js';
 import {
   DSH_PROFILE,
   HOST_REQUEST,
-  QUESTION_REPLY,
   RPC,
   approvalReason,
   approvalReply,
@@ -65,50 +64,82 @@ export interface SandboxProbe {
 const SANDBOX_PROBE_MS = 10000;
 
 export class DshEngine {
-  private readonly calls = new Map<string, any>();
   /** 沙箱探测结果（只在 probeSandbox 时等待；超时则为 undefined） */
   sandbox: SandboxProbe | undefined;
-  private constructor(private readonly proc: DshProcess) {}
+  private turnEnd: {
+    sessionId: string;
+    resolve: () => void;
+    reject: (error: Error) => void;
+  } | undefined;
+  private constructor(
+    private readonly client: HarnessClient,
+    private readonly subscription: NotificationSubscription,
+    private readonly notifications: Promise<void>,
+  ) {}
 
   static async start(opts: EngineOptions, host: EngineHost): Promise<DshEngine> {
     const patchPath = join(opts.dir, 'runtime.patch.json');
     await writeFile(patchPath, JSON.stringify(buildRuntimePatch(opts.plan, opts.groupTools), null, 2), {
       mode: 0o600,
     });
-    const proc = new DshProcess();
-    const engine = new DshEngine(proc);
+    const client = new HarnessClient({
+      profile: DSH_PROFILE,
+      patches: [patchPath],
+      dshHome: join(opts.dir, 'dsh-home'),
+      initializeTimeoutMs: 30000,
+      shutdownTimeoutMs: 500,
+      disposeEofGraceMs: 500,
+      disposeGraceMs: 1500,
+      // The SDK replaces the entire environment when env is supplied.
+      env: {
+        ...process.env,
+        [MODEL_KEY_ENV]: opts.model.apiKey || MODEL_KEY_PLACEHOLDER,
+        ...(opts.plan.web?.apiKey ? { [WEB_SEARCH_KEY_ENV]: opts.plan.web.apiKey } : {}),
+      },
+      onUserQuestion: async () => ({ cancelled: true as const }),
+    });
+    client.start();
+    const subscription = client.subscribe();
+    const calls = new Map<string, any>();
+    let engine: DshEngine | undefined;
     let probed: (probe: SandboxProbe) => void = () => {};
     const probe = new Promise<SandboxProbe>((resolve) => (probed = resolve));
-    proc.onNotification((method, params) => {
-      for (const item of translateNotification(method, params, engine.calls)) {
-        if ('failure' in item) host.fail(redact(item.failure, opts.model.apiKey));
-        else if (item.kind === 'sandbox') probed(item.payload as SandboxProbe);
-        else host.emit(item.kind, item.payload, item.source);
+    const notifications = (async () => {
+      try {
+        for await (const { method, params } of subscription) {
+          for (const item of translateNotification(method, params, calls)) {
+            if ('failure' in item) host.fail(redact(item.failure, opts.model.apiKey));
+            else if (item.kind === 'sandbox') probed(item.payload as SandboxProbe);
+            else host.emit(item.kind, item.payload, item.source);
+          }
+          if (
+            method === 'session.event' &&
+            params.sessionId === engine?.turnEnd?.sessionId &&
+            (params.event as { type?: string } | undefined)?.type === 'turn/end'
+          ) engine?.turnEnd?.resolve();
+        }
+      } catch (error) {
+        // Closing a subscription during interrupt/reap rejects its pending next().
+        if (!engine?.closing) host.fail(redact(String(error), opts.model.apiKey));
+        engine?.turnEnd?.reject(error instanceof Error ? error : new Error(String(error)));
       }
-    });
-    proc.hostHandlers.set(HOST_REQUEST.approval, async (params: any) =>
-      approvalReply(
+    })();
+    engine = new DshEngine(client, subscription, notifications);
+    client.onRequest(async (method, params) => {
+      if (method !== HOST_REQUEST.approval) throw new Error(`Unsupported host request: ${method}`);
+      const callId = String(params.callId ?? '');
+      return approvalReply(
         await host.approve({
-          tool: params.toolName,
-          callId: params.callId,
-          arguments: engine.calls.get(params.callId)?.arguments ?? {},
+          tool: String(params.toolName ?? ''),
+          callId,
+          arguments: calls.get(callId)?.arguments ?? {},
           reason: approvalReason(params.reason),
         }),
-      ),
-    );
-    proc.hostHandlers.set(HOST_REQUEST.question, async () => QUESTION_REPLY);
+      );
+    });
     try {
-      await proc.start({
-        profile: DSH_PROFILE,
-        patchPaths: [patchPath],
-        // 密钥只经环境变量传入（变量名含 KEY：dsh 为 stdio MCP 子进程清洗环境变量时会剔除，外部程序拿不到）
-        env: {
-          [MODEL_KEY_ENV]: opts.model.apiKey || MODEL_KEY_PLACEHOLDER,
-          ...(opts.plan.web?.apiKey ? { [WEB_SEARCH_KEY_ENV]: opts.plan.web.apiKey } : {}),
-        },
-      });
       await withTimeout(
-        proc.request(RPC.initialize, {
+        client.initialize({
           cwd: opts.cwd,
           // llm-pi-ai 中的会话模型路由（runtime-config.ts 的 modelRow）
           provider: MODEL_ROUTE,
@@ -118,10 +149,10 @@ export class DshEngine {
         }),
         30000,
       );
-      if (opts.resume) await withTimeout(proc.request(RPC.resume, { sessionId: opts.sessionId }), 15000);
+      if (opts.resume) await withTimeout(client.resumeSession(opts.sessionId), 15000);
       if (opts.probeSandbox) engine.sandbox = await withTimeout(probe, SANDBOX_PROBE_MS).catch(() => undefined);
     } catch (error) {
-      await proc.dispose();
+      await engine.dispose();
       throw error;
     }
     return engine;
@@ -132,17 +163,30 @@ export class DshEngine {
    * accepted 在消息被引擎接收（已写入会话日志）后调用。
    */
   async prompt(sessionId: string, text: string, waitMs: number, accepted?: () => void) {
-    await withTimeout(
-      this.proc.request(RPC.prompt, { sessionId, contentBlocks: [{ type: 'text', text }] }),
-      30000,
-    );
-    accepted?.();
-    await withTimeout(this.proc.request(RPC.wait, { sessionId }), waitMs);
+    // SDK notifications are queued independently of request responses. A wait response can
+    // arrive before the subscriber has translated the last assistant/turn events.
+    const end = new Promise<void>((resolve, reject) => {
+      this.turnEnd = { sessionId, resolve, reject };
+    });
+    // The prompt may fail before we begin waiting for the end event.
+    void end.catch(() => {});
+    try {
+      await withTimeout(this.client.prompt(sessionId, [{ type: 'text', text }]), 30000);
+      accepted?.();
+      await withTimeout(Promise.all([this.client.request(RPC.wait, { sessionId }, waitMs), end]), waitMs);
+    } finally {
+      this.turnEnd = undefined;
+    }
   }
 
   /** 中止即关闭进程：dsh 没有原生中断 RPC，下一轮从会话日志接续 */
-  dispose() {
-    return this.proc.dispose();
+  private closing = false;
+  async dispose() {
+    this.closing = true;
+    this.turnEnd?.reject(new Error('dsh session closed'));
+    this.subscription.close();
+    await this.client.close();
+    await this.notifications;
   }
 }
 

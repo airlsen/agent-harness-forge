@@ -1,6 +1,6 @@
 # 14 · 执行底座切换到 DSH sdk 组合
 
-> 状态：第 1–4 步已实现；第 5 步以后再议。
+> 状态：第 1–4 步已实现；Runner 传输层已接入官方 `@deepseek-ai/dsh-sdk-client`；第 5 步以后再议。
 > DSH 版本固定 `0.2.2-rc.5`，不 fork、不改 DSH 的英文工具说明与压缩提示词。
 
 ## 为什么换
@@ -14,6 +14,7 @@
 - **能用 DSH 的就用 DSH**，Forge 只保留平台层：工具白名单、路径守卫、配额、文件同步、命令规则、外部工具逐次确认、Skill 编辑。
 - **场景仍然可配**：场景勾选的能力决定加载哪些 DSH 插件；**没选中的能力整块关闭插件**（只隐藏工具会留下多余的提示词）。
 - **每个 sdk 内置插件都必须归类**，DSH 升级新增插件时 `npm run contract` 直接报错，避免悄悄多出能力或提示词。
+- **运行配置和客户端各司其职**：`sdk` profile 提供 Agent 能力；Runner 用官方 `HarnessClient` 启动和驱动进程、收发协议、订阅通知、关闭进程。场景 patch 保持按会话装配。
 
 ## 插件归类（`runner/src/kernel/dsh/runtime-config.ts`）
 
@@ -65,9 +66,8 @@ Forge 仍然负责：
 - 在 DSH 沙箱中执行（bubblewrap → Landlock），只能写会话工作区与临时目录；只读会话完全只读。
 - 越界时模型可带 `sandbox_permissions` + 一句理由请求放宽，**确认卡片显示中文原因**
   （“这条命令需要突破终端沙箱（…）。原因：…”），拒绝后命令保持被拦截。原因随审批票据保存，刷新页面仍可见。
-- 服务器既没有 bubblewrap 也不支持 Landlock 时：首个会话启动探测一次，之后所有会话降级为不限制写入，**终端仍可用**
-  （普通成员默认能用终端），Forge 命令规则与写入路径守卫照常生效；`GET /v1/runtime` 与治理页如实显示 `unavailable`。
-  生产环境请安装 bubblewrap。
+- 服务器既没有 bubblewrap 也不支持 Landlock 时：首个会话启动探测一次，之后需要终端的会话拒绝启动，
+  不切换为 `danger-full-access`；`GET /v1/runtime` 与治理页如实显示 `unavailable`。生产环境应安装 bubblewrap。
 - 部分 Landlock 支持时 DSH 每条命令都会输出一段英文提示，Forge 已从结果中去掉。
 
 ## 第 4 步 · 模型适配器（已完成）

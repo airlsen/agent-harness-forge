@@ -12,7 +12,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "node scripts/check-workspace.mjs && node --import tsx scripts/check-manifest.mjs && node --import tsx scripts/check-wiring.mjs && node --import tsx scripts/check-journal.mjs && node --import tsx scripts/check-system-prompt.mjs && node --import tsx scripts/check-code-projects.mjs && node --import tsx scripts/check-business.mjs && node --import tsx scripts/check-capabilities.mjs && node scripts/check-skill-authoring.mjs && node --import tsx scripts/check-skill-scripts.mjs && node scripts/check-plugin-bridge.mjs && node --import tsx scripts/check-plugin-worker.mjs",
     "test:workspace": "node scripts/check-workspace.mjs",
-    "contract": "tsx scripts/contract-check.mjs",
+    "contract": "node --import tsx scripts/contract-check.mjs",
     "start": "node --import tsx src/server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "gen:manifest": "node scripts/gen-manifest-types.mjs"
@@ -20,6 +20,7 @@
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.2-rc.5",
     "@deepseek-ai/dsh-mcp-client": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-sdk-client": "0.2.2-rc.5",
     "@deepseek-ai/dsh-skill": "0.2.2-rc.5",
     "@deepseek-ai/dsh-tool-fs-search": "0.2.2-rc.5",
     "@deepseek-ai/dsh-tool-skill": "0.2.2-rc.5",

@@ -6,10 +6,10 @@
 
 - `src/kernel/session-kernel.ts`：会话、回合、执行日志、审批、容量与清理；与执行引擎无关，只产出 `RuntimePlan`。
 - `src/kernel/dsh/`：**DSH 适配层，dsh 相关代码只在这里**。升级 dsh 时通常只需改这个目录，再跑 `npm run contract`。
-  - `process.ts`：换行 JSON-RPC、请求关联、host 请求与安全中止；
+  - 官方 `@deepseek-ai/dsh-sdk-client` 的 `HarnessClient`：子进程、JSON-RPC、通知与安全关闭；
   - `protocol.ts`：dsh 通知 → Forge 事件；
   - `runtime-config.ts`：`RuntimePlan` → dsh runtime patch（底座是官方 `sdk` profile，每个内置插件都归入 `SDK_KEPT` / `SDK_SWITCHED` / `SDK_OFF` 之一，`npm run contract` 发现未归类的新插件直接报错）；
-  - `engine.ts`：`DshEngine`。
+  - `engine.ts`：用 `HarnessClient` 装配每会话的 `DshEngine`；每个会话使用独立的 DSH home。
 - `src/kernel/journal.ts`：每会话执行日志。持久事件带序号落盘，控制面回执后清理；流式增量（`transient`）只推给在线订阅者。
 - `src/kernel/manifest.ts`：会话清单入口校验。类型 `manifest.generated.ts` 由 `contracts/session-manifest.schema.json` 生成（根目录 `make contracts`），请勿手改。
 - `src/kernel/platform-contract.ts`：读取 `contracts/platform.json`（内置工具目录与能力上限）。
@@ -55,7 +55,7 @@ bash scripts/start-runner.sh
 
 基础工具为 DSH 官方的 `read`、`write` / `edit`（只能写会话工作区内的非隐藏路径）、`present`（随写入开放，把工作区文件声明为交付物，界面在该轮回复下展示文件卡片）与 `bash`；当前时间作为上下文自动提供。`write` 只写文本，二进制文件由 `bash`（如 Python 脚本）生成；`GET /v1/sessions/:id/raw` 按原始字节读取任意类型文件供预览与下载。
 
-终端沙箱：`bash` 每次调用是独立 Shell（`cd` 不保留，用 `workdir` 参数），在 DSH 沙箱中执行——可写会话时只能写会话工作区（与临时目录），否则只读；越界写入经确认卡片由用户批准。沙箱依赖 bubblewrap 或 Linux Landlock：首个会话启动时探测，服务器都不支持时降级为不限制写入（仍有 Forge 命令规则与写入路径守卫），`GET /v1/runtime` 的 `sandbox.status` 如实上报 `enforced` / `unavailable`。业务白名单限制可见与可执行工具，不允许外部插件安装；这不是容器级隔离。
+终端沙箱：`bash` 每次调用是独立 Shell（`cd` 不保留，用 `workdir` 参数），在 DSH 沙箱中执行——可写会话时只能写会话工作区（与临时目录），否则只读；越界写入经确认卡片由用户批准。沙箱依赖 bubblewrap 或 Linux Landlock：首个会话启动时探测，服务器都不支持时拒绝启动开放终端的会话，不会退回无沙箱执行；`GET /v1/runtime` 的 `sandbox.status` 如实上报 `enforced` / `unavailable`。业务白名单限制可见与可执行工具，不允许外部插件安装；这不是容器级隔离。
 
 审批为一次性允许 / 拒绝 / 超时拒绝 / 中止取消；没有人工改参提交或 IM 审批。中止关闭进程，同 Runner 内下一轮可打开本地日志；整个 Runner 重启后不会恢复旧执行，但保留磁盘时文件读取仍可用。
 

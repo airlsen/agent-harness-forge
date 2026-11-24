@@ -447,7 +447,7 @@ function mcpRows(plan: RuntimePlan) {
 }
 
 /** contract-check 用：适配层直接引用的 dsh 包（sdk 内置插件的包名由 profile 决定，contract-check 从 profile 读取） */
-export const DSH_PACKAGES = ['@deepseek-ai/dsh', '@deepseek-ai/dsh-mcp-client'];
+export const DSH_PACKAGES = ['@deepseek-ai/dsh', '@deepseek-ai/dsh-sdk-client', '@deepseek-ai/dsh-mcp-client'];
 /** contract-check 用：dsh 原生工具名 → 提供它的包 */
 export const ENGINE_TOOL_PROVIDERS: Record<string, string> = {
   glob: '@deepseek-ai/dsh-tool-fs-search',
