@@ -96,7 +96,6 @@ make test           # 契约 + 隔离 Runner/API 测试；不请求外部模型
 # 可选浏览器回归
 python3 -m playwright install --with-deps chromium
 python3 scripts/check-business-api.py --browser   # 临时隔离业务栈的执行 UI
-python3 scripts/check-business-ui.py              # 当前无模型部署的实际页面（临时创建/删除测试场景）
 python3 scripts/check-iframe-auth.py              # 本地双 TLS 域 Cookie 登录
 python3 scripts/check-iframe-auth.py --block-cookies  # 强制剥离全部 Cookie 的预览登录
 python3 scripts/check-business-api.py --browser --cookie-blocked  # 无 Cookie 的完整执行 UI

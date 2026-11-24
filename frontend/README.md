@@ -137,8 +137,6 @@ API 统一在 `src/api/client.ts`，包含错误处理与 CSRF。认证优先用
 从仓库根目录执行：
 
 ```bash
-python3 scripts/check-business-ui.py  # 实际无模型部署；临时复制/编辑/删除一个回归场景
-python3 scripts/check-page-layout.py  # 11 组尺寸、头像菜单/原生触控、底部帮助与实际中文粗体
 # 两种隔离执行模式顺序运行（脚本共享证据文件名，不作为并发压测）
 python3 scripts/check-business-api.py --browser
 python3 scripts/check-business-api.py --browser --cookie-blocked
