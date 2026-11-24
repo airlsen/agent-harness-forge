@@ -39,7 +39,8 @@ export async function workspaceFiles(root, dir = root, depth = 0) {
 /** 写入或修改后文件的预计字节数；参数不完整时返回 undefined，交给工具自己报错 */
 async function projectedBytes(full, exec) {
   const args = exec.arguments && typeof exec.arguments === 'object' ? exec.arguments : {};
-  if (exec.name === WRITE) return typeof args.content === 'string' ? Buffer.byteLength(args.content) : undefined;
+  if (exec.name === WRITE)
+    return typeof args.content === 'string' ? Buffer.byteLength(args.content) : undefined;
   if (typeof args.old_string !== 'string' || typeof args.new_string !== 'string' || !args.old_string)
     return undefined;
   let current;
@@ -51,7 +52,10 @@ async function projectedBytes(full, exec) {
   // 原文不存在或不唯一时工具会报错；这里只按替换次数估算增量
   const matches = current.split(args.old_string).length - 1;
   const times = args.replace_all === true ? matches : Math.min(matches, 1);
-  return Buffer.byteLength(current) + (Buffer.byteLength(args.new_string) - Buffer.byteLength(args.old_string)) * times;
+  return (
+    Buffer.byteLength(current) +
+    (Buffer.byteLength(args.new_string) - Buffer.byteLength(args.old_string)) * times
+  );
 }
 
 /** 配额检查：返回拒绝原因，允许时返回 undefined */
@@ -84,7 +88,8 @@ export function installWorkspaceBridge(ctx, root) {
         const result = await next();
         if (result && !result.isError) {
           const stat = await lstat(full).catch(() => null);
-          if (stat?.isFile()) notify('forge.artifact', { path: toPosix(relative(root, full)), bytes: stat.size });
+          if (stat?.isFile())
+            notify('forge.artifact', { path: toPosix(relative(root, full)), bytes: stat.size });
         }
         return result;
       });

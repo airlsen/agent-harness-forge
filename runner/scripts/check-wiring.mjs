@@ -119,7 +119,13 @@ try {
     assert.equal(CODE_READ_TOOL, ENGINE_TOOLS.read);
     assert.deepEqual(
       Object.keys(PATH_TOOLS).toSorted(),
-      [...ENGINE_TOOLS.search, ENGINE_TOOLS.read, ENGINE_TOOLS.write, ENGINE_TOOLS.edit, ENGINE_TOOLS.present].toSorted(),
+      [
+        ...ENGINE_TOOLS.search,
+        ENGINE_TOOLS.read,
+        ENGINE_TOOLS.write,
+        ENGINE_TOOLS.edit,
+        ENGINE_TOOLS.present,
+      ].toSorted(),
     );
     for (const name of ENGINE_TOOLS.search) assert.ok(PATH_TOOLS[name].search && PATH_TOOLS[name].results);
     for (const name of [ENGINE_TOOLS.write, ENGINE_TOOLS.edit, ENGINE_TOOLS.present])
@@ -127,7 +133,11 @@ try {
     // 旧工具名：换成的新名必须仍在契约里（空串表示已由 DSH 自动提供）
     for (const [old, now] of Object.entries(PLATFORM.renamed)) {
       assert.ok(!PLATFORM.tools.some((tool) => tool.name === old), `${old} 已改名，不应再登记`);
-      if (now) assert.ok(PLATFORM.tools.some((tool) => tool.name === now), `${old} → ${now} 不在契约中`);
+      if (now)
+        assert.ok(
+          PLATFORM.tools.some((tool) => tool.name === now),
+          `${old} → ${now} 不在契约中`,
+        );
     }
   });
 

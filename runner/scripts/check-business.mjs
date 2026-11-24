@@ -174,9 +174,14 @@ const server = http.createServer(async (req, res) => {
     res.end('data: [DONE]\n\n');
     return;
   }
-  const bashCase = ['BASH_SAFE', 'BASH_WRITE', 'BASH_MAKE', 'BASH_OUTSIDE', 'BASH_ESCALATE', 'BASH_TOKEN'].find((value) =>
-    instruction.includes(value),
-  );
+  const bashCase = [
+    'BASH_SAFE',
+    'BASH_WRITE',
+    'BASH_MAKE',
+    'BASH_OUTSIDE',
+    'BASH_ESCALATE',
+    'BASH_TOKEN',
+  ].find((value) => instruction.includes(value));
   if (bashCase && !answeredTool) {
     const command = {
       BASH_SAFE: 'echo bash-marker && cat report.md 2>/dev/null',
@@ -376,12 +381,13 @@ try {
   const unsupportedSandbox = new SessionKernel();
   unsupportedSandbox.sandboxSupport = { available: false, reason: 'fixture: no sandbox' };
   await assert.rejects(
-    () => unsupportedSandbox.createSession(manifest, {
-      baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
-      model: 'protocol-fixture-not-a-model',
-      apiKey: 'test-key-do-not-use',
-      contextWindow: 64000,
-    }),
+    () =>
+      unsupportedSandbox.createSession(manifest, {
+        baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+        model: 'protocol-fixture-not-a-model',
+        apiKey: 'test-key-do-not-use',
+        contextWindow: 64000,
+      }),
     (error) => error.statusCode === 503 && /终端沙箱不可用/.test(error.message),
   );
   await unsupportedSandbox.dispose();
@@ -517,8 +523,7 @@ try {
       const call = requests
         .at(-1)
         .messages.find(
-          (message) =>
-            message.role === 'assistant' && message.tool_calls?.[0]?.function.name === 'glob',
+          (message) => message.role === 'assistant' && message.tool_calls?.[0]?.function.name === 'glob',
         );
       assert.equal(call?.reasoning_content, '需要先列出文件。');
     },
@@ -541,7 +546,10 @@ try {
   );
   events = await turn('READ');
   check('DSH read returns actual file content of a workspace-relative path', () =>
-    assert.match(events.find((event) => event.kind === 'tool_result').payload.result, /# Integration fixture/),
+    assert.match(
+      events.find((event) => event.kind === 'tool_result').payload.result,
+      /# Integration fixture/,
+    ),
   );
   await writeFile(join(dir, 'sessions', id, 'workspace', 'edited.md'), '# draft plan\n');
   events = await turn('EDIT');
@@ -657,15 +665,18 @@ try {
     });
     await assert.rejects(() => stat(outsideWrite));
     events = await turn('BASH_ESCALATE');
-    check('sandbox escalation asks the user with a Chinese reason; a denial keeps the command blocked', () => {
-      const ask = events.find((event) => event.kind === 'approval_required');
-      assert.equal(ask?.payload.tool, 'bash');
-      assert.equal(
-        ask?.payload.reason,
-        '这条命令需要突破终端沙箱（不受沙箱限制，可读写服务器上的任意位置）。原因：需要把结果写到会话目录之外',
-      );
-      assert.equal(toolResult(events)?.isError, true);
-    });
+    check(
+      'sandbox escalation asks the user with a Chinese reason; a denial keeps the command blocked',
+      () => {
+        const ask = events.find((event) => event.kind === 'approval_required');
+        assert.equal(ask?.payload.tool, 'bash');
+        assert.equal(
+          ask?.payload.reason,
+          '这条命令需要突破终端沙箱（不受沙箱限制，可读写服务器上的任意位置）。原因：需要把结果写到会话目录之外',
+        );
+        assert.equal(toolResult(events)?.isError, true);
+      },
+    );
     await assert.rejects(() => stat(outsideWrite));
   } else console.log('SKIP sandbox write boundary: this host has no bwrap / Landlock');
   assert.ok(!(await kernel.files.listFiles(id)).some((file) => file.path === 'pwned.txt'));
@@ -807,13 +818,16 @@ try {
       assert.equal(events.at(-1)?.payload.status, 'error');
     });
     if (instruction === 'TRUNCATED')
-      check('a dropped stream is retried automatically; each retry first discards the unsettled live output', () => {
-        const resets = events.filter((event) => event.kind === 'live_reset');
-        const deltas = events.filter((event) => event.kind === 'message_delta');
-        assert.ok(resets.length >= 1);
-        // 每次重试前都先清掉上一次的片段：片段数 = 清空次数 + 1
-        assert.equal(deltas.length, resets.length + 1);
-      });
+      check(
+        'a dropped stream is retried automatically; each retry first discards the unsettled live output',
+        () => {
+          const resets = events.filter((event) => event.kind === 'live_reset');
+          const deltas = events.filter((event) => event.kind === 'message_delta');
+          assert.ok(resets.length >= 1);
+          // 每次重试前都先清掉上一次的片段：片段数 = 清空次数 + 1
+          assert.equal(deltas.length, resets.length + 1);
+        },
+      );
   }
   events = await turn('CUT_TOOL');
   check('tool call cut by the output cap ends softly: partial text kept, incomplete call never runs', () => {
@@ -907,8 +921,7 @@ try {
     const call = requests
       .at(-1)
       .messages.findLast(
-        (message) =>
-          message.role === 'assistant' && message.tool_calls?.[0]?.function.name === 'glob',
+        (message) => message.role === 'assistant' && message.tool_calls?.[0]?.function.name === 'glob',
       );
     assert.equal(call?.reasoning_content, '需要先列出文件。');
   });
@@ -935,6 +948,17 @@ try {
   const restored = await turn('AFTER_INTERRUPT');
   check('same Runner process can reopen dsh session log after interrupt', () =>
     assert.ok(restored.some((event) => event.kind === 'message')),
+  );
+  // An idle eviction releases memory but must leave the session address usable.
+  kernel.sessions.get(id).lastActive = 0;
+  await kernel.reap();
+  check('idle eviction keeps the session available without an explicit restore', () => {
+    assert.equal(kernel.has(id), true);
+    assert.equal(kernel.sessions.get(id).engine, null);
+  });
+  const afterIdle = await turn('AFTER_INTERRUPT');
+  check('a new turn resumes the conversation after idle eviction', () =>
+    assert.ok(afterIdle.some((event) => event.kind === 'message')),
   );
   await kernel.disposeSession(id);
   assert.equal(await kernel.files.readFile(id, 'report.md'), '# Integration fixture\n');

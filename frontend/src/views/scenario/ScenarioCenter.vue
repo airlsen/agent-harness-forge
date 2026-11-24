@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 import type { Rule } from 'ant-design-vue/es/form';
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
 import { usePlatform } from '../../stores/platform';
@@ -29,6 +29,7 @@ import SpaceTag from '../../components/space/SpaceTag.vue';
 import SpaceMark from '../../components/space/SpaceMark.vue';
 import MoveSpaceDialog from '../../components/space/MoveSpaceDialog.vue';
 import { PUBLIC_SPACE_ID, useSpace } from '../../stores/space';
+import { confirm } from '../../utils/common/feedback';
 
 const app = usePlatform();
 const chat = useConversation();
@@ -82,6 +83,10 @@ const blank = (): ScenarioPayload => ({
   execution_mode: 'standard',
 });
 const draft = reactive<ScenarioPayload>(blank());
+const initialDraft = ref('');
+const editorChanged = computed(
+  () => JSON.stringify(draft) !== initialDraft.value || Boolean(aiRequirement.value.trim()),
+);
 
 // antd 表单校验规则：场景名称与提示词必填，描述选填。
 const rules: Record<string, Rule[]> = {
@@ -281,6 +286,7 @@ function edit(scenario?: Scenario, sourceName = '') {
   basedOn.value = sourceName;
   Object.assign(draft, normalizePayload(scenario));
   resetAi();
+  initialDraft.value = JSON.stringify(draft);
   drawer.value = true;
   void loadPlugins();
   void loadCapabilityOptions();
@@ -382,13 +388,36 @@ function canPublish(scenario: Scenario) {
     scenario.tested
   );
 }
-function closeEditor() {
-  if (busy.value) return;
+async function closeEditor() {
+  if (busy.value || !drawer.value) return;
+  if (
+    editorChanged.value &&
+    !(await confirm({
+      title: '放弃未保存的场景修改？',
+      content: '当前编辑的内容尚未保存。',
+      okText: '放弃修改',
+      cancelText: '继续编辑',
+      danger: true,
+    }))
+  )
+    return;
   // 关闭后尚未返回的 AI 结果不再写入
   aiRun += 1;
   generating.value = null;
   drawer.value = false;
 }
+onBeforeRouteLeave(async () => {
+  if (!drawer.value) return true;
+  if (busy.value) return false;
+  if (!editorChanged.value) return true;
+  return confirm({
+    title: '离开并放弃场景修改？',
+    content: '当前编辑的内容尚未保存。',
+    okText: '放弃修改',
+    cancelText: '继续编辑',
+    danger: true,
+  });
+});
 function askDelete(scenario: Scenario) {
   toDelete.value = scenario;
   deleteOpen.value = true;
@@ -440,6 +469,7 @@ function createFromTemplate(scenario: Scenario) {
   detailOpen.value = false;
   edit(undefined, scenario.payload.name);
   Object.assign(draft, normalizePayload(scenario), { name: `${scenario.payload.name} · 副本` });
+  initialDraft.value = JSON.stringify(draft);
 }
 async function discard() {
   if (!toDelete.value || deleting.value) return;
@@ -457,8 +487,7 @@ async function discard() {
 }
 async function test(scenario: Scenario) {
   if (!app.connection?.configured) {
-    app.toast('请先配置真实模型，试运行不会使用假模型', 'info');
-    void router.push('/agent/models');
+    app.toast('尚无可用模型，请先在「模型连接」完成配置；当前页面已保留', 'info');
     return;
   }
   testing.value = scenario.id;
@@ -521,6 +550,15 @@ async function versions(scenario: Scenario) {
           <p v-else>编辑场景，试运行通过后发布。</p>
         </div>
       </div>
+      <a-alert
+        v-if="maintenance && !app.loading && !app.connection?.configured"
+        type="info"
+        show-icon
+        message="试运行需要可用模型"
+        description="场景可以继续编辑和保存；配置模型后再试运行。"
+      >
+        <template #action><RouterLink to="/agent/models">前往模型连接</RouterLink></template>
+      </a-alert>
       <div class="collection-toolbar enterprise-collection-toolbar scenario-collection-toolbar">
         <CatalogFilter v-model:value="filter" aria-label="场景筛选" :options="filterOptions" />
         <!-- 搜索与维护操作同在右侧，和能力管理页一致：维护场景/新建场景紧贴搜索框右边 -->

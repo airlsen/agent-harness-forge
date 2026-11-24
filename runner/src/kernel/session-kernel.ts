@@ -787,7 +787,13 @@ export class SessionKernel {
       warm.sort((a, b) => a.lastActive - b.lastActive);
       for (const entry of warm.slice(0, warm.length - MAX_WARM_SESSIONS)) victims.add(entry);
     }
-    for (const entry of victims) await this.disposeSession(entry.id);
+    for (const entry of victims) {
+      // Keep the session handle, selections and event listeners. The next turn
+      // can boot the engine again without forcing the control plane to restore it.
+      const engine = entry.engine;
+      entry.engine = null;
+      await engine?.dispose();
+    }
   }
   async dispose() {
     if (this.reaper) {

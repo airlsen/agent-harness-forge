@@ -183,10 +183,15 @@ export const WEB_SEARCH_KEY_ENV = 'FORGE_WEB_SEARCH_API_KEY';
  * 各包字段名不同：dsh-web-deepseek-api 自 0.2.2-rc.5 起按搜索 / 抓取分开配置（search 前缀）；
  * 写错字段名 dsh 不会报错而是静默忽略，由 contract-check 的「配置项」检查兜底。
  */
-const WEB_SEARCH_PLUGINS: Record<WebSearchProvider, { id: string; keyField: string; baseUrlField: string }> = {
-  'deepseek-official': { id: 'web-search-deepseek', keyField: 'apiKeyEnv', baseUrlField: 'baseURL' },
-  'deepseek-search-api': { id: 'web-deepseek-api', keyField: 'searchApiKeyEnv', baseUrlField: 'searchBaseURL' },
-};
+const WEB_SEARCH_PLUGINS: Record<WebSearchProvider, { id: string; keyField: string; baseUrlField: string }> =
+  {
+    'deepseek-official': { id: 'web-search-deepseek', keyField: 'apiKeyEnv', baseUrlField: 'baseURL' },
+    'deepseek-search-api': {
+      id: 'web-deepseek-api',
+      keyField: 'searchApiKeyEnv',
+      baseUrlField: 'searchBaseURL',
+    },
+  };
 const MCP_TOOL_TIMEOUT_MS = 60000;
 /** 单条终端命令的默认限时（与原持久终端一致）；开启后台任务时超时的命令转为后台任务继续运行 */
 const BASH_TIMEOUT_MS = 300000;
@@ -212,7 +217,7 @@ export function isDeepSeekModel(model: Pick<PlanModel, 'id' | 'baseUrl'>) {
   return /deepseek/i.test(model.id) || /deepseek/i.test(model.baseUrl);
 }
 
-/** 文件沙箱模式：只读 / 只能写会话工作区 / 不限制（服务器不支持沙箱时的降级） */
+/** 文件沙箱模式：只读 / 只能写会话工作区 / 不限制（类型保留供审批升级，绝不作为无沙箱降级） */
 export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
 
 /** Forge 自有插件（本仓库内的 dsh 插件包），按给定顺序挂载 */
@@ -358,7 +363,8 @@ function switchedRows(plan: RuntimePlan, groupTools: Record<string, readonly str
   if (write) on.present = { maxFiles: MAX_PRESENTED };
   // 后台运行与超时转后台都需要后台任务工具读取输出；没开放时超时直接结束命令
   if (has(ENGINE_TOOLS.shell)) on['tool-bash'] = { enableRunInBackground: jobs, promoteOnTimeout: jobs };
-  for (const group of groups) for (const id of GROUP_PLUGINS[group] ?? []) on[id as keyof typeof SDK_SWITCHED] = true;
+  for (const group of groups)
+    for (const id of GROUP_PLUGINS[group] ?? []) on[id as keyof typeof SDK_SWITCHED] = true;
   if (plan.skills) on.skill = on['tool-skill'] = true;
   if (web) {
     on.web = { ...(searchPlugin ? { searchProvider: web.provider } : {}), fetchProvider: 'http' };
@@ -447,7 +453,11 @@ function mcpRows(plan: RuntimePlan) {
 }
 
 /** contract-check 用：适配层直接引用的 dsh 包（sdk 内置插件的包名由 profile 决定，contract-check 从 profile 读取） */
-export const DSH_PACKAGES = ['@deepseek-ai/dsh', '@deepseek-ai/dsh-sdk-client', '@deepseek-ai/dsh-mcp-client'];
+export const DSH_PACKAGES = [
+  '@deepseek-ai/dsh',
+  '@deepseek-ai/dsh-sdk-client',
+  '@deepseek-ai/dsh-mcp-client',
+];
 /** contract-check 用：dsh 原生工具名 → 提供它的包 */
 export const ENGINE_TOOL_PROVIDERS: Record<string, string> = {
   glob: '@deepseek-ai/dsh-tool-fs-search',

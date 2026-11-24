@@ -114,7 +114,12 @@ try {
 
   await check('scenario system prompt is one literal section at the persona position', () => {
     assert.deepEqual(sections, [
-      { name: 'forge:system-prompt', order: 5, text: '场景提示词，保留 {{placeholder}} 原样', interpolate: false },
+      {
+        name: 'forge:system-prompt',
+        order: 5,
+        text: '场景提示词，保留 {{placeholder}} 原样',
+        interpolate: false,
+      },
     ]);
   });
   await check('workspace writes run directly; only non-whitelisted tools are denied', async () => {

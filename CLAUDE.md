@@ -24,7 +24,7 @@ Three independently-run processes:
 browser :5173 ── Vue SPA + same-origin /api (FastAPI)
                     │ internal Bearer token (never in browser)
                     ▼
-               Runner :9000  ── one dsh sdk-minimal child process per session
+               Runner :9000  ── one dsh sdk child process per active session
                     │
                     ▼
         forge-runtime plugin (model adapter / tools / gating)
@@ -91,7 +91,7 @@ Optional browser regressions (need `python3 -m playwright install --with-deps ch
 
 ### Request / execution flow
 
-The control plane (`backend/src/api`) is the only thing the browser talks to, same-origin. It authenticates the request, then calls the Runner over HTTP with an internal `Bearer FORGE_RUNNER_TOKEN` (`backend/src/api/services/runner_client.py`). The Runner (`runner/src/server.ts`) is a Fastify app that is **never exposed to the browser**; it spawns one `dsh sdk-minimal` subprocess per session via `DshProcess` (`runner/src/kernel/dsh-process.ts`), speaking newline-delimited JSON-RPC.
+The control plane (`backend/src/api`) is the only thing the browser talks to, same-origin. It authenticates the request, then calls the Runner over HTTP with an internal `Bearer FORGE_RUNNER_TOKEN` (`backend/src/api/services/runner_client.py`). The Runner (`runner/src/server.ts`) is a Fastify app that is **never exposed to the browser**. A Runner session boots the official `sdk` profile through `DshEngine` and `DeepSeekHarness` (`runner/src/kernel/dsh/engine.ts`); an empty conversation draft does not start a Runner session.
 
 ### Bundle vs. SessionManifest (scenario → execution contract)
 
@@ -103,7 +103,7 @@ The Runner never sees the Bundle. `runner_client` sends its projection, the vers
 
 ### Session kernel + DSH adapter
 
-`runner/src/kernel/session-kernel.ts` (`SessionKernel`) owns sessions, turns, the event journal, approvals and capacity; it is engine-agnostic and only builds a `RuntimePlan`. **Everything dsh-specific lives in `runner/src/kernel/dsh/`**: `process.ts` (newline JSON-RPC child process), `protocol.ts` (dsh notifications → Forge events, `SDK_METHODS`), `runtime-config.ts` (`RuntimePlan` → dsh runtime patch on top of dsh's official `sdk` profile; every sdk builtin plugin is classified in exactly one of `SDK_KEPT` / `SDK_SWITCHED` (toggled per session capability — an unselected capability disables the whole plugin, never just hides its tool, so no stray prompt text) / `SDK_OFF`; plus `DSH_PACKAGES`, `ENGINE_TOOL_PROVIDERS`) and `engine.ts` (`DshEngine`), plus `engine-tools.js` — dsh native tool names and the shape of their path arguments, written in plain JS so the kernel (via `engine-tools.d.ts`) and the forge-runtime plugin share one copy. A dsh protocol or packaging change should only touch that directory; a change to the dsh *plugin API* also touches the Forge plugins. `npm run contract` (`scripts/contract-check.mjs`) derives its expectations from those declarations and asserts the dsh extension points still exist, that every plugin of the expanded `sdk` profile is classified (an unclassified new plugin fails the check) and that every config key we write is still recognised — run it before/after any dsh upgrade.
+`runner/src/kernel/session-kernel.ts` (`SessionKernel`) owns sessions, turns, the event journal, approvals and capacity; it is engine-agnostic and only builds a `RuntimePlan`. **Everything dsh-specific lives in `runner/src/kernel/dsh/`**: `protocol.ts` (dsh notifications → Forge events, `SDK_METHODS`), `runtime-config.ts` (`RuntimePlan` → dsh runtime patch on top of dsh's official `sdk` profile; every sdk builtin plugin is classified in exactly one of `SDK_KEPT` / `SDK_SWITCHED` (toggled per session capability — an unselected capability disables the whole plugin, never just hides its tool, so no stray prompt text) / `SDK_OFF`; plus `DSH_PACKAGES`, `ENGINE_TOOL_PROVIDERS`) and `engine.ts` (`DshEngine`, `DeepSeekHarness.run()` and session resume), plus `engine-tools.js` — dsh native tool names and the shape of their path arguments, written in plain JS so the kernel (via `engine-tools.d.ts`) and the forge-runtime plugin share one copy. A dsh protocol or packaging change should only touch that directory; a change to the dsh *plugin API* also touches the Forge plugins. `npm run contract` (`scripts/contract-check.mjs`) derives its expectations from those declarations and asserts the dsh extension points still exist, that every plugin of the expanded `sdk` profile is classified (an unclassified new plugin fails the check) and that every config key we write is still recognised — run it before/after any dsh upgrade.
 
 ### Forge plugins
 
@@ -112,13 +112,13 @@ Forge's own dsh plugins are registered in one place, `runner/src/kernel/forge-pl
 The model exit is dsh's own `dsh-llm-pi-ai` (OpenAI-compatible `openai-completions`): `modelRow()` in `runtime-config.ts` writes one route `providers.forge` with one model (base URL, context window, output cap, timeout, `X-Title`, and `compat` — `max_tokens`, no `store`/developer role; DeepSeek models also get the DeepSeek thinking format and `reasoning_content` replay). The API key is passed only as the child env var `FORGE_MODEL_API_KEY` (`apiKeyEnv`; a fixed placeholder when the model has no key), never written into the patch; dsh scrubs `*KEY*` vars from stdio MCP, and `check-capabilities` asserts bash/MCP cannot see it. A failed turn (`turn/end` reason `error`) becomes a Chinese message via `turnFailure()` in `protocol.ts`, with the key masked by `redact()`; `max-tokens` keeps the partial reply (soft end). dsh retries transient failures itself; each retry re-streams, so forge-runtime emits `forge.live_reset` (transient `live_reset`) first and the backend `LiveHub`, the partial accumulators, the workbench and the Skill editor drop the unsettled live text.
 
 `runner/internal-plugins/forge-runtime/` (`inject: ['tools','approval','systemPrompt']`) is loaded into every dsh process. File, delivery, shell and time tools all come from dsh's `sdk` plugins (`read`/`write`/`edit` from `dsh-tool-fs`, `present`, `bash` from `dsh-tool-bash`, time as context); forge-runtime only adds the platform layer. `index.js` only composes:
-- `live-stream.js` — relays dsh's in-process `agent/assistant-stream` text/reasoning chunks as `forge.delta` / `forge.reasoning_delta` (the JSON-RPC server does not forward them), and `forge.live_reset` before a retried attempt;
+- `live-stream.js` — relays dsh's in-process `agent/assistant-stream` text/reasoning chunks as `forge.delta` / `forge.reasoning_delta`, and `forge.live_reset` before a retried attempt;
 - the scenario system prompt, injected as one `interpolate:false` section at the persona position (dsh would otherwise treat `{{name}}` in scenario text as variables);
 - `workspace-bridge.js` — quotas from `limits.js` for `write`/`edit` (serialized), `forge.artifact` after each write/edit, `forge.present` (workspace-relative paths) after `present`;
 - an optional sandbox probe (`forge.sandbox`) — see below;
 - `policy-hooks.js` — `restrict` + allowlist `guard`, path narrowing for dsh `glob/grep/read` (workspace + read-only roots) and `write/edit/present` (workspace only, no hidden paths/symlinks, depth ≤ 16) via `path-guard.js` driven by `PATH_TOOLS`, secret filtering of search results, `bash` gating and output sanitizing (`bash-rules.js`), and per-call `ask` for admin-flagged MCP tools.
 
-The `bash` tool itself is dsh's one-shot `dsh-tool-bash` (each call is a fresh `bash -c`; `cd` does not persist, use the `workdir` argument) running inside dsh's sandbox (`sandbox-policy` mode: `workspace-write` when the session may write, else `read-only`; bwrap → Landlock → fail closed; escalation goes through the approval card with the model's `justification`). On the first session boot the Runner asks forge-runtime to probe the sandbox; if the host has neither bwrap nor Landlock, every later session uses `danger-full-access` so `bash` keeps working (Forge's deny-list and write path guard still apply) and `/v1/runtime` reports `sandbox.status: unavailable`.
+The `bash` tool itself is dsh's one-shot `dsh-tool-bash` (each call is a fresh `bash -c`; `cd` does not persist, use the `workdir` argument) running inside dsh's sandbox (`sandbox-policy` mode: `workspace-write` when the session may write, else `read-only`; bwrap → Landlock → fail closed; escalation goes through the approval card with the model's `justification`). On the first session boot the Runner asks forge-runtime to probe the sandbox; if the host has neither bwrap nor Landlock, sessions that require `bash` are rejected with 503, and `/v1/runtime` reports `sandbox.status: unavailable`. Never restore the old `danger-full-access` fallback.
 
 The historical M0 POC (fake model + `forge_probe` security probe, `scripts/poc.mjs`) has been removed; it is in git history up to commit `1ca7e8e`, and `docs/05` keeps its report.
 
@@ -146,9 +146,9 @@ Single admin account; scrypt-hashed password + HMAC-signed cookie `forge_session
 
 ## Constraints & gotchas
 
-- **No shell / network tools.** Only the four workspace tools are whitelisted. `Runner :9000` must stay internal.
+- **Shell and network tools are governed by scenario capabilities and policy.** Terminal execution requires an enforced sandbox; no sandbox means terminal sessions are rejected. `Runner :9000` must stay internal.
 - **No fork, no replay-as-execution.** There is no fork API. After a Runner restart a session is re-assembled from its snapshot and continues from the engine's on-disk session log (`/restore`); 404/410 mean the log is missing/unrecoverable and a new session is required.
 - **Real models only.** With no model configured, sessions fail with "模型未配置" rather than falling back to a fake.
 - **Immutable snapshots.** Policy/model/price changes affect only new sessions; existing sessions keep their `bundle_snapshot`.
-- **Node >= 24.9 for the Runner.** dsh's `bin.js` self-starts via `import.meta.main`, so the old `dsh-launch.mjs` wrapper is gone; `dsh/process.ts` spawns `bin.js` directly.
+- **Node >= 24.9 for the Runner.** The Runner uses the official `@deepseek-ai/dsh-sdk-client` and `DeepSeekHarness.run()`; do not restore the old child-process wrapper.
 - **Deliberately unimplemented** (do not silently add or fake these): real employee identity/OIDC, enterprise RBAC, per-employee session isolation, Skill/MCP/project/knowledge mounting into execution, AI Creative scenario generation, structured input forms, native fork, container-grade isolation, Redis/S3/WORM/SIEM.

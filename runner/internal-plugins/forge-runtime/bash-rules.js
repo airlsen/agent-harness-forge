@@ -26,7 +26,9 @@ export function sanitizeShellValue(value, depth = 0) {
   if (typeof value === 'string') return sanitizeGitOutput(value.replace(SANDBOX_NOTICE, ''));
   if (depth > 4 || !value || typeof value !== 'object') return value;
   if (Array.isArray(value)) return value.map((item) => sanitizeShellValue(item, depth + 1));
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, sanitizeShellValue(item, depth + 1)]));
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, sanitizeShellValue(item, depth + 1)]),
+  );
 }
 
 /** 命令起始位置：行首，或 ; & | ( 换行、$( 、反引号之后 */

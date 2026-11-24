@@ -111,7 +111,9 @@ const BASE_TOOLS = ['read', 'write', 'bash'];
 const canonicalList = (names: string[]) => names.map(canonicalToolName).filter(Boolean);
 const selectedTools = computed(() => {
   const declared = canonicalList(
-    chat.current?.bundle?.meta?.builtin_tools ?? selected.value?.payload.capabilities.builtin_tool_names ?? [],
+    chat.current?.bundle?.meta?.builtin_tools ??
+      selected.value?.payload.capabilities.builtin_tool_names ??
+      [],
   );
   const rawCeiling = chat.current?.bundle?.meta?.policy?.allowedTools;
   const ceiling = Array.isArray(rawCeiling) ? canonicalList(rawCeiling) : null;

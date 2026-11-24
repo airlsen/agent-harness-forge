@@ -498,8 +498,7 @@ export const useConversation = defineStore('conversation', {
       const switchTo = this.current ? this.sessionModel(this.selectedModelId) : null;
       const turnModelId = this.current && switchTo !== this.current.modelId ? switchTo : null;
       const modelId = this.current ? null : this.availableModel(this.selectedModelId);
-      if (!this.current && modelId === null)
-        throw new Error('没有可用的模型，请由管理员在「模型管理」启用模型');
+      if (!this.current && modelId === null) throw new Error('没有可用的模型，请在「模型连接」启用模型');
       const message = [
         this.input.trim(),
         ...this.draftAttachments.map((file) => `\n附件：${file.name}\n\`\`\`text\n${file.content}\n\`\`\``),

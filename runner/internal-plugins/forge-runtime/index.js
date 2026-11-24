@@ -43,7 +43,10 @@ function registerSystemPrompt(ctx, text) {
 function probeSandbox(ctx, root) {
   return ctx.inject(['sandbox'], async (scope) => {
     try {
-      const confined = await scope.sandbox.confine(['true'], { mode: 'workspace-write', workspaceRoot: root });
+      const confined = await scope.sandbox.confine(['true'], {
+        mode: 'workspace-write',
+        workspaceRoot: root,
+      });
       notify('forge.sandbox', { available: true, enforcement: confined?.enforcement ?? 'full' });
     } catch (error) {
       notify('forge.sandbox', { available: false, reason: error?.code ?? error?.message ?? 'unknown' });

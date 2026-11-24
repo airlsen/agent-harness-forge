@@ -16,7 +16,14 @@ import {
   translateNotification,
   type ApprovalOutcome,
 } from './protocol.js';
-import { MODEL_KEY_ENV, MODEL_KEY_PLACEHOLDER, MODEL_ROUTE, WEB_SEARCH_KEY_ENV, buildRuntimePatch, type RuntimePlan } from './runtime-config.js';
+import {
+  MODEL_KEY_ENV,
+  MODEL_KEY_PLACEHOLDER,
+  MODEL_ROUTE,
+  WEB_SEARCH_KEY_ENV,
+  buildRuntimePatch,
+  type RuntimePlan,
+} from './runtime-config.js';
 
 export interface ApprovalRequest {
   tool: string;
@@ -134,7 +141,8 @@ export class DshEngine {
     try {
       await withTimeout(harness.start(), 30000);
       if (opts.resume) await withTimeout(harness.resumeSession(opts.sessionId), 15000);
-      if (opts.probeSandbox) engine.sandbox = await withTimeout(probe, SANDBOX_PROBE_MS).catch(() => undefined);
+      if (opts.probeSandbox)
+        engine.sandbox = await withTimeout(probe, SANDBOX_PROBE_MS).catch(() => undefined);
     } catch (error) {
       await engine.dispose();
       throw error;
@@ -147,13 +155,19 @@ export class DshEngine {
    * accepted 在消息被引擎接收（已写入会话日志）后调用。
    */
   async prompt(sessionId: string, text: string, waitMs: number, accepted?: () => void) {
-    await withTimeout(this.harness.run(text, {
-      sessionId,
-      onNotification: ({ method, params }) => {
-        if (method === 'session.event' && (params.event as { type?: string } | undefined)?.type === 'agent/inbox/spliced')
-          accepted?.();
-      },
-    }), waitMs);
+    await withTimeout(
+      this.harness.run(text, {
+        sessionId,
+        onNotification: ({ method, params }) => {
+          if (
+            method === 'session.event' &&
+            (params.event as { type?: string } | undefined)?.type === 'agent/inbox/spliced'
+          )
+            accepted?.();
+        },
+      }),
+      waitMs,
+    );
   }
 
   /** 中止即关闭进程：dsh 没有原生中断 RPC，下一轮从会话日志接续 */

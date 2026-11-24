@@ -1102,6 +1102,11 @@ textarea:focus-visible {
 .task-composer #task-input::placeholder {
   color: var(--text-secondary);
 }
+.task-composer .composer-queued-hint {
+  margin: -8px 4px 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
 /* One continuous toolbar: controls scroll as a group on narrow screens, while
    the primary action remains anchored on the right. Popups render in portals. */
 .task-composer-toolbar {

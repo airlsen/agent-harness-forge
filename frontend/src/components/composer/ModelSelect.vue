@@ -26,7 +26,7 @@ const label = computed(() => {
   return selected.value?.name ?? '选择模型';
 });
 const title = computed(() => {
-  if (!app.modelOptions.length) return '尚无可用模型，请由管理员在「模型管理」启用';
+  if (!app.modelOptions.length) return '尚无可用模型，请在「模型连接」启用';
   const current = selected.value
     ? `${selected.value.name} · ${selected.value.model}`
     : '选择本次对话使用的模型';

@@ -19,7 +19,13 @@ export const HOST_REQUEST = {
 /** dsh → Runner 的会话日志通知 */
 export const SESSION_EVENT = 'session.event';
 /** contract-check 用：高级 run API 与恢复会话所依赖的协议消息 */
-export const SDK_METHODS = ['initialize', 'session/query', 'session/resume', ...Object.values(HOST_REQUEST), SESSION_EVENT];
+export const SDK_METHODS = [
+  'initialize',
+  'session/query',
+  'session/resume',
+  ...Object.values(HOST_REQUEST),
+  SESSION_EVENT,
+];
 
 /** 审批结论（Forge 侧）→ dsh 审批回复 */
 export type ApprovalOutcome = 'approve' | 'deny' | 'timeout' | 'cancelled';
@@ -52,7 +58,8 @@ export function approvalReason(reason: unknown): string | undefined {
 /**
  * 翻译结果：普通事件，或「本轮失败」。失败只记第一次（例如中止后 dsh 报告的 aborted 不覆盖用户中止）。
  */
-export type Translated = { kind: string; payload: unknown; source: KernelEvent['source'] } | { failure: string };
+export type Translated =
+  { kind: string; payload: unknown; source: KernelEvent['source'] } | { failure: string };
 
 /** 错误信息里回显的密钥替换掉（模型网关的报错可能原样带回请求里的凭据） */
 export function redact(message: string, secret?: string) {
@@ -65,7 +72,11 @@ const unknownWarned = new Set<string>();
  * Forge 自有插件经 dsh 通知通道上报的事件：登记表在 internal-plugins/shared/events.js（插件与这里共用）。
  * 未登记的 `forge.*` 不再静默丢弃，而是在 Runner 日志里告警一次。
  */
-function translatePluginEvent(method: string, params: any, calls: Map<string, any>): Translated[] | undefined {
+function translatePluginEvent(
+  method: string,
+  params: any,
+  calls: Map<string, any>,
+): Translated[] | undefined {
   const spec = Object.hasOwn(FORGE_EVENTS, method) ? FORGE_EVENTS[method] : undefined;
   if (!spec) {
     if (!method.startsWith(FORGE_EVENT_PREFIX)) return undefined;
@@ -101,7 +112,9 @@ const FAILED_TURN: Record<string, string> = {
  * 只有鉴权失败才提示检查凭据；分类不认识的错误原样返回。
  */
 export function turnFailure(error: any): string {
-  const raw = String(error?.message ?? '').replace(/\s+/g, ' ').trim();
+  const raw = String(error?.message ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const code = String(error?.code ?? '');
   const status = /^([45]\d\d)\b/.exec(raw)?.[1];
   const detail = (status ? raw.slice(status.length) : raw).replace(/^[\s:：-]+/, '').slice(0, 300);
