@@ -448,7 +448,7 @@ const bindInteractivity = () => {
       const code = pre?.getAttribute('data-code') || pre?.textContent || '';
       if (!code) return;
       try {
-        await copyText(code);
+        if (!(await copyText(code))) return;
         const copyIcon = btn.querySelector<HTMLElement>('.copy-icon');
         const checkIcon = btn.querySelector<HTMLElement>('.check-icon');
         const txt = btn.querySelector<HTMLElement>('.md-btn-text');

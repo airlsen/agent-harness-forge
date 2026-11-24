@@ -48,6 +48,7 @@ function select(id: number) {
 // —— 基础工具开关 ——
 const tools = ref<Tool[]>([]);
 const toolsLoading = ref(false);
+const toolsError = ref('');
 const toolBusy = ref<string | null>(null);
 let toolGeneration = 0;
 async function loadTools() {
@@ -55,11 +56,13 @@ async function loadTools() {
   if (!space) return;
   const generation = ++toolGeneration;
   toolsLoading.value = true;
+  tools.value = [];
+  toolsError.value = '';
   try {
     const result = await api<{ items: Tool[] }>(`/spaces/${space.id}/tools`);
     if (generation === toolGeneration) tools.value = result.items;
   } catch (error) {
-    if (generation === toolGeneration) notify('error', (error as Error).message);
+    if (generation === toolGeneration) toolsError.value = (error as Error).message;
   } finally {
     if (generation === toolGeneration) toolsLoading.value = false;
   }
@@ -67,7 +70,7 @@ async function loadTools() {
 const enabledCount = computed(() => tools.value.filter((tool) => tool.available).length);
 async function toggleTool(tool: Tool, enabled: boolean) {
   const space = selected.value;
-  if (!space || toolBusy.value) return;
+  if (!space || toolBusy.value || toolsLoading.value) return;
   if (!enabled) {
     // 关闭前提示：本空间里哪些场景在用它
     toolBusy.value = tool.name;
@@ -95,13 +98,11 @@ async function toggleTool(tool: Tool, enabled: boolean) {
       toolBusy.value = null;
     }
   }
+  if (selected.value?.id !== space.id) return;
   toolBusy.value = tool.name;
   try {
-    const result = await put<{ items: Tool[] }>(
-      `/spaces/${space.id}/tools/${encodeURIComponent(tool.name)}`,
-      { enabled },
-    );
-    tools.value = result.items;
+    await put<{ items: Tool[] }>(`/spaces/${space.id}/tools/${encodeURIComponent(tool.name)}`, { enabled });
+    if (selected.value?.id === space.id) void loadTools();
     notify('success', `${tool.title}已在「${space.name}」${enabled ? '开启' : '关闭'}`);
     await store.load().catch(() => {});
     if (space.id === store.currentId) await platform.refreshTools().catch(() => {});
@@ -342,6 +343,15 @@ onMounted(async () => {
             <div v-if="toolsLoading && !tools.length" class="loading-inline" role="status">
               <a-spin size="small" />正在读取工具…
             </div>
+            <a-alert
+              v-else-if="toolsError"
+              type="error"
+              show-icon
+              message="未能读取工具"
+              :description="toolsError"
+            >
+              <template #action><a-button size="small" @click="loadTools">重试</a-button></template>
+            </a-alert>
             <ul v-else class="space-tool-list">
               <li v-for="tool in tools" :key="tool.name" :class="{ off: !tool.available }">
                 <span class="tool-checkbox-icon"><Icon :name="tool.icon" :size="18" /></span>

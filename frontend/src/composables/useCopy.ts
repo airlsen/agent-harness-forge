@@ -1,4 +1,5 @@
 import { ref } from 'vue';
+import { notify } from '../utils/common/feedback';
 
 /** 复制到剪贴板并给出 1.5s 的「已复制」反馈 */
 export function useCopy() {
@@ -10,8 +11,11 @@ export function useCopy() {
       copied.value = true;
       window.clearTimeout(timer);
       timer = window.setTimeout(() => (copied.value = false), 1500);
+      return true;
     } catch {
-      /* 剪贴板不可用时静默 */
+      copied.value = false;
+      notify('error', '复制失败，请检查浏览器剪贴板权限后重试');
+      return false;
     }
   }
   return { copied, copy };

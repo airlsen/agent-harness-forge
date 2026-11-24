@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { onBeforeRouteLeave } from 'vue-router';
 import type { Rule } from 'ant-design-vue/es/form';
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
 import { api, post, put, remove } from '../../api/client';
@@ -36,6 +37,11 @@ const form = reactive({
 });
 // 点击查看后取回的已保存密钥；保存时未改动就不重新提交。
 const revealedKey = ref('');
+const initialForm = ref('');
+function formSnapshot() {
+  return JSON.stringify({ ...form, apiKey: form.apiKey === revealedKey.value ? '' : form.apiKey });
+}
+const dirty = computed(() => editorOpen.value && formSnapshot() !== initialForm.value);
 
 // antd 表单校验规则：等价于原原生 HTML5 校验（必填、URL、数值范围），并提供字段级错误提示。
 const rules: Record<string, Rule[]> = {
@@ -94,14 +100,41 @@ function resetForm(model?: ModelConnection) {
   form.contextWindow = model?.contextWindow ?? 64000;
   form.inputPrice = model?.inputPrice ?? null;
   form.outputPrice = model?.outputPrice ?? null;
+  initialForm.value = formSnapshot();
 }
 function openEditor(model?: ModelConnection) {
   resetForm(model);
   editorOpen.value = true;
 }
-function closeEditor() {
-  if (!saving.value) editorOpen.value = false;
+async function canLeaveEditor() {
+  if (saving.value) {
+    app.toast('请等待模型保存完成', 'info');
+    return false;
+  }
+  if (!dirty.value) return true;
+  return confirm({
+    title: '模型配置有未保存的修改',
+    content: '离开后这些修改将丢失。',
+    okText: '放弃修改',
+    cancelText: '继续编辑',
+    danger: true,
+  });
 }
+async function closeEditor() {
+  if (await canLeaveEditor()) {
+    editorOpen.value = false;
+    form.apiKey = '';
+    revealedKey.value = '';
+  }
+}
+onBeforeRouteLeave(() => canLeaveEditor());
+function protectEditor(event: BeforeUnloadEvent) {
+  if (!dirty.value && !saving.value) return;
+  event.preventDefault();
+  event.returnValue = '';
+}
+onMounted(() => window.addEventListener('beforeunload', protectEditor));
+onBeforeUnmount(() => window.removeEventListener('beforeunload', protectEditor));
 function endpointHost(baseUrl: string) {
   try {
     return new URL(baseUrl).host;
@@ -173,9 +206,15 @@ async function save() {
     };
     if (editing.value?.id) await put(`/models/${editing.value.id}`, payload);
     else await post('/models', payload);
-    await Promise.all([load(), app.refreshRuntime()]);
     app.toast(editing.value ? '模型配置已保存' : '模型已添加。');
     editorOpen.value = false;
+    form.apiKey = '';
+    revealedKey.value = '';
+    try {
+      await Promise.all([load(), app.refreshRuntime()]);
+    } catch {
+      app.toast('模型已保存，但状态刷新失败；请刷新页面', 'info');
+    }
   } catch (error) {
     app.toast((error as Error).message, 'error');
   } finally {
@@ -437,6 +476,7 @@ onMounted(load);
       id="model-editor-form"
       :model="form"
       :rules="rules"
+      :disabled="saving"
       layout="vertical"
       class="model-editor-form"
       @finish="save"

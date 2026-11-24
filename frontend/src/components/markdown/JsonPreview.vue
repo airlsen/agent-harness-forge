@@ -82,9 +82,10 @@ const copyJson = async () => {
 };
 const copyNode = async (path: string, value: unknown) => {
   try {
-    await copy(JSON.stringify(value, null, 2));
-    copiedPath.value = path;
-    setTimeout(() => (copiedPath.value = ''), 1400);
+    if (await copy(JSON.stringify(value, null, 2))) {
+      copiedPath.value = path;
+      setTimeout(() => (copiedPath.value = ''), 1400);
+    }
   } catch {
     // ignore
   }

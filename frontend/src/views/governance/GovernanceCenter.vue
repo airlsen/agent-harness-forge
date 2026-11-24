@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import type { Rule } from 'ant-design-vue/es/form';
 import { api, post, put } from '../../api/client';
 import { formatBytes } from '../../utils/common/format';
+import { confirm } from '../../utils/common/feedback';
 import { usePlatform } from '../../stores/platform';
 import type { Tool, WebSearchSettings } from '../../types/platform';
 import Icon from '../../components/base/ForgeIcon.vue';
@@ -10,6 +11,7 @@ import SecretInput from '../../components/base/SecretInput.vue';
 const app = usePlatform(),
   saving = ref(false),
   loaded = ref(false);
+const policyError = ref('');
 const policy = reactive({
   allowedTools: [] as string[],
   allowedPluginTools: ['*'] as string[],
@@ -85,8 +87,17 @@ async function loadStorage() {
   }
 }
 async function cleanup() {
+  if (cleaning.value) return;
   cleaning.value = true;
   try {
+    const confirmed = await confirm({
+      title: '立即清理过期会话文件？',
+      content: '清理会永久删除超过保留期限的文件，无法撤销。会话消息和审计记录不受影响。',
+      okText: '清理文件',
+      cancelText: '取消',
+      danger: true,
+    });
+    if (!confirmed) return;
     const result = await post<NonNullable<StorageStats['lastCleanup']>>('/governance/storage/cleanup', {});
     const parts = [];
     if (result.purgedSessions || result.freedBytes)
@@ -229,18 +240,21 @@ const KEY_SOURCE: Record<WebSearchSettings['keySource'], string> = {
 function cleanupTime(value: string) {
   return new Date(value).toLocaleString('zh-CN', { hour12: false });
 }
-onMounted(async () => {
+async function loadPolicy() {
+  policyError.value = '';
   try {
     Object.assign(policy, await api('/governance/policies'));
-    void loadStorage();
-    void loadWeb();
-    void loadCodeRoot();
-    await app.refreshRuntime();
-  } catch (e) {
-    app.toast((e as Error).message, 'error');
-  } finally {
     loaded.value = true;
+  } catch (e) {
+    policyError.value = (e as Error).message;
   }
+}
+onMounted(() => {
+  void loadPolicy();
+  void loadStorage();
+  void loadWeb();
+  void loadCodeRoot();
+  void app.refreshRuntime().catch((e) => app.toast((e as Error).message, 'error'));
 });
 async function save() {
   saving.value = true;
@@ -270,6 +284,15 @@ async function save() {
           >工具与执行限额只影响<b>新建会话</b>，已开始的会话继续使用启动时锁定的场景与策略快照；文件保留期限对所有会话即时生效。</span
         >
       </div>
+      <a-alert
+        v-if="policyError"
+        type="error"
+        show-icon
+        message="未能读取执行策略，暂不能保存"
+        :description="policyError"
+      >
+        <template #action><a-button size="small" @click="loadPolicy">重试</a-button></template>
+      </a-alert>
       <div class="settings-layout">
         <a-form
           v-if="loaded"

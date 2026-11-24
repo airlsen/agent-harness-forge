@@ -171,42 +171,45 @@ try {
     // 消息流里不再渲染模型切换分隔条
     assert.equal('switch' in turns[1], false);
   });
-  check('present 结果成为本轮交付物（旧会话的 workspace_present 同样识别）；失败调用与其他轮不受影响，同路径以后声明为准', () => {
-    const present = (id, callId, files, isError = false, name = 'present') => ({
-      id,
-      role: 'tool',
-      content: isError ? '文件不存在' : JSON.stringify({ files }),
-      meta: { toolCallId: callId, tool: name, arguments: { files }, isError },
-    });
-    const turns = buildTurns(
-      [
-        user(1),
-        present(2, 'p1', [{ path: 'report.md', bytes: 10 }]),
-        present(3, 'p2', [{ path: 'missing.md', bytes: 0 }], true),
-        present(
-          4,
-          'p3',
-          [
-            { path: 'chart.png', bytes: 20 },
-            { path: 'report.md', bytes: 12, description: '终版' },
-          ],
-          false,
-          'workspace_present',
-        ),
-        assistant(5, '已完成'),
-        user(6),
-        assistant(7, '无文件'),
-      ],
-      idle,
-    );
-    assert.deepEqual(turns[0].deliverables, [
-      { path: 'report.md', bytes: 12, description: '终版' },
-      { path: 'chart.png', bytes: 20 },
-    ]);
-    assert.deepEqual(turns[1].deliverables, []);
-    // 交付声明仍作为一次工具调用保留在过程步骤里
-    assert.equal(turns[0].steps[0].calls.length, 3);
-  });
+  check(
+    'present 结果成为本轮交付物（旧会话的 workspace_present 同样识别）；失败调用与其他轮不受影响，同路径以后声明为准',
+    () => {
+      const present = (id, callId, files, isError = false, name = 'present') => ({
+        id,
+        role: 'tool',
+        content: isError ? '文件不存在' : JSON.stringify({ files }),
+        meta: { toolCallId: callId, tool: name, arguments: { files }, isError },
+      });
+      const turns = buildTurns(
+        [
+          user(1),
+          present(2, 'p1', [{ path: 'report.md', bytes: 10 }]),
+          present(3, 'p2', [{ path: 'missing.md', bytes: 0 }], true),
+          present(
+            4,
+            'p3',
+            [
+              { path: 'chart.png', bytes: 20 },
+              { path: 'report.md', bytes: 12, description: '终版' },
+            ],
+            false,
+            'workspace_present',
+          ),
+          assistant(5, '已完成'),
+          user(6),
+          assistant(7, '无文件'),
+        ],
+        idle,
+      );
+      assert.deepEqual(turns[0].deliverables, [
+        { path: 'report.md', bytes: 12, description: '终版' },
+        { path: 'chart.png', bytes: 20 },
+      ]);
+      assert.deepEqual(turns[1].deliverables, []);
+      // 交付声明仍作为一次工具调用保留在过程步骤里
+      assert.equal(turns[0].steps[0].calls.length, 3);
+    },
+  );
 
   check('多次模型请求的思考、工具与中间说明合成一个过程块，最终回答单独显示', () => {
     // 截图场景：思考 → 说明 → 列文件 → 思考 → 写入 → 思考 → 写入 → 思考 → 最终回答
