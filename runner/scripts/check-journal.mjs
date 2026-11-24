@@ -11,7 +11,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const { EventJournal } = await import('../src/kernel/journal.ts');
-const { translateNotification, approvalReply, SESSION_EVENT } = await import('../src/kernel/dsh/protocol.ts');
+const { translateNotification, approvalReply, turnFailure, redact, SESSION_EVENT } = await import(
+  '../src/kernel/dsh/protocol.ts'
+);
 
 const dir = await mkdtemp(join(tmpdir(), 'forge-journal-'));
 let passed = 0;
@@ -119,14 +121,24 @@ try {
     assert.deepEqual(phase('compaction/end'), { phase: 'end' });
     assert.deepEqual(phase('compaction/end', { error: 'boom' }), { phase: 'failed' });
   });
-  check('plugin notifications map to Forge events; gateway errors are explicit failures', () => {
+  check('plugin notifications map to Forge events; unknown methods are ignored', () => {
     assert.deepEqual(translateNotification('forge.delta', { text: 'x' }, calls), [
       { kind: 'message_delta', payload: { text: 'x' }, source: 'llm' },
     ]);
-    assert.deepEqual(translateNotification('forge.error', { message: 'bad' }, calls), [
-      { failure: 'bad', explicit: true },
-    ]);
     assert.deepEqual(translateNotification('unknown.method', {}, calls), []);
+  });
+  check('model failures become Chinese guidance; unknown errors pass through; echoed keys are masked', () => {
+    assert.equal(
+      turnFailure({ message: '403 forbidden', code: 'AUTH' }),
+      '模型网关拒绝访问（HTTP 403），请检查模型中心的凭据：forbidden',
+    );
+    assert.match(turnFailure({ message: '404 model not found', code: 'PI_AI_ERROR' }), /HTTP 404，请检查模型中心的地址和模型名/);
+    assert.match(turnFailure({ message: '502 bad gateway', code: 'SERVER' }), /^模型网关 HTTP 502：bad gateway$/);
+    assert.match(turnFailure({ message: 'Provider finish_reason: content_filter', code: 'PI_AI_ERROR' }), /被拦截/);
+    assert.match(turnFailure({ message: 'pi-ai stream idle timeout after 300000ms', code: 'TIMEOUT' }), /超时/);
+    assert.match(turnFailure({ message: 'too long', code: 'CONTEXT_WINDOW_EXCEEDED' }), /超出了模型能处理的长度/);
+    assert.equal(turnFailure({ message: 'something else' }), 'something else');
+    assert.equal(redact('401 bad key sk-123', 'sk-123'), '401 bad key ***');
   });
   check('approval outcomes map to dsh replies', () => {
     assert.deepEqual(approvalReply('approve'), { outcome: 'allowed-once' });

@@ -12,7 +12,8 @@
 export const FORGE_EVENTS = Object.freeze({
   'forge.delta': { kind: 'message_delta', source: 'llm' },
   'forge.reasoning_delta': { kind: 'reasoning_delta', source: 'llm' },
-  'forge.error': { kind: 'failure', source: 'llm' },
+  // 模型请求失败后自动重试：丢弃上一次尝试已推送、但没有结算的正文与思考
+  'forge.live_reset': { kind: 'live_reset', source: 'llm' },
   'forge.artifact': { kind: 'files', source: 'tools' },
   'forge.present': { kind: 'deliverables', source: 'tools' },
   // 终端沙箱探测结果：只在 DSH 适配层内部使用（决定是否降级），不进入会话事件

@@ -1272,6 +1272,8 @@ async def run_authoring_turn(skill_id: int, session_id: int, message: str, model
                     "path": path,
                 }
                 revisions.append(event["payload"])
+            elif kind == "live_reset":
+                partial_text, partial_reasoning = "", ""
             elif kind == "message_delta":
                 partial_text += str(payload.get("text") or "")
             elif kind == "reasoning_delta":

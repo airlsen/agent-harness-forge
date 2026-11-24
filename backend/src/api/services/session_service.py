@@ -802,7 +802,10 @@ class SessionService:
                 if kind in TRANSIENT_KINDS:
                     # 流式片段只累计（中断时保留为部分输出）并推送，不落库
                     text = str(payload.get("text") or "")
-                    if kind == "message_delta":
+                    if kind == "live_reset":
+                        partial = ""
+                        partial_reasoning = ""
+                    elif kind == "message_delta":
                         partial += text
                     else:
                         partial_reasoning += text

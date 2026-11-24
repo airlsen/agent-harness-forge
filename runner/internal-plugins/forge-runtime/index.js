@@ -1,17 +1,18 @@
 /**
- * Forge 业务插件（每个会话都装配）：真实 OpenAI-compatible 模型出口 + 系统提示 + 执行门控 + 工作区配额。无假模型。
- * 文件读写、交付、终端、时间等工具都来自 dsh 官方插件（sdk profile），这里只做平台层。本文件只做组装，各部分职责：
+ * Forge 业务插件（每个会话都装配）：系统提示 + 执行门控 + 工作区配额 + 实时输出转发。
+ * 模型出口（llm-pi-ai）以及文件读写、交付、终端、时间等工具都来自 dsh 官方插件（sdk profile），
+ * 这里只做平台层。本文件只做组装，各部分职责：
  * - limits.js：工作区配额与路径上限；
  * - path-guard.js：带路径工具的路径收窄（读取 / 写入两种范围）、搜索结果脱敏；
  * - bash-rules.js：bash 命令分类与输出脱敏（纯函数）；
- * - gateway.js：模型网关（dsh LlmAdapter）；
+ * - live-stream.js：生成过程中的正文 / 思考片段实时推给 Runner；
  * - workspace-bridge.js：写入配额，文件与交付物的实时同步事件；
  * - policy-hooks.js：白名单、路径守卫、bash 门控、外部工具确认等执行钩子。
  */
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { notify } from '../shared/events.js';
-import { GatewayAdapter } from './gateway.js';
+import { installLiveStream } from './live-stream.js';
 import { installPolicyHooks } from './policy-hooks.js';
 import { installWorkspaceBridge } from './workspace-bridge.js';
 
@@ -19,7 +20,7 @@ export { searchPathDenial, toolPathDenial, filterSecretResults, workspacePathDen
 export { classifyBashCommand, sanitizeGitOutput, sanitizeShellValue } from './bash-rules.js';
 
 export const name = 'forge-runtime';
-export const inject = ['llm', 'tools', 'approval', 'systemPrompt'];
+export const inject = ['tools', 'approval', 'systemPrompt'];
 
 /**
  * 场景系统提示：作为一个不做变量插值的段落注入（dsh 会把段落里的 {{name}} 当作变量，
@@ -51,9 +52,6 @@ function probeSandbox(ctx, root) {
 }
 
 export async function apply(ctx, config) {
-  // 变量名含 SECRET：DSH 为 stdio MCP 子进程清洗环境变量时会剔除它，模型密钥不会泄露给外部程序
-  const connection = JSON.parse(process.env.FORGE_MODEL_SECRET_CONFIG ?? '{}');
-  if (!connection.baseUrl || !connection.model) throw new Error('Forge model gateway is not configured');
   const allowed = new Set(config.allowedTools ?? []);
   const root = resolve(config.workspace);
   await mkdir(root, { recursive: true });
@@ -65,7 +63,7 @@ export async function apply(ctx, config) {
     ...(typeof config.spillDir === 'string' ? [{ name: 'spill', path: resolve(config.spillDir) }] : []),
   ].filter((item) => item && typeof item.path === 'string');
   const disposers = [
-    ctx.llm.registerAdapter(['forge-gateway'], new GatewayAdapter({ ...connection, ...config })),
+    installLiveStream(ctx),
     registerSystemPrompt(ctx, config.systemPrompt),
     ...installPolicyHooks(ctx, {
       allowed,

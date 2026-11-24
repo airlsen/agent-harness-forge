@@ -474,11 +474,11 @@ try {
     assert.equal(message?.payload.text, '思考后的回答');
     assert.equal(message?.payload.reasoning, '先分析一下。');
   });
-  check('reasoning tokens ride with usage accounting', () =>
+  // 思考用量已包含在输出用量里（计费按输入 / 输出），不单独上报
+  check('reasoning is billed inside output tokens', () =>
     assert.deepEqual(events.find((event) => event.kind === 'cost_tick')?.payload, {
       tokensIn: 100,
       tokensOut: 12,
-      reasoningTokens: 7,
     }),
   );
   events = await turn('PLAIN');
@@ -792,6 +792,14 @@ try {
       assert.ok(events.some((event) => event.kind === 'error' && expected.test(event.payload.message)));
       assert.equal(events.at(-1)?.payload.status, 'error');
     });
+    if (instruction === 'TRUNCATED')
+      check('a dropped stream is retried automatically; each retry first discards the unsettled live output', () => {
+        const resets = events.filter((event) => event.kind === 'live_reset');
+        const deltas = events.filter((event) => event.kind === 'message_delta');
+        assert.ok(resets.length >= 1);
+        // 每次重试前都先清掉上一次的片段：片段数 = 清空次数 + 1
+        assert.equal(deltas.length, resets.length + 1);
+      });
   }
   events = await turn('CUT_TOOL');
   check('tool call cut by the output cap ends softly: partial text kept, incomplete call never runs', () => {
@@ -933,7 +941,7 @@ try {
     (error) => error.statusCode === 404,
   );
   // 执行日志：Runner 重启后、会话尚未恢复时，控制面仍能从磁盘补读重启前产生的事件
-  const durableBefore = allEvents.filter((event) => !event.kind.endsWith('_delta'));
+  const durableBefore = allEvents.filter((event) => !event.transient);
   const lastSeqBefore = durableBefore.at(-1).seq;
   const fromDisk = restarted.eventsAfter(id, lastSeqBefore - 5);
   check('journal: an unloaded session serves persisted events from disk by seq', () => {
@@ -950,7 +958,7 @@ try {
     );
     const delta = allEvents.find((event) => event.kind === 'message_delta');
     assert.ok(delta && durableBefore.some((event) => event.seq === delta.seq));
-    assert.ok(!fromDisk.some((event) => event.kind.endsWith('_delta')));
+    assert.ok(!fromDisk.some((event) => event.transient));
   });
   assert.throws(
     () => restarted.eventsAfter('22222222-2222-4222-8222-222222222222', 0),

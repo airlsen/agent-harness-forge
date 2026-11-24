@@ -14,7 +14,7 @@
 - `src/kernel/manifest.ts`：会话清单入口校验。类型 `manifest.generated.ts` 由 `contracts/session-manifest.schema.json` 生成（根目录 `make contracts`），请勿手改。
 - `src/kernel/platform-contract.ts`：读取 `contracts/platform.json`（内置工具目录与能力上限）。
 - `internal-plugins/`：Forge 自带、随 Runner 发布的 DSH 插件，**目录名 = 插件名**（`forge-runtime`、`forge-skills`、`skill-authoring`、`skill-scripts`、`forge-plugin-bridge`）；`shared/` 是插件共用的库（`events.js` 插件事件表、`skill-script-runtime/` 脚本执行逻辑），不是插件。
-- `internal-plugins/forge-runtime/`：每个会话都装配的业务插件，文件、交付、终端、时间等工具都来自 DSH `sdk` 组合，这里只做平台层。`index.js` 只做组装——`gateway.js`（OpenAI-compatible 模型适配器）、场景系统提示（不做变量插值的段落）、`workspace-bridge.js`（`write` / `edit` 配额，配额见 `limits.js`；文件与交付物同步事件）、终端沙箱探测、`policy-hooks.js`（agent 级 restrict、单调拒绝 guard、dsh 搜索/读取的路径收窄、bash 门控与输出脱敏、外部工具逐次确认；规则在 `path-guard.js`、`bash-rules.js`）。
+- `internal-plugins/forge-runtime/`：每个会话都装配的业务插件，文件、交付、终端、时间等工具都来自 DSH `sdk` 组合，这里只做平台层。`index.js` 只做组装——`live-stream.js`（把 DSH 进程内的正文 / 思考片段转成实时事件，自动重试前先发 `forge.live_reset` 清掉作废的片段）、场景系统提示（不做变量插值的段落）、`workspace-bridge.js`（`write` / `edit` 配额，配额见 `limits.js`；文件与交付物同步事件）、终端沙箱探测、`policy-hooks.js`（agent 级 restrict、单调拒绝 guard、dsh 搜索/读取的路径收窄、bash 门控与输出脱敏、外部工具逐次确认；规则在 `path-guard.js`、`bash-rules.js`）。
 - `src/kernel/forge-plugins.ts`：Forge 自有插件的唯一登记处（插件名、会话清单能否声明；新增插件 = 建 `internal-plugins/<插件名>/` + 在这里登记一行）；`internal-plugins/shared/events.js`：插件事件的唯一登记表，插件与 DSH 适配层共用；`src/kernel/dsh/engine-tools.js`：dsh 原生工具名与路径参数形状，内核与插件共用。`scripts/check-wiring.mjs` 核对这几张表与平台契约彼此一致。
 
 ## 控制面接口（内部 Bearer Token）
@@ -27,7 +27,7 @@
 | `GET /v1/sessions/:id/events?after=seq` | SSE：先补发 `seq > after` 的持久事件，再推送实时事件；断线后按最后的 seq 续读 |
 | `POST /v1/sessions/:id/events/ack` | 回执已落库的位置，Runner 清理该位置之前的执行日志 |
 
-模型配置只能由控制面传入。没有配置模型时拒绝创建执行会话，不会回落到历史假模型。模型凭据只经环境传入 dsh 子进程，不写入 runtime patch。
+模型配置只能由控制面传入。没有配置模型时拒绝创建执行会话，不会回落到历史假模型。模型请求由 DSH 自带的 `dsh-llm-pi-ai`（OpenAI 兼容协议）发出，Forge 只在 runtime patch 里写一条路由（`modelRow`）；模型凭据只经环境变量 `FORGE_MODEL_API_KEY` 传入 dsh 子进程，不写入 runtime patch，终端与 MCP 子进程看不到，失败信息里出现时打码。
 
 ```bash
 npm ci

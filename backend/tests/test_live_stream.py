@@ -40,6 +40,25 @@ def test_hub_snapshot_order_and_end():
     assert hub.subscribe(1) is None
 
 
+def test_hub_reset_discards_unsettled_output_of_a_retried_attempt():
+    """模型请求失败后自动重试：上一次尝试尚未结算的正文与思考作废，之后订阅的页面看不到。"""
+    hub = LiveHub()
+    hub.begin(1, 0)
+    early = hub.subscribe(1)
+    hub.delta(1, "reasoning_delta", "想")
+    hub.delta(1, "message_delta", "半截")
+    hub.delta(1, "live_reset", "")
+    hub.delta(1, "message_delta", "重试")
+    late = hub.subscribe(1)
+    assert (late.text, late.reasoning) == ("重试", "")
+    assert [item["kind"] for item in early.drain()] == [
+        "reasoning_delta",
+        "message_delta",
+        "live_reset",
+        "message_delta",
+    ]
+
+
 def test_slow_reader_is_marked_lagged_instead_of_buffering_forever(monkeypatch):
     monkeypatch.setattr(live_stream, "SUBSCRIBER_BUFFER", 2)
     hub = LiveHub()

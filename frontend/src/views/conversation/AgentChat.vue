@@ -934,7 +934,10 @@ async function quoteMessage(text: string) {
             </li>
             <li v-if="extensionWeb"><Icon name="check" :size="12" />网页抓取仅访问公网地址，搜索按次计费</li>
             <li><Icon name="check" :size="12" />消息与执行事件持久化记录</li>
-            <li><Icon name="lock" :size="12" />不开放任意 Shell 命令</li>
+            <li v-if="selectedTools.some((tool) => tool.name === 'bash')">
+              <Icon name="check" :size="12" />可执行终端命令，系统拒绝提权、破坏系统与读取密钥等高危命令
+            </li>
+            <li v-else><Icon name="lock" :size="12" />本会话未开放终端命令</li>
           </ul>
         </div>
         <div class="context-section">

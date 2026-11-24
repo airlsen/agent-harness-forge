@@ -701,6 +701,13 @@ export const useConversation = defineStore('conversation', {
             buffer.push(event.kind, String(data.text ?? ''));
             return;
           }
+          if (event.kind === 'live_reset') {
+            // 模型请求失败后自动重试：上一次尝试的正文与思考作废，由重试的输出重新填充
+            buffer.clear();
+            this.liveText = '';
+            this.liveReasoning = '';
+            return;
+          }
           // 其他事件处理前先写入已攒下的片段，保证先后顺序
           buffer.flush();
           if (event.kind === 'live_snapshot') {

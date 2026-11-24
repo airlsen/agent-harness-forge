@@ -10,7 +10,8 @@ Runner 把流式增量（正文 / 思考片段）标记为 transient：不写执
 import asyncio
 
 # 与 Runner journal.ts 的 TRANSIENT_KINDS 一致：只转发，不落库、没有序号
-TRANSIENT_KINDS = frozenset({"message_delta", "reasoning_delta"})
+# live_reset：模型请求失败后自动重试，丢弃上一次尝试尚未结算的正文与思考
+TRANSIENT_KINDS = frozenset({"message_delta", "reasoning_delta", "live_reset"})
 # 单个页面允许积压的事件数；读取跟不上时不再积压，改为重新读库并取快照
 SUBSCRIBER_BUFFER = 2000
 # 回合结束标记
@@ -64,7 +65,15 @@ class LiveHub:
 
     def delta(self, session_id: int, kind: str, text: str, source: str = "llm"):
         turn = self.turns.get(session_id)
-        if turn is None or not text:
+        if turn is None:
+            return
+        if kind == "live_reset":
+            turn.text = ""
+            turn.reasoning = ""
+            for subscriber in turn.subscribers:
+                subscriber.put({"kind": kind, "source": source, "payload": {}})
+            return
+        if not text:
             return
         if kind == "message_delta":
             turn.text += text

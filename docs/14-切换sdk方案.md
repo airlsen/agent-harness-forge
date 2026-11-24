@@ -1,6 +1,6 @@
 # 14 · 执行底座切换到 DSH sdk 组合
 
-> 状态：第 1–3 步已实现；第 4 步（模型适配器）待定；第 5 步以后再议。
+> 状态：第 1–4 步已实现；第 5 步以后再议。
 > DSH 版本固定 `0.2.2-rc.5`，不 fork、不改 DSH 的英文工具说明与压缩提示词。
 
 ## 为什么换
@@ -19,7 +19,7 @@
 
 | 类别 | 含义 | 内容 |
 | --- | --- | --- |
-| `SDK_KEPT` | 每个会话都加载 | 内核、模型（`llm-deepseek` 与重试）、会话与持久化、agent、后台进程、沙箱 ×4、Shell 环境、审批、系统提示、用量、压缩、图片转存、旧结果裁剪、提醒、超长结果转存 ×2、超时策略、时间上下文、MCP 资源、启动与 JSON-RPC |
+| `SDK_KEPT` | 每个会话都加载 | 内核、模型（`llm-pi-ai` 与重试）、会话与持久化、agent、后台进程、沙箱 ×4、Shell 环境、审批、系统提示、用量、压缩、图片转存、旧结果裁剪、提醒、超长结果转存 ×2、超时策略、时间上下文、MCP 资源、启动与 JSON-RPC |
 | `SDK_SWITCHED` | 按会话能力开关 | `tool-fs`（`read`/`write`/`edit`，关闭读图与 apply_patch）、`fs-search`、`present`（每次最多 4 个文件）、`tool-bash`（后台运行随“后台任务”开放）、待办、后台任务、目标 ×2、Skill ×2、联网 ×5 |
 | `SDK_OFF` | 永远关闭 | 第二套模型适配、`permission`、定时任务、遥测（会上报到外部地址）、插件管理、子代理、Office、agent 指令文件、文件系统 Skill、目标自动推进、向用户提问等 |
 
@@ -70,10 +70,33 @@ Forge 仍然负责：
   生产环境请安装 bubblewrap。
 - 部分 Landlock 支持时 DSH 每条命令都会输出一段英文提示，Forge 已从结果中去掉。
 
-## 第 4 步 · 模型适配器（待定）
+## 第 4 步 · 模型适配器（已完成）
 
-用 `dsh-llm-pi-ai`（按路由配置 `providers`）替换 Forge 自写的 `gateway.js`。当前 `gateway.js` 仍是唯一的真实模型出口，
-`llm-deepseek` 保留到这一步。涉及模型凭据传递方式，单独评估后再做。
+用 DSH 自带的 `dsh-llm-pi-ai` 替换 Forge 自写的 `gateway.js`，`llm-deepseek` 改为关闭，`forge.error` 事件删除。
+
+- **路由**：`modelRow()` 只写一条路由 `providers.forge`、一个模型（地址、上下文长度、单次输出上限、请求超时、`X-Title`）。
+  兼容项固定用 `max_tokens`、不发 `store` 与 developer 角色；DeepSeek 模型另开 DeepSeek 思考格式，思考内容按 `reasoning_content` 回放。
+- **凭据**：只经子进程环境变量 `FORGE_MODEL_API_KEY` 传入，不写入补丁；DSH 启动 stdio MCP 时会去掉名字带 KEY 的变量，
+  `check-capabilities` 断言终端与 MCP 看不到；没填密钥的模型（内网免鉴权）发固定占位值。
+- **失败提示**：回合以 `error` 结束时，`protocol.ts` 的 `turnFailure()` 按错误类型转成中文（凭据、额度、繁忙、超长、超时、
+  连接中断、内容被拦截、HTTP 状态等），未知错误原样显示；失败信息里的密钥打码（`redact()`）。
+- **输出上限**：`max-tokens` 结束时保留已生成的部分，提示可回复“继续”。
+- **用量**：思考 token 计入输出 token（pi-ai 不单独报告，界面也不单独显示）。
+- **自动重试**：连接中断等临时错误由 DSH 自动重试，每次重试从头生成；forge-runtime 先发 `forge.live_reset`
+  （不落盘的实时事件），后端实时通道、部分输出累积、工作台与 Skill 编辑器据此清掉上一次尝试的半截内容。
+- **契约检查**：逐层核对写入的配置字段（含 `providers.forge.models[0].compat` 这类嵌套字段），写错字段直接报错；
+  不再依赖 `@deepseek-ai/dsh-llm`（已从 `package.json` 移除）。
+- **代价**：pi-ai 自带多家模型服务的 SDK，每会话常驻内存约 185 MB → 205 MB，启动约 1.0 s → 1.2 s。
+
+## 终端改为单次执行后的提示词调整
+
+终端每次调用都是独立的 Shell（`cd` 不保留），提示词相应调整：
+
+- 平台系统提示（`runner/src/kernel/system-prompt.ts`）：换目录用 `workdir`；文本文件用 `write` / `edit`，不用 echo、cat 重定向或 heredoc；
+  Word、Excel、PDF、图片等二进制文件先用 `write` 写脚本、再用 `bash` 运行生成；会话没有终端时如实说明、改用文本格式。
+- Skill 设计参考（`builtin_skills/skill-design/references/forge-platform.md`）：同样的写法要求，避免写出依赖上一条命令状态的步骤。
+- AI 生成场景（`llm_prompts.py` 的 `scenario.generate`）：场景提示词只写做什么、交付什么格式，不写具体终端写法。
+- 内置场景只有「代码与研发」改为“需要验证时用终端运行命令或测试”；只影响新安装，已有数据库里的场景不变（原文不涉及终端，无冲突）。
 
 ## 第 5 步 · 以后
 
@@ -81,7 +104,5 @@ Forge 仍然负责：
 
 ## 待决定
 
-- 终端不再常驻（`cd` 不保留）对现有场景提示词的影响。
 - 生产环境安装 bubblewrap / 确认 Landlock。
-- 每会话内存（约 185 MB）与 Runner 容量设置。
-- 第 4 步的时间。
+- 每会话内存（约 205 MB）与 Runner 容量设置。

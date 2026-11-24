@@ -25,8 +25,8 @@ export const SDK_KEPT = [
   'llm',
   'deepseek-llm-api-extensions',
   'llm-retry',
-  // DeepSeek 官方模型适配器：当前模型仍走 forge-runtime 的网关，保留它供后续接入
-  'llm-deepseek',
+  // 模型出口：DSH 官方通用适配器（OpenAI 兼容接口），按会话模型配置一条路由，见 modelRow
+  'llm-pi-ai',
   'session',
   'session-log-deepseek',
   // 无模型的兜底标题（控制面另有自己的会话标题）
@@ -101,8 +101,8 @@ export const SDK_OFF = [
   'deepseek-account',
   'llm-deepseek-account',
   'agent-default-model',
-  // 多家模型适配器：接入方式改造（后续步骤）前先不启用
-  'llm-pi-ai',
+  // DeepSeek 官方专用适配器：模型统一经 llm-pi-ai 的 OpenAI 兼容路由接入（DeepSeek 按兼容配置识别）
+  'llm-deepseek',
   // 桌面端 / 网页界面专用：斜杠命令、反馈、计划模式、上传、浏览器连接、@文件、链接说明、权限选择器
   'commands',
   'command-feedback',
@@ -195,6 +195,23 @@ const MAX_PRESENTED = 4;
 /** 时间上下文的回退时区：浏览器时区不可用时使用（Forge 用户默认在中国） */
 const DEFAULT_TIME_ZONE = 'Asia/Shanghai';
 
+/** 会话模型在 llm-pi-ai 中的路由名（initialize 的 provider） */
+export const MODEL_ROUTE = 'forge';
+/** 模型密钥的环境变量名（含 KEY：dsh 不会把它传给 stdio MCP 子进程；密钥不写入落盘的 patch 文件） */
+export const MODEL_KEY_ENV = 'FORGE_MODEL_API_KEY';
+/**
+ * 模型中心没填密钥时（如内网免鉴权的模型服务）使用的占位值：dsh 的适配器要求必须有密钥，
+ * 免鉴权的服务会忽略这个请求头；需要鉴权的服务会返回 401，界面提示检查凭据。
+ */
+export const MODEL_KEY_PLACEHOLDER = 'forge-no-api-key';
+/** 请求头里的应用名（部分网关按它统计来源） */
+const APP_TITLE = 'AgentHarness Forge';
+
+/** DeepSeek 按模型名或接口地址识别（企业网关地址不一定含 deepseek.com） */
+export function isDeepSeekModel(model: Pick<PlanModel, 'id' | 'baseUrl'>) {
+  return /deepseek/i.test(model.id) || /deepseek/i.test(model.baseUrl);
+}
+
 /** 文件沙箱模式：只读 / 只能写会话工作区 / 不限制（服务器不支持沙箱时的降级） */
 export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
 
@@ -212,6 +229,15 @@ export interface PlanSkill {
   content: string;
   dir: string;
 }
+/** 会话模型（不含密钥：密钥只经环境变量 MODEL_KEY_ENV 传入） */
+export interface PlanModel {
+  /** 模型名（接口里的 model） */
+  id: string;
+  /** OpenAI 兼容接口地址（到 /v1 为止） */
+  baseUrl: string;
+  /** 单次模型请求上限（毫秒） */
+  requestTimeoutMs: number;
+}
 /** 内核给出的一次装配需求：只描述「要什么」，不含任何 dsh 包名或配置格式 */
 export interface RuntimePlan {
   /** dsh 会话日志目录（session/resume 从这里接续） */
@@ -222,11 +248,12 @@ export interface RuntimePlan {
   workspace: string;
   contextWindow: number;
   outputTokens: number;
+  model: PlanModel;
   /** 模型可见的全部工具（forge-runtime 白名单） */
   allowed: string[];
   /** 文件沙箱模式 */
   sandbox: SandboxMode;
-  /** forge-runtime：模型出口、系统提示、白名单与路径守卫，必须最先挂载 */
+  /** forge-runtime：系统提示、白名单与路径守卫、实时输出转发，必须最先挂载 */
   runtime: LocalPlugin;
   /** 其余 Forge 插件（受管插件桥、Skill 编辑、Skill 脚本），按顺序挂载 */
   plugins: LocalPlugin[];
@@ -256,6 +283,50 @@ export function compactionConfig(contextWindow: number, outputTokens: number) {
   return { headroomTokens, maxTokens: Math.max(1, Math.min(headroomTokens, outputTokens)) };
 }
 
+/**
+ * 模型路由（llm-pi-ai 的 providers 配置）：一条 OpenAI 兼容路由，只含会话模型这一个模型。
+ * 兼容项按 Forge 原网关的行为固定：用 max_tokens、不发 store / developer 角色 / 思考强度等 OpenAI 专有参数，
+ * 企业网关普遍兼容。DeepSeek 另开 DeepSeek 思考格式：历史中的思考内容按 DeepSeek 要求带回
+ * （没有思考内容的 assistant 消息补空字符串），且不主动开关思考模式（off 不发送参数，沿用模型默认）。
+ */
+export function modelRow(plan: RuntimePlan) {
+  const { model } = plan;
+  const deepseek = isDeepSeekModel(model);
+  const compat = {
+    maxTokensField: 'max_tokens',
+    supportsStore: false,
+    supportsDeveloperRole: false,
+    supportsReasoningEffort: false,
+    ...(deepseek ? { thinkingFormat: 'deepseek', requiresReasoningContentOnAssistantMessages: true } : {}),
+  };
+  return {
+    id: 'llm-pi-ai',
+    config: {
+      providers: {
+        [MODEL_ROUTE]: {
+          displayName: APP_TITLE,
+          api: 'openai-completions',
+          baseURL: model.baseUrl.replace(/\/+$/, ''),
+          apiKeyEnv: MODEL_KEY_ENV,
+          headers: { 'X-Title': APP_TITLE },
+          timeoutMs: model.requestTimeoutMs,
+          models: [
+            {
+              id: model.id,
+              name: model.id,
+              contextWindow: plan.contextWindow,
+              maxTokens: plan.outputTokens,
+              input: ['text'],
+              ...(deepseek ? { reasoningEfforts: { off: null, high: 'high' } } : { reasoningEfforts: false }),
+              compat,
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
 /** 按会话能力算出每个可开关插件开或关，以及开启时的配置 */
 function switchedRows(plan: RuntimePlan, groupTools: Record<string, readonly string[]>) {
   const has = (tool: string) => plan.allowed.includes(tool);
@@ -270,7 +341,7 @@ function switchedRows(plan: RuntimePlan, groupTools: Record<string, readonly str
   if (read || write)
     on['tool-fs'] = {
       read,
-      // 网关只支持文本输入，不读图片
+      // 模型路由只声明文本输入，不读图片
       readImage: false,
       write,
       edit: write,
@@ -321,6 +392,7 @@ function switchedRows(plan: RuntimePlan, groupTools: Record<string, readonly str
 export function buildRuntimePatch(plan: RuntimePlan, groupTools: Record<string, readonly string[]>) {
   return [
     { id: 'session-persistence-jsonl', config: { root: plan.sessionLogDir, compression: 'none' } },
+    modelRow(plan),
     { id: 'compaction-basic', config: compactionConfig(plan.contextWindow, plan.outputTokens) },
     // 系统提示由 forge-runtime 以不插值的段落注入（场景提示词里可能有 {{…}}）：去掉 sdk 的编码助手人设与 Harness 身份；
     // 运行时上下文保留（含沙箱策略说明）
@@ -375,7 +447,7 @@ function mcpRows(plan: RuntimePlan) {
 }
 
 /** contract-check 用：适配层直接引用的 dsh 包（sdk 内置插件的包名由 profile 决定，contract-check 从 profile 读取） */
-export const DSH_PACKAGES = ['@deepseek-ai/dsh', '@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-mcp-client'];
+export const DSH_PACKAGES = ['@deepseek-ai/dsh', '@deepseek-ai/dsh-mcp-client'];
 /** contract-check 用：dsh 原生工具名 → 提供它的包 */
 export const ENGINE_TOOL_PROVIDERS: Record<string, string> = {
   glob: '@deepseek-ai/dsh-tool-fs-search',

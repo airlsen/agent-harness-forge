@@ -17,7 +17,7 @@ const META = 'events.meta.json';
 /** 未回执事件的保留上限（内存与磁盘一致）：控制面长期不回执时只保留最新的这些 */
 export const MAX_JOURNAL_EVENTS = 20000;
 /** 只推给在线订阅者、不落盘不编号的流式事件 */
-export const TRANSIENT_KINDS = new Set(['message_delta', 'reasoning_delta']);
+export const TRANSIENT_KINDS = new Set(['message_delta', 'reasoning_delta', 'live_reset']);
 
 export class EventJournal {
   private events: KernelEvent[] = [];

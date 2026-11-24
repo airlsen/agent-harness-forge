@@ -42,7 +42,6 @@ for (const name of pluginNames) modules.set(name, await import(pathToFileURL(for
 async function registeredTools(name, workspace) {
   const tools = [];
   const ctx = {
-    llm: { registerAdapter: () => () => {} },
     tools: {
       register: (tool) => {
         tools.push(tool.name);
@@ -60,11 +59,6 @@ async function registeredTools(name, workspace) {
 }
 
 const dir = await mkdtemp(join(tmpdir(), 'forge-wiring-'));
-const previousModel = process.env.FORGE_MODEL_SECRET_CONFIG;
-process.env.FORGE_MODEL_SECRET_CONFIG = JSON.stringify({
-  baseUrl: 'http://127.0.0.1:9',
-  model: 'wiring-check',
-});
 try {
   await check(
     'registered Forge plugins match internal-plugins/ one to one and export their names',
@@ -161,8 +155,7 @@ try {
       assert.ok(method.startsWith(FORGE_EVENT_PREFIX));
       const out = translateNotification(method, { message: 'x', path: 'a.md' }, new Map());
       assert.equal(out.length, 1, `${method} 没有被翻译`);
-      if (spec.kind === 'failure') assert.deepEqual(out[0], { failure: 'x', explicit: true });
-      else if (spec.kind === 'files')
+      if (spec.kind === 'files')
         assert.deepEqual(out[0].payload, { files: [{ message: 'x', path: 'a.md' }] });
       else assert.equal(out[0].kind, spec.kind);
     }
@@ -180,8 +173,6 @@ try {
     assert.match(warnings[0], /forge\.not_registered/);
   });
 } finally {
-  if (previousModel === undefined) delete process.env.FORGE_MODEL_SECRET_CONFIG;
-  else process.env.FORGE_MODEL_SECRET_CONFIG = previousModel;
   await rm(dir, { recursive: true, force: true });
 }
 console.log(JSON.stringify({ scope: 'plugin / contract / event wiring, no dsh', checks, result: 'passed' }));

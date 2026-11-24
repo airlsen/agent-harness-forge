@@ -201,9 +201,9 @@ export class SessionKernel {
     const event = entry.journal.append(kind, payload, source);
     for (const listener of entry.listeners) listener(event);
   }
-  /** 本轮失败：只记第一次（例如用户中止后引擎报告的 aborted 不覆盖），force 时总是记录 */
-  private fail(entry: Entry, message: string, force = false) {
-    if (entry.error && !force) return;
+  /** 本轮失败：只记第一次（例如用户中止后引擎报告的 aborted 不覆盖） */
+  private fail(entry: Entry, message: string) {
+    if (entry.error) return;
     entry.error = message;
     this.emit(entry, 'error', { message });
   }
@@ -419,6 +419,11 @@ export class SessionKernel {
       workspace: entry.workspace,
       contextWindow,
       outputTokens,
+      model: {
+        id: entry.model.model,
+        baseUrl: entry.model.baseUrl,
+        requestTimeoutMs: (policy.requestTimeoutSeconds ?? 300) * 1000,
+      },
       allowed: toolset.allowed,
       sandbox,
       runtime: forgePlugin('forge-runtime', {
@@ -428,8 +433,6 @@ export class SessionKernel {
         codeProjects: entry.code.map(({ name, path }) => ({ name, path })),
         readRoots: Object.entries(skillDirs).map(([name, path]) => ({ name: `skill:${name}`, path })),
         spillDir,
-        maxOutputTokens: outputTokens,
-        requestTimeoutSeconds: policy.requestTimeoutSeconds ?? 300,
         probeSandbox,
         // 系统提示在下面拼好后填入（forge-runtime 以不插值的段落注入）
         systemPrompt: '',
@@ -533,7 +536,7 @@ export class SessionKernel {
       },
       {
         emit: (kind, payload, source) => this.emit(entry, kind, payload, source),
-        fail: (message, explicit) => this.fail(entry, message, explicit),
+        fail: (message) => this.fail(entry, message),
         approve: (request) => this.requestApproval(entry, request),
       },
     );

@@ -22,11 +22,6 @@ const root = join(temporary, 'workspace');
 const guards = [];
 const hooks = new Map();
 const sections = [];
-const oldConfig = process.env.FORGE_MODEL_SECRET_CONFIG;
-process.env.FORGE_MODEL_SECRET_CONFIG = JSON.stringify({
-  baseUrl: 'http://unused.invalid/v1',
-  model: 'executor-check-no-model',
-});
 // 插件经 stdout 发出 forge.* 通知：截获下来核对，不打印到测试输出
 const notices = [];
 const stdoutWrite = process.stdout.write.bind(process.stdout);
@@ -98,7 +93,6 @@ const check = async (name, test) => {
 try {
   dispose = await apply(
     {
-      llm: { registerAdapter: () => () => {} },
       tools: { guard: (guard) => (guards.push(guard), () => {}) },
       systemPrompt: {
         getSectionOrder: (name) => (name === 'DEPLOYMENT_PERSONA_PREFIX' ? 5 : 0),
@@ -491,7 +485,5 @@ try {
 } finally {
   process.stdout.write = stdoutWrite;
   dispose?.();
-  if (oldConfig === undefined) delete process.env.FORGE_MODEL_SECRET_CONFIG;
-  else process.env.FORGE_MODEL_SECRET_CONFIG = oldConfig;
   await rm(temporary, { recursive: true, force: true });
 }

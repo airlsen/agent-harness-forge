@@ -456,7 +456,7 @@ try {
     assert.equal(payload.isError, false, payload.result);
     assert.ok(payload.result.includes('echo:hi'));
     assert.ok(payload.result.includes('greeting=hello'));
-    for (const leaked of ['FORGE_MODEL_SECRET_CONFIG', 'FORGE_WEB_SEARCH_API_KEY', 'FORGE_RUNNER_TOKEN'])
+    for (const leaked of ['FORGE_MODEL_API_KEY', 'FORGE_WEB_SEARCH_API_KEY', 'FORGE_RUNNER_TOKEN'])
       assert.ok(!payload.result.includes(leaked), leaked);
     assert.equal(
       list.some((event) => event.kind === 'approval_required'),

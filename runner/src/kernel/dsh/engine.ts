@@ -14,10 +14,11 @@ import {
   RPC,
   approvalReason,
   approvalReply,
+  redact,
   translateNotification,
   type ApprovalOutcome,
 } from './protocol.js';
-import { WEB_SEARCH_KEY_ENV, buildRuntimePatch, type RuntimePlan } from './runtime-config.js';
+import { MODEL_KEY_ENV, MODEL_KEY_PLACEHOLDER, MODEL_ROUTE, WEB_SEARCH_KEY_ENV, buildRuntimePatch, type RuntimePlan } from './runtime-config.js';
 
 export interface ApprovalRequest {
   tool: string;
@@ -28,8 +29,8 @@ export interface ApprovalRequest {
 /** 内核提供给引擎的回调 */
 export interface EngineHost {
   emit(kind: string, payload: unknown, source: KernelEvent['source']): void;
-  /** 本轮失败：explicit 为插件主动上报的错误（总是记录），否则只在尚无错误时记录 */
-  fail(message: string, explicit?: boolean): void;
+  /** 本轮失败：只在尚无错误时记录 */
+  fail(message: string): void;
   /** 工具需要用户确认：内核负责票据、超时与取消，返回最终结论 */
   approve(request: ApprovalRequest): Promise<ApprovalOutcome>;
 }
@@ -80,7 +81,7 @@ export class DshEngine {
     const probe = new Promise<SandboxProbe>((resolve) => (probed = resolve));
     proc.onNotification((method, params) => {
       for (const item of translateNotification(method, params, engine.calls)) {
-        if ('failure' in item) host.fail(item.failure, item.explicit);
+        if ('failure' in item) host.fail(redact(item.failure, opts.model.apiKey));
         else if (item.kind === 'sandbox') probed(item.payload as SandboxProbe);
         else host.emit(item.kind, item.payload, item.source);
       }
@@ -100,17 +101,17 @@ export class DshEngine {
       await proc.start({
         profile: DSH_PROFILE,
         patchPaths: [patchPath],
-        // 密钥类变量名都含 SECRET/KEY：dsh 为 stdio MCP 子进程清洗环境变量时会剔除，外部程序拿不到
+        // 密钥只经环境变量传入（变量名含 KEY：dsh 为 stdio MCP 子进程清洗环境变量时会剔除，外部程序拿不到）
         env: {
-          FORGE_MODEL_SECRET_CONFIG: JSON.stringify(opts.model),
+          [MODEL_KEY_ENV]: opts.model.apiKey || MODEL_KEY_PLACEHOLDER,
           ...(opts.plan.web?.apiKey ? { [WEB_SEARCH_KEY_ENV]: opts.plan.web.apiKey } : {}),
         },
       });
       await withTimeout(
         proc.request(RPC.initialize, {
           cwd: opts.cwd,
-          // forge-runtime 注册的模型出口适配器
-          provider: 'forge-gateway',
+          // llm-pi-ai 中的会话模型路由（runtime-config.ts 的 modelRow）
+          provider: MODEL_ROUTE,
           model: opts.model.model,
           maxTokens: opts.plan.outputTokens,
           approvalRequests: true,

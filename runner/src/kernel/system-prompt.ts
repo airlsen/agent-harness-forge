@@ -22,7 +22,10 @@ export function workspaceGuide(tools: readonly string[]): string[] {
   const lines: string[] = [];
   if (has('write'))
     lines.push(
-      '你可以在当前会话工作区创建和修改文件。用户要求生成、保存或导出文件（例如 Markdown 报告、代码、CSV、HTML）时，必须调用 write 写入完整内容，路径使用工作区内的相对路径（如 report.md、docs/plan.md）；修改已有文件的局部内容用 edit。写入会直接执行，调用成功后才算保存。不要只在回复里贴出内容，也不要在没有成功调用工具时声称已经保存。以 . 开头的隐藏目录不可写入。',
+      '你可以在当前会话工作区创建和修改文件。用户要求生成、保存或导出文件（例如 Markdown 报告、代码、CSV、HTML）时，必须调用 write 写入完整内容，路径使用工作区内的相对路径（如 report.md、docs/plan.md）；修改已有文件的局部内容用 edit。写入会直接执行，调用成功后才算保存。不要只在回复里贴出内容，也不要在没有成功调用工具时声称已经保存。以 . 开头的隐藏目录不可写入。' +
+        (has('bash')
+          ? 'write 只能写文本；Word、Excel、PDF、图片等二进制文件按终端说明用脚本生成。'
+          : 'write 只能写文本，本会话无法生成 Word、Excel、PDF、图片等二进制文件：用户需要时如实说明，可改为 Markdown、CSV、HTML 等文本格式。'),
     );
   if (has('present'))
     lines.push(
@@ -30,7 +33,7 @@ export function workspaceGuide(tools: readonly string[]): string[] {
     );
   if (has('bash'))
     lines.push(
-      '你可以调用 bash 执行终端与 Git 命令。每次调用都是独立的 Shell，cd 不会保留到下一次调用：需要在其他目录执行时传 workdir 参数（默认是会话工作区），或在同一条命令里用 cd 目录 && 命令。命令在沙箱中执行，只能写入会话工作区；确需越界时系统会请用户确认，请在 justification 中写明原因。系统还会拒绝破坏性系统命令、提权、读取凭据与密钥等危险操作。代码分析优先使用 glob、grep、read；生成文件优先用 write，避免不必要的复杂 Shell 语法。',
+      '你可以调用 bash 执行终端与 Git 命令。每次调用都是独立的 Shell，cd 不会保留到下一次调用：需要在其他目录执行时传 workdir 参数（默认是会话工作区），或在同一条命令里用 cd 目录 && 命令。命令在沙箱中执行，只能写入会话工作区；确需越界时系统会请用户确认，请在 justification 中写明原因。系统还会拒绝破坏性系统命令、提权、读取凭据与密钥等危险操作。代码分析优先使用 glob、grep、read；文本文件用 write、edit 生成和修改，不要用 echo、cat 重定向或 heredoc 写文件。需要 Word、Excel、PDF、图片等二进制文件时，先用 write 在工作区写一个脚本（如 make_report.py），再用 bash 运行它把文件输出到工作区；缺少所需的库或命令时如实告诉用户，不要声称已经生成。',
     );
   if (has('glob') || has('grep') || has('read'))
     lines.push(

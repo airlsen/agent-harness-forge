@@ -31,7 +31,7 @@ for (const pkg of [
   'dsh-base',
   'dsh-headless',
   'dsh-tools',
-  'dsh-llm',
+  'dsh-llm-pi-ai',
   'dsh-user-approval',
 ]) {
   const exists = await readFile(join(DSH, pkg, 'package.json'), 'utf8')
@@ -45,9 +45,11 @@ const toolsEvents = await readFile(join(DSH, 'dsh-tools/lib/types/events.d.ts'),
 check("'tools/pre-execute' 瀑布存在", toolsEvents.includes("'tools/pre-execute'"));
 check("'tools/execute' 瀑布存在", toolsEvents.includes("'tools/execute'"));
 
-const llmIdx = await readFile(join(DSH, 'dsh-llm/lib/types/index.d.ts'), 'utf8').catch(() => '');
-check('ctx.llm.registerAdapter 存在', llmIdx.includes('registerAdapter'));
-check('LlmAdapter 抽象类存在', llmIdx.includes('abstract class LlmAdapter'));
+// 模型出口：llm-pi-ai 的 OpenAI 兼容协议（modelRow 的 api）；实时输出：agent 的流式片段广播（forge-runtime/live-stream.js）
+const { supportedProtocols } = await import('@deepseek-ai/dsh-llm-pi-ai');
+check('llm-pi-ai 支持 openai-completions 协议', supportedProtocols().includes('openai-completions'));
+const agentTypes = await readFile(join(DSH, 'dsh-agent/lib/types/runtime-types.d.ts'), 'utf8').catch(() => '');
+check("agent 事件 'agent/assistant-stream' 存在", agentTypes.includes("'agent/assistant-stream'"));
 
 const approval = await readFile(join(DSH, 'dsh-user-approval/lib/types/index.d.ts'), 'utf8').catch(() => '');
 check('ctx.approval 服务存在', approval.includes('approval: ApprovalService'));
@@ -136,6 +138,7 @@ const basePlan = {
   workspace: '/tmp/contract-workspace',
   contextWindow: 128000,
   outputTokens: 8192,
+  model: { id: 'contract-model', baseUrl: 'https://example.com/v1', requestTimeoutMs: 300000 },
   allowed: Object.values(GROUP_TOOLS).flat(),
   sandbox: 'workspace-write',
   runtime: local('forge-runtime'),
@@ -160,19 +163,46 @@ const rows = [null, ...webVariants].flatMap((web) => {
   const patch = buildRuntimePatch({ ...basePlan, web }, GROUP_TOOLS);
   return patch.flatMap((row) => row.insert ?? [row]);
 });
+// DeepSeek 模型：模型路由另带 DeepSeek 思考格式的兼容项
+rows.push(
+  ...buildRuntimePatch(
+    { ...basePlan, model: { ...basePlan.model, id: 'deepseek-chat' }, web: null },
+    GROUP_TOOLS,
+  ).filter((row) => row.id === 'llm-pi-ai'),
+);
 // 能力全关的会话：只读沙箱、没有任何可选能力
 rows.push(
   ...buildRuntimePatch({ ...basePlan, allowed: [], sandbox: 'read-only', skills: null, mcp: { cwd: '/tmp', servers: [] }, web: null }, GROUP_TOOLS).flatMap(
     (row) => row.insert ?? [row],
   ),
 );
-const configKeys = async (pkg) => {
+const configSchema = async (pkg) => {
   const mod = await import(pkg).catch(() => null);
   const schema = mod?.Config ?? mod?.default?.Config;
   const members = schema?.type === 'union' ? schema.list : [schema];
-  if (!members.every((member) => member?.dict)) return null;
-  return members.map((member) => new Set(Object.keys(member.dict)));
+  return members.every((member) => member?.dict) ? schema : null;
 };
+/**
+ * 配置里插件不认识的字段（逐层核对：对象、字典、数组、联合类型），返回字段路径。
+ * 例如模型路由 providers.forge.models[0].compat 里写错的兼容项也能查出来。
+ */
+function unknownKeys(value, schema, path = '') {
+  if (!schema || value === null || typeof value !== 'object') return [];
+  if (schema.type === 'union')
+    return schema.list
+      .map((member) => unknownKeys(value, member, path))
+      .reduce((a, b) => (b.length < a.length ? b : a));
+  if (schema.type === 'dict')
+    return Object.entries(value).flatMap(([key, item]) => unknownKeys(item, schema.inner, `${path}.${key}`));
+  if (schema.type === 'array' && Array.isArray(value))
+    return value.flatMap((item, index) => unknownKeys(item, schema.inner, `${path}[${index}]`));
+  if (!schema.dict) return [];
+  return Object.entries(value).flatMap(([key, item]) =>
+    Object.hasOwn(schema.dict, key)
+      ? unknownKeys(item, schema.dict[key], path ? `${path}.${key}` : key)
+      : [path ? `${path}.${key}` : key],
+  );
+}
 const seen = new Set();
 for (const row of rows) {
   const pkg = row.name ?? builtin.get(row.id);
@@ -181,22 +211,23 @@ for (const row of rows) {
     check(`patch 引用的内置插件 id ${row.id} 仍在 ${DSH_PROFILE} 装配清单中`, builtin.has(row.id));
   }
   if (!pkg?.startsWith('@deepseek-ai/') || !row.config) continue;
-  const label = `${pkg} 配置项 ${Object.keys(row.config).sort().join('、')}`;
+  const label = `${pkg} 配置项 ${Object.keys(row.config).sort().join('、')}${
+    row.id === 'llm-pi-ai' && JSON.stringify(row.config).includes('"deepseek"') ? '（DeepSeek 路由）' : ''
+  }`;
   if (seen.has(label)) continue;
   seen.add(label);
-  const schemas = await configKeys(pkg);
-  if (!schemas) {
+  const schema = await configSchema(pkg);
+  if (!schema) {
     check(label, false, '读不到插件导出的 Config 定义');
     continue;
   }
   // 联合类型（如 mcp-client 的 stdio / http）只要有一种形态认识全部配置项即可
-  const misses = schemas.map((keys) => Object.keys(row.config).filter((key) => !keys.has(key)));
-  const best = misses.reduce((a, b) => (b.length < a.length ? b : a));
-  check(label, best.length === 0, best.length ? `插件不认识：${best.join('、')}` : '');
+  const misses = unknownKeys(row.config, schema);
+  check(label, misses.length === 0, misses.length ? `插件不认识：${misses.join('、')}` : '');
 }
 
 // 6. 所有 dsh 包同一版本、每个 @deepseek-ai 包只装一份。
-//    升级时漏改某个版本号，npm 会把同一模块装出两份不同版本：Forge 插件（如继承 dsh-llm LlmAdapter 的模型网关）
+//    升级时漏改某个版本号，npm 会把同一模块装出两份不同版本：Forge 插件直接引用的 dsh 包
 //    与 dsh 用到的不是同一份，问题隐蔽且难查。基准是 package.json 中 @deepseek-ai/dsh 的锁定版本；
 //    cordis、schemastery 等 @deepseek-ai 通用库版本独立，只要求不重复。
 const manifest = JSON.parse(await readFile(join(ROOT, 'package.json'), 'utf8'));
