@@ -1,0 +1,87 @@
+# 14 · 执行底座切换到 DSH sdk 组合
+
+> 状态：第 1–3 步已实现；第 4 步（模型适配器）待定；第 5 步以后再议。
+> DSH 版本固定 `0.2.2-rc.5`，不 fork、不改 DSH 的英文工具说明与压缩提示词。
+
+## 为什么换
+
+原来以 `sdk-minimal` 为底座，文件读写、交付声明、当前时间都是 Forge 自己写的工具（`workspace-tools.js`），
+终端是常驻 Shell、没有系统沙箱。DSH 官方 `sdk` 组合已经提供同类能力，并且带有沙箱、超长结果转存、
+超时转后台等配套。继续自己维护一套，DSH 每次升级都要跟着改，而且效果更差。
+
+切换后的原则：
+
+- **能用 DSH 的就用 DSH**，Forge 只保留平台层：工具白名单、路径守卫、配额、文件同步、命令规则、外部工具逐次确认、Skill 编辑。
+- **场景仍然可配**：场景勾选的能力决定加载哪些 DSH 插件；**没选中的能力整块关闭插件**（只隐藏工具会留下多余的提示词）。
+- **每个 sdk 内置插件都必须归类**，DSH 升级新增插件时 `npm run contract` 直接报错，避免悄悄多出能力或提示词。
+
+## 插件归类（`runner/src/kernel/dsh/runtime-config.ts`）
+
+| 类别 | 含义 | 内容 |
+| --- | --- | --- |
+| `SDK_KEPT` | 每个会话都加载 | 内核、模型（`llm-deepseek` 与重试）、会话与持久化、agent、后台进程、沙箱 ×4、Shell 环境、审批、系统提示、用量、压缩、图片转存、旧结果裁剪、提醒、超长结果转存 ×2、超时策略、时间上下文、MCP 资源、启动与 JSON-RPC |
+| `SDK_SWITCHED` | 按会话能力开关 | `tool-fs`（`read`/`write`/`edit`，关闭读图与 apply_patch）、`fs-search`、`present`（每次最多 4 个文件）、`tool-bash`（后台运行随“后台任务”开放）、待办、后台任务、目标 ×2、Skill ×2、联网 ×5 |
+| `SDK_OFF` | 永远关闭 | 第二套模型适配、`permission`、定时任务、遥测（会上报到外部地址）、插件管理、子代理、Office、agent 指令文件、文件系统 Skill、目标自动推进、向用户提问等 |
+
+运行时补丁要点（`buildRuntimePatch`）：
+
+- 系统提示：不带 DSH 的身份与编程助手人设，场景提示词作为一个**不做变量插值**的段落放在人设位置（场景里写 `{{占位符}}` 不会出错）。
+- 沙箱：`sandbox-policy.mode` 可写会话为 `workspace-write`，否则 `read-only`；工作区根目录 = 会话工作区。
+- 终端单条命令 5 分钟；审批方式为“询问”；超长结果转存到会话专用目录（保留 30 天，模型可只读访问）；时区默认 `Asia/Shanghai`（`TZ` 可改）。
+
+## 第 1 步 · sdk 底座
+
+- `DSH_PROFILE = 'sdk'`，Runner 只通过上面的归类决定加载什么。
+- 验收：Runner 集成检查全部通过；系统提示里没有无关的人设 / 身份文字；契约检查发现未归类插件即失败。
+- 实测（本机，模拟模型，加载读写 + 终端）：启动约 **1.0 秒**、每个会话的 dsh 进程约 **185 MB**。
+  对比：原 `sdk-minimal` 0.91 秒 / 165 MB，未裁剪的完整 `sdk` 2.75 秒 / 350 MB。
+
+## 第 2 步 · 文件、交付、时间
+
+| 旧（Forge 自写） | 新（DSH） |
+| --- | --- |
+| `workspace_list` / `workspace_read` | `read`（+ `glob` / `grep`） |
+| `workspace_write` | `write`（文本）/ `edit`（局部替换） |
+| `workspace_present` | `present` |
+| `current_time` | 时间作为上下文自动提供，不再是工具 |
+
+Forge 仍然负责：
+
+- **路径守卫**（`path-guard.js`）：读取 / 搜索限制在会话工作区与只读目录；`write` / `edit` / `present` 只能写会话工作区内的非隐藏路径，拒绝符号链接与越界。
+- **配额**（`limits.js` + `workspace-bridge.js`）：单文件 10 MB、1000 个文件、总量 200 MB；写入串行检查。
+- **文件同步**：每次 `write` / `edit` 后发 `forge.artifact`，`present` 后发 `forge.present`（工作区相对路径）。持久化的交付结果为 `{files:[{path, bytes, description}]}`。
+
+旧名兼容（`contracts/platform.json` 的 `renamed`）：
+
+- Runner（`canonicalTools`）、控制面（`canonical_tools`）、前端（`LEGACY_TOOL_NAMES`）都认旧名。
+- 控制面启动时一次性迁移（标记 `tool-rename-v2`）：执行策略、空间工具开关、场景版本快照里的旧名换成新名并重算快照哈希。
+- 历史会话的消息不改，界面按旧名正常显示（标题、交付卡片）。
+
+二进制文件：`write` 只写文本，二进制文件由 `bash`（如 Python 脚本）生成。
+
+## 第 3 步 · 沙箱中的终端
+
+- 终端改用 DSH 一次性 `bash`：每次调用是新的 Shell，`cd` 不保留，用 `workdir` 参数指定目录。
+- 在 DSH 沙箱中执行（bubblewrap → Landlock），只能写会话工作区与临时目录；只读会话完全只读。
+- 越界时模型可带 `sandbox_permissions` + 一句理由请求放宽，**确认卡片显示中文原因**
+  （“这条命令需要突破终端沙箱（…）。原因：…”），拒绝后命令保持被拦截。原因随审批票据保存，刷新页面仍可见。
+- 服务器既没有 bubblewrap 也不支持 Landlock 时：首个会话启动探测一次，之后所有会话降级为不限制写入，**终端仍可用**
+  （普通成员默认能用终端），Forge 命令规则与写入路径守卫照常生效；`GET /v1/runtime` 与治理页如实显示 `unavailable`。
+  生产环境请安装 bubblewrap。
+- 部分 Landlock 支持时 DSH 每条命令都会输出一段英文提示，Forge 已从结果中去掉。
+
+## 第 4 步 · 模型适配器（待定）
+
+用 `dsh-llm-pi-ai`（按路由配置 `providers`）替换 Forge 自写的 `gateway.js`。当前 `gateway.js` 仍是唯一的真实模型出口，
+`llm-deepseek` 保留到这一步。涉及模型凭据传递方式，单独评估后再做。
+
+## 第 5 步 · 以后
+
+子代理、向用户提问、Office 等按场景开放；目前全部关闭。
+
+## 待决定
+
+- 终端不再常驻（`cd` 不保留）对现有场景提示词的影响。
+- 生产环境安装 bubblewrap / 确认 Landlock。
+- 每会话内存（约 185 MB）与 Runner 容量设置。
+- 第 4 步的时间。

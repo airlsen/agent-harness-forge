@@ -37,7 +37,11 @@ async def pending(request: Request, db: AsyncSession = Depends(get_session)):
                     "tool": r.tool,
                     "arguments": r.args_digest,
                     "status": r.status,
-                    **({"reason": r.decision_payload["reason"]} if (r.decision_payload or {}).get("reason") else {}),
+                    **(
+                        {"reason": r.decision_payload["reason"]}
+                        if (r.decision_payload or {}).get("reason")
+                        else {}
+                    ),
                 }
                 for r in rows
             ]

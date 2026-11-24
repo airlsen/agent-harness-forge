@@ -131,7 +131,10 @@ async def runtime():
     shell_note = {
         "enforced": "终端命令（bash）在系统沙箱中执行，只能写入会话工作区，越界写入需用户确认；仅拦截少数高危命令，受平台策略约束",
         "unavailable": "Runner 所在服务器不支持终端沙箱（缺少 bubblewrap 或 Landlock），终端命令（bash）已降级为不限制写入，仅拦截少数高危命令；生产环境请安装 bubblewrap",
-    }.get(sandbox, "终端命令（bash）默认在系统沙箱中执行，只能写入会话工作区；首个会话启动后确认服务器是否支持沙箱")
+    }.get(
+        sandbox,
+        "终端命令（bash）默认在系统沙箱中执行，只能写入会话工作区；首个会话启动后确认服务器是否支持沙箱",
+    )
     return ResponseUtil.ok(
         {
             "controlPlane": "online",

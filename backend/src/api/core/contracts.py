@@ -44,7 +44,7 @@ def renamed_tools() -> dict[str, str]:
     """已下线的旧工具名 → 新名（空串表示能力已由运行时自动提供、不再是工具）。"""
     renamed = platform_contract().get("renamed") or {}
     if not isinstance(renamed, dict):
-        raise RuntimeError(f"平台契约的 renamed 应为对象：{PLATFORM_CONTRACT}")
+        raise TypeError(f"平台契约的 renamed 应为对象：{PLATFORM_CONTRACT}")
     return renamed
 
 

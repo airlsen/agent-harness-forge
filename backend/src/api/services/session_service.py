@@ -375,7 +375,11 @@ class SessionService:
                         "tool": ticket.tool,
                         "arguments": ticket.decision_payload.get("arguments", ticket.args_digest),
                         "status": ticket.status,
-                        **({"reason": ticket.decision_payload["reason"]} if ticket.decision_payload.get("reason") else {}),
+                        **(
+                            {"reason": ticket.decision_payload["reason"]}
+                            if ticket.decision_payload.get("reason")
+                            else {}
+                        ),
                     }
                     for ticket in approvals
                 ],

@@ -313,7 +313,9 @@ async def migrate_tool_names(db) -> None:
     完成后写入标记，之后启动不再执行；Runner 与控制面读取旧数据时也会兜底换名。
     """
     import json
+
     from sqlalchemy import select
+
     from ..models.agent_scenario import AgentScenarioVersion
     from ..models.platform import PlatformSetting
     from ..models.space import Space
@@ -340,7 +342,9 @@ async def migrate_tool_names(db) -> None:
             continue
         data = json.loads(json.dumps(version.bundle_json))
         modified = False
-        caps = (data.get("payload") or {}).get("capabilities") if isinstance(data.get("payload"), dict) else None
+        caps = (
+            (data.get("payload") or {}).get("capabilities") if isinstance(data.get("payload"), dict) else None
+        )
         if isinstance(caps, dict):
             caps["builtin_tool_names"], changed = _canonical_list(caps.get("builtin_tool_names"), rename)
             modified |= changed
