@@ -85,7 +85,7 @@ node --import tsx runner/scripts/check-business.mjs       # isolated business-ke
 npm --prefix frontend test                                # conversation-draft checks
 ```
 
-Optional browser regressions (need `python3 -m playwright install --with-deps chromium` first): `scripts/check-business-api.py --browser`, `scripts/check-business-ui.py`, `scripts/check-iframe-auth.py`. These create/destroy temporary scenarios and are for human verification, not CI gates beyond `checks.yml`.
+Optional browser regressions (need `python3 -m playwright install --with-deps chromium` first): `scripts/check-business-api.py --browser`, `scripts/check-iframe-auth.py`. These are for human verification, not CI gates beyond `checks.yml`.
 
 ## Architecture
 
