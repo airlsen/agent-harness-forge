@@ -13,6 +13,8 @@ import type {
   ChatMessage,
   CodeProjectList,
   KernelEvent,
+  PendingQuestion,
+  QuestionAnswerPayload,
   SessionDetail,
   SessionModelSegment,
 } from '../types/platform';
@@ -30,6 +32,8 @@ export const PROCESS_KINDS = [
   'tool_result',
   'approval_required',
   'approval_resolved',
+  'question_required',
+  'question_resolved',
   'error',
   'message',
   'compaction',
@@ -158,6 +162,8 @@ export const useConversation = defineStore('conversation', {
     /** 已开始、尚未返回结果的工具调用 */
     activeTools: [] as ToolCallView[],
     approvals: [] as Approval[],
+    /** 模型向用户提问的卡片（含已结束的：置灰显示回答状态） */
+    questions: [] as PendingQuestion[],
     files: [] as WorkspaceFile[],
     fileRetention: null as FileRetention | null,
     /** 文件清单已从服务端读取过（用于区分「加载中」与「文件已被删除」） */
@@ -292,6 +298,7 @@ export const useConversation = defineStore('conversation', {
       this.trajectoryEventCount = 0;
       this.activeTools = [];
       this.approvals = [];
+      this.questions = [];
       this.files = [];
       this.fileRetention = null;
       this.filesLoaded = false;
@@ -468,6 +475,7 @@ export const useConversation = defineStore('conversation', {
         this.messages = detail.messages;
         this.restoreDraft(`session:${id}`, detail.scenarioId, true);
         this.approvals = detail.pendingApprovals;
+        this.questions = detail.pendingQuestions ?? [];
         this.trajectoryEventCount = detail.trajectoryEventCount ?? 0;
         for (const event of events) this.recordEvent(event);
         this.lastSeq = Math.max(detail.lastEventSeq, events.at(-1)?.seq ?? 0);
@@ -746,6 +754,12 @@ export const useConversation = defineStore('conversation', {
           } else if (event.kind === 'approval_required') this.approvals.push(data);
           else if (event.kind === 'approval_resolved')
             this.approvals = this.approvals.filter((approval) => approval.ticketId !== data.ticketId);
+          else if (event.kind === 'question_required')
+            this.questions = [...this.questions, { ...data, status: 'pending' }];
+          else if (event.kind === 'question_resolved')
+            this.questions = this.questions.map((question) =>
+              question.ticketId === data.ticketId ? { ...question, status: data.action } : question,
+            );
           else if (event.kind === 'error') this.runError = data.message;
           else if (event.kind === 'queued') this.queue = { position: data.position, capacity: data.capacity };
           else if (event.kind === 'dequeued') this.queue = null;
@@ -793,6 +807,7 @@ export const useConversation = defineStore('conversation', {
         this.current = detail;
         this.messages = detail.messages;
         this.approvals = detail.pendingApprovals;
+        this.questions = detail.pendingQuestions ?? [];
         this.liveText = '';
         this.liveReasoning = '';
         this.activeTools = [];
@@ -837,6 +852,20 @@ export const useConversation = defineStore('conversation', {
       try {
         await post(`/agent/approvals/${ticketId}/resolve`, { action });
         this.approvals = this.approvals.filter((approval) => approval.ticketId !== ticketId);
+      } catch (error) {
+        if (this.current) void this.open(this.current.id);
+        throw error;
+      }
+    },
+    /** 回答或忽略模型的一批提问；失败时重开当前会话以恢复服务端状态 */
+    async resolveQuestion(ticketId: number, payload: QuestionAnswerPayload) {
+      try {
+        await post(`/agent/questions/${ticketId}/resolve`, payload);
+        this.questions = this.questions.map((question) =>
+          question.ticketId === ticketId
+            ? { ...question, status: payload.action === 'cancel' ? 'cancelled' : 'answered' }
+            : question,
+        );
       } catch (error) {
         if (this.current) void this.open(this.current.id);
         throw error;

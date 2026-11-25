@@ -64,6 +64,7 @@ class RuntimePolicy(BaseModel):
     maxOutputTokens: int | None = None
     requestTimeoutSeconds: int | None = None
     approvalTimeoutSeconds: int | None = None
+    askTimeoutSeconds: int | None = None
 
 
 class DraftFile(_Strict):

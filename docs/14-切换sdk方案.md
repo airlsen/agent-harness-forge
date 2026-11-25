@@ -23,8 +23,8 @@
 | 类别 | 含义 | 内容 |
 | --- | --- | --- |
 | `SDK_KEPT` | 每个会话都加载 | 内核、模型（`llm-pi-ai` 与重试）、会话与持久化、agent、后台进程、沙箱 ×4、Shell 环境、审批、系统提示、用量、压缩、图片转存、旧结果裁剪、提醒、超长结果转存 ×2、超时策略、时间上下文、MCP 资源、启动与 JSON-RPC |
-| `SDK_SWITCHED` | 按会话能力开关 | `tool-fs`（`read`/`write`/`edit`，关闭读图与 apply_patch）、`fs-search`、`present`（每次最多 4 个文件）、`tool-bash`（后台运行随“后台任务”开放）、待办、后台任务、目标 ×2、Skill ×2、联网 ×5 |
-| `SDK_OFF` | 永远关闭 | 第二套模型适配、`permission`、定时任务、遥测（会上报到外部地址）、插件管理、子代理、Office、agent 指令文件、文件系统 Skill、目标自动推进、向用户提问等 |
+| `SDK_SWITCHED` | 按会话能力开关 | `tool-fs`（`read`/`write`/`edit`，关闭读图与 apply_patch）、`fs-search`、`present`（每次最多 4 个文件）、`tool-bash`（后台运行随“后台任务”开放）、待办、后台任务、目标 ×2、Skill ×2、向用户提问 ×2（`user-questions` + `tool-ask-user`，随基础工具「向用户提问」开放）、联网 ×5 |
+| `SDK_OFF` | 永远关闭 | 第二套模型适配、`permission`、定时任务、遥测（会上报到外部地址）、插件管理、子代理、Office、agent 指令文件、文件系统 Skill、目标自动推进等 |
 
 运行时补丁要点（`buildRuntimePatch`）：
 
@@ -102,7 +102,7 @@ Forge 仍然负责：
 
 ## 第 5 步 · 以后
 
-子代理、向用户提问、Office 等按场景开放；目前全部关闭。
+子代理、Office 等按场景开放；目前全部关闭。向用户提问已在 2026-11 接入（见 `docs/16`）：`user-questions` / `tool-ask-user` 移入 `SDK_SWITCHED`，随基础工具「向用户提问」开放。
 
 ## 待决定
 

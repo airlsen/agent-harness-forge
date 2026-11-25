@@ -360,6 +360,21 @@ try {
     // 格式异常的条目被忽略
     assert.deepEqual(latestUnavailable([{ user: withCaps(1, [null, { kind: 'other' }, jira]) }]), [jira]);
   });
+
+  const { canonicalToolName, isPresentTool, builtinToolTitle } = await vite.ssrLoadModule(
+    '/src/utils/conversation/toolTitles.ts',
+  );
+  check('旧工具名按平台契约换新：交付判定兼容历史会话，新工具显示中文名', () => {
+    assert.equal(canonicalToolName('workspace_present'), 'present');
+    assert.equal(canonicalToolName('workspace_write'), 'write');
+    assert.equal(canonicalToolName('current_time'), '');
+    assert.equal(canonicalToolName('read'), 'read');
+    assert.equal(isPresentTool('workspace_present'), true);
+    assert.equal(isPresentTool('present'), true);
+    assert.equal(isPresentTool('write'), false);
+    assert.equal(builtinToolTitle('ask_user_question'), '向用户提问');
+    assert.equal(builtinToolTitle('mcp__demo__echo'), 'demo · echo');
+  });
 } finally {
   await vite.close();
 }

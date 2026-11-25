@@ -22,6 +22,8 @@ export const ENGINE_TOOLS = Object.freeze({
   jobOutput: 'job_output',
   /** dsh-tool-skill */
   skill: 'skill',
+  /** dsh-tool-ask-user：向用户提问（随基础能力开放，仍受平台策略上限约束） */
+  ask: 'ask_user_question',
   /** dsh-tool-web */
   webSearch: 'web_search',
   webFetch: 'web_fetch',

@@ -35,6 +35,7 @@ export const BUILTIN_TOOL_TITLES: Record<string, string> = {
   glob: '查找文件',
   grep: '搜索文件内容',
   bash: '执行终端命令',
+  ask_user_question: '向用户提问',
   read: '读取文件',
   write: '生成与修改文件',
   job_output: '读取后台任务输出',

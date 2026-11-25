@@ -17,7 +17,9 @@ class ApprovalTicket(Base):
     tool: Mapped[str] = mapped_column(String(64))
     args_digest: Mapped[str] = mapped_column(String(4096), default="")  # 脱敏后参数
     channel: Mapped[str] = mapped_column(String(16), default="ui")  # ui/feishu/dingtalk
-    # pending/approved/denied/timeout
+    # 工单类型：tool=工具确认；question=模型向用户提问（ask_user_question）
+    kind: Mapped[str] = mapped_column(String(16), default="tool")
+    # tool: pending/approved/denied/timeout；question: pending/answered/cancelled/timeout
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     decided_by: Mapped[str] = mapped_column(String(64), default="")
     decision_payload: Mapped[dict] = mapped_column(JSON, default=dict)

@@ -18,6 +18,7 @@ from .routes import (
     code,
     governance,
     llm,
+    question,
     registry,
     auth,
     model,
@@ -106,6 +107,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(agent_scenario.router, prefix="/api/agent-scenarios", tags=["scenario"])
 app.include_router(agent_session.router, prefix="/api/agent/sessions", tags=["session"])
 app.include_router(approval.router, prefix="/api/agent/approvals", tags=["approval"])
+app.include_router(question.router, prefix="/api/agent/questions", tags=["question"])
 app.include_router(code.router, prefix="/api/code", tags=["code"])
 app.include_router(capability.router, prefix="/api/capabilities", tags=["capabilities"])
 app.include_router(registry.router, prefix="/api/registry", tags=["registry"])

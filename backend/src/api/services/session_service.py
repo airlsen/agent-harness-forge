@@ -322,7 +322,18 @@ class SessionService:
             approvals = (
                 await db.scalars(
                     select(ApprovalTicket).where(
-                        ApprovalTicket.session_id == session_id, ApprovalTicket.status == "pending"
+                        ApprovalTicket.session_id == session_id,
+                        ApprovalTicket.status == "pending",
+                        ApprovalTicket.kind == "tool",
+                    )
+                )
+            ).all()
+            questions = (
+                await db.scalars(
+                    select(ApprovalTicket).where(
+                        ApprovalTicket.session_id == session_id,
+                        ApprovalTicket.status == "pending",
+                        ApprovalTicket.kind == "question",
                     )
                 )
             ).all()
@@ -382,6 +393,14 @@ class SessionService:
                         ),
                     }
                     for ticket in approvals
+                ],
+                "pendingQuestions": [
+                    {
+                        "ticketId": ticket.id,
+                        "questions": ticket.decision_payload.get("questions", []),
+                        "status": ticket.status,
+                    }
+                    for ticket in questions
                 ],
             }
 
@@ -707,6 +726,42 @@ class SessionService:
                         }.get(payload.get("action"), "denied")
                         ticket.decided_at = datetime.now(timezone.utc)
                         payload = {**payload, "ticketId": ticket.id}
+                elif kind == "question_required":
+                    ticket = ApprovalTicket(
+                        session_id=session_id,
+                        tool_call_id=payload["ticketId"],
+                        tool="ask_user_question",
+                        kind="question",
+                        args_digest=str(payload.get("questions", []))[:4096],
+                        status="pending",
+                        decision_payload={
+                            "runnerTicketId": payload["ticketId"],
+                            "questions": payload.get("questions", []),
+                        },
+                    )
+                    db.add(ticket)
+                    await db.flush()
+                    payload = {**payload, "ticketId": ticket.id}
+                elif kind == "question_resolved":
+                    ticket = await db.scalar(
+                        select(ApprovalTicket).where(
+                            ApprovalTicket.session_id == session_id,
+                            ApprovalTicket.tool_call_id == str(payload.get("ticketId", "")),
+                        )
+                    )
+                    if ticket:
+                        ticket.status = {
+                            "answered": "answered",
+                            "cancelled": "cancelled",
+                            "timeout": "timeout",
+                        }.get(payload.get("action"), "cancelled")
+                        ticket.decided_at = datetime.now(timezone.utc)
+                        if payload.get("answers") is not None:
+                            ticket.decision_payload = {
+                                **ticket.decision_payload,
+                                "answers": payload["answers"],
+                            }
+                        payload = {**payload, "ticketId": ticket.id}
                 elif kind == "tool_result":
                     db.add(
                         SessionMessage(
@@ -877,13 +932,15 @@ class SessionService:
         async with SessionFactory() as db:
             pending = (
                 await db.scalars(
-                    select(ApprovalTicket.tool_call_id).where(
+                    select(ApprovalTicket).where(
                         ApprovalTicket.session_id == session_id, ApprovalTicket.status == "pending"
                     )
                 )
             ).all()
-        for ticket_id in pending:
-            await persist("approval_resolved", {"ticketId": ticket_id, "action": "cancelled"}, "tools")
+        for ticket in pending:
+            # 遗留的挂起项随回合结束统一取消（Runner 正常会先自行结算；提问发 question_resolved 保持卡片状态一致）
+            kind = "question_resolved" if ticket.kind == "question" else "approval_resolved"
+            await persist(kind, {"ticketId": ticket.tool_call_id, "action": "cancelled"}, "tools")
         if turn.get("messageId"):
             try:
                 if baseline is not None:

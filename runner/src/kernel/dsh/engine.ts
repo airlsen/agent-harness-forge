@@ -10,6 +10,7 @@ import type { RuntimeModel } from '../runtime-model.js';
 import {
   DSH_PROFILE,
   HOST_REQUEST,
+  QUESTION_CANCELLED,
   approvalReason,
   approvalReply,
   redact,
@@ -31,6 +32,14 @@ export interface ApprovalRequest {
   arguments: unknown;
   reason?: string;
 }
+/** 一个问题的回答：selected 为选中的选项 label（多选可多项），custom 为自由文本（单选时覆盖 selected） */
+export interface AskAnswer {
+  id: string;
+  selected: string[];
+  custom?: string;
+}
+/** 用户对一批提问的最终结论：回答，或不回答（模型随后自行继续） */
+export type AnswerOutcome = { answers: AskAnswer[] } | { cancelled: true };
 /** 内核提供给引擎的回调 */
 export interface EngineHost {
   emit(kind: string, payload: unknown, source: KernelEvent['source']): void;
@@ -38,6 +47,10 @@ export interface EngineHost {
   fail(message: string): void;
   /** 工具需要用户确认：内核负责票据、超时与取消，返回最终结论 */
   approve(request: ApprovalRequest): Promise<ApprovalOutcome>;
+  /** 模型向用户提问：内核负责票据、超时与取消；signal 在运行时撤销等待时中止 */
+  ask(request: { questions: unknown[] }, context: { signal: AbortSignal }): Promise<AnswerOutcome>;
+  /** 运行时撤销了挂起提问（user-question.cancelled）：取消本会话全部挂起提问 */
+  cancelQuestions(): void;
 }
 export interface EngineOptions {
   sessionId: string;
@@ -102,7 +115,8 @@ export class DshEngine {
         [MODEL_KEY_ENV]: opts.model.apiKey || MODEL_KEY_PLACEHOLDER,
         ...(opts.plan.web?.apiKey ? { [WEB_SEARCH_KEY_ENV]: opts.plan.web.apiKey } : {}),
       },
-      onUserQuestion: async () => ({ cancelled: true as const }),
+      onUserQuestion: (request, context) =>
+        host.ask({ questions: Array.isArray(request?.questions) ? request.questions : [] }, context),
     });
     const client = harness.client;
     client.start();
@@ -114,6 +128,11 @@ export class DshEngine {
     const notifications = (async () => {
       try {
         for await (const { method, params } of subscription) {
+          // 运行时撤销挂起提问：无法按 requestId 对应票据（回调参数不携带），按全会话取消处理
+          if (method === QUESTION_CANCELLED) {
+            host.cancelQuestions();
+            continue;
+          }
           for (const item of translateNotification(method, params, calls)) {
             if ('failure' in item) host.fail(redact(item.failure, opts.model.apiKey));
             else if (item.kind === 'sandbox') probed(item.payload as SandboxProbe);

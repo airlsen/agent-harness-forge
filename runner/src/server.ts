@@ -53,6 +53,8 @@ app.get('/v1/runtime', async () => ({
   capabilities: {
     stream: true,
     approvals: true,
+    // 模型可在执行中向用户提问（ask_user_question）；是否开放仍由平台策略决定
+    questions: BASE_TOOLS.includes('ask_user_question'),
     workspaceFiles: true,
     codeProjects: true,
     skills: true,
@@ -235,6 +237,13 @@ app.post<{ Params: { id: string; ticket: string } }>(
   '/v1/sessions/:id/approvals/:ticket/resolve',
   async (req) => {
     await kernel.resolveApproval(req.params.id, req.params.ticket, req.body);
+    return { ok: true };
+  },
+);
+app.post<{ Params: { id: string; ticket: string } }>(
+  '/v1/sessions/:id/questions/:ticket/resolve',
+  async (req) => {
+    await kernel.resolveQuestion(req.params.id, req.params.ticket, req.body);
     return { ok: true };
   },
 );

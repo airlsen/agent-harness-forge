@@ -172,13 +172,26 @@
           ],
           "default": null,
           "title": "Approvaltimeoutseconds"
+        },
+        "askTimeoutSeconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asktimeoutseconds"
         }
       },
       "required": [
         "allowedTools",
         "maxOutputTokens",
         "requestTimeoutSeconds",
-        "approvalTimeoutSeconds"
+        "approvalTimeoutSeconds",
+        "askTimeoutSeconds"
       ],
       "title": "RuntimePolicy",
       "type": "object"

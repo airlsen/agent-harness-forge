@@ -1,6 +1,6 @@
 {
   "$comment": "控制面与 Runner 共用的平台契约（唯一来源）：平台内置工具目录与能力上限。provider 为 dsh 包名或 Forge 插件名；带 follows 的工具随被跟随的工具一同开放，不在平台策略中单独管控。renamed 记录已下线的旧工具名 → 新工具名（空串表示能力已由 DSH 自动提供、不再是工具），两端读取旧数据（企业策略、空间开关、场景快照、会话清单）时据此换成新名。改这里，两端同时生效；npm run contract 核对 dsh 包仍提供对应工具，npm test 的 check-wiring 核对 Forge 插件确实注册了对应工具。",
-  "version": 2,
+  "version": 3,
   "tools": [
     {
       "name": "read",
@@ -48,6 +48,15 @@
       "icon": "terminal",
       "group": "base",
       "provider": "@deepseek-ai/dsh-tool-bash"
+    },
+    {
+      "name": "ask_user_question",
+      "title": "向用户提问",
+      "description": "执行中遇到口径、范围或选择不明确时，把问题连同候选项发给用户，等回答后再继续；未回答时模型会自行按合理假设推进。",
+      "permission": "read",
+      "icon": "question",
+      "group": "base",
+      "provider": "@deepseek-ai/dsh-tool-ask-user"
     },
     {
       "name": "skill_run_script",
