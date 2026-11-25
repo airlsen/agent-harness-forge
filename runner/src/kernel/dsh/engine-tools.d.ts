@@ -8,6 +8,7 @@ export declare const ENGINE_TOOLS: {
   readonly shell: 'bash';
   readonly jobOutput: 'job_output';
   readonly skill: 'skill';
+  readonly ask: 'ask_user_question';
   readonly webSearch: 'web_search';
   readonly webFetch: 'web_fetch';
 };

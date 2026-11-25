@@ -247,6 +247,27 @@ export interface Approval {
   arguments: unknown;
   reason?: string;
   timeoutSeconds?: number;
+  /** tool=工具确认；question=模型向用户提问（提问卡片用） */
+  kind?: 'tool' | 'question';
+}
+/** 模型向用户提问的一批问题（ask_user_question）；内容为模型生成的纯文本 */
+export interface PendingQuestion {
+  ticketId: number;
+  questions: {
+    id: string;
+    question: string;
+    header?: string;
+    detail?: string;
+    options?: { label: string; description?: string }[];
+    multiSelect?: boolean;
+  }[];
+  /** pending 等待回答；answered/cancelled/timeout 已结束（卡片置灰展示） */
+  status: string;
+}
+/** 提问回执载荷：逐问题回答（每题至少一个选中项或自由文本），或整批忽略 */
+export interface QuestionAnswerPayload {
+  answers?: { id: string; selected: string[]; custom?: string }[];
+  action?: 'cancel';
 }
 /** 会话模型分段（append-only）：会话创建时一段，每次会话内切换追加一段 */
 export interface SessionModelSegment {
@@ -271,6 +292,7 @@ export interface SessionDetail extends Conversation {
   trajectoryEventCount?: number;
   bundle: any;
   pendingApprovals: Approval[];
+  pendingQuestions?: PendingQuestion[];
   models?: SessionModelSegment[];
   /** 最近一次模型请求的输入 tokens，约等于当前上下文规模 */
   contextTokens?: number;

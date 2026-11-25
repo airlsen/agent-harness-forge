@@ -475,7 +475,10 @@ try {
   check('base capabilities load without scenario grants (edit/present ride on write, search on read)', () =>
     assert.deepEqual(
       requests[0].tools.map((tool) => tool.function.name).sort(),
-      [...BASE_TOOLS, 'edit', 'present', ...SEARCH_TOOLS].toSorted(),
+      // 夹具刻意沿用旧版策略：旧上限不含后来新增的 ask_user_question，因此不进入白名单
+      [...BASE_TOOLS, 'edit', 'present', ...SEARCH_TOOLS]
+        .filter((name) => name !== 'ask_user_question')
+        .toSorted(),
     ),
   );
   check('system prompt tells the model to save requested files with write', () => {

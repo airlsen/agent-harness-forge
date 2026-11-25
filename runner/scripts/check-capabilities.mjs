@@ -298,19 +298,37 @@ const plan = {
   ECHO: ['mcp__demo__echo', { text: 'hi' }],
   NOTE: ['mcp__demo__write_note', { note: 'n1' }],
   HIDDEN: ['mcp__demo__hidden', {}],
+  ASK: [
+    'ask_user_question',
+    {
+      questions: [
+        {
+          id: 'q1',
+          question: '统计哪个季度的数据？',
+          header: '确认口径',
+          options: [{ label: 'Q1', description: '一季度' }, { label: 'Q2' }],
+        },
+        { id: 'q2', question: '输出语言？' },
+      ],
+    },
+  ],
 };
 const server = http.createServer(async (req, res) => {
   let raw = '';
   for await (const chunk of req) raw += chunk;
   const body = JSON.parse(raw);
   requests.push(body);
-  // dsh 注入的会话上下文（工作目录等）也以 user 角色发送，0.2.2-rc.5 起为 <system-reminder> 包装
-  const lastUser = body.messages.findLastIndex(
-    (message) =>
+  // dsh 注入的会话上下文（工作目录、时间采样等）也以 user 角色发送；指令取最后一条命中脚本词的 user 消息
+  const lastUser = body.messages.reduce((found, message, index) => {
+    if (
       message.role === 'user' &&
       typeof message.content === 'string' &&
-      !message.content.startsWith('<system-reminder>'),
-  );
+      !message.content.startsWith('<system-reminder>') &&
+      Object.keys(plan).some((value) => message.content.includes(value))
+    )
+      return index;
+    return found;
+  }, -1);
   const instruction = body.messages[lastUser]?.content ?? '';
   const answered = body.messages.slice(lastUser + 1).some((message) => message.role === 'tool');
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -353,10 +371,10 @@ server.listen(0, '127.0.0.1');
 await once(server, 'listening');
 const manifest = fixtureManifest({
   systemPrompt: { identity: 'Capability contract test.' },
-  // 策略不开放基础能力：只看扩展能力带来的工具
+  // 策略只开放向用户提问：看扩展能力与提问工具
   tools: { builtin: [] },
   policy: {
-    allowedTools: [],
+    allowedTools: ['ask_user_question'],
     requestTimeoutSeconds: 20,
     approvalTimeoutSeconds: 5,
     maxOutputTokens: 512,
@@ -391,12 +409,23 @@ try {
     events.push(event);
     if (event.kind === 'approval_required')
       void kernel.resolveApproval(id, event.payload.ticketId, { action: approval });
+    // 自动回答提问：有选项选第一项，无选项给自由文本
+    if (event.kind === 'question_required')
+      void kernel.resolveQuestion(id, event.payload.ticketId, {
+        answers: event.payload.questions.map((question) => ({
+          id: question.id,
+          ...(question.options?.length
+            ? { selected: [question.options[0].label] }
+            : { selected: [], custom: '中文' }),
+        })),
+      });
   });
 
   let list = await turn('PLAIN');
   void list;
-  await check('model sees skill, read, web and granted MCP tools; ungranted MCP tool stays hidden', () => {
+  await check('model sees ask, skill, read, web and granted MCP tools; ungranted MCP tool stays hidden', () => {
     assert.deepEqual(toolNames(), [
+      'ask_user_question',
       'mcp__demo__echo',
       'mcp__demo__write_note',
       'read',
@@ -480,6 +509,26 @@ try {
     const payload = result(list);
     assert.ok(!payload || payload.isError);
   });
+  list = await turn('ASK');
+  await check('model questions reach the user as a pending ticket and the answer returns to the tool', () => {
+    const required = list.find((event) => event.kind === 'question_required')?.payload;
+    assert.ok(required?.ticketId);
+    assert.equal(required.questions.length, 2);
+    assert.deepEqual(required.questions[0], {
+      id: 'q1',
+      question: '统计哪个季度的数据？',
+      header: '确认口径',
+      options: [{ label: 'Q1', description: '一季度' }, { label: 'Q2' }],
+    });
+    assert.deepEqual(required.questions[1], { id: 'q2', question: '输出语言？' });
+    const resolved = list.find((event) => event.kind === 'question_resolved')?.payload;
+    assert.equal(resolved.action, 'answered');
+    assert.deepEqual(resolved.answers[0], { id: 'q1', selected: ['Q1'] });
+    assert.deepEqual(resolved.answers[1], { id: 'q2', selected: [], custom: '中文' });
+    const payload = result(list);
+    assert.equal(payload.isError, false, payload?.result);
+    assert.ok(payload.result.includes('Q1'));
+  });
   await turn('/report-style 写一份周报');
   await check('users can invoke a skill directly with /name', () => {
     const text = JSON.stringify(requests.at(-1).messages);
@@ -489,7 +538,7 @@ try {
   // 下一轮移除 MCP 与联网：Runner 以新配置重启接续，工具随之消失
   list = await turn('PLAIN', { skills: [skill], mcp: [], web: null });
   await check('capability changes apply from the next turn (restart + resume)', () => {
-    assert.deepEqual(toolNames(), ['read', 'skill']);
+    assert.deepEqual(toolNames(), ['ask_user_question', 'read', 'skill']);
     const changed = list.find((event) => event.kind === 'capabilities');
     assert.deepEqual(changed?.payload.mcp, []);
     assert.equal(changed?.payload.web, null);
@@ -503,7 +552,7 @@ try {
       list.some((event) => event.kind === 'capabilities'),
       false,
     );
-    assert.deepEqual(toolNames(), ['read', 'skill']);
+    assert.deepEqual(toolNames(), ['ask_user_question', 'read', 'skill']);
   });
   list = await turn('REFERENCE', { skills: [refOf(skill)], mcp: [], web: null });
   await check('a snapshot ref (no body, no files) reuses the content Runner already has without restarting', () => {
@@ -554,12 +603,61 @@ try {
     assert.equal(payload.isError, false, payload.result);
     assert.ok(payload.result.includes(skillDir(snapshotOf(bare))));
     assert.equal(await readFile(join(skillDir(snapshotOf(bare)), 'SKILL.md'), 'utf8'), bare.document);
-    assert.deepEqual(toolNames(), ['skill']);
+    assert.deepEqual(toolNames(), ['ask_user_question', 'skill']);
   });
   list = await turn('PLAIN', { skills: [], mcp: [], web: null });
   await check('removing every capability drops skill and read tools', () =>
-    assert.deepEqual(toolNames(), []),
+    assert.deepEqual(toolNames(), ['ask_user_question']),
   );
+
+  // —— 提问超时：没有人回答时到点按取消处理，模型带着假设继续 ——
+  const events2 = [];
+  const timeoutSession = await kernel.createSession(
+    fixtureManifest({
+      systemPrompt: { identity: 'Capability contract test.' },
+      tools: { builtin: [] },
+      policy: {
+        allowedTools: ['ask_user_question'],
+        askTimeoutSeconds: 1,
+        requestTimeoutSeconds: 20,
+        maxOutputTokens: 512,
+      },
+    }),
+    { baseUrl: `http://127.0.0.1:${server.address().port}/v1`, model: 'fixture', apiKey: 'k', contextWindow: 64000 },
+  );
+  kernel.onEvent(timeoutSession.sessionId, (event) => events2.push(event));
+  const start2 = events2.length;
+  await kernel.sendTurn(timeoutSession.sessionId, 'ASK');
+  const list2 = events2.slice(start2);
+  await check('an unanswered question times out into a cancelled tool result', () => {
+    assert.ok(list2.some((event) => event.kind === 'question_required'));
+    const resolved = list2.find((event) => event.kind === 'question_resolved')?.payload;
+    assert.equal(resolved.action, 'timeout');
+    const payload = result(list2);
+    assert.ok(payload, 'ask tool should still return a result to the model');
+    assert.equal(payload.isError, true);
+  });
+
+  // —— 策略上限不含提问：工具不装配，调用直接失败 ——
+  const events3 = [];
+  const noAskSession = await kernel.createSession(
+    fixtureManifest({
+      systemPrompt: { identity: 'Capability contract test.' },
+      tools: { builtin: [] },
+      policy: { allowedTools: [], requestTimeoutSeconds: 20, maxOutputTokens: 512 },
+    }),
+    { baseUrl: `http://127.0.0.1:${server.address().port}/v1`, model: 'fixture', apiKey: 'k', contextWindow: 64000 },
+  );
+  kernel.onEvent(noAskSession.sessionId, (event) => events3.push(event));
+  const start3 = events3.length;
+  await kernel.sendTurn(noAskSession.sessionId, 'ASK');
+  const list3 = events3.slice(start3);
+  await check('policy ceiling without ask_user_question keeps the ask plugins disabled', () => {
+    assert.ok(!toolNames().includes('ask_user_question'));
+    assert.equal(list3.some((event) => event.kind === 'question_required'), false);
+    const payload = result(list3);
+    assert.ok(!payload || payload.isError);
+  });
 } finally {
   await kernel.dispose();
   server.close();

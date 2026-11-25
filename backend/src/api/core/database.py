@@ -178,6 +178,21 @@ async def init_db() -> None:
 
         await conn.run_sync(ensure_authoring_model_column)
 
+        # 会话内提问复用审批工单表：旧库的工单都是工具确认（kind 默认值即正确）
+        def ensure_approval_kind_column(sync_conn):
+            from sqlalchemy import inspect, text
+
+            inspector = inspect(sync_conn)
+            if "approval_ticket" not in inspector.get_table_names():
+                return
+            existing = {column["name"] for column in inspector.get_columns("approval_ticket")}
+            if "kind" not in existing:
+                sync_conn.execute(
+                    text("ALTER TABLE approval_ticket ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'tool'")
+                )
+
+        await conn.run_sync(ensure_approval_kind_column)
+
         # Existing published rows keep their live version when new revisions are saved.
         def ensure_scenario_published_version(sync_conn):
             from sqlalchemy import inspect, text

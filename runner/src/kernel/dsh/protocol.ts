@@ -18,6 +18,8 @@ export const HOST_REQUEST = {
 } as const;
 /** dsh → Runner 的会话日志通知 */
 export const SESSION_EVENT = 'session.event';
+/** 运行时撤销挂起提问（回合中止等）：requestId 不暴露给宿主回调，按取消全会话挂起提问处理 */
+export const QUESTION_CANCELLED = 'user-question.cancelled';
 /** contract-check 用：高级 run API 与恢复会话所依赖的协议消息 */
 export const SDK_METHODS = [
   'initialize',
@@ -25,6 +27,7 @@ export const SDK_METHODS = [
   'session/resume',
   ...Object.values(HOST_REQUEST),
   SESSION_EVENT,
+  QUESTION_CANCELLED,
 ];
 
 /** 审批结论（Forge 侧）→ dsh 审批回复 */

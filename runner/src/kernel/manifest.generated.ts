@@ -63,6 +63,7 @@ export interface RuntimePolicy {
   maxOutputTokens: number | null;
   requestTimeoutSeconds: number | null;
   approvalTimeoutSeconds: number | null;
+  askTimeoutSeconds: number | null;
   [k: string]: unknown;
 }
 /**

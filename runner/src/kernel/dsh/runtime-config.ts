@@ -80,6 +80,8 @@ export const SDK_SWITCHED = {
   'tool-goal': '目标',
   skill: 'Skill',
   'tool-skill': 'Skill',
+  'user-questions': '向用户提问（ask_user_question）',
+  'tool-ask-user': '向用户提问（ask_user_question）',
   web: '联网',
   'web-search-deepseek': '联网搜索（DeepSeek 官方）',
   'web-deepseek-api': '联网搜索（DeepSeek Search API）',
@@ -145,9 +147,7 @@ export const SDK_OFF = [
   'skill-filesystem',
   // 目标自动续行：会改变 agent 循环
   'goal-round-driver',
-  // 高级编排：执行中提问、子智能体、智能体团队、工作流——后续按场景再开
-  'user-questions',
-  'tool-ask-user',
+  // 高级编排：子智能体、智能体团队、工作流——后续按场景再开（向用户提问已按能力开放，见 SDK_SWITCHED）
   'subagent',
   'subagent-spawn-in-process',
   'subagent-fork-in-process',
@@ -366,6 +366,11 @@ function switchedRows(plan: RuntimePlan, groupTools: Record<string, readonly str
   for (const group of groups)
     for (const id of GROUP_PLUGINS[group] ?? []) on[id as keyof typeof SDK_SWITCHED] = true;
   if (plan.skills) on.skill = on['tool-skill'] = true;
+  // 向用户提问：user-questions 提供接缝、tool-ask-user 提供模型工具，随基础能力一起按策略开放
+  if (has(ENGINE_TOOLS.ask)) {
+    on['user-questions'] = true;
+    on['tool-ask-user'] = { mode: 'legacy' };
+  }
   if (web) {
     on.web = { ...(searchPlugin ? { searchProvider: web.provider } : {}), fetchProvider: 'http' };
     on['web-fetch-http'] = true;

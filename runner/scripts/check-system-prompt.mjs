@@ -49,11 +49,15 @@ assert.deepEqual(sessionToolset({ tools: { builtin: ['current_time'] }, policy }
 });
 // 清单没有策略上限与场景工具时同样补齐
 assert.deepEqual(sessionToolset().allowed, [...BASE_TOOLS, 'edit', 'present', ...SEARCH_TOOLS]);
-// 旧版本保存的策略（workspace_* / current_time）按平台契约换成新名
+// 旧版本保存的策略（workspace_* / current_time）按平台契约换成新名；
+// 旧策略不覆盖后来新增的基础工具（ask_user_question），因此不进入白名单
 const legacy = sessionToolset({
   policy: { allowedTools: ['current_time', 'workspace_list', 'workspace_read', 'workspace_write', 'bash'] },
 });
-assert.deepEqual(legacy.allowed, [...BASE_TOOLS, 'edit', 'present', ...SEARCH_TOOLS]);
+assert.deepEqual(
+  legacy.allowed,
+  [...BASE_TOOLS, 'edit', 'present', ...SEARCH_TOOLS].filter((name) => name !== 'ask_user_question'),
+);
 // 平台策略仍是上限：关闭写入 → 无修改与交付声明；关闭读取 → 不开放搜索
 const noWrite = sessionToolset({ policy: { allowedTools: ['read'] } });
 assert.ok(!['write', 'edit', 'present'].some((name) => noWrite.allowed.includes(name)));

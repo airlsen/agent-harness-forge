@@ -10,6 +10,8 @@ export {
   DshEngine,
   EngineTimeout,
   type ApprovalRequest,
+  type AnswerOutcome,
+  type AskAnswer,
   type EngineHost,
   type SandboxProbe,
 } from './engine.js';

@@ -10,13 +10,14 @@ import { sessionState } from '../../utils/conversation/sessionState';
 import { trapTabKey } from '../../utils/common/focus';
 import { confirm } from '../../utils/common/feedback';
 import { animateComposerArrival, captureComposerOrigin } from '../../utils/conversation/composerTransition';
-import type { KernelEvent } from '../../types/platform';
+import type { KernelEvent, QuestionAnswerPayload } from '../../types/platform';
 import { useStickToBottom } from '../../composables/useStickToBottom';
 import { buildTurns, latestUnavailable, type ToolCallView, type Turn } from '../../utils/conversation/turns';
 import { missingSkillInfo } from '../../utils/skill/lifecycle';
 import Icon from '../../components/base/ForgeIcon.vue';
 import Markdown from '../../components/markdown/MarkdownContent.vue';
 import ProcessBlock from '../../components/message/ProcessBlock.vue';
+import QuestionCard from '../../components/message/QuestionCard.vue';
 import UserMessageText from '../../components/message/UserMessageText.vue';
 import TaskComposer from '../../components/composer/TaskComposer.vue';
 import ConversationStart from '../../components/composer/ConversationStart.vue';
@@ -392,7 +393,9 @@ const lastTurnCompleted = computed(() => {
 const status = computed(() =>
   chat.approvals.length
     ? { label: '等待确认', tone: 'warning', icon: 'shield' }
-    : sessionState(chat.current?.status ?? 'idle'),
+    : chat.questions.some((question) => question.status === 'pending')
+      ? { label: '等待回答', tone: 'warning', icon: 'question' }
+      : sessionState(chat.current?.status ?? 'idle'),
 );
 let routeGeneration = 0;
 async function loadSession(value: unknown) {
@@ -536,6 +539,19 @@ async function decide(id: number, action: 'approve' | 'deny') {
     approvalBusy.value = null;
   }
 }
+/** 提问回执：与审批卡片同样的提交中状态；全部问题已作答才能提交（组件内校验） */
+const questionBusy = ref<number | null>(null);
+async function answerQuestion(id: number, payload: QuestionAnswerPayload) {
+  questionBusy.value = id;
+  try {
+    await chat.resolveQuestion(id, payload);
+    app.toast('已提交回答，模型会继续执行');
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  } finally {
+    questionBusy.value = null;
+  }
+}
 async function copyMessage(text: string) {
   try {
     await navigator.clipboard.writeText(text);
@@ -654,7 +670,10 @@ async function quoteMessage(text: string) {
                   v-if="turn.process.length"
                   :steps="turn.process"
                   :active="turn.running"
-                  :waiting="chat.approvals.length > 0"
+                  :waiting="
+                    chat.approvals.length > 0 ||
+                    chat.questions.some((question) => question.status === 'pending')
+                  "
                   :writing="answerStreaming(turn)"
                 />
                 <section v-for="step in turn.answer" :key="step.key" class="step-text">
@@ -775,6 +794,13 @@ async function quoteMessage(text: string) {
             </button>
           </div>
         </div>
+        <QuestionCard
+          v-for="question in chat.questions"
+          :key="question.ticketId"
+          :question="question"
+          :busy="questionBusy !== null"
+          @resolve="answerQuestion"
+        />
         <TaskComposer ref="composer" @submitted="(id) => router.replace(`/agent/chat/${id}`)" />
       </div>
     </section>
