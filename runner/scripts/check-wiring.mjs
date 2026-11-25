@@ -42,7 +42,6 @@ for (const name of pluginNames) modules.set(name, await import(pathToFileURL(for
 async function registeredTools(name, workspace) {
   const tools = [];
   const ctx = {
-    llm: { registerAdapter: () => () => {} },
     tools: {
       register: (tool) => {
         tools.push(tool.name);
@@ -60,11 +59,6 @@ async function registeredTools(name, workspace) {
 }
 
 const dir = await mkdtemp(join(tmpdir(), 'forge-wiring-'));
-const previousModel = process.env.FORGE_MODEL_SECRET_CONFIG;
-process.env.FORGE_MODEL_SECRET_CONFIG = JSON.stringify({
-  baseUrl: 'http://127.0.0.1:9',
-  model: 'wiring-check',
-});
 try {
   await check(
     'registered Forge plugins match internal-plugins/ one to one and export their names',
@@ -109,23 +103,42 @@ try {
   });
 
   await check('companion tools open with their leader and stay out of the policy list', () => {
-    assert.deepEqual(COMPANION_TOOLS, { workspace_write: ['workspace_present'] });
-    const withWrite = sessionToolset({ policy: { allowedTools: ['workspace_write'] } }).allowed;
-    assert.ok(withWrite.includes('workspace_present'));
-    const readOnly = sessionToolset({ policy: { allowedTools: ['workspace_read'] } }).allowed;
-    assert.ok(!readOnly.includes('workspace_present'));
+    assert.deepEqual(COMPANION_TOOLS, { write: ['edit', 'present'] });
+    const withWrite = sessionToolset({ policy: { allowedTools: ['write'] } }).allowed;
+    assert.ok(withWrite.includes('edit') && withWrite.includes('present'));
+    const readOnly = sessionToolset({ policy: { allowedTools: ['read'] } }).allowed;
+    assert.ok(!readOnly.includes('edit') && !readOnly.includes('present'));
   });
 
   await check('dsh engine tool table agrees with the contract and the kernel toolset', () => {
-    const shell = PLATFORM.tools.find((tool) => tool.name === ENGINE_TOOLS.shell);
-    assert.ok(shell && isDshPackage(shell.provider), '终端工具应登记在契约中且由 dsh 包提供');
+    for (const name of [ENGINE_TOOLS.shell, ENGINE_TOOLS.read, ENGINE_TOOLS.write, ENGINE_TOOLS.present]) {
+      const tool = PLATFORM.tools.find((item) => item.name === name);
+      assert.ok(tool && isDshPackage(tool.provider), `${name} 应登记在契约中且由 dsh 包提供`);
+    }
     assert.deepEqual(SEARCH_TOOLS, ENGINE_TOOLS.search);
     assert.equal(CODE_READ_TOOL, ENGINE_TOOLS.read);
     assert.deepEqual(
       Object.keys(PATH_TOOLS).toSorted(),
-      [...ENGINE_TOOLS.search, ENGINE_TOOLS.read].toSorted(),
+      [
+        ...ENGINE_TOOLS.search,
+        ENGINE_TOOLS.read,
+        ENGINE_TOOLS.write,
+        ENGINE_TOOLS.edit,
+        ENGINE_TOOLS.present,
+      ].toSorted(),
     );
     for (const name of ENGINE_TOOLS.search) assert.ok(PATH_TOOLS[name].search && PATH_TOOLS[name].results);
+    for (const name of [ENGINE_TOOLS.write, ENGINE_TOOLS.edit, ENGINE_TOOLS.present])
+      assert.ok(PATH_TOOLS[name].workspace, `${name} 只能写会话工作区`);
+    // 旧工具名：换成的新名必须仍在契约里（空串表示已由 DSH 自动提供）
+    for (const [old, now] of Object.entries(PLATFORM.renamed)) {
+      assert.ok(!PLATFORM.tools.some((tool) => tool.name === old), `${old} 已改名，不应再登记`);
+      if (now)
+        assert.ok(
+          PLATFORM.tools.some((tool) => tool.name === now),
+          `${old} → ${now} 不在契约中`,
+        );
+    }
   });
 
   await check('every forge.* event used in plugin sources is registered', async () => {
@@ -152,8 +165,7 @@ try {
       assert.ok(method.startsWith(FORGE_EVENT_PREFIX));
       const out = translateNotification(method, { message: 'x', path: 'a.md' }, new Map());
       assert.equal(out.length, 1, `${method} 没有被翻译`);
-      if (spec.kind === 'failure') assert.deepEqual(out[0], { failure: 'x', explicit: true });
-      else if (spec.kind === 'files')
+      if (spec.kind === 'files')
         assert.deepEqual(out[0].payload, { files: [{ message: 'x', path: 'a.md' }] });
       else assert.equal(out[0].kind, spec.kind);
     }
@@ -171,8 +183,6 @@ try {
     assert.match(warnings[0], /forge\.not_registered/);
   });
 } finally {
-  if (previousModel === undefined) delete process.env.FORGE_MODEL_SECRET_CONFIG;
-  else process.env.FORGE_MODEL_SECRET_CONFIG = previousModel;
   await rm(dir, { recursive: true, force: true });
 }
 console.log(JSON.stringify({ scope: 'plugin / contract / event wiring, no dsh', checks, result: 'passed' }));

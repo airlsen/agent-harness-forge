@@ -12,6 +12,7 @@ from typing import Any, TypedDict
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.contracts import canonical_tools
 from ..schemas.agent_scenario import ScenarioPayload
 from .capability_service import freeze_scenario_mcp, freeze_scenario_skills
 from .plugin_service import approved_bindings
@@ -74,8 +75,9 @@ def apply_current_policy(bundle: Bundle, tenant_policy: dict) -> Bundle:
     """
     allowed_tools = set(tenant_policy.get("allowedTools", []))
     allowed_plugin_tools = set(tenant_policy.get("allowedPluginTools", []))
+    # 冻结快照里可能是旧工具名（workspace_* 等）：换成新名后再按当前策略收紧
     bundle.meta["builtin_tools"] = [
-        name for name in bundle.meta.get("builtin_tools", []) if name in allowed_tools
+        name for name in canonical_tools(bundle.meta.get("builtin_tools", [])) if name in allowed_tools
     ]
 
     bindings = []
@@ -112,7 +114,9 @@ class ScenarioAssembler:
     ) -> Bundle:
         caps = scenario.capabilities
         requested_plugins = list(dict.fromkeys(caps.plugin_names))
-        if set(caps.builtin_tool_names) - TOOL_NAMES:
+        # 旧版本保存的工具名（workspace_* 等）先换成新名
+        builtin_names = canonical_tools(caps.builtin_tool_names)
+        if set(builtin_names) - TOOL_NAMES:
             raise HTTPException(422, "包含尚未接入的基础工具")
         # project_ids（已由聊天「关联代码」取代）与 model（模型在聊天中选择）为兼容旧数据保留，装配时忽略。
         if len(set(caps.skill_ids)) != len(caps.skill_ids) or len(set(caps.mcp_server_ids)) != len(
@@ -128,11 +132,7 @@ class ScenarioAssembler:
             # 场景只能使用本空间和公共空间的 Skill、MCP、插件
             await ensure_caps_visible(db, space_id, caps.skill_ids, caps.mcp_server_ids, requested_plugins)
         bindings = await approved_bindings(db, requested_plugins, caps.plugin_tools)
-        builtin_tools = [
-            name
-            for name in dict.fromkeys(caps.builtin_tool_names)
-            if name in tenant_policy.get("allowedTools", [])
-        ]
+        builtin_tools = [name for name in builtin_names if name in tenant_policy.get("allowedTools", [])]
         enterprise_plugin_allow = set(tenant_policy.get("allowedPluginTools", []))
         plugin_tools = [
             tool["name"]

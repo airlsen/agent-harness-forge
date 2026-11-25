@@ -45,7 +45,7 @@ const pickerValue = computed(() =>
 );
 const title = computed(() => {
   if (inSession.value && (keepsUnlisted.value || !selected.value)) return chat.current?.model || '未记录模型';
-  if (!app.modelOptions.length) return '尚无可用模型，请由管理员在「模型管理」启用';
+  if (!app.modelOptions.length) return '尚无可用模型，请在「模型连接」启用';
   return selected.value ? `${selected.value.name} · ${selected.value.model}` : '选择本次会话使用的模型';
 });
 

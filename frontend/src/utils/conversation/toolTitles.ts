@@ -1,16 +1,44 @@
 /** 对话过程中的工具显示名：平台内置工具的中文名，以及 MCP 工具名的展示格式。 */
 
 /** 交付文件工具：模型用它声明本轮最终交付的文件 */
-export const PRESENT_TOOL = 'workspace_present';
+export const PRESENT_TOOL = 'present';
+/**
+ * 已下线的旧工具名 → 新名（空串表示能力已由运行时自动提供、不再是工具），与平台契约 contracts/platform.json 的 renamed 一致。
+ * 旧会话的历史消息与场景快照里仍是旧名，展示时据此识别。
+ */
+export const LEGACY_TOOL_NAMES: Record<string, string> = {
+  workspace_list: 'read',
+  workspace_read: 'read',
+  workspace_write: 'write',
+  workspace_present: 'present',
+  current_time: '',
+};
+/** 工具名换成当前名称；已下线且无替代的返回空串 */
+export function canonicalToolName(name: string): string {
+  return Object.hasOwn(LEGACY_TOOL_NAMES, name) ? LEGACY_TOOL_NAMES[name] : name;
+}
+/** 是否为交付文件调用（含旧会话里的 workspace_present） */
+export function isPresentTool(name: unknown): boolean {
+  return typeof name === 'string' && canonicalToolName(name) === PRESENT_TOOL;
+}
 /** 平台内置、但不在工具目录（不可单独授权）中的工具显示名 */
 export const BUILTIN_TOOL_TITLES: Record<string, string> = {
   [PRESENT_TOOL]: '交付文件',
+  edit: '修改文件',
+  // 旧会话历史里的工具名
+  workspace_list: '查看文件',
+  workspace_read: '读取文件',
+  workspace_write: '生成文件',
+  workspace_present: '交付文件',
+  current_time: '获取当前时间',
   // Runner 基础能力中的 DSH 搜索插件
   glob: '查找文件',
   grep: '搜索文件内容',
   bash: '执行终端命令',
-  // 关联代码、Skill 参考资料的只读读取
+  ask_user_question: '向用户提问',
   read: '读取文件',
+  write: '生成与修改文件',
+  job_output: '读取后台任务输出',
   // 扩展能力
   skill: '加载 Skill',
   web_search: '联网搜索',

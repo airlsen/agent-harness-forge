@@ -26,7 +26,7 @@ export function latestUnavailable(turns: Pick<Turn, 'user'>[]): UnavailableCapab
  * （中间说明收进过程块），避免「文字出现几秒又消失」。
  */
 import type { ActiveCapabilities, ChatMessage } from '../../types/platform';
-import { PRESENT_TOOL } from './toolTitles';
+import { isPresentTool } from './toolTitles';
 import {
   mergeDeliverables,
   parseChanges,
@@ -63,7 +63,7 @@ export interface Turn {
   running: boolean;
   /** 生成本轮回复的模型显示名；旧消息未记录时为空，由调用方回退为会话模型 */
   model: string;
-  /** 本轮模型通过 workspace_present 声明的交付文件（同一路径以最后一次声明为准） */
+  /** 本轮模型通过 present（旧会话为 workspace_present）声明的交付文件（同一路径以最后一次声明为准） */
   deliverables: Deliverable[];
   /** 本轮结束时服务端记录的工作区改动（新增/修改/删除与行数），无改动时为 null */
   changes: WorkspaceChanges | null;
@@ -127,7 +127,7 @@ export function buildTurns(messages: ChatMessage[], live: LiveTurn): Turn[] {
         result: message.content,
         isError: Boolean(message.meta?.isError),
       });
-      if (message.meta?.tool === PRESENT_TOOL && !message.meta?.isError)
+      if (isPresentTool(message.meta?.tool) && !message.meta?.isError)
         mergeDeliverables(turn.deliverables, parseDeliverables(message.content));
     }
   }
@@ -216,7 +216,11 @@ export function processSummary(stats: ProcessStats): string {
 export function toolArgSummary(value: unknown, max = 48): string {
   if (!value || typeof value !== 'object') return typeof value === 'string' ? clip(value, max) : '';
   const record = value as Record<string, unknown>;
-  if (typeof record.path === 'string' && record.path) return record.path;
+  // read / write / edit 的路径参数是 file_path，搜索与旧版工具是 path
+  for (const key of ['file_path', 'path']) {
+    const path = record[key];
+    if (typeof path === 'string' && path) return path;
+  }
   if (Array.isArray(record.files) && record.files.length)
     return record.files.map((file) => (typeof file?.path === 'string' ? file.path : '…')).join('、');
   // 整篇写入类调用（如更新 SKILL.md）没有路径，显示修改说明而不是正文开头

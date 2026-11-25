@@ -7,11 +7,11 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import HTTPException
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..core.contracts import builtin_tools
+from ..core.contracts import builtin_tools, canonical_tools
 from ..core.security import decrypt, encrypt, reveal_secret
 from ..models.platform import ModelConnection, PlatformSetting
 
@@ -83,6 +83,12 @@ class PolicyInput(BaseModel):
     approvalTimeoutSeconds: int = Field(default=120, ge=15, le=600)
     fileRetentionDays: int = Field(default=30, ge=0, le=3650)
 
+    @field_validator("allowedTools", mode="before")
+    @classmethod
+    def current_tool_names(cls, value):
+        # 旧版本客户端提交的旧工具名（workspace_* 等）换成新名
+        return canonical_tools(value) if isinstance(value, list) else value
+
     @model_validator(mode="after")
     def known_tools(self):
         if set(self.allowedTools) - TOOL_NAMES:
@@ -94,6 +100,9 @@ async def get_policy(db: AsyncSession) -> dict:
     row = await db.get(PlatformSetting, "policy")
     # 只保留当前仍有效的策略项：旧版本保存的 requireWriteApproval 等已下线字段不再下发
     stored = {key: value for key, value in (row.value if row else {}).items() if key in DEFAULT_POLICY}
+    # 旧工具名（workspace_* 等）换成新名：启动迁移已改写数据库，这里兜底未迁移的数据
+    if isinstance(stored.get("allowedTools"), list):
+        stored["allowedTools"] = canonical_tools(stored["allowedTools"])
     return {**DEFAULT_POLICY, **stored}
 
 

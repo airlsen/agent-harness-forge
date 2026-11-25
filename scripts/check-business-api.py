@@ -91,9 +91,9 @@ class GatewayFixture(BaseHTTPRequestHandler):
         elif "WRITE" in text and (
             not answered or (answered == 1 and "APPROVAL" in upper)
         ):
-            tool_name = "workspace_write"
+            tool_name = "write"
             tool_arguments = {
-                "path": "result.md",
+                "file_path": "result.md",
                 "content": "# API integration fixture\n",
             }
         else:
@@ -443,10 +443,10 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                 lambda item: item["status"] != "running",
             )
             check(
-                "workspace_write runs directly without an approval prompt",
+                "write runs directly without an approval prompt",
                 any(
                     message["role"] == "tool"
-                    and message["meta"]["tool"] == "workspace_write"
+                    and message["meta"]["tool"] == "write"
                     and not message["meta"]["isError"]
                     for message in write_detail["messages"]
                 )
@@ -540,7 +540,7 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                 "/governance/policies",
                 {
                     **policy,
-                    "allowedTools": ["current_time"],
+                    "allowedTools": ["todo_write"],
                     "allowedPluginTools": ["crm_find_customer"],
                 },
             )
@@ -552,8 +552,8 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
             existing_snapshot = api("GET", f"/agent/sessions/{sid}")["bundle"]["meta"]
             check(
                 "governance changes leave existing session policy snapshots unchanged",
-                "workspace_write" in existing_snapshot["builtin_tools"]
-                and "workspace_write" in existing_snapshot["policy"]["allowedTools"],
+                "write" in existing_snapshot["builtin_tools"]
+                and "write" in existing_snapshot["policy"]["allowedTools"],
             )
             plugin_session = api(
                 "POST",
@@ -582,7 +582,7 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
             )
             check(
                 "scenario and platform policy intersect; unadvertised tool cannot execute",
-                restricted_detail["bundle"]["meta"]["builtin_tools"] == ["current_time"]
+                "write" not in restricted_detail["bundle"]["meta"]["builtin_tools"]
                 and any(
                     m["role"] == "tool" and m["meta"]["isError"]
                     for m in restricted_detail["messages"]
@@ -639,7 +639,7 @@ with tempfile.TemporaryDirectory(prefix="forge-api-test-") as temp:
                         ApprovalTicket(
                             session_id=orphan["id"],
                             tool_call_id="fixture-orphan",
-                            tool="workspace_write",
+                            tool="write",
                             status="pending",
                         )
                     )

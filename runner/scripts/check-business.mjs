@@ -13,6 +13,7 @@ import { once } from 'node:events';
 import { fixtureManifest } from './fixtures.mjs';
 
 const dir = await mkdtemp(join(tmpdir(), 'forge-contract-'));
+const outsideWrite = join(process.cwd(), `.sandbox-escape-${process.pid}.txt`);
 process.env.FORGE_RUNNER_DATA_DIR = join(dir, 'sessions');
 // 关联代码夹具：代码根目录下两个项目，alpha 带 git 元数据、密钥文件与指向外部的符号链接
 const codeRoot = join(dir, 'code');
@@ -107,7 +108,7 @@ const server = http.createServer(async (req, res) => {
     res.end('data: [DONE]\n\n');
     return;
   }
-  // 输出到上限时正在生成工具调用：正文之后跟一段被截断的 workspace_write 参数
+  // 输出到上限时正在生成工具调用：正文之后跟一段被截断的 write 参数
   if (instruction.includes('CUT_TOOL')) {
     send({ choices: [{ delta: { content: 'cut tool partial' } }] });
     send({
@@ -119,7 +120,7 @@ const server = http.createServer(async (req, res) => {
                 index: 0,
                 id: 'cut-call',
                 type: 'function',
-                function: { name: 'workspace_write', arguments: '{"path":"cases.md","content":"# 用例' },
+                function: { name: 'write', arguments: '{"file_path":"cases.md","content":"# 用例' },
               },
             ],
           },
@@ -157,7 +158,7 @@ const server = http.createServer(async (req, res) => {
     res.on('close', () => clearTimeout(timer));
     return;
   }
-  if (instruction.includes('THINK') && !instruction.includes('TIME')) {
+  if (instruction.includes('THINK') && !instruction.includes('LIST')) {
     send({ choices: [{ delta: { reasoning_content: '先分析' } }] });
     send({ choices: [{ delta: { reasoning_content: '一下。' } }] });
     send({ choices: [{ delta: { content: '思考后的' } }] });
@@ -173,10 +174,30 @@ const server = http.createServer(async (req, res) => {
     res.end('data: [DONE]\n\n');
     return;
   }
-  const bashCase = ['BASH_SAFE', 'BASH_WRITE'].find((value) => instruction.includes(value));
+  const bashCase = [
+    'BASH_SAFE',
+    'BASH_WRITE',
+    'BASH_MAKE',
+    'BASH_OUTSIDE',
+    'BASH_ESCALATE',
+    'BASH_TOKEN',
+  ].find((value) => instruction.includes(value));
   if (bashCase && !answeredTool) {
-    const command =
-      bashCase === 'BASH_SAFE' ? 'echo bash-marker && cat report.md 2>/dev/null' : 'echo pwned > /etc/passwd';
+    const command = {
+      BASH_SAFE: 'echo bash-marker && cat report.md 2>/dev/null',
+      BASH_WRITE: 'echo pwned > /etc/passwd',
+      // 会话工作区内可写；工作区外（如上级目录）被 dsh 沙箱拒绝
+      BASH_MAKE: 'echo made-by-bash > bash-made.txt && echo done',
+      // 临时目录在沙箱里本来就可写，越界目标放在 Runner 目录下
+      BASH_OUTSIDE: `echo escaped > ${outsideWrite}`,
+      BASH_ESCALATE: `echo escalated > ${outsideWrite}`,
+      BASH_TOKEN: 'echo https://user:ghp_secrettoken1234567890abcdefghijklmnop@github.com/x.git',
+    }[bashCase];
+    // 越界写入：模型带上 sandbox_permissions 与给用户看的理由，请求突破沙箱
+    const escalation =
+      bashCase === 'BASH_ESCALATE'
+        ? { sandbox_permissions: 'danger-full-access', justification: '需要把结果写到会话目录之外' }
+        : {};
     send({
       choices: [
         {
@@ -188,7 +209,7 @@ const server = http.createServer(async (req, res) => {
                 type: 'function',
                 function: {
                   name: 'bash',
-                  arguments: JSON.stringify({ description: 'Check bash routing', command }),
+                  arguments: JSON.stringify({ description: 'Check bash routing', command, ...escalation }),
                 },
               },
             ],
@@ -279,38 +300,29 @@ const server = http.createServer(async (req, res) => {
     res.end('data: [DONE]\n\n');
     return;
   }
-  if (
-    (instruction.includes('WRITE') ||
-      instruction.includes('ESCAPE') ||
-      instruction.includes('TIME') ||
-      instruction.includes('LIST') ||
-      instruction.includes('READ') ||
-      instruction.includes('PRESENT')) &&
-    !answeredTool
-  ) {
-    const tool = instruction.includes('TIME')
-      ? 'current_time'
-      : instruction.includes('LIST')
-        ? 'workspace_list'
-        : instruction.includes('READ')
-          ? 'workspace_read'
-          : instruction.includes('PRESENT')
-            ? 'workspace_present'
-            : 'workspace_write';
+  const fileCase = ['WRITE', 'ESCAPE', 'HIDDEN', 'LIST', 'READ', 'PRESENT', 'EDIT'].find((value) =>
+    instruction.includes(value),
+  );
+  if (fileCase && !answeredTool) {
+    const tool = { LIST: 'glob', READ: 'read', PRESENT: 'present', EDIT: 'edit' }[fileCase] ?? 'write';
     if (instruction.includes('THINK'))
-      send({ choices: [{ delta: { reasoning_content: '需要先查时间。' } }] });
+      send({ choices: [{ delta: { reasoning_content: '需要先列出文件。' } }] });
     const path = instruction.includes('ESCAPE')
       ? '../escape.txt'
-      : instruction.includes('DENY')
-        ? 'denied.md'
-        : 'report.md';
-    const args = ['current_time', 'workspace_list'].includes(tool)
-      ? '{}'
-      : tool === 'workspace_read'
-        ? JSON.stringify({ path: 'report.md' })
-        : tool === 'workspace_present'
-          ? JSON.stringify({ files: [{ path: 'report.md', description: '集成报告' }] })
-          : JSON.stringify({ path, content: '# Integration fixture\n' });
+      : instruction.includes('HIDDEN')
+        ? '.skill/SKILL.md'
+        : instruction.includes('DENY')
+          ? 'denied.md'
+          : 'report.md';
+    const args = JSON.stringify(
+      {
+        glob: { pattern: '*.md' },
+        read: { file_path: 'report.md' },
+        present: { files: [{ path: 'report.md', description: '集成报告' }] },
+        edit: { file_path: 'edited.md', old_string: 'draft', new_string: 'final' },
+        write: { file_path: path, content: '# Integration fixture\n' },
+      }[tool],
+    );
     send({
       choices: [
         {
@@ -346,11 +358,13 @@ await once(server, 'listening');
 const manifest = fixtureManifest({
   systemPrompt: {
     identity: 'Integration contract test only.',
-    domain: 'Do not contact external services.',
+    // 场景提示词里的模板占位符必须原样保留，不能让 dsh 当作变量插值而使请求失败
+    domain: 'Do not contact external services. Keep {{placeholder}} literal.',
   },
-  // 与「通用助手」一样只声明 current_time：文件读写与搜索由 Runner 基础能力补齐
+  // 旧版本保存的场景只声明 current_time（已由 DSH 时间上下文替代）：文件读写与搜索由 Runner 基础能力补齐
   tools: { builtin: ['current_time'] },
   policy: {
+    // 旧版本保存的工具名：Runner 按平台契约换成 read / write
     allowedTools: ['current_time', 'workspace_list', 'workspace_read', 'workspace_write', 'bash'],
     // 旧版本保存的策略字段：已下线，必须被忽略（写入不再逐次确认）
     requireWriteApproval: true,
@@ -364,6 +378,21 @@ let id,
   // 任何意外出现的确认请求都会被拒绝，从而让写入失败、断言暴露问题
   approvalAction = 'deny';
 try {
+  const unsupportedSandbox = new SessionKernel();
+  unsupportedSandbox.sandboxSupport = { available: false, reason: 'fixture: no sandbox' };
+  await assert.rejects(
+    () =>
+      unsupportedSandbox.createSession(manifest, {
+        baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+        model: 'protocol-fixture-not-a-model',
+        apiKey: 'test-key-do-not-use',
+        contextWindow: 64000,
+      }),
+    (error) => error.statusCode === 503 && /终端沙箱不可用/.test(error.message),
+  );
+  await unsupportedSandbox.dispose();
+  checks.push('missing terminal sandbox rejects a bash-enabled session instead of removing confinement');
+  console.log('PASS', checks.at(-1));
   const handle = await kernel.createSession(manifest, {
     baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
     model: 'protocol-fixture-not-a-model',
@@ -421,8 +450,21 @@ try {
   );
   check('gateway receives leading system message and correct model', () => {
     assert.equal(requests[0].model, 'protocol-fixture-not-a-model');
-    assert.ok(requests[0].messages[0].content.includes('Integration contract test'));
     assert.equal(requests[0].messages[0].role, 'system');
+    assert.ok(requests[0].messages[0].content.startsWith('Integration contract test'));
+  });
+  check('system prompt: scenario prompt first and literal; no sdk coding persona or harness identity', () => {
+    const system = requests[0].messages[0].content;
+    assert.ok(system.includes('Keep {{placeholder}} literal.'));
+    assert.doesNotMatch(system, /DeepSeek Harness|coding agent powered by/);
+  });
+  check('current time reaches the model as context, without a tool call', () => {
+    const context = JSON.stringify(requests[0].messages.slice(1));
+    assert.match(context, new RegExp(String(new Date().getFullYear())));
+    assert.equal(
+      requests[0].tools.some((tool) => tool.function.name === 'current_time'),
+      false,
+    );
   });
   check('token usage includes cached input exactly once', () =>
     assert.deepEqual(events.find((event) => event.kind === 'cost_tick')?.payload, {
@@ -430,16 +472,19 @@ try {
       tokensOut: 10,
     }),
   );
-  check('base capabilities load without scenario grants (present rides on write, search on read)', () =>
+  check('base capabilities load without scenario grants (edit/present ride on write, search on read)', () =>
     assert.deepEqual(
       requests[0].tools.map((tool) => tool.function.name).sort(),
-      [...BASE_TOOLS, 'workspace_present', ...SEARCH_TOOLS].toSorted(),
+      // 夹具刻意沿用旧版策略：旧上限不含后来新增的 ask_user_question，因此不进入白名单
+      [...BASE_TOOLS, 'edit', 'present', ...SEARCH_TOOLS]
+        .filter((name) => name !== 'ask_user_question')
+        .toSorted(),
     ),
   );
-  check('system prompt tells the model to save requested files with workspace_write', () => {
+  check('system prompt tells the model to save requested files with write', () => {
     const system = requests[0].messages[0].content;
-    assert.ok(system.includes('必须调用 workspace_write'));
-    assert.ok(system.includes('workspace_present'));
+    assert.ok(system.includes('必须调用 write'));
+    assert.ok(system.includes('present'));
     assert.ok(system.includes('grep 按正则搜索'));
   });
   events = await turn('THINK');
@@ -452,11 +497,11 @@ try {
     assert.equal(message?.payload.text, '思考后的回答');
     assert.equal(message?.payload.reasoning, '先分析一下。');
   });
-  check('reasoning tokens ride with usage accounting', () =>
+  // 思考用量已包含在输出用量里（计费按输入 / 输出），不单独上报
+  check('reasoning is billed inside output tokens', () =>
     assert.deepEqual(events.find((event) => event.kind === 'cost_tick')?.payload, {
       tokensIn: 100,
       tokensOut: 12,
-      reasoningTokens: 7,
     }),
   );
   events = await turn('PLAIN');
@@ -467,12 +512,12 @@ try {
     assert.ok(assistant, 'earlier answer remains in history');
     assert.equal(assistant.reasoning_content, '先分析一下。');
   });
-  events = await turn('THINK TIME');
+  events = await turn('THINK LIST');
   check('reasoning inside the current tool loop is replayed to the gateway', () => {
     assert.ok(events.some((event) => event.kind === 'tool_result'));
     const followUp = requests.at(-1).messages;
     const call = followUp.find((message) => message.role === 'assistant' && message.tool_calls?.length);
-    assert.equal(call?.reasoning_content, '需要先查时间。');
+    assert.equal(call?.reasoning_content, '需要先列出文件。');
   });
   events = await turn('WRITE');
   check(
@@ -481,10 +526,9 @@ try {
       const call = requests
         .at(-1)
         .messages.find(
-          (message) =>
-            message.role === 'assistant' && message.tool_calls?.[0]?.function.name === 'current_time',
+          (message) => message.role === 'assistant' && message.tool_calls?.[0]?.function.name === 'glob',
         );
-      assert.equal(call?.reasoning_content, '需要先查时间。');
+      assert.equal(call?.reasoning_content, '需要先列出文件。');
     },
   );
   check('fragmented tool arguments; file writes run directly without approval', () => {
@@ -499,26 +543,35 @@ try {
   });
   check('actual artifact written', () => assert.ok(events.some((event) => event.kind === 'files')));
   assert.equal(await kernel.files.readFile(id, 'report.md'), '# Integration fixture\n');
-  events = await turn('TIME');
-  check('current_time executor returns an actual ISO time', () =>
-    assert.ok(JSON.parse(events.find((event) => event.kind === 'tool_result').payload.result).iso),
-  );
   events = await turn('LIST');
-  check('workspace_list executor returns actual artifact metadata', () =>
-    assert.equal(
-      JSON.parse(events.find((event) => event.kind === 'tool_result').payload.result).files[0].path,
-      'report.md',
-    ),
+  check('DSH glob lists the written artifact', () =>
+    assert.match(events.find((event) => event.kind === 'tool_result').payload.result, /report\.md/),
   );
   events = await turn('READ');
-  check('workspace_read executor returns actual file content', () =>
-    assert.equal(
-      JSON.parse(events.find((event) => event.kind === 'tool_result').payload.result).content,
-      '# Integration fixture\n',
+  check('DSH read returns actual file content of a workspace-relative path', () =>
+    assert.match(
+      events.find((event) => event.kind === 'tool_result').payload.result,
+      /# Integration fixture/,
     ),
   );
+  await writeFile(join(dir, 'sessions', id, 'workspace', 'edited.md'), '# draft plan\n');
+  events = await turn('EDIT');
+  check('DSH edit changes a workspace file in place and reports it as an artifact', () => {
+    assert.equal(events.find((event) => event.kind === 'tool_result')?.payload.isError, false);
+    assert.deepEqual(events.find((event) => event.kind === 'files')?.payload.files, [
+      { path: 'edited.md', bytes: 13 },
+    ]);
+  });
+  assert.equal(await kernel.files.readFile(id, 'edited.md'), '# final plan\n');
+  await kernel.files.deleteFile(id, 'edited.md');
+  events = await turn('HIDDEN');
+  check('writes into hidden folders such as the .skill/ mirror are denied', () => {
+    const result = events.find((event) => event.kind === 'tool_result')?.payload;
+    assert.equal(result?.isError, true);
+    assert.match(result.result, /隐藏/);
+  });
   events = await turn('PRESENT');
-  check('present is enabled with workspace_write and declares deliverables without approval', () => {
+  check('present is enabled with write and declares deliverables without approval', () => {
     assert.equal(
       events.some((event) => event.kind === 'approval_required'),
       false,
@@ -596,6 +649,39 @@ try {
     assert.equal(result?.isError, true);
     assert.match(result?.result ?? '', /安全策略|系统核心路径/);
   });
+  events = await turn('BASH_MAKE');
+  check('bash writes inside the session workspace (one-shot shell, cwd = workspace)', () => {
+    assert.equal(toolResult(events)?.isError, false);
+    assert.match(toolResult(events)?.result ?? '', /done/);
+  });
+  assert.equal(await kernel.files.readFile(id, 'bash-made.txt'), 'made-by-bash\n');
+  await kernel.files.deleteFile(id, 'bash-made.txt');
+  events = await turn('BASH_TOKEN');
+  check('bash output is sanitized before the model sees it', () => {
+    assert.match(toolResult(events)?.result ?? '', /user:\*\*\*@github\.com/);
+    assert.doesNotMatch(toolResult(events)?.result ?? '', /ghp_secret/);
+  });
+  if (kernel.sandbox.status === 'enforced') {
+    events = await turn('BASH_OUTSIDE');
+    check('the dsh sandbox blocks bash writes outside the workspace (no approval granted)', () => {
+      assert.match(toolResult(events)?.result ?? '', /sandbox|denied|Permission denied|Read-only/i);
+    });
+    await assert.rejects(() => stat(outsideWrite));
+    events = await turn('BASH_ESCALATE');
+    check(
+      'sandbox escalation asks the user with a Chinese reason; a denial keeps the command blocked',
+      () => {
+        const ask = events.find((event) => event.kind === 'approval_required');
+        assert.equal(ask?.payload.tool, 'bash');
+        assert.equal(
+          ask?.payload.reason,
+          '这条命令需要突破终端沙箱（不受沙箱限制，可读写服务器上的任意位置）。原因：需要把结果写到会话目录之外',
+        );
+        assert.equal(toolResult(events)?.isError, true);
+      },
+    );
+    await assert.rejects(() => stat(outsideWrite));
+  } else console.log('SKIP sandbox write boundary: this host has no bwrap / Landlock');
   assert.ok(!(await kernel.files.listFiles(id)).some((file) => file.path === 'pwned.txt'));
   assert.ok(!(await kernel.files.listFiles(id)).some((file) => file.path === 'bash-denied.txt'));
   events = await turn('GREP');
@@ -631,8 +717,8 @@ try {
     assert.doesNotMatch(result.result, /link\.txt|sentinel/);
   });
   const toolNames = () => requests.at(-1).tools.map((tool) => tool.function.name);
-  check('without associated code the session has no read tool and no code section', () => {
-    assert.equal(toolNames().includes('read'), false);
+  check('read is a base tool; without associated code there is no code section', () => {
+    assert.equal(toolNames().includes('read'), true);
     assert.equal(requests.at(-1).messages[0].content.includes('关联代码'), false);
   });
   await assert.rejects(
@@ -652,7 +738,7 @@ try {
     const names = firstRequest.tools.map((tool) => tool.function.name);
     assert.ok(names.includes('read'));
     assert.ok(names.includes('bash'));
-    for (const name of ['write', 'edit', 'apply_patch', 'read_image'])
+    for (const name of ['apply_patch', 'read_image', 'working_directory'])
       assert.equal(names.includes(name), false, name);
   });
   check('grep searches an associated project by absolute path', () => {
@@ -706,9 +792,8 @@ try {
     assert.equal(result?.isError, false);
     assert.match(result.result, /BETA_MARKER = True/);
   });
-  events = await turn('TIME', undefined, []);
-  check('removing every project drops read and the code section again', () => {
-    assert.equal(toolNames().includes('read'), false);
+  events = await turn('PLAIN', undefined, []);
+  check('removing every project drops the code section again', () => {
     assert.equal(requests.at(-1).messages[0].content.includes('关联代码'), false);
   });
   events = await turn('HTTP_ERROR');
@@ -735,6 +820,17 @@ try {
       assert.ok(events.some((event) => event.kind === 'error' && expected.test(event.payload.message)));
       assert.equal(events.at(-1)?.payload.status, 'error');
     });
+    if (instruction === 'TRUNCATED')
+      check(
+        'a dropped stream is retried automatically; each retry first discards the unsettled live output',
+        () => {
+          const resets = events.filter((event) => event.kind === 'live_reset');
+          const deltas = events.filter((event) => event.kind === 'message_delta');
+          assert.ok(resets.length >= 1);
+          // 每次重试前都先清掉上一次的片段：片段数 = 清空次数 + 1
+          assert.equal(deltas.length, resets.length + 1);
+        },
+      );
   }
   events = await turn('CUT_TOOL');
   check('tool call cut by the output cap ends softly: partial text kept, incomplete call never runs', () => {
@@ -818,7 +914,7 @@ try {
     // 其他模型的思考内容不带过来，只补空字符串
     assert.equal(assistants.find((message) => message.content === '思考后的回答')?.reasoning_content, '');
   });
-  events = await turn('THINK TIME');
+  events = await turn('THINK LIST');
   events = await turn('PLAIN');
   check('DeepSeek keeps working after its own tool-call turn (no 400 on the next message)', () => {
     assert.equal(
@@ -828,10 +924,9 @@ try {
     const call = requests
       .at(-1)
       .messages.findLast(
-        (message) =>
-          message.role === 'assistant' && message.tool_calls?.[0]?.function.name === 'current_time',
+        (message) => message.role === 'assistant' && message.tool_calls?.[0]?.function.name === 'glob',
       );
-    assert.equal(call?.reasoning_content, '需要先查时间。');
+    assert.equal(call?.reasoning_content, '需要先列出文件。');
   });
   const running = kernel.sendTurn(id, 'HOLD');
   await new Promise((resolve, reject) => {
@@ -857,6 +952,17 @@ try {
   check('same Runner process can reopen dsh session log after interrupt', () =>
     assert.ok(restored.some((event) => event.kind === 'message')),
   );
+  // An idle eviction releases memory but must leave the session address usable.
+  kernel.sessions.get(id).lastActive = 0;
+  await kernel.reap();
+  check('idle eviction keeps the session available without an explicit restore', () => {
+    assert.equal(kernel.has(id), true);
+    assert.equal(kernel.sessions.get(id).engine, null);
+  });
+  const afterIdle = await turn('AFTER_INTERRUPT');
+  check('a new turn resumes the conversation after idle eviction', () =>
+    assert.ok(afterIdle.some((event) => event.kind === 'message')),
+  );
   await kernel.disposeSession(id);
   assert.equal(await kernel.files.readFile(id, 'report.md'), '# Integration fixture\n');
   restarted = new SessionKernel();
@@ -876,7 +982,7 @@ try {
     (error) => error.statusCode === 404,
   );
   // 执行日志：Runner 重启后、会话尚未恢复时，控制面仍能从磁盘补读重启前产生的事件
-  const durableBefore = allEvents.filter((event) => !event.kind.endsWith('_delta'));
+  const durableBefore = allEvents.filter((event) => !event.transient);
   const lastSeqBefore = durableBefore.at(-1).seq;
   const fromDisk = restarted.eventsAfter(id, lastSeqBefore - 5);
   check('journal: an unloaded session serves persisted events from disk by seq', () => {
@@ -893,7 +999,7 @@ try {
     );
     const delta = allEvents.find((event) => event.kind === 'message_delta');
     assert.ok(delta && durableBefore.some((event) => event.seq === delta.seq));
-    assert.ok(!fromDisk.some((event) => event.kind.endsWith('_delta')));
+    assert.ok(!fromDisk.some((event) => event.transient));
   });
   assert.throws(
     () => restarted.eventsAfter('22222222-2222-4222-8222-222222222222', 0),
@@ -1049,4 +1155,5 @@ try {
   server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
   await rm(dir, { recursive: true, force: true });
+  await rm(outsideWrite, { force: true });
 }

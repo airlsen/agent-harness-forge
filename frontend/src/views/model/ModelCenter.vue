@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { onBeforeRouteLeave } from 'vue-router';
 import type { Rule } from 'ant-design-vue/es/form';
 import type { MenuInfo } from 'ant-design-vue/es/menu/src/interface';
 import { api, post, put, remove } from '../../api/client';
@@ -36,6 +37,19 @@ const form = reactive({
 });
 // 点击查看后取回的已保存密钥；保存时未改动就不重新提交。
 const revealedKey = ref('');
+const originalForm = ref('');
+const formChanged = computed(
+  () =>
+    JSON.stringify({
+      name: form.name,
+      baseUrl: form.baseUrl,
+      model: form.model,
+      apiKey: form.apiKey === revealedKey.value ? '' : form.apiKey,
+      contextWindow: form.contextWindow,
+      inputPrice: form.inputPrice,
+      outputPrice: form.outputPrice,
+    }) !== originalForm.value,
+);
 
 // antd 表单校验规则：等价于原原生 HTML5 校验（必填、URL、数值范围），并提供字段级错误提示。
 const rules: Record<string, Rule[]> = {
@@ -97,11 +111,36 @@ function resetForm(model?: ModelConnection) {
 }
 function openEditor(model?: ModelConnection) {
   resetForm(model);
+  originalForm.value = JSON.stringify({ ...form });
   editorOpen.value = true;
 }
-function closeEditor() {
-  if (!saving.value) editorOpen.value = false;
+async function closeEditor() {
+  if (saving.value || !editorOpen.value) return;
+  if (
+    formChanged.value &&
+    !(await confirm({
+      title: '放弃未保存的模型配置？',
+      content: '当前填写的内容尚未保存。',
+      okText: '放弃修改',
+      cancelText: '继续编辑',
+      danger: true,
+    }))
+  )
+    return;
+  editorOpen.value = false;
 }
+onBeforeRouteLeave(async () => {
+  if (!editorOpen.value) return true;
+  if (saving.value) return false;
+  if (!formChanged.value) return true;
+  return confirm({
+    title: '离开并放弃模型配置？',
+    content: '当前填写的内容尚未保存。',
+    okText: '放弃修改',
+    cancelText: '继续编辑',
+    danger: true,
+  });
+});
 function endpointHost(baseUrl: string) {
   try {
     return new URL(baseUrl).host;
@@ -276,7 +315,7 @@ onMounted(load);
           <span class="catalog-kicker"
             ><span class="catalog-kicker-mark"><Icon name="model" :size="12" /></span>MODEL CONNECTIONS</span
           >
-          <h1>模型管理</h1>
+          <h1>模型连接</h1>
           <p>管理聊天模型及其连接状态。</p>
         </div>
         <div class="page-heading-actions">

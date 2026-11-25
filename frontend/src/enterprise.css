@@ -1102,6 +1102,11 @@ textarea:focus-visible {
 .task-composer #task-input::placeholder {
   color: var(--text-secondary);
 }
+.task-composer .composer-queued-hint {
+  margin: -8px 4px 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
 /* One continuous toolbar: controls scroll as a group on narrow screens, while
    the primary action remains anchored on the right. Popups render in portals. */
 .task-composer-toolbar {
@@ -2794,6 +2799,80 @@ textarea:focus-visible {
 }
 .enterprise-chat .approval-actions {
   gap: 8px;
+}
+/* 模型提问卡片：复用审批卡片的底子，问题区按纯文本呈现 */
+.enterprise-chat .question-card.settled {
+  opacity: 0.72;
+  max-height: none;
+}
+.enterprise-chat .question-item {
+  border-color: var(--color-warning-border);
+  background: var(--surface-card);
+  border-radius: 8px;
+  padding: 11px 12px;
+  margin-bottom: 8px;
+}
+.enterprise-chat .question-title {
+  color: var(--color-warning-text);
+  font-size: 13px;
+  margin: 0 0 6px;
+}
+.enterprise-chat .question-header {
+  display: inline-block;
+  color: var(--color-warning-text);
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: 5px;
+  font-size: 12px;
+  padding: 1px 6px;
+  margin-right: 6px;
+}
+.enterprise-chat .question-detail {
+  color: var(--color-warning-text);
+  font-size: 12px;
+  opacity: 0.85;
+  margin: 0 0 6px;
+}
+.enterprise-chat .question-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.enterprise-chat .question-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 9px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.enterprise-chat .question-option.selected {
+  border-color: var(--color-warning-text);
+  background: var(--color-warning-bg);
+}
+.enterprise-chat .question-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.enterprise-chat .question-option-body small {
+  color: var(--color-warning-text);
+  opacity: 0.8;
+  font-size: 12px;
+}
+.enterprise-chat .question-custom {
+  width: 100%;
+  font-size: 13px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-content);
+}
+.enterprise-chat .question-custom:focus {
+  outline: 1px solid var(--color-warning-text);
 }
 .enterprise-chat .stop-button:not(.task-composer .stop-button) {
   color: var(--color-warning-text);

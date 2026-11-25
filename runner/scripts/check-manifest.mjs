@@ -26,7 +26,7 @@ check('runner supports exactly the schema manifest version', () =>
 );
 
 check('a complete manifest passes through unchanged', () => {
-  const manifest = fixtureManifest({ tools: { builtin: ['current_time'] } });
+  const manifest = fixtureManifest({ tools: { builtin: ['todo_write'] } });
   assert.equal(parseManifest(manifest), manifest);
 });
 

@@ -6,14 +6,18 @@
  *
  * kind 为内核事件名；两个特殊值由翻译层处理：
  * - failure：本轮失败（插件主动上报，如模型网关报错）；
- * - files：文件产物（payload 为单个文件，翻译时包成 { files: [payload] }）。
+ * - files：文件产物（payload 为单个文件，翻译时包成 { files: [payload] }）；
+ * 另外 sandbox 由 DSH 适配层自己消费（engine.ts），不转给内核。
  */
 export const FORGE_EVENTS = Object.freeze({
   'forge.delta': { kind: 'message_delta', source: 'llm' },
   'forge.reasoning_delta': { kind: 'reasoning_delta', source: 'llm' },
-  'forge.error': { kind: 'failure', source: 'llm' },
+  // 模型请求失败后自动重试：丢弃上一次尝试已推送、但没有结算的正文与思考
+  'forge.live_reset': { kind: 'live_reset', source: 'llm' },
   'forge.artifact': { kind: 'files', source: 'tools' },
   'forge.present': { kind: 'deliverables', source: 'tools' },
+  // 终端沙箱探测结果：只在 DSH 适配层内部使用（决定是否降级），不进入会话事件
+  'forge.sandbox': { kind: 'sandbox', source: 'agent' },
   'forge.policy': { kind: 'policy_decision', source: 'tools' },
   'forge.skill_revision': { kind: 'skill_revision', source: 'tools' },
   'forge.skills_loaded': { kind: 'skills_loaded', source: 'tools' },

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type VNode } from 'vue';
-import { useRouter } from 'vue-router';
 import { useConversation } from '../../stores/conversation';
 import { usePlatform } from '../../stores/platform';
 import { isAvailableScenario } from '../../utils/conversation/sessionState';
@@ -13,7 +12,6 @@ const props = withDefaults(defineProps<{ hero?: boolean }>(), { hero: false });
 const emit = defineEmits<{ submitted: [id: number] }>();
 const app = usePlatform();
 const chat = useConversation();
-const router = useRouter();
 const picker = ref(false);
 const textarea = ref<HTMLTextAreaElement | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
@@ -77,8 +75,8 @@ async function send() {
   if (!canSend.value || chat.running) return;
   // 已有会话使用创建时锁定的模型快照；只有新会话需要一个当前可用的模型。
   if (!chat.current && !app.modelOptions.length) {
-    app.toast('尚无可用模型，请由管理员在「模型管理」添加并启用模型', 'info');
-    await router.push('/agent/models');
+    app.toast('尚无可用模型，请先在「模型连接」添加并启用模型；输入内容已保留', 'info');
+    textarea.value?.focus();
     return;
   }
   submitting.value = true;
@@ -137,7 +135,7 @@ defineExpose({ focus: () => textarea.value?.focus() });
         <Icon name="file" :size="14" /><span class="attachment-name">{{ file.name }}</span>
         <button
           :aria-label="`移除附件 ${file.name}`"
-          :disabled="chat.running"
+          :disabled="chat.sending || chat.loading"
           @click="chat.draftAttachments.splice(index, 1)"
         >
           <Icon name="close" :size="13" />
@@ -150,11 +148,18 @@ defineExpose({ focus: () => textarea.value?.focus() });
       v-model="chat.input"
       aria-label="任务输入"
       :placeholder="chat.current ? '补充要求，或继续这项工作…' : '描述你的目标、已有信息和期望结果…'"
-      :disabled="chat.running || chat.loading"
+      :disabled="chat.sending || chat.loading"
       :rows="hero ? 3 : 2"
       maxlength="64000"
       @keydown="keyboard"
     ></textarea>
+    <p
+      v-if="chat.current?.status === 'running' && (chat.input.trim() || chat.draftAttachments.length)"
+      class="composer-queued-hint"
+      role="status"
+    >
+      内容已保留，当前执行结束后可发送。
+    </p>
     <div class="task-composer-toolbar">
       <div class="task-composer-options" role="group" aria-label="任务配置，可横向滚动">
         <div class="scenario-picker-wrap">
@@ -233,7 +238,7 @@ defineExpose({ focus: () => textarea.value?.focus() });
       <a-button
         type="text"
         class="icon-button composer-attachment"
-        :disabled="chat.running || chat.loading"
+        :disabled="chat.sending || chat.loading"
         :loading="attaching"
         aria-label="附加文本文件"
         title="附加文本文件 · 最多 4 个，每个 200 KB"

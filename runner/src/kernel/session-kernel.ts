@@ -14,9 +14,12 @@ import { fileURLToPath } from 'node:url';
 import {
   DshEngine,
   EngineTimeout,
+  type AnswerOutcome,
   type ApprovalOutcome,
   type ApprovalRequest,
   type RuntimePlan,
+  type SandboxMode,
+  type SandboxProbe,
 } from './dsh/index.js';
 import { buildSystemPrompt } from './system-prompt.js';
 import { projectOverview, resolveCodeProjects, sameProjects, type CodeProject } from './code-projects.js';
@@ -31,7 +34,7 @@ import { EventJournal } from './journal.js';
 import { failure, isSessionId } from './errors.js';
 import { effectiveOutputTokens, modelFingerprint, validModel, type RuntimeModel } from './runtime-model.js';
 import { materializeSkills } from './skill-snapshots.js';
-import { GROUP_TOOLS, SKILL_SCRIPT_TOOL, sessionToolset } from './toolset.js';
+import { GROUP_TOOLS, SHELL_TOOL, SKILL_SCRIPT_TOOL, sessionToolset } from './toolset.js';
 import { MANIFEST_PLUGINS, forgePlugin } from './forge-plugins.js';
 import { WorkspaceFiles } from './workspace-files.js';
 import type { PluginWorkerClient } from '../plugin-worker-client.js';
@@ -57,6 +60,21 @@ const MAX_WARM_SESSIONS = nonNegativeInt(process.env.RUNNER_MAX_WARM_SESSIONS, 2
 const REAP_INTERVAL_MS = 60_000;
 
 type Pending = { resolve: (outcome: ApprovalOutcome) => void; timer: NodeJS.Timeout };
+/** 一个挂起提问：等待回答 / 取消 / 超时，questions 为内核钳制后的问题（回答校验以它为准） */
+type PendingQuestion = {
+  resolve: (outcome: AnswerOutcome) => void;
+  timer: NodeJS.Timeout;
+  questions: SanitizedQuestion[];
+};
+/** 钳制后的问题：全部内容来自模型，按纯文本上限收窄后交给界面与回答校验 */
+interface SanitizedQuestion {
+  id: string;
+  question: string;
+  header?: string;
+  detail?: string;
+  options?: { label: string; description?: string }[];
+  multiSelect?: boolean;
+}
 type Entry = {
   id: string;
   manifest: SessionManifest;
@@ -72,6 +90,8 @@ type Entry = {
   error: string | null;
   workspace: string;
   pending: Map<string, Pending>;
+  /** 当前挂起的向用户提问（票据 id → 等待）；中断与回合结束时全部取消 */
+  questions: Map<string, PendingQuestion>;
   /** 当前关联的代码项目（只读挂载）；变化时下一轮以新配置重启引擎并接续会话 */
   code: CodeProject[];
   /** 本轮生效的扩展能力（场景绑定 ∪ 聊天临时选择）；变化时同样重启接续 */
@@ -86,6 +106,101 @@ interface PreparedTurn {
   model?: RuntimeModel;
   code: CodeProject[];
   caps: RuntimeCapabilities;
+}
+
+/** 向用户提问的默认等待（秒）：提问要打字，比审批默认的 120 秒长；清单策略可用 askTimeoutSeconds 覆盖 */
+const ASK_TIMEOUT_SECONDS = 300;
+/** 模型生成内容的钳制上限：超长内容收窄后照常呈现，不用 422 打断用户 */
+const MAX_QUESTIONS = 10;
+const MAX_QUESTION_TEXT = 2000;
+const MAX_QUESTION_HEADER = 100;
+const MAX_QUESTION_DETAIL = 4000;
+const MAX_QUESTION_OPTIONS = 20;
+const MAX_OPTION_LABEL = 200;
+const MAX_OPTION_DESCRIPTION = 500;
+const MAX_ANSWER_TEXT = 4000;
+const MAX_QUESTION_ID = 200;
+
+const clampText = (value: unknown, max: number): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const clean = value.replace(/\0/g, '').trim();
+  if (!clean) return undefined;
+  return clean.length > max ? `${clean.slice(0, max)}…` : clean;
+};
+
+/** 把模型给的问题钳制成可呈现、可校验的形状；全部无效时返回空数组（引擎直接按取消处理） */
+function clampQuestions(raw: unknown): SanitizedQuestion[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SanitizedQuestion[] = [];
+  const seen = new Set<string>();
+  for (const item of raw.slice(0, MAX_QUESTIONS)) {
+    if (!item || typeof item !== 'object') continue;
+    const record = item as Record<string, unknown>;
+    const id = clampText(record.id, MAX_QUESTION_ID);
+    const question = clampText(record.question, MAX_QUESTION_TEXT);
+    if (!id || seen.has(id) || !question) continue;
+    seen.add(id);
+    const header = clampText(record.header, MAX_QUESTION_HEADER);
+    const detail = clampText(record.detail, MAX_QUESTION_DETAIL);
+    const multiSelect = record.multiSelect === true || record.multi_select === true;
+    const options = Array.isArray(record.options)
+      ? record.options
+          .slice(0, MAX_QUESTION_OPTIONS)
+          .map((option) => {
+            const source = (option ?? {}) as Record<string, unknown>;
+            const label = clampText(source.label, MAX_OPTION_LABEL);
+            if (!label) return undefined;
+            const description = clampText(source.description, MAX_OPTION_DESCRIPTION);
+            return description ? { label, description } : { label };
+          })
+          .filter((option): option is { label: string; description?: string } => option !== undefined)
+      : [];
+    out.push({
+      id,
+      question,
+      ...(header ? { header } : {}),
+      ...(detail ? { detail } : {}),
+      ...(options.length ? { options } : {}),
+      ...(multiSelect && options.length ? { multiSelect: true } : {}),
+    });
+  }
+  return out;
+}
+
+/**
+ * 校验用户回答并换成给 dsh 的形状：每个问题恰好一条、选项必须在原选项内、
+ * 每条至少有选中项或自由文本。结构不符抛 422，票据保持挂起可重试。
+ */
+function answerOutcome(questions: SanitizedQuestion[], decision: unknown): AnswerOutcome {
+  if (decision && typeof decision === 'object' && (decision as { action?: unknown }).action === 'cancel')
+    return { cancelled: true };
+  const raw = (decision as { answers?: unknown } | null)?.answers;
+  if (!Array.isArray(raw)) throw failure('回答缺少 answers 数组', 422);
+  const byId = new Map<string, { selected: unknown; custom: unknown }>();
+  for (const item of raw) {
+    if (!item || typeof item !== 'object' || typeof (item as any).id !== 'string')
+      throw failure('回答项缺少问题 id', 422);
+    if (byId.has((item as any).id)) throw failure(`问题 ${String((item as any).id)} 被回答了多次`, 422);
+    byId.set((item as any).id, { selected: (item as any).selected, custom: (item as any).custom });
+  }
+  const answers = questions.map((question) => {
+    const item = byId.get(question.id);
+    if (!item) throw failure(`问题 ${question.id} 没有回答`, 422);
+    byId.delete(question.id);
+    const selected = Array.isArray(item.selected)
+      ? item.selected.filter((label): label is string => typeof label === 'string')
+      : [];
+    if (question.options?.length) {
+      const labels = new Set(question.options.map((option) => option.label));
+      const invalid = selected.find((label) => !labels.has(label));
+      if (invalid) throw failure(`问题 ${question.id} 的所选选项无效：${invalid.slice(0, 50)}`, 422);
+    }
+    const custom = clampText(item.custom, MAX_ANSWER_TEXT);
+    if (!selected.length && !custom) throw failure(`问题 ${question.id} 没有给出回答`, 422);
+    return { id: question.id, selected, ...(custom ? { custom } : {}) };
+  });
+  if (byId.size) throw failure(`回答包含了未知的问题：${[...byId.keys()][0]}`, 422);
+  return { answers };
 }
 
 /**
@@ -126,6 +241,18 @@ export class SessionKernel {
       reaper.unref?.();
       this.reaper = reaper;
     }
+  }
+  /**
+   * 本机是否支持终端沙箱（bwrap / Landlock）：首次启动会话时由 forge-runtime 探测，之后沿用。
+   * 不支持时拒绝开放终端，绝不退回无沙箱的宿主机执行。
+   */
+  private sandboxSupport: SandboxProbe | undefined;
+  /** /v1/runtime 上报：unknown（尚未有会话启动）/ enforced / unavailable */
+  get sandbox() {
+    if (!this.sandboxSupport) return { status: 'unknown' as const };
+    return this.sandboxSupport.available
+      ? { status: 'enforced' as const, enforcement: this.sandboxSupport.enforcement }
+      : { status: 'unavailable' as const };
   }
   get size() {
     return this.sessions.size;
@@ -187,9 +314,9 @@ export class SessionKernel {
     const event = entry.journal.append(kind, payload, source);
     for (const listener of entry.listeners) listener(event);
   }
-  /** 本轮失败：只记第一次（例如用户中止后引擎报告的 aborted 不覆盖），force 时总是记录 */
-  private fail(entry: Entry, message: string, force = false) {
-    if (entry.error && !force) return;
+  /** 本轮失败：只记第一次（例如用户中止后引擎报告的 aborted 不覆盖） */
+  private fail(entry: Entry, message: string) {
+    if (entry.error) return;
     entry.error = message;
     this.emit(entry, 'error', { message });
   }
@@ -199,6 +326,60 @@ export class SessionKernel {
       entry.pending.delete(ticketId);
       this.emit(entry, 'approval_resolved', { ticketId, action: 'cancelled' }, 'tools');
       pending.resolve('cancelled');
+    }
+  }
+  /**
+   * 引擎请求用户提问：发出 question_required 事件并等待回答 / 忽略 / 超时。
+   * 超时不产生失败：与「忽略」一样按 cancelled 回给模型，由它带着假设继续。
+   */
+  private requestQuestion(entry: Entry, request: { questions: unknown[] }): Promise<AnswerOutcome> {
+    const questions = clampQuestions(request?.questions);
+    if (!questions.length) return Promise.resolve({ cancelled: true });
+    const policy = entry.manifest.policy;
+    const milliseconds = (policy.askTimeoutSeconds ?? ASK_TIMEOUT_SECONDS) * 1000;
+    return new Promise((resolve) => {
+      const ticketId = randomUUID();
+      const timer = setTimeout(() => {
+        entry.questions.delete(ticketId);
+        this.emit(entry, 'question_resolved', { ticketId, action: 'timeout' }, 'tools');
+        resolve({ cancelled: true });
+      }, milliseconds);
+      entry.questions.set(ticketId, { resolve, timer, questions });
+      this.emit(
+        entry,
+        'question_required',
+        { ticketId, questions, timeoutSeconds: milliseconds / 1000 },
+        'tools',
+      );
+    });
+  }
+  /** 控制面回填一条提问的结论：回答（逐问题校验）或取消 */
+  async resolveQuestion(id: string, ticketId: string, decision: unknown) {
+    const entry = this.entry(id);
+    const pending = entry.questions.get(ticketId);
+    if (!pending) throw failure('提问已过期或已处理', 409);
+    const outcome = answerOutcome(pending.questions, decision);
+    clearTimeout(pending.timer);
+    entry.questions.delete(ticketId);
+    this.emit(
+      entry,
+      'question_resolved',
+      {
+        ticketId,
+        action: 'answers' in outcome ? 'answered' : 'cancelled',
+        ...('answers' in outcome ? { answers: outcome.answers } : {}),
+      },
+      'tools',
+    );
+    pending.resolve(outcome);
+  }
+  /** 取消全部挂起提问（中止、回合结束或运行时撤销）；已结束的提问由 question_resolved 事件记录 */
+  private cancelQuestions(entry: Entry) {
+    for (const [ticketId, pending] of entry.questions) {
+      clearTimeout(pending.timer);
+      entry.questions.delete(ticketId);
+      this.emit(entry, 'question_resolved', { ticketId, action: 'cancelled' }, 'tools');
+      pending.resolve({ cancelled: true });
     }
   }
   /** 引擎请求用户确认：发出审批事件，等待控制面裁决、超时或取消 */
@@ -361,6 +542,7 @@ export class SessionKernel {
       error: null,
       workspace: join(DATA, id, 'workspace'),
       pending: new Map(),
+      questions: new Map(),
       code,
       caps,
       lastActive: Date.now(),
@@ -374,7 +556,7 @@ export class SessionKernel {
     };
   }
   /** 按会话当前配置启动执行引擎：先算出装配需求（RuntimePlan），具体怎么装配交给 DSH 适配层 */
-  private async boot(entry: Entry) {
+  private async boot(entry: Entry): Promise<void> {
     const dir = join(DATA, entry.id);
     await mkdir(entry.workspace, { recursive: true, mode: 0o700 });
     const { manifest } = entry;
@@ -393,21 +575,36 @@ export class SessionKernel {
     const scriptSkills = entry.caps.skills.filter((skill) =>
       skill.files.some((file) => file.path.startsWith('scripts/')),
     );
+    const spillDir = join(dir, 'spill');
+    await mkdir(spillDir, { recursive: true, mode: 0o700 });
+    const probeSandbox = this.sandboxSupport === undefined;
+    // 没有终端沙箱时终端不可用；写入仍由文件沙箱与 Forge 路径守卫约束。
+    if (this.sandboxSupport?.available === false && toolset.allowed.includes(SHELL_TOOL))
+      throw failure('终端沙箱不可用，已拒绝开放终端；请安装 bubblewrap 或启用 Landlock', 503);
+    const sandbox: SandboxMode = toolset.write ? 'workspace-write' : 'read-only';
     const plan: RuntimePlan = {
       sessionLogDir: join(dir, 'session-log'),
+      spillDir,
+      workspace: entry.workspace,
       contextWindow,
       outputTokens,
+      model: {
+        id: entry.model.model,
+        baseUrl: entry.model.baseUrl,
+        requestTimeoutMs: (policy.requestTimeoutSeconds ?? 300) * 1000,
+      },
       allowed: toolset.allowed,
-      search: toolset.search,
-      read: toolset.read,
+      sandbox,
       runtime: forgePlugin('forge-runtime', {
         workspace: entry.workspace,
         allowedTools: toolset.allowed,
         approvalTools: toolset.approval,
         codeProjects: entry.code.map(({ name, path }) => ({ name, path })),
         readRoots: Object.entries(skillDirs).map(([name, path]) => ({ name: `skill:${name}`, path })),
-        maxOutputTokens: outputTokens,
-        requestTimeoutSeconds: policy.requestTimeoutSeconds ?? 300,
+        spillDir,
+        probeSandbox,
+        // 系统提示在下面拼好后填入（forge-runtime 以不插值的段落注入）
+        systemPrompt: '',
       }),
       plugins: [
         ...(mounts.includes('forge-plugin-bridge')
@@ -494,23 +691,39 @@ export class SessionKernel {
         webFetch: Boolean(entry.caps.web?.fetch),
       },
     );
-    entry.engine = await DshEngine.start(
+    plan.runtime.config.systemPrompt = systemPrompt;
+    const engine = await DshEngine.start(
       {
         sessionId: entry.id,
         dir,
         cwd: entry.workspace,
         model: entry.model,
-        systemPrompt,
         plan,
         groupTools: GROUP_TOOLS,
         resume: entry.hasHistory,
+        probeSandbox,
       },
       {
         emit: (kind, payload, source) => this.emit(entry, kind, payload, source),
-        fail: (message, explicit) => this.fail(entry, message, explicit),
+        fail: (message) => this.fail(entry, message),
         approve: (request) => this.requestApproval(entry, request),
+        ask: (request) => this.requestQuestion(entry, request),
+        cancelQuestions: () => this.cancelQuestions(entry),
       },
     );
+    if (probeSandbox && engine.sandbox) {
+      this.sandboxSupport = engine.sandbox;
+      if (!engine.sandbox.available) {
+        console.warn(
+          `[runner] 本机不支持终端沙箱（${engine.sandbox.reason ?? '没有 bwrap，也不支持 Landlock'}）：` +
+            '需要终端的会话将拒绝启动。请在服务器上安装 bubblewrap 或启用 Landlock。',
+        );
+        // 探测发生在首轮执行前；释放本次引擎，再按安全边界决定是否开放会话。
+        await engine.dispose();
+        return this.boot(entry);
+      }
+    }
+    entry.engine = engine;
   }
 
   /**
@@ -621,6 +834,7 @@ export class SessionKernel {
       await engine?.dispose();
     } finally {
       this.cancelApprovals(entry);
+      this.cancelQuestions(entry);
       entry.busy = false;
       this.releaseTurn();
       this.finishTurn(entry);
@@ -709,6 +923,7 @@ export class SessionKernel {
     if (this.cancelQueuedTurn(id)) return;
     if (entry.busy) this.fail(entry, '任务已由用户中止');
     this.cancelApprovals(entry);
+    this.cancelQuestions(entry);
     const engine = entry.engine;
     entry.engine = null;
     await engine?.dispose();
@@ -744,7 +959,13 @@ export class SessionKernel {
       warm.sort((a, b) => a.lastActive - b.lastActive);
       for (const entry of warm.slice(0, warm.length - MAX_WARM_SESSIONS)) victims.add(entry);
     }
-    for (const entry of victims) await this.disposeSession(entry.id);
+    for (const entry of victims) {
+      // Keep the session handle, selections and event listeners. The next turn
+      // can boot the engine again without forcing the control plane to restore it.
+      const engine = entry.engine;
+      entry.engine = null;
+      await engine?.dispose();
+    }
   }
   async dispose() {
     if (this.reaper) {

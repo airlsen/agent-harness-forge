@@ -20,7 +20,7 @@ const check = (name, fn) => {
 const idle = { running: false, reasoning: '', text: '', activeTools: [] };
 const user = (id, content = '任务') => ({ id, role: 'user', content, meta: {} });
 const assistant = (id, content, meta = {}) => ({ id, role: 'assistant', content, meta });
-const tool = (id, callId, name = 'workspace_read') => ({
+const tool = (id, callId, name = 'read') => ({
   id,
   role: 'tool',
   content: '{"ok":true}',
@@ -43,7 +43,7 @@ try {
 
   check('连续工具调用并入一组；正文会断开分组', () => {
     const turns = buildTurns(
-      [user(1), tool(2, 'c1'), tool(3, 'c2', 'workspace_write'), assistant(4, '中间说明'), tool(5, 'c3')],
+      [user(1), tool(2, 'c1'), tool(3, 'c2', 'write'), assistant(4, '中间说明'), tool(5, 'c3')],
       idle,
     );
     assert.deepEqual(
@@ -67,7 +67,7 @@ try {
       running: true,
       reasoning: '又在想',
       text: '部分回答',
-      activeTools: [{ id: 'c2', tool: 'workspace_write', pending: true }],
+      activeTools: [{ id: 'c2', tool: 'write', pending: true }],
     });
     assert.equal(turns.length, 2);
     assert.equal(turns[1].running, true);
@@ -103,7 +103,7 @@ try {
       running: true,
       reasoning: '推理中',
       text: '',
-      activeTools: [{ id: 'c1', tool: 'workspace_read', pending: true }],
+      activeTools: [{ id: 'c1', tool: 'read', pending: true }],
     });
     assert.equal(toolStarted[0].steps[0].live, false);
     assert.deepEqual(
@@ -117,7 +117,7 @@ try {
       running: true,
       reasoning: '',
       text: '',
-      activeTools: [{ id: 'c2', tool: 'workspace_write', pending: true }],
+      activeTools: [{ id: 'c2', tool: 'write', pending: true }],
     });
     assert.equal(turns[0].steps.length, 1);
     assert.deepEqual(
@@ -171,36 +171,45 @@ try {
     // 消息流里不再渲染模型切换分隔条
     assert.equal('switch' in turns[1], false);
   });
-  check('workspace_present 结果成为本轮交付物；失败调用与其他轮不受影响，同路径以后声明为准', () => {
-    const present = (id, callId, files, isError = false) => ({
-      id,
-      role: 'tool',
-      content: isError ? '文件不存在' : JSON.stringify({ files }),
-      meta: { toolCallId: callId, tool: 'workspace_present', arguments: { files }, isError },
-    });
-    const turns = buildTurns(
-      [
-        user(1),
-        present(2, 'p1', [{ path: 'report.md', bytes: 10 }]),
-        present(3, 'p2', [{ path: 'missing.md', bytes: 0 }], true),
-        present(4, 'p3', [
-          { path: 'chart.png', bytes: 20 },
-          { path: 'report.md', bytes: 12, description: '终版' },
-        ]),
-        assistant(5, '已完成'),
-        user(6),
-        assistant(7, '无文件'),
-      ],
-      idle,
-    );
-    assert.deepEqual(turns[0].deliverables, [
-      { path: 'report.md', bytes: 12, description: '终版' },
-      { path: 'chart.png', bytes: 20 },
-    ]);
-    assert.deepEqual(turns[1].deliverables, []);
-    // 交付声明仍作为一次工具调用保留在过程步骤里
-    assert.equal(turns[0].steps[0].calls.length, 3);
-  });
+  check(
+    'present 结果成为本轮交付物（旧会话的 workspace_present 同样识别）；失败调用与其他轮不受影响，同路径以后声明为准',
+    () => {
+      const present = (id, callId, files, isError = false, name = 'present') => ({
+        id,
+        role: 'tool',
+        content: isError ? '文件不存在' : JSON.stringify({ files }),
+        meta: { toolCallId: callId, tool: name, arguments: { files }, isError },
+      });
+      const turns = buildTurns(
+        [
+          user(1),
+          present(2, 'p1', [{ path: 'report.md', bytes: 10 }]),
+          present(3, 'p2', [{ path: 'missing.md', bytes: 0 }], true),
+          present(
+            4,
+            'p3',
+            [
+              { path: 'chart.png', bytes: 20 },
+              { path: 'report.md', bytes: 12, description: '终版' },
+            ],
+            false,
+            'workspace_present',
+          ),
+          assistant(5, '已完成'),
+          user(6),
+          assistant(7, '无文件'),
+        ],
+        idle,
+      );
+      assert.deepEqual(turns[0].deliverables, [
+        { path: 'report.md', bytes: 12, description: '终版' },
+        { path: 'chart.png', bytes: 20 },
+      ]);
+      assert.deepEqual(turns[1].deliverables, []);
+      // 交付声明仍作为一次工具调用保留在过程步骤里
+      assert.equal(turns[0].steps[0].calls.length, 3);
+    },
+  );
 
   check('多次模型请求的思考、工具与中间说明合成一个过程块，最终回答单独显示', () => {
     // 截图场景：思考 → 说明 → 列文件 → 思考 → 写入 → 思考 → 写入 → 思考 → 最终回答
@@ -208,11 +217,11 @@ try {
       [
         user(1),
         assistant(2, '我先查看工作区状态', { reasoning: '想一想' }),
-        tool(3, 'c1', 'workspace_list'),
+        tool(3, 'c1', 'glob'),
         assistant(4, '', { reasoning: '第一批' }),
-        tool(5, 'c2', 'workspace_write'),
+        tool(5, 'c2', 'write'),
         assistant(6, '', { reasoning: '第二批' }),
-        tool(7, 'c3', 'workspace_write'),
+        tool(7, 'c3', 'write'),
         assistant(8, '已生成全部文件', { reasoning: '收尾' }),
       ],
       idle,
@@ -251,7 +260,7 @@ try {
       running: true,
       reasoning: '想',
       text: '我先看看',
-      activeTools: [{ id: 'c1', tool: 'workspace_list', pending: true }],
+      activeTools: [{ id: 'c1', tool: 'glob', pending: true }],
     })[0];
     assert.deepEqual(
       narrating.answer.map((s) => s.text),
@@ -279,7 +288,7 @@ try {
       running: true,
       reasoning: '',
       text: '',
-      activeTools: [{ id: 'c2', tool: 'workspace_read', pending: true }],
+      activeTools: [{ id: 'c2', tool: 'read', pending: true }],
     })[0];
     assert.deepEqual(
       running.answer.map((s) => s.text),
@@ -350,6 +359,21 @@ try {
     );
     // 格式异常的条目被忽略
     assert.deepEqual(latestUnavailable([{ user: withCaps(1, [null, { kind: 'other' }, jira]) }]), [jira]);
+  });
+
+  const { canonicalToolName, isPresentTool, builtinToolTitle } = await vite.ssrLoadModule(
+    '/src/utils/conversation/toolTitles.ts',
+  );
+  check('旧工具名按平台契约换新：交付判定兼容历史会话，新工具显示中文名', () => {
+    assert.equal(canonicalToolName('workspace_present'), 'present');
+    assert.equal(canonicalToolName('workspace_write'), 'write');
+    assert.equal(canonicalToolName('current_time'), '');
+    assert.equal(canonicalToolName('read'), 'read');
+    assert.equal(isPresentTool('workspace_present'), true);
+    assert.equal(isPresentTool('present'), true);
+    assert.equal(isPresentTool('write'), false);
+    assert.equal(builtinToolTitle('ask_user_question'), '向用户提问');
+    assert.equal(builtinToolTitle('mcp__demo__echo'), 'demo · echo');
   });
 } finally {
   await vite.close();

@@ -60,13 +60,7 @@ AUTHORING_TOOLS = [
     "skill_trial",
 ]
 # 编辑会话另外开放的基础工具（仍以平台策略为上限）：试用时读写会话工作区、用 bash 运行脚本与测试
-WORKBENCH_TOOLS = (
-    "current_time",
-    "workspace_list",
-    "workspace_read",
-    "workspace_write",
-    "bash",
-)
+WORKBENCH_TOOLS = ("read", "write", "bash")
 
 # Skill 编写助手的工作方法：仓库内置的 skill-design 元 Skill。
 # 正文常驻编写会话的系统提示，参考资料由 skill_read_guide 按需读取。
@@ -867,7 +861,7 @@ def authoring_system_prompt(history: str, unavailable: str = "") -> dict:
             "skill_update_draft 会用 content 整体替换草稿：必须提交完整文档，未要求修改的内容原样保留。",
             "用户询问原因或解释内容时只回答，不调用更新工具；只有明确要求修改或创建时才修改草稿。",
             "对话期间维护者可能手动修改草稿或附加文件：每次修改前都重新调用 skill_read_draft，不要沿用之前读到的内容。",
-            "试用产出是“试用文件”，与 Skill 文件分开：生成的报告、测试代码、解析结果等写到会话工作区的 outputs/ 下（workspace_write 或 bash），用户在编辑页「试用文件」中查看；只有用户要求把某个产出沉淀为模板或资料时，才用 skill_write_file 存进 Skill。",
+            "试用产出是“试用文件”，与 Skill 文件分开：生成的报告、测试代码、解析结果等写到会话工作区的 outputs/ 下（write 或 bash），用户在编辑页「试用文件」中查看；只有用户要求把某个产出沉淀为模板或资料时，才用 skill_write_file 存进 Skill。",
             "调试时自动“修改 → 重测”最多 3 轮，且只在用户明确要求调通、修好或直接改时进行；否则试用发现问题只报告，并询问是否修改。",
         ],
         "workspace": [
@@ -1187,7 +1181,7 @@ async def delete_trial_file(db: AsyncSession, skill_id: int, session_id: int, pa
     await file_service.authoring_delete(session.id, session.runner_session_id, path, runner_client)
 
 
-# 这些工具可能在会话工作区产生或删除文件且没有逐次通知：结果返回后同步试用文件（workspace_write 有 files 事件）
+# 这些工具可能在会话工作区产生或删除文件且没有逐次通知：结果返回后同步试用文件（write / edit 有 files 事件）
 TRIAL_FILE_TOOLS = frozenset({"bash", "skill_test_script"})
 
 
@@ -1278,6 +1272,8 @@ async def run_authoring_turn(skill_id: int, session_id: int, message: str, model
                     "path": path,
                 }
                 revisions.append(event["payload"])
+            elif kind == "live_reset":
+                partial_text, partial_reasoning = "", ""
             elif kind == "message_delta":
                 partial_text += str(payload.get("text") or "")
             elif kind == "reasoning_delta":

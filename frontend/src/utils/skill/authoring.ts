@@ -82,7 +82,11 @@ export function applyAuthoringEvent(
   const data = event.payload ?? {};
   if (event.kind === 'message_delta') live.text += String(data.text ?? '');
   else if (event.kind === 'reasoning_delta') live.reasoning += String(data.text ?? '');
-  else if (event.kind === 'message') {
+  else if (event.kind === 'live_reset') {
+    // 模型请求失败后自动重试：上一次尝试的正文与思考作废
+    live.text = '';
+    live.reasoning = '';
+  } else if (event.kind === 'message') {
     const text = String(data.text ?? '');
     const reasoning = typeof data.reasoning === 'string' ? data.reasoning : '';
     if (text || reasoning)

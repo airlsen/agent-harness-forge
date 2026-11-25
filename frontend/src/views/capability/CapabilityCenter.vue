@@ -312,21 +312,20 @@ const related = computed(() =>
   ),
 );
 const guidance: Record<string, { example: string; boundary: string }> = {
-  current_time: {
-    example: '请告诉我当前日期和时间，作为报告的时间依据。',
-    boundary: '读取执行环境的当前时间，不访问外部业务系统。',
-  },
-  workspace_list: {
-    example: '请列出本次会话已经生成的文件。',
-    boundary: '只查看当前会话工作目录，不会列出其他会话文件。',
-  },
-  workspace_read: {
+  read: {
     example: '请阅读当前会话中的报告文件，并提炼关键结论。',
-    boundary: '只能读取当前会话工作目录内的文本文件，不读取服务器任意路径。',
+    boundary:
+      '只能读取当前会话工作目录、已关联代码项目与 Skill 资料，不读取服务器任意路径；密钥类文件不可读取。',
   },
-  workspace_write: {
+  write: {
     example: '请把分析结果整理成 Markdown 文件，供我预览和下载。',
-    boundary: '直接写入当前会话目录，无需逐次确认；受文件数量与容量配额约束，不能写到会话目录之外。',
+    boundary:
+      '直接写入或局部修改当前会话目录中的文件，无需逐次确认；受文件数量与容量配额约束，不能写到会话目录之外或隐藏目录。',
+  },
+  bash: {
+    example: '请运行项目里的测试脚本，告诉我哪些用例失败了。',
+    boundary:
+      '命令在系统沙箱中执行，只能写入当前会话目录；确需写到别处时会先请你确认，高危系统命令一律拒绝。',
   },
   todo_write: {
     example: '请把这次任务拆成待办清单，并逐步更新进度。',

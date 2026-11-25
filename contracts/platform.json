@@ -1,61 +1,62 @@
 {
-  "$comment": "控制面与 Runner 共用的平台契约（唯一来源）：平台内置工具目录与能力上限。provider 为 dsh 包名或 Forge 插件名；带 follows 的工具随被跟随的工具一同开放，不在平台策略中单独管控。改这里，两端同时生效；npm run contract 核对 dsh 包仍提供对应工具，npm test 的 check-wiring 核对 Forge 插件确实注册了对应工具。",
-  "version": 1,
+  "$comment": "控制面与 Runner 共用的平台契约（唯一来源）：平台内置工具目录与能力上限。provider 为 dsh 包名或 Forge 插件名；带 follows 的工具随被跟随的工具一同开放，不在平台策略中单独管控。renamed 记录已下线的旧工具名 → 新工具名（空串表示能力已由 DSH 自动提供、不再是工具），两端读取旧数据（企业策略、空间开关、场景快照、会话清单）时据此换成新名。改这里，两端同时生效；npm run contract 核对 dsh 包仍提供对应工具，npm test 的 check-wiring 核对 Forge 插件确实注册了对应工具。",
+  "version": 3,
   "tools": [
     {
-      "name": "current_time",
-      "title": "当前时间",
-      "description": "读取当前日期与时区，不访问外部网络。",
-      "permission": "read",
-      "icon": "clock",
-      "group": "base",
-      "provider": "forge-runtime"
-    },
-    {
-      "name": "workspace_list",
-      "title": "列出工作区文件",
-      "description": "仅列出当前会话工作区内的文件。",
-      "permission": "read",
-      "icon": "folder",
-      "group": "base",
-      "provider": "forge-runtime"
-    },
-    {
-      "name": "workspace_read",
-      "title": "读取工作区文件",
-      "description": "读取当前会话生成的文本文件，禁止越界路径与符号链接。",
+      "name": "read",
+      "title": "读取文件",
+      "description": "读取会话工作区与已关联项目中的文本文件（带行号，可分段读取），同时开放按文件名查找与按内容搜索；密钥类文件不可读取。",
       "permission": "read",
       "icon": "file",
       "group": "base",
-      "provider": "forge-runtime"
+      "provider": "@deepseek-ai/dsh-tool-fs"
     },
     {
-      "name": "workspace_write",
-      "title": "生成文本产物",
-      "description": "直接写入当前会话的受限工作区，无需逐次确认；受文件数量与容量配额约束。",
+      "name": "write",
+      "title": "生成与修改文件",
+      "description": "在当前会话工作区创建、覆盖或局部修改文本文件，直接执行无需逐次确认；受文件数量与容量配额约束。",
       "permission": "write",
       "icon": "edit",
       "group": "base",
-      "provider": "forge-runtime"
+      "provider": "@deepseek-ai/dsh-tool-fs"
     },
     {
-      "name": "workspace_present",
+      "name": "edit",
+      "title": "修改文件",
+      "description": "按原文精确替换工作区文件中的片段；随「生成与修改文件」一同开放。",
+      "permission": "write",
+      "icon": "edit",
+      "group": "base",
+      "provider": "@deepseek-ai/dsh-tool-fs",
+      "follows": "write"
+    },
+    {
+      "name": "present",
       "title": "交付文件",
-      "description": "把工作区中已完成的文件声明为交付物，在回复下方以文件卡片展示；随「生成文本产物」一同开放。",
+      "description": "把工作区中已完成的文件声明为交付物，在回复下方以文件卡片展示；随「生成与修改文件」一同开放。",
       "permission": "read",
       "icon": "file",
       "group": "base",
-      "provider": "forge-runtime",
-      "follows": "workspace_write"
+      "provider": "@deepseek-ai/dsh-tool-present",
+      "follows": "write"
     },
     {
       "name": "bash",
       "title": "终端命令执行",
-      "description": "在会话工作区执行终端命令（运行脚本、编译、Git 等），直接执行无需确认；仅拦截少数高危命令。",
+      "description": "在会话工作区执行终端命令（运行脚本、编译、Git 等），直接执行无需确认；命令在系统沙箱中运行，只能写入会话工作区，需要写到别处时会先请你确认；仅拦截少数高危命令。",
       "permission": "write",
       "icon": "terminal",
       "group": "base",
-      "provider": "@deepseek-ai/dsh-tool-bash-persistent"
+      "provider": "@deepseek-ai/dsh-tool-bash"
+    },
+    {
+      "name": "ask_user_question",
+      "title": "向用户提问",
+      "description": "执行中遇到口径、范围或选择不明确时，把问题连同候选项发给用户，等回答后再继续；未回答时模型会自行按合理假设推进。",
+      "permission": "read",
+      "icon": "question",
+      "group": "base",
+      "provider": "@deepseek-ai/dsh-tool-ask-user"
     },
     {
       "name": "skill_run_script",
@@ -130,6 +131,13 @@
       "provider": "@deepseek-ai/dsh-tool-goal"
     }
   ],
+  "renamed": {
+    "workspace_list": "read",
+    "workspace_read": "read",
+    "workspace_write": "write",
+    "workspace_present": "present",
+    "current_time": ""
+  },
   "limits": {
     "sessionSkills": 20,
     "sessionMcpServers": 10,

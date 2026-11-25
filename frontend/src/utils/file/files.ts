@@ -1,7 +1,7 @@
 /**
  * 会话工作区文件：类型识别、交付物解析与预览辅助（纯函数，便于脚本测试）。
  *
- * - 交付物：模型调用 workspace_present 声明的最终文件，随工具结果消息持久化，
+ * - 交付物：模型调用 present 声明的最终文件，随工具结果消息持久化，
  *   因此切换会话、刷新页面后仍能在原轮次下方展示；
  * - 文件本体保存在服务端会话工作区，预览与下载都按原始字节读取。
  */
@@ -216,7 +216,7 @@ export function parseDelimited(text: string, delimiter = ',', maxRows = TABLE_PR
   return { rows, truncated };
 }
 
-/** 从 workspace_present 的工具结果中解析交付物；结果不合法时返回空列表 */
+/** 从 present（旧会话为 workspace_present）的工具结果中解析交付物；两者持久化的结果都是 {files:[{path, bytes, description}]}，不合法时返回空列表 */
 export function parseDeliverables(result: unknown): Deliverable[] {
   if (typeof result !== 'string' || !result.trim()) return [];
   let value: any;

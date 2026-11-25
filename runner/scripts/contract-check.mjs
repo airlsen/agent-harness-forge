@@ -6,7 +6,10 @@
  * 适配层新增依赖时这里自动覆盖，不需要再手工同步。
  */
 
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,10 +27,11 @@ const check = (name, ok, detail = '') => {
 for (const pkg of [
   'dsh',
   'dsh-sdk-protocol',
-  'dsh-sdk-minimal',
+  'dsh-sdk-app',
+  'dsh-base',
   'dsh-headless',
   'dsh-tools',
-  'dsh-llm',
+  'dsh-llm-pi-ai',
   'dsh-user-approval',
 ]) {
   const exists = await readFile(join(DSH, pkg, 'package.json'), 'utf8')
@@ -41,17 +45,25 @@ const toolsEvents = await readFile(join(DSH, 'dsh-tools/lib/types/events.d.ts'),
 check("'tools/pre-execute' 瀑布存在", toolsEvents.includes("'tools/pre-execute'"));
 check("'tools/execute' 瀑布存在", toolsEvents.includes("'tools/execute'"));
 
-const llmIdx = await readFile(join(DSH, 'dsh-llm/lib/types/index.d.ts'), 'utf8').catch(() => '');
-check('ctx.llm.registerAdapter 存在', llmIdx.includes('registerAdapter'));
-check('LlmAdapter 抽象类存在', llmIdx.includes('abstract class LlmAdapter'));
+// 模型出口：llm-pi-ai 的 OpenAI 兼容协议（modelRow 的 api）；实时输出：agent 的流式片段广播（forge-runtime/live-stream.js）
+const { supportedProtocols } = await import('@deepseek-ai/dsh-llm-pi-ai');
+check('llm-pi-ai 支持 openai-completions 协议', supportedProtocols().includes('openai-completions'));
+const agentTypes = await readFile(join(DSH, 'dsh-agent/lib/types/runtime-types.d.ts'), 'utf8').catch(() => '');
+check("agent 事件 'agent/assistant-stream' 存在", agentTypes.includes("'agent/assistant-stream'"));
 
 const approval = await readFile(join(DSH, 'dsh-user-approval/lib/types/index.d.ts'), 'utf8').catch(() => '');
 check('ctx.approval 服务存在', approval.includes('approval: ApprovalService'));
 check('审批策略 ask/never 存在', approval.includes("'ask'") && approval.includes("'never'"));
 
 const { SDK_METHODS } = await import('../src/kernel/dsh/protocol.ts');
+const { DeepSeekHarness, HarnessClient } = await import('@deepseek-ai/dsh-sdk-client');
+for (const method of ['start', 'run', 'resumeSession', 'close'])
+  check(`官方 DeepSeekHarness.${method} 可用`, typeof DeepSeekHarness.prototype[method] === 'function');
+for (const method of ['start', 'onRequest', 'subscribe'])
+  check(`官方 HarnessClient.${method} 可用`, typeof HarnessClient.prototype[method] === 'function');
 const { DSH_PACKAGES, ENGINE_TOOL_PROVIDERS } = await import('../src/kernel/dsh/runtime-config.ts');
 const { PLATFORM } = await import('../src/kernel/platform-contract.ts');
+const { GROUP_TOOLS } = await import('../src/kernel/toolset.ts');
 
 const proto = await readFile(join(DSH, 'dsh-sdk-protocol/lib/types/types.d.ts'), 'utf8').catch(() => '');
 for (const m of SDK_METHODS) {
@@ -73,25 +85,67 @@ const providers = [
     .map((tool) => [tool.name, tool.provider]),
   ...Object.entries(ENGINE_TOOL_PROVIDERS),
 ];
+const checkedTools = new Set();
 for (const [tool, pkg] of providers) {
+  if (checkedTools.has(`${tool}@${pkg}`)) continue;
+  checkedTools.add(`${tool}@${pkg}`);
   const source = await readFile(join(ROOT, 'node_modules', pkg, 'lib', 'index.js'), 'utf8').catch(() => '');
   check(`工具 ${tool} 由 ${pkg} 提供`, source.includes(`'${tool}'`) || source.includes(`"${tool}"`));
 }
 check('服务端身份 deepseek-harness-sdk-runtime', proto.includes('deepseek-harness-sdk-runtime'));
 
-// 5. 适配层写给 dsh 插件的每个配置项，插件的配置定义里仍然有。
-//    dsh 遇到不认识的配置项不报错、静默忽略（如 0.2.2-rc.5 把 Search API 的 apiKeyEnv 改为 searchApiKeyEnv），
-//    所以按全部分支各造一份装配需求生成 patch，逐项对照插件导出的 Config。
-const { buildRuntimePatch } = await import('../src/kernel/dsh/runtime-config.ts');
-const { GROUP_TOOLS } = await import('../src/kernel/toolset.ts');
+// 5. sdk 底座的每个内置插件都已归类，适配层写给插件的每个配置项插件仍然认识。
+//    sdk profile 的完整装配清单（dsh-base + dsh-sdk-app 补丁）直接让 dsh 自己展开，不手工解析补丁文件。
+const { DSH_PROFILE } = await import('../src/kernel/dsh/protocol.ts');
+const { SDK_KEPT, SDK_SWITCHED, SDK_OFF, buildRuntimePatch } = await import('../src/kernel/dsh/runtime-config.ts');
+const dshHome = mkdtempSync(join(tmpdir(), 'forge-contract-dsh-'));
+let composed = '';
+try {
+  composed = execFileSync(
+    process.execPath,
+    [join(DSH, 'dsh', 'lib', 'bin.js'), '--profile', DSH_PROFILE, '--dump-default-config'],
+    { env: { ...process.env, DSH_HOME: dshHome }, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
+  );
+} catch (error) {
+  check(`展开 ${DSH_PROFILE} profile 装配清单`, false, error.message);
+} finally {
+  rmSync(dshHome, { recursive: true, force: true });
+}
+const builtin = new Map([...composed.matchAll(/^- id: ([\w-]+)\n {2}name: '([^']+)'/gm)].map((m) => [m[1], m[2]]));
+check(`${DSH_PROFILE} profile 展开出内置插件`, builtin.size > 50, `${builtin.size} 个`);
+// 三张表互不重叠，且覆盖 sdk 的全部内置插件：升级带来没归类的新插件、或旧插件被移除，都在这里报出来
+const tables = { SDK_KEPT, SDK_SWITCHED: Object.keys(SDK_SWITCHED), SDK_OFF };
+const owner = new Map();
+for (const [table, ids] of Object.entries(tables))
+  for (const id of ids) {
+    if (owner.has(id)) check(`插件 ${id} 只归入一张表`, false, `同时在 ${owner.get(id)} 与 ${table}`);
+    owner.set(id, table);
+  }
+const unclassified = [...builtin.keys()].filter((id) => !owner.has(id));
+check(
+  `sdk 的每个内置插件都已归入 SDK_KEPT / SDK_SWITCHED / SDK_OFF`,
+  unclassified.length === 0,
+  unclassified.length ? `未归类：${unclassified.join('、')}（请在 runtime-config.ts 中决定保留、按能力开关还是关闭）` : '',
+);
+const vanished = [...owner.keys()].filter((id) => !builtin.has(id));
+check(
+  '归类表里的插件 id 都仍在 sdk 装配清单中',
+  vanished.length === 0,
+  vanished.length ? `已不存在：${vanished.join('、')}` : '',
+);
+
+// 按全部分支各造一份装配需求生成 patch，逐项对照插件导出的 Config。
+// dsh 遇到不认识的配置项不报错、静默忽略（如 0.2.2-rc.5 把 Search API 的 apiKeyEnv 改为 searchApiKeyEnv）。
 const local = (id) => ({ id, entry: join(ROOT, 'internal-plugins', id, 'index.js'), config: {} });
 const basePlan = {
   sessionLogDir: '/tmp/contract-sessions',
+  spillDir: '/tmp/contract-spill',
+  workspace: '/tmp/contract-workspace',
   contextWindow: 128000,
   outputTokens: 8192,
+  model: { id: 'contract-model', baseUrl: 'https://example.com/v1', requestTimeoutMs: 300000 },
   allowed: Object.values(GROUP_TOOLS).flat(),
-  search: true,
-  read: true,
+  sandbox: 'workspace-write',
   runtime: local('forge-runtime'),
   plugins: [],
   skills: { plugin: local('forge-skills') },
@@ -111,43 +165,74 @@ const webVariants = ['deepseek-official', 'deepseek-search-api'].map((provider) 
   source: 'scenario',
 }));
 const rows = [null, ...webVariants].flatMap((web) => {
-  const patch = buildRuntimePatch({ ...basePlan, read: web !== null, web }, GROUP_TOOLS);
+  const patch = buildRuntimePatch({ ...basePlan, web }, GROUP_TOOLS);
   return patch.flatMap((row) => row.insert ?? [row]);
 });
-// 内置插件（只给 id 不给包名）的 id → 包名，取自 sdk-minimal 的装配清单
-const profile = await readFile(join(DSH, 'dsh-sdk-minimal/cordis.patch.yml'), 'utf8');
-const builtin = new Map([...profile.matchAll(/- id: ([\w-]+)\s+name: '([^']+)'/g)].map((m) => [m[1], m[2]]));
-const configKeys = async (pkg) => {
+// DeepSeek 模型：模型路由另带 DeepSeek 思考格式的兼容项
+rows.push(
+  ...buildRuntimePatch(
+    { ...basePlan, model: { ...basePlan.model, id: 'deepseek-chat' }, web: null },
+    GROUP_TOOLS,
+  ).filter((row) => row.id === 'llm-pi-ai'),
+);
+// 能力全关的会话：只读沙箱、没有任何可选能力
+rows.push(
+  ...buildRuntimePatch({ ...basePlan, allowed: [], sandbox: 'read-only', skills: null, mcp: { cwd: '/tmp', servers: [] }, web: null }, GROUP_TOOLS).flatMap(
+    (row) => row.insert ?? [row],
+  ),
+);
+const configSchema = async (pkg) => {
   const mod = await import(pkg).catch(() => null);
   const schema = mod?.Config ?? mod?.default?.Config;
   const members = schema?.type === 'union' ? schema.list : [schema];
-  if (!members.every((member) => member?.dict)) return null;
-  return members.map((member) => new Set(Object.keys(member.dict)));
+  return members.every((member) => member?.dict) ? schema : null;
 };
+/**
+ * 配置里插件不认识的字段（逐层核对：对象、字典、数组、联合类型），返回字段路径。
+ * 例如模型路由 providers.forge.models[0].compat 里写错的兼容项也能查出来。
+ */
+function unknownKeys(value, schema, path = '') {
+  if (!schema || value === null || typeof value !== 'object') return [];
+  if (schema.type === 'union')
+    return schema.list
+      .map((member) => unknownKeys(value, member, path))
+      .reduce((a, b) => (b.length < a.length ? b : a));
+  if (schema.type === 'dict')
+    return Object.entries(value).flatMap(([key, item]) => unknownKeys(item, schema.inner, `${path}.${key}`));
+  if (schema.type === 'array' && Array.isArray(value))
+    return value.flatMap((item, index) => unknownKeys(item, schema.inner, `${path}[${index}]`));
+  if (!schema.dict) return [];
+  return Object.entries(value).flatMap(([key, item]) =>
+    Object.hasOwn(schema.dict, key)
+      ? unknownKeys(item, schema.dict[key], path ? `${path}.${key}` : key)
+      : [path ? `${path}.${key}` : key],
+  );
+}
 const seen = new Set();
 for (const row of rows) {
   const pkg = row.name ?? builtin.get(row.id);
   if (!row.name && !seen.has(row.id)) {
     seen.add(row.id);
-    check(`内置插件 id ${row.id} 仍在 dsh-sdk-minimal 装配清单中`, builtin.has(row.id));
+    check(`patch 引用的内置插件 id ${row.id} 仍在 ${DSH_PROFILE} 装配清单中`, builtin.has(row.id));
   }
   if (!pkg?.startsWith('@deepseek-ai/') || !row.config) continue;
-  const label = `${pkg} 配置项 ${Object.keys(row.config).sort().join('、')}`;
+  const label = `${pkg} 配置项 ${Object.keys(row.config).sort().join('、')}${
+    row.id === 'llm-pi-ai' && JSON.stringify(row.config).includes('"deepseek"') ? '（DeepSeek 路由）' : ''
+  }`;
   if (seen.has(label)) continue;
   seen.add(label);
-  const schemas = await configKeys(pkg);
-  if (!schemas) {
+  const schema = await configSchema(pkg);
+  if (!schema) {
     check(label, false, '读不到插件导出的 Config 定义');
     continue;
   }
   // 联合类型（如 mcp-client 的 stdio / http）只要有一种形态认识全部配置项即可
-  const misses = schemas.map((keys) => Object.keys(row.config).filter((key) => !keys.has(key)));
-  const best = misses.reduce((a, b) => (b.length < a.length ? b : a));
-  check(label, best.length === 0, best.length ? `插件不认识：${best.join('、')}` : '');
+  const misses = unknownKeys(row.config, schema);
+  check(label, misses.length === 0, misses.length ? `插件不认识：${misses.join('、')}` : '');
 }
 
 // 6. 所有 dsh 包同一版本、每个 @deepseek-ai 包只装一份。
-//    升级时漏改某个版本号，npm 会把同一模块装出两份不同版本：Forge 插件（如继承 dsh-llm LlmAdapter 的模型网关）
+//    升级时漏改某个版本号，npm 会把同一模块装出两份不同版本：Forge 插件直接引用的 dsh 包
 //    与 dsh 用到的不是同一份，问题隐蔽且难查。基准是 package.json 中 @deepseek-ai/dsh 的锁定版本；
 //    cordis、schemastery 等 @deepseek-ai 通用库版本独立，只要求不重复。
 const manifest = JSON.parse(await readFile(join(ROOT, 'package.json'), 'utf8'));

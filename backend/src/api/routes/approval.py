@@ -35,8 +35,15 @@ async def pending(request: Request, db: AsyncSession = Depends(get_session)):
                     "ticketId": r.id,
                     "sessionId": r.session_id,
                     "tool": r.tool,
+                    # kind=tool 是工具确认；kind=question 是模型向用户提问（由提问卡片处理）
+                    "kind": r.kind,
                     "arguments": r.args_digest,
                     "status": r.status,
+                    **(
+                        {"reason": r.decision_payload["reason"]}
+                        if (r.decision_payload or {}).get("reason")
+                        else {}
+                    ),
                 }
                 for r in rows
             ]

@@ -4,11 +4,12 @@
  */
 import { ENGINE_TOOLS } from '../../src/kernel/dsh/engine-tools.js';
 import { notify } from '../shared/events.js';
-import { classifyBashCommand, sanitizeGitOutput } from './bash-rules.js';
+import { classifyBashCommand, sanitizeShellValue } from './bash-rules.js';
 import { filterSecretResults, toolPathDenial } from './path-guard.js';
 
-/** dsh 提供的终端工具名 */
+/** dsh 提供的终端工具名；后台任务输出与终端输出同样需要脱敏 */
 const SHELL = ENGINE_TOOLS.shell;
+const SHELL_OUTPUT = new Set([SHELL, ENGINE_TOOLS.jobOutput]);
 
 /**
  * 安装策略钩子，返回各自的注销函数。
@@ -30,20 +31,20 @@ export function installPolicyHooks(ctx, { allowed, root, readRoots, approvalTool
   disposers.push(
     ctx.tools.guard((exec) => (allowed.has(exec.name) ? undefined : 'Forge 当前部署禁止执行此工具')),
   );
-  // 搜索与只读 read 来自 DSH 官方插件，其路径参数不受工作区约束；
-  // 在执行前统一收窄到会话工作区与已关联的只读目录。
+  // 读取、搜索、写入、修改、交付都来自 DSH 官方插件：读取类收窄到会话工作区与已关联的只读目录，
+  // 写入类收窄到会话工作区内的非隐藏路径（dsh 文件沙箱只按工作区根目录限制写入）。
   disposers.push(ctx.tools.guard((exec) => toolPathDenial(root, readRoots, exec)));
   if (readRoots.length)
     disposers.push(
       ctx.on('tools/execute', async (exec, next) => filterSecretResults(root, readRoots, exec, await next())),
     );
-  // bash 工具输出脱敏：避免通过 git remote -v、输出回显等泄漏包含 token 的远程地址与密钥
+  // 终端与后台任务输出脱敏：避免通过 git remote -v、输出回显等泄漏包含 token 的远程地址与密钥。
+  // 结果是结构化对象（stdout / stderr / output 等），逐个字符串字段脱敏后交给工具自己的 render 生成文本
   disposers.push(
     ctx.on('tools/execute', async (exec, next) => {
       const result = await next();
-      if (exec.name === SHELL && result && typeof result === 'object' && typeof result.value === 'string') {
-        return { ...result, value: sanitizeGitOutput(result.value) };
-      }
+      if (SHELL_OUTPUT.has(exec.name) && result && typeof result === 'object' && 'value' in result)
+        return { ...result, value: sanitizeShellValue(result.value) };
       return result;
     }),
   );
@@ -93,7 +94,7 @@ export function installPolicyHooks(ctx, { allowed, root, readRoots, approvalTool
         };
       }
 
-      // 4. 会话工作区受限工具（如写入/读取/时间等）直接放行
+      // 4. 其余工具（读写会话工作区、交付、任务清单等）直接放行
       notify('forge.policy', {
         tool: exec.name,
         callId: exec.callId,

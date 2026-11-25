@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select, text, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.contracts import canonical_tools
 from ..core.database import get_session
 from ..models.agent_scenario import AgentScenario, AgentScenarioVersion
 from ..models.agent_session import AgentSession
@@ -140,7 +141,7 @@ async def disabled_tools(db: AsyncSession, space_id: int | None) -> set[str]:
     if space_id is None:
         return set()
     row = await db.get(Space, space_id)
-    return set(row.disabled_tools or []) if row else set()
+    return set(canonical_tools(row.disabled_tools or [])) if row else set()
 
 
 async def effective_policy(db: AsyncSession, space_id: int | None) -> dict:
@@ -205,7 +206,7 @@ def _deps_from_version(deps: ScenarioDeps, bundle_json: dict) -> None:
         for binding in meta.get("pluginBindings") or []
         if isinstance(binding, dict) and binding.get("package")
     )
-    deps.tools.update(str(item) for item in caps.get("builtin_tool_names") or [])
+    deps.tools.update(canonical_tools(str(item) for item in caps.get("builtin_tool_names") or []))
 
 
 async def scenario_dependencies(
@@ -264,7 +265,7 @@ async def set_tool_enabled(db: AsyncSession, space_id: int, tool: str, enabled: 
         policy = await get_policy(db)
         if tool not in policy.get("allowedTools", []):
             raise HTTPException(409, "执行策略未允许这个工具，空间里不能开启；请先在「执行策略」中允许")
-    off = [name for name in (row.disabled_tools or []) if name != tool and name in TOOL_NAMES]
+    off = [name for name in canonical_tools(row.disabled_tools or []) if name != tool and name in TOOL_NAMES]
     if not enabled:
         off.append(tool)
     row.disabled_tools = sorted(set(off))

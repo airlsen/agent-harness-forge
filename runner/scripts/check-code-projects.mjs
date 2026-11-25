@@ -165,7 +165,7 @@ try {
     assert.match(deny('read', { file_path: 'a\0b' }), /文件路径无效/);
     assert.match(deny('glob', { pattern: '*', path: '' }), /搜索路径无效/);
     // 其他工具不受影响
-    assert.equal(deny('workspace_read', { path: '/etc/passwd' }), undefined);
+    assert.equal(deny('todo_write', { path: '/etc/passwd' }), undefined);
   });
   await check(
     'secret files are removed from project-wide search results; other results are untouched',

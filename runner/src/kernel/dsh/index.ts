@@ -3,10 +3,18 @@
  * - engine.ts：一个会话的引擎实例（启动 / 接续 / 执行一轮 / 关闭）；
  * - runtime-config.ts：装配知识（包名、插件 id、配置项、原生工具名）；
  * - protocol.ts：SDK 方法名与事件翻译；
- * - process.ts：子进程与换行 JSON-RPC 传输。
+ * - 官方 DeepSeekHarness：子进程、会话运行与完成判定；底层 client 接收平台通知与审批。
  * dsh 升级时只改本目录，再跑 `npm run contract` 与 `npm test`。
  */
-export { DshEngine, EngineTimeout, type ApprovalRequest, type EngineHost } from './engine.js';
+export {
+  DshEngine,
+  EngineTimeout,
+  type ApprovalRequest,
+  type AnswerOutcome,
+  type AskAnswer,
+  type EngineHost,
+  type SandboxProbe,
+} from './engine.js';
 export type { ApprovalOutcome } from './protocol.js';
 export {
   ENGINE_TOOLS,
@@ -14,6 +22,7 @@ export {
   type LocalPlugin,
   type PlanSkill,
   type RuntimePlan,
+  type SandboxMode,
 } from './runtime-config.js';
 
 /** 当前装配的 dsh 版本（从已安装的包读取，/v1/runtime 上报，不再手写） */

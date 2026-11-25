@@ -18,6 +18,7 @@ from .routes import (
     code,
     governance,
     llm,
+    question,
     registry,
     auth,
     model,
@@ -106,6 +107,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(agent_scenario.router, prefix="/api/agent-scenarios", tags=["scenario"])
 app.include_router(agent_session.router, prefix="/api/agent/sessions", tags=["session"])
 app.include_router(approval.router, prefix="/api/agent/approvals", tags=["approval"])
+app.include_router(question.router, prefix="/api/agent/questions", tags=["question"])
 app.include_router(code.router, prefix="/api/code", tags=["code"])
 app.include_router(capability.router, prefix="/api/capabilities", tags=["capabilities"])
 app.include_router(registry.router, prefix="/api/registry", tags=["registry"])
@@ -126,10 +128,19 @@ async def healthz():
 async def runtime():
     async with SessionFactory() as db:
         connection = await get_connection(db)
+    runner = await runner_client.health()
+    sandbox = (runner.get("sandbox") or {}).get("status") if isinstance(runner, dict) else None
+    shell_note = {
+        "enforced": "终端命令（bash）在系统沙箱中执行，只能写入会话工作区，越界写入需用户确认；仅拦截少数高危命令，受平台策略约束",
+        "unavailable": "Runner 所在服务器不支持终端沙箱（缺少 bubblewrap 或 Landlock），终端命令（bash）已降级为不限制写入，仅拦截少数高危命令；生产环境请安装 bubblewrap",
+    }.get(
+        sandbox,
+        "终端命令（bash）默认在系统沙箱中执行，只能写入会话工作区；首个会话启动后确认服务器是否支持沙箱",
+    )
     return ResponseUtil.ok(
         {
             "controlPlane": "online",
-            "runner": await runner_client.health(),
+            "runner": runner,
             "model": {
                 "configured": connection["configured"],
                 "name": connection.get("model"),
@@ -141,7 +152,7 @@ async def runtime():
             "deployment": "sandbox",
             "limitations": [
                 "支持本地账号与会话所有者校验；空间和能力配置仍共享，OIDC 与多租户 RBAC 尚未接入",
-                "会话工作区文件工具与终端命令（bash）直接执行，仅拦截少数高危命令，受平台策略约束；不是容器级隔离",
+                f"{shell_note}；文件读写限定在会话工作区与已关联项目内；不是容器级隔离",
                 "原生 fork 与跨 Runner 重启恢复尚未接入；历史消息和事件持久化保留",
                 "本地数据库与文件存储，尚未接入 S3/WORM 和生产容器隔离",
             ],

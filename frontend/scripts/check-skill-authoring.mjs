@@ -91,6 +91,11 @@ try {
   apply('tool_result', { toolCallId: 'c2', tool: 'skill_update_draft', result: '重复' });
   assert.equal(live.tools.length, 0);
   assert.equal(messages.filter((message) => message.role === 'tool').length, 1);
+  // 模型请求失败后自动重试：上一次尝试的半截正文与思考作废
+  apply('reasoning_delta', { text: '半截思考' });
+  apply('message_delta', { text: '半截' });
+  apply('live_reset', {});
+  assert.deepEqual([live.text, live.reasoning], ['', '']);
   apply('message_delta', { text: '已补' });
   [running] = buildTurns(authoring.authoringChatMessages(messages), authoring.authoringLiveTurn(live, true));
   assert.deepEqual(

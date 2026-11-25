@@ -233,7 +233,8 @@ def test_current_policy_restricts_frozen_bundle_tools():
         plugin_mounts=["forge-runtime", "forge-plugin-bridge"],
         policy_ref="previous-policy",
         meta={
-            "builtin_tools": ["current_time", "workspace_write"],
+            # 旧版本冻结的快照：旧工具名先换新，再按当前策略收紧
+            "builtin_tools": ["current_time", "workspace_write", "todo_write"],
             "plugin_tools": ["crm_find_customer", "crm_add_customer_note"],
             "pluginBindings": [
                 {
@@ -251,12 +252,12 @@ def test_current_policy_restricts_frozen_bundle_tools():
     apply_current_policy(
         bundle,
         {
-            "allowedTools": ["current_time"],
+            "allowedTools": ["read", "todo_write"],
             "allowedPluginTools": ["crm_find_customer"],
         },
     )
 
-    assert bundle.meta["builtin_tools"] == ["current_time"]
+    assert bundle.meta["builtin_tools"] == ["todo_write"]
     assert bundle.meta["plugin_tools"] == ["crm_find_customer"]
     assert [tool["name"] for tool in bundle.meta["pluginBindings"][0]["tools"]] == ["crm_find_customer"]
     assert bundle.plugin_mounts == ["forge-runtime", "forge-plugin-bridge"]
@@ -264,7 +265,7 @@ def test_current_policy_restricts_frozen_bundle_tools():
 
     apply_current_policy(
         bundle,
-        {"allowedTools": ["current_time"], "allowedPluginTools": []},
+        {"allowedTools": ["todo_write"], "allowedPluginTools": []},
     )
     assert bundle.meta["plugin_tools"] == []
     assert bundle.meta["pluginBindings"] == []

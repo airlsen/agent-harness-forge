@@ -10,13 +10,14 @@ import { sessionState } from '../../utils/conversation/sessionState';
 import { trapTabKey } from '../../utils/common/focus';
 import { confirm } from '../../utils/common/feedback';
 import { animateComposerArrival, captureComposerOrigin } from '../../utils/conversation/composerTransition';
-import type { KernelEvent } from '../../types/platform';
+import type { KernelEvent, QuestionAnswerPayload } from '../../types/platform';
 import { useStickToBottom } from '../../composables/useStickToBottom';
 import { buildTurns, latestUnavailable, type ToolCallView, type Turn } from '../../utils/conversation/turns';
 import { missingSkillInfo } from '../../utils/skill/lifecycle';
 import Icon from '../../components/base/ForgeIcon.vue';
 import Markdown from '../../components/markdown/MarkdownContent.vue';
 import ProcessBlock from '../../components/message/ProcessBlock.vue';
+import QuestionCard from '../../components/message/QuestionCard.vue';
 import UserMessageText from '../../components/message/UserMessageText.vue';
 import TaskComposer from '../../components/composer/TaskComposer.vue';
 import ConversationStart from '../../components/composer/ConversationStart.vue';
@@ -25,7 +26,7 @@ import FilePreview from '../../components/file/FilePreview.vue';
 import FileTree from '../../components/file/FileTree.vue';
 import FileDiff from '../../components/file/FileDiff.vue';
 import TurnChanges from '../../components/message/TurnChanges.vue';
-import { builtinToolTitle } from '../../utils/conversation/toolTitles';
+import { builtinToolTitle, canonicalToolName } from '../../utils/conversation/toolTitles';
 import {
   archiveUrl,
   fileName,
@@ -105,17 +106,19 @@ const sceneIcon = computed(
 const sceneDescription = computed(
   () => chat.current?.bundle?.meta?.scenarioDescription ?? selected.value?.payload.description ?? '',
 );
-// Runner 为每个会话补齐基础能力（时间、文件列表/读取/写入），平台策略 allowedTools 仍是上限
-const BASE_TOOLS = ['current_time', 'workspace_list', 'workspace_read', 'workspace_write'];
+// Runner 为每个会话补齐基础能力（读取、生成与修改文件、终端），平台策略 allowedTools 仍是上限；
+// 旧会话快照里的旧工具名（workspace_* 等）先换成新名
+const BASE_TOOLS = ['read', 'write', 'bash'];
+const canonicalList = (names: string[]) => names.map(canonicalToolName).filter(Boolean);
 const selectedTools = computed(() => {
-  const declared =
+  const declared = canonicalList(
     chat.current?.bundle?.meta?.builtin_tools ??
-    selected.value?.payload.capabilities.builtin_tool_names ??
-    [];
-  const ceiling = chat.current?.bundle?.meta?.policy?.allowedTools;
-  const names = new Set(
-    [...BASE_TOOLS, ...declared].filter((name) => !Array.isArray(ceiling) || ceiling.includes(name)),
+      selected.value?.payload.capabilities.builtin_tool_names ??
+      [],
   );
+  const rawCeiling = chat.current?.bundle?.meta?.policy?.allowedTools;
+  const ceiling = Array.isArray(rawCeiling) ? canonicalList(rawCeiling) : null;
+  const names = new Set([...BASE_TOOLS, ...declared].filter((name) => !ceiling || ceiling.includes(name)));
   return app.tools.filter((t) => names.has(t.name));
 });
 const welcome = computed(() => !chat.messages.length && !chat.outgoing && !loadError.value);
@@ -390,7 +393,9 @@ const lastTurnCompleted = computed(() => {
 const status = computed(() =>
   chat.approvals.length
     ? { label: '等待确认', tone: 'warning', icon: 'shield' }
-    : sessionState(chat.current?.status ?? 'idle'),
+    : chat.questions.some((question) => question.status === 'pending')
+      ? { label: '等待回答', tone: 'warning', icon: 'question' }
+      : sessionState(chat.current?.status ?? 'idle'),
 );
 let routeGeneration = 0;
 async function loadSession(value: unknown) {
@@ -534,6 +539,19 @@ async function decide(id: number, action: 'approve' | 'deny') {
     approvalBusy.value = null;
   }
 }
+/** 提问回执：与审批卡片同样的提交中状态；全部问题已作答才能提交（组件内校验） */
+const questionBusy = ref<number | null>(null);
+async function answerQuestion(id: number, payload: QuestionAnswerPayload) {
+  questionBusy.value = id;
+  try {
+    await chat.resolveQuestion(id, payload);
+    app.toast('已提交回答，模型会继续执行');
+  } catch (error) {
+    app.toast((error as Error).message, 'error');
+  } finally {
+    questionBusy.value = null;
+  }
+}
 async function copyMessage(text: string) {
   try {
     await navigator.clipboard.writeText(text);
@@ -652,7 +670,10 @@ async function quoteMessage(text: string) {
                   v-if="turn.process.length"
                   :steps="turn.process"
                   :active="turn.running"
-                  :waiting="chat.approvals.length > 0"
+                  :waiting="
+                    chat.approvals.length > 0 ||
+                    chat.questions.some((question) => question.status === 'pending')
+                  "
                   :writing="answerStreaming(turn)"
                 />
                 <section v-for="step in turn.answer" :key="step.key" class="step-text">
@@ -773,6 +794,13 @@ async function quoteMessage(text: string) {
             </button>
           </div>
         </div>
+        <QuestionCard
+          v-for="question in chat.questions"
+          :key="question.ticketId"
+          :question="question"
+          :busy="questionBusy !== null"
+          @resolve="answerQuestion"
+        />
         <TaskComposer ref="composer" @submitted="(id) => router.replace(`/agent/chat/${id}`)" />
       </div>
     </section>
@@ -934,7 +962,10 @@ async function quoteMessage(text: string) {
             </li>
             <li v-if="extensionWeb"><Icon name="check" :size="12" />网页抓取仅访问公网地址，搜索按次计费</li>
             <li><Icon name="check" :size="12" />消息与执行事件持久化记录</li>
-            <li><Icon name="lock" :size="12" />不开放任意 Shell 命令</li>
+            <li v-if="selectedTools.some((tool) => tool.name === 'bash')">
+              <Icon name="check" :size="12" />可执行终端命令，系统拒绝提权、破坏系统与读取密钥等高危命令
+            </li>
+            <li v-else><Icon name="lock" :size="12" />本会话未开放终端命令</li>
           </ul>
         </div>
         <div class="context-section">

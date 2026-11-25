@@ -1,9 +1,9 @@
 /**
  * bash 门控规则：命令分类（deny-list-only，只拦截少数明显高危的命令）与输出中 Git 凭据的脱敏。
- * bash 工具本身来自 dsh（sdk-minimal 内置的持久终端），这里只是执行前后的规则，纯函数、可单独测试。
+ * bash 工具本身来自 dsh（dsh-tool-bash，命令在 dsh 沙箱中执行，只能写入会话工作区）；
+ * 沙箱只管文件写入，读取凭据、提权等仍由这里拦截。纯函数、可单独测试。
  */
 import { basename, dirname } from 'node:path';
-import { inspectReadOnlyShell, ALLOWED_SHELL_COMMANDS } from './bash-readonly.js';
 
 /**
  * 脱敏输出中的 Git 敏感信息（如含凭据的 Remote URL、Token 等）
@@ -16,6 +16,19 @@ export function sanitizeGitOutput(text) {
   // 脱敏出现的独立 GitHub/通用 Personal Access Token
   cleaned = cleaned.replace(/\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{30,255}\b/g, '***REDACTED***');
   return cleaned;
+}
+
+/** 内核 Landlock 版本较旧时沙箱启动器每条命令都会打印的提示：对模型是噪音，状态已在 /v1/runtime 上报 */
+const SANDBOX_NOTICE = /^landlock-run: partial enforcement[^\n]*(?:\n|$)/gm;
+
+/** 终端结果（字符串或 stdout / stderr / output 等嵌套字段）中的每个字符串都脱敏，结构保持不变 */
+export function sanitizeShellValue(value, depth = 0) {
+  if (typeof value === 'string') return sanitizeGitOutput(value.replace(SANDBOX_NOTICE, ''));
+  if (depth > 4 || !value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map((item) => sanitizeShellValue(item, depth + 1));
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, sanitizeShellValue(item, depth + 1)]),
+  );
 }
 
 /** 命令起始位置：行首，或 ; & | ( 换行、$( 、反引号之后 */
@@ -105,10 +118,6 @@ export function classifyBashCommand(cmd, { workspace } = {}) {
   if (/>\s*\/(?:etc|boot)\//i.test(clean)) {
     return { level: 'deny', reason: '安全策略禁止向系统核心路径重定向写入' };
   }
-  // 白名单（当前为空，保留供未来登记免确认只读命令）；deny-list-only 下其余默认放行。
-  // 注意：bash 工具没有路径沙箱，黑名单只挡明显危险操作，不是隔离边界。
-  if (ALLOWED_SHELL_COMMANDS.size > 0 && inspectReadOnlyShell(clean).safe) {
-    return { level: 'allow', reason: '只读命令自动放行' };
-  }
+  // deny-list-only：其余默认放行。文件写入边界由 dsh 沙箱负责，这里的黑名单只挡明显危险的操作
   return { level: 'allow', reason: '非禁止命令自动放行（deny-list-only）' };
 }

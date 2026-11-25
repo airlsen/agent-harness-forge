@@ -7,7 +7,7 @@ import { failure, isSessionId } from './errors.js';
 
 /** 清单上限：高于插件的 1000 个文件配额（bash 产出不受该配额约束）；达到上限时标记 truncated，控制面不会据此删除记录 */
 export const MAX_LISTED_FILES = 2000;
-/** 清单遍历的最大目录深度，与 workspace_write 允许的层级一致 */
+/** 清单遍历的最大目录深度，与 write 允许的层级一致 */
 const MAX_LISTED_DEPTH = 16;
 const MAX_RAW_BYTES = 20 * 1024 * 1024;
 
